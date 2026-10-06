@@ -1,0 +1,7 @@
+case module/c3030_device_directory
+clause SPEC-09 CINTC-12 (no segment of a module path is a Windows device name, directories included, in any case); SPEC-04 LS-225
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C3030
+diagnostic.position module/Com1/plain_math.ci:1:1

@@ -1,0 +1,61 @@
+// compiler/tests/golden/arrays.ci: local arrays with checked indexing (SPEC-04 LS-62 to
+// LS-67, LS-278; SPEC-01 IM-186), compared with cint_ref by the golden suite (slice 2
+// task 2.13 part (b)).
+
+export I64 squares(I64 n) {
+    I64[8] a;
+    for i in 0..8 {
+        a[i] = i * i;
+    }
+    a[2] += 10;
+    a[3]++;
+    I64 s = 0;
+    for i in 0..n {
+        s = s + a[i];
+    }
+    return s;
+}
+
+export U8 bytes(I64 i) {
+    U8[0] none;
+    U8[4] b;
+    b[i] = 200;
+    b[0] = b[i] +% 100;
+    if (i > 3) {
+        return none[i];
+    }
+    return b[0];
+}
+
+I64 first_of(in I64[_] xs) {
+    return xs[0];
+}
+
+// An array declared without an initializer is zero each time its declaration runs (LS-67):
+// a self-copy right after it keeps the zeros, an initializer or an assignment right after it
+// replaces them.
+export I64 redeclared(I64 n) {
+    I64[2] k;
+    k[1] = 3;
+    I64 total = 0;
+    for i in 0..n {
+        I64[2] a;
+        a = a;
+        I64[2] c = k;
+        I64[2] d;
+        d = k;
+        U8[3] b;
+        Bool[1] f;
+        total += a[1] + c[1] + d[1] + (b[2] as I64) + first_of(a);
+        if (f[0]) {
+            total += 100;
+        }
+        a[0] = 1;
+        a[1] = 5;
+        c[1] = 6;
+        d[1] = 7;
+        b[2] = 9;
+        f[0] = true;
+    }
+    return total;
+}

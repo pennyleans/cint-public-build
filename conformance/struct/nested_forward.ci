@@ -1,0 +1,9 @@
+// case: struct/nested_forward
+// clause: SPEC-04 LS-73; SPEC-09 BOOT-01, CINTC-16
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 7
+
+struct Outer { Inner item; }
+struct Inner { I64 v; }
+export I64 run() { Outer b; b.item.v = 7; return b.item.v; }

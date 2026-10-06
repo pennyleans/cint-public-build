@@ -1,0 +1,11 @@
+// case: module/c3030_device_directory
+// clause: SPEC-09 CINTC-12 (no segment of a module path is a Windows device name, directories included, in any case); SPEC-04 LS-225
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C3030 at module/Com1/plain_math.ci:1:1
+
+import module.Com1.plain_math;
+
+export I64 run() {
+    return plain_math.SCALE;
+}

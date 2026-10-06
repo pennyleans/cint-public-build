@@ -1,0 +1,13 @@
+// case: boot/refuse_enum
+// clause: SPEC-09 BOOT-01 (enum_decl, enumerator), SEED-06; SPEC-04 LS-87, LS-88, LS-89
+// subset: cint-core-1
+// entry: run; args: none
+// seed outcome: C9100 at 8:1
+// spec outcome: value I64 5 under cint-core-1 (coast follows burn = 4); the seed refuses the enum declaration
+
+enum Mode : U8 { idle, burn = 4, coast }
+
+export I64 run() {
+    Mode m = Mode.coast;
+    return (m as U8) as I64;
+}

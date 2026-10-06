@@ -1,0 +1,81 @@
+# Program cases held out of the frozen set at T0 (2026-10-02).
+#
+# A held case keeps its .ci file but has no .expect file. Each line is
+#   <case> <reason ids> <reason>
+# where the ids name entries of ref/OPEN.md. A case leaves this list when the
+# entry it cites is closed by an amendment or a decision, and its
+# .expect file is then generated with conformance/tools/gen_expect.py and
+# reviewed. Lines are sorted by case.
+#
+# Slice 2 task 2.1 (2026-10-03) released the 22 cases that decision 23
+# decides through the slice 2 decision patch (D-11 and D-12). Task 2.7
+# (2026-10-03) released arith/stores_before_fault, frozen in `.expect` format 2
+# with its state line (D-10, REF-OQ-23 closed). Task 2.8 (2026-10-03) gave
+# cint_ref rank-1 arrays, views, size parameters and import, and released
+# diag/c1042_increment_in_expression and struct/array_of_structs (I-2 as
+# amended by D-15). Three stay held: the two fuel cases, whose entry takes an
+# array argument that no case list can state before T3 (OQ-133), and which a
+# scalar wrapper entry cannot replace, because its call would add a fuel unit
+# and change the counts they pin; and struct/layout_static_assert, whose
+# fixed-point and bit-field forms are outside cint_ref until T3 and later
+# (D-15 rows 17 and 20).
+#
+# Task 2.13 (decision 26, item 2; compiler/OPEN.md CINTC-OQ-48): a line whose case
+# ends in `.cintc` holds the cintc expectation of a boot/ refusal case, whose own `.expect`
+# holds the seed's outcome. The eight below are the cases whose construct cint_ref
+# refuses; the other eight have a frozen `<case>.cintc.expect`.
+
+# Box 09 (2026-10-05, docs/design/notes/2026-10-05-box09-arrays-views-kernels.md) adds
+# 88 cases for arrays of rank 2 to 4, slices, views, copy, the reduction built-ins and
+# kernels. Each states its outcome in its header. They were held under I-2 until
+# cint_ref implemented these forms under rulings R1 to R10 (PR #54). The 73 that the
+# seed refuses with C9100 and B1 with C9102 are now frozen, a kernel fault in .expect
+# format 4, as is the cintc expectation of boot/refuse_kernel (I-7, OQ-197), and
+# kernel/where_violation since OQ-203 gave its bind.where record (it was held under
+# REF-OQ-40). Fourteen stayed held under I-7, since a compiler rejected them with another
+# diagnostic. After B1's box 09 support (PR #119) B1 gives the outcome of each, and all
+# 14 are frozen. The seed rejected three with C1050, C3007 and C6004, which CONF-14
+# cannot list as seed limits (only a C9xxx code can be unsupported); each now has a box
+# 09 form that the seed refuses first with C9100: an array literal in view/slice_reversed
+# (fuel 2, where its loop made 12) and a slice argument in reduce/dot_shape_mismatch
+# (whose entry now comes first) and view/negative_extent_runtime.
+
+# Box 12 (2026-10-05, docs/design/notes/2026-10-05-box12-errors-cleanup-lifetimes.md,
+# section 7 step 3) adds 42 cases for error sets and error unions, `try`, `catch`,
+# `as?`, `defer` and `errdefer`. Each states its outcome in its header, in `.expect`
+# format 3 where the entry returns an error (SPEC-09 CONF-11 rule 12). They were held
+# under I-2 until cint_ref implemented these forms (box 12 step 2, PR #83). The 32 that
+# the seed refuses with C9100 and B1 with C9102 are now frozen, an error result in
+# .expect format 3, as are the cintc expectations of boot/refuse_defer and
+# boot/refuse_error_union (I-8, OQ-206). Ten stayed held under I-8 until the box 12
+# compiler step (compiler/OPEN.md CINTC-OQ-63): eight that B1 rejected with C1050 at a
+# combined error set, and two that it rejected with C4012 at `errdefer`. B1 now gives
+# the outcome of each, and nine are frozen. cleanup/c4031_errdefer_without_error_union
+# stayed held, because the seed rejected it with C4012, which CONF-14 cannot list as a
+# seed limit (only a C9xxx code can be unsupported); a `defer` now precedes its
+# `errdefer`, so the seed refuses it with C9100, and it is frozen.
+# Box 12 memory lifetimes (2026-10-05, the box 12 note, section 7; BX12-04, BX12-05,
+# BX12-06, BX12-18, BX12-26, BX12-29) adds 40 cases under memory/ for arenas, child
+# arenas, pools, handles and the frame arena. Each states its outcome in its header,
+# under the readings of ref/OPEN.md REF-OQ-45, one of which (the `container` reason)
+# changes the SPEC-03 M-17 table. Decision 2026-10-06 on OQ-210 adopts the readings
+# with the `container` reason and freezes the cases from cint_ref: the three frame arena
+# cases at once (the seed refuses them with C9003 under EMIT-30, B1 with C9102 under
+# CINTC-OQ-15, both in unsupported.txt), and the other 37, which the seed refuses with
+# C9100, once B1's box 12 compiler work parses arenas and pools. Since its arena and
+# pool step (compiler/OPEN.md CINTC-OQ-64: the checker, then the lowering and
+# rt/cint_mem.c) B1 gives the outcome of all 37, and all 37 are frozen.
+# memory/pool_insert_result_try_main no longer names `main` as its entry, since a
+# harness calls an entry line's function as an export and `main` is the program entry.
+
+boot/refuse_attribute.cintc I-2 the cintc expectation (decision 26 item 2): an attribute is outside the surface that cint_ref implements, so no reference outcome can be frozen (CONF-11 rule 7); the seed's frozen file is unchanged
+boot/refuse_byte_string.cintc I-2 the cintc expectation (decision 26 item 2): a byte-string literal is outside the surface that cint_ref implements, so no reference outcome can be frozen (CONF-11 rule 7); the seed's frozen file is unchanged
+boot/refuse_destructuring.cintc I-2 the cintc expectation (decision 26 item 2): destructuring is outside the surface that cint_ref implements, so no reference outcome can be frozen (CONF-11 rule 7); the seed's frozen file is unchanged
+boot/refuse_enum.cintc I-2 the cintc expectation (decision 26 item 2): `enum` declarations are outside the surface that cint_ref implements, so no reference outcome can be frozen (CONF-11 rule 7); the seed's frozen file is unchanged
+boot/refuse_fixed_point.cintc I-2 the cintc expectation (decision 26 item 2): fixed point is outside the surface that cint_ref implements, so no reference outcome can be frozen (CONF-11 rule 7); the seed's frozen file is unchanged
+boot/refuse_fraction_literal.cintc I-2 the cintc expectation (decision 26 item 2): fixed point (a fraction literal) is outside the surface that cint_ref implements, so no reference outcome can be frozen (CONF-11 rule 7); the seed's frozen file is unchanged
+boot/refuse_type_alias.cintc I-2 the cintc expectation (decision 26 item 2): `type` declarations are outside the surface that cint_ref implements, so no reference outcome can be frozen (CONF-11 rule 7); the seed's frozen file is unchanged
+boot/refuse_where.cintc I-2 the cintc expectation (decision 26 item 2): a `where` clause is outside the surface that cint_ref implements, so no reference outcome can be frozen (CONF-11 rule 7); the seed's frozen file is unchanged
+control/fuel_total_n3 I-2 an array argument to the entry; a case list has no form for it before T3 (OQ-133), and a scalar wrapper entry would add a call and change the fuel count
+control/fuel_total_n3_enough I-2 an array argument to the entry; a case list has no form for it before T3 (OQ-133), and a scalar wrapper entry would add a call and change the fuel count
+struct/layout_static_assert I-2 a fixed-point field and bit fields in a program; outside cint_ref until T3 and later (D-15 rows 17 and 20)

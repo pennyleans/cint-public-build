@@ -1,0 +1,13 @@
+// case: boot/refuse_print
+// clause: SPEC-09 BOOT-01 (hole, print_stmt), SEED-06, SEED-14; SPEC-04 LS-193
+// subset: cint-core-1
+// entry: run; args: none
+// seed outcome: C9100 at 10:5
+// spec outcome: value I64 2 with 7 bytes of output under cint-core-1; the seed refuses the print statement
+
+export I64 run() {
+    I64 x = 2;
+    "x={x}\n";
+    "ok\n";
+    return x;
+}

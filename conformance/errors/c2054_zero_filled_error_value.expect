@@ -1,0 +1,7 @@
+case errors/c2054_zero_filled_error_value
+clause SPEC-04 LS-91, LS-314; decision 2026-10-05, BX12-09
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2054
+diagnostic.position errors/c2054_zero_filled_error_value.ci:10:5

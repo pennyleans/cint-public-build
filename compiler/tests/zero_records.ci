@@ -1,0 +1,55 @@
+import zero_record_lib;
+
+export struct Z { I64[0] none; }
+export struct Other { I64[0] none; }
+export struct Nested { Z first; Z[3] rows; }
+export struct Mixed { U8 tag; Z first; Z[2] rows; U8 tail; }
+struct Unused { Nested[4] rows; }
+
+I64 hit = 0;
+I64 index() { hit += 1; return 2; }
+Z value() { hit += 100; Z z; return z; }
+I64 scalar() { hit += 100; return 9; }
+I64 zcount[n](in Z[n] a) { return n; }
+I64 forward[n](in Z[n] a) { return zcount(a); }
+void store(inout Z a, Z b) { a = b; }
+I64 nested_count(in Nested a) { return zcount(a.rows); }
+
+export Z echo(Z a) { return a; }
+export Z cleared() { Z a; return a; }
+export void scalar_copy(inout Z a, Z b) { store(a, b); }
+export I64 view_count[n](in Z[n] a) { return forward(a); }
+export I64 view_copy[n](inout Z[n] a, in Z[n] b) {
+    Z z = b[0]; a[n - 1] = z; return n;
+}
+export I64 view_index(in Z[_] a, I64 i) { Z z = a[i]; return 7; }
+export void view_write(inout Z[_] a, I64 i) { Z z; a[i] = z; }
+export I64 scalar_and_view(inout Z a, in Z[_] b) { return zcount(b); }
+export I64 read_pair(in Z[_] a, in Z[_] b) { return zcount(a) + zcount(b); }
+export Mixed mixed_echo(Mixed a) { return a; }
+void mixed_store(inout Mixed a, Mixed b) { a = b; }
+
+export I64 copied() {
+    Z[2] a; Z b = a[1]; a[0] = b; Z c; store(c, b); return 7;
+}
+export I64 local_view() { Z[3] a; return forward(a); }
+export I64 nested_view() { Nested a; return nested_count(a); }
+export I64 indexed_view() { Nested[2] a; return zcount(a[1].rows); }
+export I64 positive_copy() {
+    Mixed a; a.tag = 3; a.tail = 11; Z z; a.first = z; a.rows[1] = z;
+    Mixed b = a; a.tail = 1; Z c = b.first; Z d = b.rows[0];
+    return (b.tag as I64) + (b.tail as I64) + zcount(b.rows);
+}
+export I64 imported() { zero_record_lib.Z[2] a; return zero_record_lib.span(a); }
+export I64 repeated() {
+    I64 total = 0;
+    for i in 0..3 { Z[2] a; Z b = a[1]; a[0] = b; total += zcount(a); }
+    return total;
+}
+export I64 positive_inout() { Mixed a; Mixed b; b.tag = 5; b.tail = 17; mixed_store(a, b); return a.tail as I64; }
+export I64 element_read(I64 i) { Z[2] a; Z z = a[i]; return 7; }
+export I64 element_write(I64 i) { Z[2] a; Z z; a[i] = z; return 9; }
+export I64 empty_read(I64 i) { Z[0] a; Z z = a[i]; return 7; }
+export I64 bounds_order() { Z[2] a; a[index()] = value(); return 0; }
+export I64 inner_bounds() { Z[2] a; a[1].none[0] = scalar(); return 0; }
+export I64 nested_bounds() { Nested a; Z z = a.rows[3]; return 0; }

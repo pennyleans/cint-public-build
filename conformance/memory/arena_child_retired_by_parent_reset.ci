@@ -1,0 +1,18 @@
+// case: memory/arena_child_retired_by_parent_reset
+// clause: SPEC-03 M-13, M-17, M-20; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arenas, child arena, pool, handles)
+// entry: run; args: none
+// spec outcome: fault E_STALE_HANDLE at 17:16 (the `[` of `part[t]`), operation handle.check, operands U64 0, I64 2, U64 0, U32 3, U8 1 (the handle: slot, length, generation, container, kind), U64 0 (the current generation), U8 2 (retired), no exact, no limit; stack depth 0; fuel 1. Arenas `first` and `scratch` are 1 and 2 and the pool `counts` is pool 1, so the child is arena 3; resetting `scratch` retires it
+
+Arena(I64, 8) first;
+Arena(I64, 8) scratch;
+Pool(I64, 2) counts;
+
+export I64 run() {
+    Handle(I64) n = counts.insert(1);
+    Arena(I64) part = scratch.child(4);
+    Handle(I64[]) t = part.alloc(2);
+    part[t][0] = counts[n];
+    scratch.reset();
+    return part[t][0];
+}

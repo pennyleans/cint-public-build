@@ -1,0 +1,13 @@
+// case: errors/as_question_narrow_catch
+// clause: SPEC-04 LS-96, LS-130, LS-133; SPEC-01 IM-188; decision 2026-10-05, BX12-10
+// subset: cint-core-1 (`as?`, `catch`)
+// entry: run; args: none
+// spec outcome: value I64 -901: `300 as? I8` is ArithError.narrow, so its catch gives -1, and `99 as? I8` is 99; fuel 1
+
+export I64 run() {
+    I64 big = 300;
+    I64 small = 99;
+    I8 a = big as? I8 catch -1;
+    I8 b = small as? I8 catch -1;
+    return (a as I64) * 1000 + (b as I64);
+}

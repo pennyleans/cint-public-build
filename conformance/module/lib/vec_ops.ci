@@ -1,0 +1,20 @@
+// Helper module of the G-C1 fixtures module/imported_view_*.ci (not a case): exports
+// with size parameters and views.
+
+export I64 mac[n](in I64[n] a, in I64[n] b) {
+    I64 s = 0;
+    for i in 0..n {
+        s += a[i] * b[i];
+    }
+    return s;
+}
+
+export void copy_into(inout I64[_] dst, in I64[_] src) {
+    dst[0] = src[0];
+}
+
+export void fill_iota[n](inout I64[n] v) {
+    for i in 0..n {
+        v[i] = i + 1;
+    }
+}

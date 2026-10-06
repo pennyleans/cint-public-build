@@ -1,0 +1,12 @@
+// case: arith/const_type_mismatch
+// clause: SPEC-01 3.2 (fixture 101); SPEC-04 4.2 rule 3
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error, type (C2xxx, no fault code) at 10:13: K + K has type I8 and initializes I16
+
+const I8 K = 100;
+
+export I16 run() {
+    I16 z = K + K;
+    return z;
+}

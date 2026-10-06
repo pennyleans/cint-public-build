@@ -1,0 +1,6 @@
+case arith/literal_i8_128
+clause SPEC-01 3.2 (fixture 54); SPEC-04 3.5
+source compile-error
+outcome compile-error
+diagnostic.code C2003
+diagnostic.position arith/literal_i8_128.ci:8:12

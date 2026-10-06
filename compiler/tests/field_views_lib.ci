@@ -1,0 +1,2 @@
+export struct Bucket { I64[2] data; }
+export I64 take(in I64[_] a) { return a[1]; }

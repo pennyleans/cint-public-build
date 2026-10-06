@@ -1,0 +1,6 @@
+case boot/refuse_kernel
+clause SPEC-09 BOOT-01 (kernel_decl, kparam, over_clause), SEED-06; SPEC-04 LS-243, LS-244
+source compile-error
+outcome compile-error
+diagnostic.code C9100
+diagnostic.position boot/refuse_kernel.ci:8:1

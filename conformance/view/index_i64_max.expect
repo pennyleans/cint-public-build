@@ -1,0 +1,17 @@
+case view/index_i64_max
+clause SPEC-04 LS-64; SPEC-01 IM-186 (the largest I64 index is checked against the extent without overflow)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_BOUNDS
+fault.operation index.checked.i64
+fault.operand I64 9223372036854775807
+fault.exact none
+fault.limit I64 4
+fault.position view/index_i64_max.ci:10:13
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

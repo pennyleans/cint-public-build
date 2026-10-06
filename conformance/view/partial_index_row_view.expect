@@ -1,0 +1,8 @@
+case view/partial_index_row_view
+clause SPEC-04 LS-65, LS-117 (a partial index is a rank-1 view of a row, bound to a size parameter)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 5
+fuel-consumed 6

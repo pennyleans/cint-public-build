@@ -1,0 +1,28 @@
+// Helper module of module/import_plain and module/import_private_c3008. It is not a case:
+// conformance/tools/gen_expect.py reads only the .ci files directly under a category
+// directory. It is read as module.lib.plain_math from the source root conformance/.
+
+export const I64 SCALE = 10;
+
+export struct Pair {
+    I64 a;
+    I64 b;
+}
+
+export I64 add3(I64 x, I64 y, I64 z) {
+    return x + y + z;
+}
+
+export I64 sum_pair(Pair p) {
+    return p.a + p.b;
+}
+
+export void set_all[n](inout I64[n] cells, I64 v) {
+    for i in 0..n {
+        cells[i] = v;
+    }
+}
+
+I64 hidden() {
+    return 1;
+}

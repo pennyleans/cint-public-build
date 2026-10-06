@@ -1,0 +1,16 @@
+// case: errors/as_question_try_narrow
+// clause: SPEC-04 LS-96, LS-129, LS-130, LS-133; SPEC-01 IM-188; SPEC-09 CONF-11 rule 12; decision 2026-10-05, BX12-10, BX12-21
+// subset: cint-core-1 (`as?`, `catch`, `try`, error unions)
+// entry: run; args: none
+// spec outcome: error (format 3): error.set ArithError, a built-in set with no module part, error.value narrow, error.tag U16 4: narrow_or gives -1, then `try` propagates the narrow of 300; stdout 0 bytes; fuel 2
+
+I8 narrow_or(I64 v, I8 fallback) {
+    return v as? I8 catch fallback;
+}
+
+export ArithError!I64 run() {
+    I8 a = narrow_or(300, -1);
+    I64 big = 300;
+    I8 small = try (big as? I8);
+    return (a as I64) + (small as I64);
+}

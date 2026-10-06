@@ -1,0 +1,11 @@
+// case: view/rank4_index_value
+// clause: SPEC-04 LS-62, LS-64; SPEC-02 V-2 (rank 4, the cint-core-1 maximum)
+// subset: cint-core-1 (rank 4)
+// entry: run; args: none
+// spec outcome: value I8 -3; fuel 1
+
+export I8 run() {
+    I8[2, 2, 2, 2] q;
+    q[1, 0, 1, 1] = -3;
+    return q[1, 0, 1, 1];
+}

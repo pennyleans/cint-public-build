@@ -1,0 +1,6 @@
+case diag/c4012_expression_statement
+clause SPEC-04 8.1; SPEC-04 17.1, 17.2
+source compile-error
+outcome compile-error
+diagnostic.code C4012
+diagnostic.position diag/c4012_expression_statement.ci:9:5

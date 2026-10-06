@@ -1,0 +1,7 @@
+case view/slice_readonly_inout_c2067
+clause SPEC-04 LS-162, LS-121 (a slice of an `in` view is read-only and cannot bind an `inout` parameter)
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2067
+diagnostic.position view/slice_readonly_inout_c2067.ci:12:10

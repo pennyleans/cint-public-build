@@ -1,0 +1,7 @@
+case module/import_string_private_c3008
+clause SPEC-09 BOOT-02, CINTC-16 Lookup; SPEC-04 LS-227
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C3008
+diagnostic.position module/import_string_private_c3008.ci:8:40

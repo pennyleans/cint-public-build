@@ -1,0 +1,17 @@
+case control/print_hole_fault_partial
+clause SPEC-04 LS-193, LS-197, LS-218; SPEC-01 IM-30, IM-106; SPEC-06 3.4a; decision 2026-10-03, slice 2 patch D-19
+source reference
+outcome fault
+stdout-bytes 6
+stdout-sha256 03caa4c5d650469d395423ed90694a30cc07fa835cdc2241dc162f7d2f653551
+fuel-consumed 1
+fault.code E_OVERFLOW
+fault.operation add.checked.i64
+fault.operand I64 9223372036854775807
+fault.operand I64 1
+fault.exact 9223372036854775808
+fault.limit I64 9223372036854775807
+fault.position control/print_hole_fault_partial.ci:8:11
+fault.revision self
+fault.address none
+fault.stack-depth 0

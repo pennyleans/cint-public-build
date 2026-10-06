@@ -1,0 +1,8 @@
+case module/struct_field_imported_struct
+clause SPEC-04 6.1, LS-73 (a field of struct type), LS-227; SPEC-09 CINTC-16; decision 27 item 4 (imported structs)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 37
+fuel-consumed 2

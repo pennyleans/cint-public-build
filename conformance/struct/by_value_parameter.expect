@@ -1,0 +1,7 @@
+case struct/by_value_parameter
+clause SPEC-04 6.2 (in is the default mode; structs are read-only)
+source reference
+outcome value
+stdout-bytes 0
+return I32 20
+fuel-consumed 2

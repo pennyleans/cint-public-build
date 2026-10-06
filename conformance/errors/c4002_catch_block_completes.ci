@@ -1,0 +1,19 @@
+// case: errors/c4002_catch_block_completes
+// clause: SPEC-04 LS-131
+// subset: cint-core-1 (error sets, error unions, `catch`)
+// entry: run; args: none
+// spec outcome: compile error C4002 at 15:31, the `{` of the catch block, which can complete normally (position: first character of the offending construct)
+
+error ParseError { empty, bad_digit, too_large }
+
+ParseError!I64 parse() {
+    return .empty;
+}
+
+export I64 run() {
+    I64 n = 0;
+    I64 v = parse() catch (e) {
+        n = 1;
+    };
+    return v + n;
+}

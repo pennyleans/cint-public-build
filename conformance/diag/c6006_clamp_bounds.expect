@@ -1,0 +1,7 @@
+case diag/c6006_clamp_bounds
+clause SPEC-01 4.8; SPEC-04 17.2 (C6006)
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C6006
+diagnostic.position diag/c6006_clamp_bounds.ci:9:12

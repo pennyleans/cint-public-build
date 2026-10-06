@@ -1,0 +1,13 @@
+case boot/decl_extent_field_fault
+clause SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C6001
+diagnostic.position boot/decl_extent_field_fault.ci:7:18
+diagnostic.fault.code E_DIV_ZERO
+diagnostic.fault.operation div.checked.i64
+diagnostic.fault.operand I64 1
+diagnostic.fault.operand I64 0
+diagnostic.fault.exact none
+diagnostic.fault.limit none

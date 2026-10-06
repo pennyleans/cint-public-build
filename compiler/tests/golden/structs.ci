@@ -1,0 +1,37 @@
+// compiler/tests/golden/structs.ci: struct declarations, constructors by position and by
+// name, field reads and writes, copies, zero fill inside a loop, and a struct passed by
+// value (SPEC-04 section 6, LS-73, LS-107), compared with cint_ref by the golden suite
+// (slice 2 task 2.13 part (ii)).
+
+struct Span {
+    U8 kind;
+    I32 start;
+    I16 len;
+    Bool open;
+    I64 tag;
+}
+
+I64 width(Span s) {
+    if (s.open) {
+        return s.tag;
+    }
+    return (s.start as I64) + (s.len as I64);
+}
+
+export I64 spans(I64 a, I32 b) {
+    Span x = Span(1, b, 3, false, a);
+    Span y = x;
+    y.start += 10;
+    y.len++;
+    Span z = Span(tag = a * 2, open = true, len = 0, start = 0, kind = 7);
+    I64 t = 0;
+    for i in 0..3 {
+        Span w;
+        t = t + (w.start as I64) + (w.kind as I64);
+        w.kind = 200;
+        w.kind +%= 100;
+        t = t + (w.kind as I64);
+    }
+    x = y;
+    return width(x) + width(y) + width(z) + t + (x.kind as I64);
+}

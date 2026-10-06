@@ -1,0 +1,9 @@
+// case: boot/decl_extent_view_named
+// clause: SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value
+
+const I64 N = 2;
+I64 f(in I64[N] a) { return a[1]; }
+export I64 run() { I64[2] a; a[1] = 7; return f(a); }

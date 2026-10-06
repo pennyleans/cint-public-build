@@ -1,0 +1,7 @@
+case boot/refuse_ternary_literal
+clause SPEC-09 BOOT-01 (TERN_INT), SEED-06; SPEC-04 LS-24, LS-30
+source reference
+outcome value
+stdout-bytes 0
+return I64 8
+fuel-consumed 1

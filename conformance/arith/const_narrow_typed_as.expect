@@ -1,0 +1,11 @@
+case arith/const_narrow_typed_as
+clause SPEC-01 4.6, 9.2 (E_NARROW); SPEC-09 SEED-08
+source compile-error
+outcome compile-error
+diagnostic.code C6001
+diagnostic.position arith/const_narrow_typed_as.ci:10:14
+diagnostic.fault.code E_NARROW
+diagnostic.fault.operation as.checked.i64.i8
+diagnostic.fault.operand I64 300
+diagnostic.fault.exact 300
+diagnostic.fault.limit I8 127

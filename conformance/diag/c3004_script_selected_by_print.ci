@@ -1,0 +1,9 @@
+// case: diag/c3004_script_selected_by_print
+// clause: SPEC-04 LS-112, LS-218, LS-219, LS-312 (decision 2026-10-03, slice 2 patch D-22)
+// subset: cint-core-1 (module variable, print)
+// entry: read_balance; args: none
+// spec outcome: compile error C3004 at 8:36: `balance` is a script local, because the print statement on line 9 makes the file a script; the LS-312 note names that statement
+
+I64 balance = 5;
+export I64 read_balance() { return balance; }
+"ready\n";

@@ -1,0 +1,8 @@
+case cleanup/defer_reverse_order
+clause SPEC-04 LS-185
+format 2
+source reference
+outcome value
+stdout-bytes 8
+stdout-sha256 248e0487b5484fd2679b806a2e8e17b42ee3bfa6893d5358c0a129ab5bbf6c45
+fuel-consumed 1

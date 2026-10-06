@@ -1,0 +1,18 @@
+case struct/zero_field_bounds_order
+clause SPEC-04 LS-68, LS-73, LS-139, LS-141
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 2
+fault.code E_BOUNDS
+fault.operation index.checked.struct
+fault.operand I64 0
+fault.exact none
+fault.limit I64 0
+fault.position struct/zero_field_bounds_order.ci:12:36
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0
+state.global struct.zero_field_bounds_order hit I64 1

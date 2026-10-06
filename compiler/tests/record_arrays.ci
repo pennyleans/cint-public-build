@@ -1,0 +1,119 @@
+// LS-64, LS-67, LS-73, LS-78: exercises fixed record-array fields and copies.
+import record_array_lib as lib;
+
+struct Frame { Grid[2] grids; Row extra; Bool done; }
+struct Grid { Row[2] rows; Bool tail; }
+struct Row { Bool active; I64 value; Bool[2] bits; I64[2] numbers; }
+struct Box { Leaf[2] items; }
+struct Leaf { Bool active; I64 value; }
+struct Bits { Bit[257] items; Bool tail; }
+struct Bit { Bool active; }
+struct Imported { lib.Value[2] items; }
+struct Unused { U16 tag; }
+
+I64 seen = 0;
+I64 tick(I64 value) { seen = seen * 10 + value; return value; }
+Leaf make(I64 value) { return Leaf(true, value); }
+I64 read(Leaf first, I64 later) { return first.value + later; }
+I64 mutate(inout Box box) { box.items[0].value = 99; return 0; }
+void set(inout Leaf item) { item.value = 29; }
+
+export I64 zeroed() {
+    I64 total = 0;
+    for i in 0..3 {
+        Frame frame;
+        Frame[1] frames;
+        total += frame.grids[1].rows[1].value + frames[0].extra.numbers[1];
+        if (frame.grids[1].rows[1].bits[1] || frames[0].done) { total += 1000; }
+        frame.grids[1].rows[1].value = i + 1;
+        frames[0].extra.numbers[1] = i + 1;
+        frames[0].done = true;
+    }
+    return total;
+}
+
+export I64 copied() {
+    Frame first;
+    first.grids[1].rows[1].value = 17;
+    first.grids[1].rows[1].bits[1] = true;
+    Frame second = first;
+    Row item = second.grids[1].rows[1];
+    first.grids[1].rows[1].value = 99;
+    second.grids[1].rows[1].numbers[0] = 8;
+    first.extra = second.grids[1].rows[1];
+    return item.value * 100 + first.extra.numbers[0];
+}
+
+export I64 assigned(I64 mode) {
+    Box box;
+    if (mode == 0) { box.items[1] = Leaf(true, 17); }
+    if (mode == 1) { Leaf item = Leaf(true, 19); box.items[1] = item; }
+    if (mode == 2) { box.items[1] = make(23); }
+    box.items[0] = box.items[1];
+    box.items[1].value = 99;
+    return box.items[0].value;
+}
+
+export I64 nested_bounds(I64 outer, I64 inner) {
+    Frame frame;
+    frame.grids[outer].rows[inner].value = 7;
+    return frame.grids[outer].rows[inner].value;
+}
+
+export I64 element_bounds(I64 index, I64 divisor) {
+    Box box;
+    box.items[index] = make(10 / divisor);
+    return box.items[index].value;
+}
+
+export I64 ordered(I64 outer, I64 inner) {
+    seen = 0;
+    Box[1] boxes;
+    boxes[tick(outer)].items[tick(inner)] = make(tick(7));
+    return seen * 100 + boxes[0].items[inner].value;
+}
+
+export I64 argument_read() {
+    Box box;
+    box.items[0] = Leaf(true, 7);
+    return read(box.items[0], 5);
+}
+
+export I64 argument_order() {
+    Box box;
+    box.items[0] = Leaf(true, 7);
+    return read(box.items[0], mutate(box));
+}
+
+export I64 inout_element() {
+    Box box;
+    set(box.items[1]);
+    return box.items[1].value;
+}
+
+export I64 imported() {
+    lib.Packet first;
+    first.items[1].flags[1] = true;
+    first.items[1].values[1] = 31;
+    lib.Packet second = first;
+    first.items[1].values[1] = 99;
+    if (!second.items[1].flags[1]) { return -1; }
+    Imported local;
+    local.items[1] = lib.make(11);
+    return second.items[1].values[1] + local.items[1].value;
+}
+
+export Frame echo(Frame input) { return input; }
+export Frame empty() { Frame result; return result; }
+export Bits bits(Bits input) { return input; }
+export lib.Packet packet(lib.Packet input) { return input; }
+export I64 touch(inout Frame[1] rows) {
+    rows[0].grids[1].rows[1].value += 1;
+    return rows[0].grids[1].rows[1].value;
+}
+export Frame change(inout Frame input, I64 divisor) {
+    input.grids[1].rows[1].value = 33;
+    Frame result = input;
+    result.extra.value = 10 / divisor;
+    return result;
+}

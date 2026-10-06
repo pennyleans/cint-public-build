@@ -1,0 +1,10 @@
+// case: diag/c2003_neg_paren_literal_i8
+// clause: SPEC-01 IM-25, IM-26; SPEC-04 LS-28, LS-151 (decision 2026-10-03, slice 2 patch D-21 option 1); SPEC-04 LS-313 (C2003 position)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2003 at 8:14 (the `128`): `-(128)` negates 128, which does not fit I8; the same under every D-21 option
+
+export I64 run() {
+    I8 d = -(128);
+    return d as I64;
+}

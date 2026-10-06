@@ -1,0 +1,17 @@
+// case: module/import_record_result
+// clause: SPEC-04 LS-73, LS-119, LS-225, LS-226; SPEC-09 CINTC-16
+// subset: cint-core-1
+// entry: run; args: none
+
+import module.lib.import_records;
+import module.lib.import_records as other;
+
+other.R make() { return import_records.R(true, 11); }
+I64 take(in other.R[_] rows) { return rows[0].value; }
+
+export I64 run() {
+    import_records.R value = make();
+    import_records.R[1] rows;
+    rows[0].value = value.value;
+    return take(rows);
+}

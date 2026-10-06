@@ -1,0 +1,15 @@
+case view/index_out_of_range
+clause SPEC-04 LS-64, LS-278; SPEC-01 IM-186 (E_BOUNDS, index.checked.i64, index operand, extent limit)
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_BOUNDS
+fault.operation index.checked.i64
+fault.operand I64 4
+fault.exact none
+fault.limit I64 4
+fault.position view/index_out_of_range.ci:11:13
+fault.revision self
+fault.address none
+fault.stack-depth 0

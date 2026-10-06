@@ -1,0 +1,16 @@
+// case: switch/empty_case_c4023
+// clause: SPEC-04 8.5
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C4023 at 10:9: a case clause with an empty body
+
+export I64 run() {
+    I64 x = 3;
+    switch (x) {
+        case 1:
+        case 2:
+            return 1;
+        default:
+            return 0;
+    }
+}

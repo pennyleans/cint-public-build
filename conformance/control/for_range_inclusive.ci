@@ -1,0 +1,13 @@
+// case: control/for_range_inclusive
+// clause: SPEC-04 8.4
+// subset: cint-boot-1 (SPEC-09 5.2: both range forms, after Q5)
+// entry: run; args: none
+// spec outcome: value I64 55
+
+export I64 run() {
+    I64 s = 0;
+    for i in 1..=10 {
+        s = s + i;
+    }
+    return s;
+}

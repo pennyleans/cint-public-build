@@ -1,0 +1,8 @@
+case cleanup/defer_in_loop_continue_break
+clause SPEC-04 LS-185, LS-318; decision 2026-10-05, BX12-11
+format 2
+source reference
+outcome value
+stdout-bytes 12
+stdout-sha256 d8a08e018968c7d4b91fb9a6fb2718feb036f99cde18691b5898b15079984643
+fuel-consumed 5

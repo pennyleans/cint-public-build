@@ -1,0 +1,11 @@
+// case: errors/tags_from_one
+// clause: SPEC-04 LS-92, LS-93; SPEC-03 A-18; SPEC-09 CONF-11 rule 12; decision 2026-10-05, BX12-12, BX12-21
+// subset: cint-core-1 (error sets, error unions)
+// entry: run; args: none
+// spec outcome: error (format 3): error.set errors.tags_from_one.Stage, error.value third, error.tag U16 3, since values are numbered from 1 in declaration order and the default underlying type is U16; stdout 0 bytes; fuel 1
+
+error Stage { first, second, third }
+
+export Stage!I64 run() {
+    return .third;
+}

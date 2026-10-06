@@ -1,0 +1,19 @@
+case kernel/fuel_in_body_located
+clause SPEC-02 X-8 items 2 to 4, F-6a item 2 (an in-body loop charge exceeds the allowance inside work-item 1)
+format 4
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 7
+fault.code E_FUEL
+fault.operation fuel.charge
+fault.exact none
+fault.limit I64 7
+fault.position kernel/fuel_in_body_located.ci:9:5
+fault.revision self
+fault.source-map self
+fault.phase work-item
+fault.kernel kernel.fuel_in_body_located.rowsum
+fault.address 0 1 2
+fault.stack-depth 1
+fault.stack kernel/fuel_in_body_located.ci:18:5

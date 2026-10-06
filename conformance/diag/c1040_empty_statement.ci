@@ -1,0 +1,11 @@
+// case: diag/c1040_empty_statement
+// clause: SPEC-04 8.1; SPEC-04 17.1, 17.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C1040 at 9:11: `if (c);` has an empty statement (position: first character of the offending construct, SPEC-04 17.1; see ref/OPEN.md O-13)
+
+export I64 run() {
+    Bool c = true;
+    if (c);
+    return 0;
+}

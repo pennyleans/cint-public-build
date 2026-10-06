@@ -1,0 +1,21 @@
+// case: reduce/loop_sum_sat_i8
+// clause: SPEC-01 IM-73, IM-77, IM-84; SPEC-09 9.3 (reductions row) (a saturating left fold of 120, 120, -120 is 7; the twin of reduce/sum_sat_i8)
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: value I8 7 (0 +| 120 = 120; 120 +| 120 = 127; 127 +| -120 = 7); fuel 5
+
+I8 fold_sat[n](in I8[n] xs) {
+    I8 acc = 0;
+    for i in 0..n {
+        acc = acc +| xs[i];
+    }
+    return acc;
+}
+
+export I8 run() {
+    I8[3] a;
+    a[0] = 120;
+    a[1] = 120;
+    a[2] = -120;
+    return fold_sat(a);
+}

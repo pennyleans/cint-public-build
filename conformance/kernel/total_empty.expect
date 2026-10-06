@@ -1,0 +1,8 @@
+case kernel/total_empty
+clause SPEC-02 R-3, K-8, 8.5 (an empty dispatch: sum is 0)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 0
+fuel-consumed 1

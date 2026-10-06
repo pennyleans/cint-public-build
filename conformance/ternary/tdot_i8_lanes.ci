@@ -1,0 +1,178 @@
+// case: ternary/tdot_i8_lanes
+// clause: SPEC-05 TR-DOT-1, TR-DOT-4, TR-IMP-1, TR-IMP-2, Lemma L2, 9.2 (ternary by I8 in four 16-bit SWAR lanes per U64 word, direct and offset forms, against the exact sum; the lane bounds 255, 258, 127 and 129)
+// subset: cint-core-1 (print statements)
+// entry: run; args: none
+// spec outcome: value I64 0 (no lane disagrees within its TR-IMP-2 bound, and the widened lanes give the exact sum); past a bound the first disagreement is printed as a result, not counted; 13 output lines
+// t27 set 1 (docs/design/notes/2026-10-05-t27-ternary-tests-scoping.md 5.2), with SPEC-05 12.2 TDOT-03.
+// A lane is 16 bits of a U64 word, lane l at bits 16l to 16l + 15, added modulo 2^16 with no carry between lanes:
+// ((a & ~H) +% (b & ~H)) ^ ((a ^ b) & H), H = 0x8000800080008000. The direct form adds products w x (P = mx); the
+// offset form adds u x with u = w + 1 in {0, 1, 2} (P = 2 mx), and S = sum(u x) - sum(x) (the pmaddubsw and vpdpbusd
+// technique). Bounds (TR-IMP-2): direct 255 products for full-range I8 (mx 128) and 258 for x in [-127, 127]; offset
+// 127 and 129. Part 1 adds the same adversarial product to a lane 259 times and reports the first count at which
+// the lane differs from the exact sum. Part 2 uses random inputs inside the bounds: w_i = sm(81, i) % 3 - 1,
+// x_i = sm(82, i) as% I8, and for the restricted domain x_i = sm(83, i) % 255 - 127, with sm(s, i) output i (from 0) of
+// SplitMix64 seeded with s, as in ternary/planes_add27; lane l takes inputs l c to l c + c - 1 for c products per lane.
+// Output: the TDOT-03 line, one line per adversarial lane, three lines for the random runs, then the mismatch count.
+
+const U64 GAMMA = 0x9E37_79B9_7F4A_7C15;
+const U64 H = 0x8000_8000_8000_8000;
+
+U64 mix(U64 z0) {
+    U64 z = (z0 ^ (z0 >> 30)) *% 0xBF58_476D_1CE4_E5B9;
+    z = (z ^ (z >> 27)) *% 0x94D0_49BB_1331_11EB;
+    return z ^ (z >> 31);
+}
+
+U64 sm(U64 seed, I64 i) {
+    return mix(seed +% ((i as U64) +% 1) *% GAMMA);
+}
+
+U64 swar_add(U64 a, U64 b) {
+    return ((a & ~H) +% (b & ~H)) ^ ((a ^ b) & H);
+}
+
+U64 place(I64 p, I64 lane) {
+    return ((p as% U16) as U64) << (16 * lane);
+}
+
+I64 lane_of(U64 acc, I64 lane) {
+    U16 v = ((acc >> (16 * lane)) & 0xFFFF) as U16;
+    return (v as% I16) as I64;
+}
+
+// Part 1: lane l adds the product w[l] x[l] (offset form: (w[l] + 1) x[l]) 259 times; a disagreement at or below
+// the lane's bound is a mismatch, one past it is the result.
+I64 adversarial(I64 offset, in I64[4] w, in I64[4] x, in I64[4] bound) {
+    I64 bad = 0;
+    I64[4] p;
+    I64[4] first;
+    I64[4] got;
+    U64 word = 0;
+    for l in 0..4 {
+        p[l] = (w[l] + offset) * x[l];
+        word = word | place(p[l], l);
+        first[l] = 0;
+        got[l] = 0;
+    }
+    U64 acc = 0;
+    for j in 1..260 {
+        acc = swar_add(acc, word);
+        for l in 0..4 {
+            if (first[l] == 0 && lane_of(acc, l) != j * p[l]) {
+                first[l] = j;
+                got[l] = lane_of(acc, l);
+            }
+        }
+    }
+    for l in 0..4 {
+        if (offset == 0) {
+            "direct";
+        } else {
+            "offset";
+        }
+        " lane {l}: w {w[l]} x {x[l]}, product {p[l]}, bound {bound[l]}: ";
+        if (first[l] == 0) {
+            "exact through 259\n";
+        } else {
+            "first disagreement at {first[l]} (lane {got[l]}, exact {first[l] * p[l]})\n";
+            bad += first[l] <= bound[l] ? 1 : 0;
+        }
+    }
+    return bad;
+}
+
+// Part 2: c products per lane, widened and summed once; the offset form subtracts sum(x).
+I64 lanes_sum[n](in I8[n] w, in I8[n] x, I64 c, I64 offset) {
+    U64 acc = 0;
+    for j in 0..c {
+        U64 word = 0;
+        for l in 0..4 {
+            I64 i = l * c + j;
+            word = word | place(((w[i] as I64) + offset) * (x[i] as I64), l);
+        }
+        acc = swar_add(acc, word);
+    }
+    I64 s = 0;
+    for l in 0..4 {
+        s = s + lane_of(acc, l);
+    }
+    if (offset != 0) {
+        for i in 0..4 * c {
+            s = s - (x[i] as I64);
+        }
+    }
+    return s;
+}
+
+I64 exact[n](in I8[n] w, in I8[n] x, I64 upto) {
+    I64 s = 0;
+    for i in 0..upto {
+        s = s + (w[i] as I64) * (x[i] as I64);
+    }
+    return s;
+}
+
+export I64 run() {
+    I64 bad = 0;
+
+    // TDOT-03: w = [1, 1, -1], x = [100, 100, 100] gives 100 in one lane; a left fold in I8 would fault at 100 + 100.
+    U64 t3 = 0;
+    t3 = swar_add(t3, place(100, 0));
+    t3 = swar_add(t3, place(100, 0));
+    t3 = swar_add(t3, place(-100, 0));
+    "TDOT-03 [1, 1, -1] by [100, 100, 100]: {lane_of(t3, 0)}\n";
+    bad += lane_of(t3, 0) != 100 ? 1 : 0;
+
+    I64[4] w;
+    I64[4] x;
+    I64[4] bound;
+    w[0] = -1;
+    x[0] = -128;
+    bound[0] = 255;
+    w[1] = 1;
+    x[1] = -128;
+    bound[1] = 255;
+    w[2] = 1;
+    x[2] = 127;
+    bound[2] = 258;
+    w[3] = -1;
+    x[3] = 127;
+    bound[3] = 258;
+    bad += adversarial(0, w, x, bound);
+    w[0] = 1;
+    x[0] = -128;
+    bound[0] = 127;
+    w[1] = 1;
+    x[1] = 127;
+    bound[1] = 129;
+    w[2] = 1;
+    x[2] = -127;
+    bound[2] = 129;
+    w[3] = 0;
+    x[3] = -128;
+    bound[3] = 127;
+    bad += adversarial(1, w, x, bound);
+
+    I8[1032] rw;
+    I8[1032] rx;
+    I8[1032] ry;
+    for i in 0..1032 {
+        rw[i] = ((sm(81, i) % 3) as I8) - 1;
+        rx[i] = sm(82, i) as% I8;
+        ry[i] = (((sm(83, i) % 255) as I64) - 127) as I8;
+    }
+    I64 d = lanes_sum(rw, rx, 255, 0);
+    I64 e = exact(rw, rx, 1020);
+    "direct, full-range x, 255 per lane: lanes {d}, exact {e}\n";
+    bad += d != e ? 1 : 0;
+    I64 o = lanes_sum(rw, rx, 127, 1);
+    I64 f = exact(rw, rx, 508);
+    "offset, full-range x, 127 per lane: lanes {o}, exact {f}\n";
+    bad += o != f ? 1 : 0;
+    I64 r = lanes_sum(rw, ry, 129, 1);
+    I64 g = exact(rw, ry, 516);
+    "offset, x in [-127, 127], 129 per lane: lanes {r}, exact {g}\n";
+    bad += r != g ? 1 : 0;
+    "mismatches {bad}\n";
+    return bad;
+}

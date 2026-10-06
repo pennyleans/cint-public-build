@@ -1,0 +1,8 @@
+case kernel/total_exact_sum
+clause SPEC-02 R-1, R-5, 8.5 (the total_exact row)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 9223372036854775807
+fuel-consumed 4

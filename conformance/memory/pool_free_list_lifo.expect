@@ -1,0 +1,23 @@
+case memory/pool_free_list_lifo
+clause SPEC-03 M-15, M-17, M-18; ref/OPEN.md REF-OQ-45
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_STALE_HANDLE
+fault.operation pool.deref
+fault.operand U64 2
+fault.operand I64 1
+fault.operand U64 1
+fault.operand U32 1
+fault.operand U8 2
+fault.operand U64 2
+fault.operand U8 3
+fault.exact none
+fault.limit none
+fault.position memory/pool_free_list_lifo.ci:21:26
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

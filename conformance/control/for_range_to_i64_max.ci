@@ -1,0 +1,13 @@
+// case: control/for_range_to_i64_max
+// clause: SPEC-04 8.4 (for i in 0..=I64.max runs without overflow)
+// subset: cint-core-1 (I64.max)
+// entry: run; args: none
+// spec outcome: value I64 3; the loop ends at I64.max without computing I64.max + 1
+
+export I64 run() {
+    I64 steps = 0;
+    for i in 9223372036854775805..=I64.max {
+        steps = steps + 1;
+    }
+    return steps;
+}

@@ -1,0 +1,122 @@
+// Drives one module through the real scan, parse, check, declaration and lowering passes
+// over views the host supplies, so that a host can shorten any one table to its capacity
+// boundary (SPEC-09 CINTC-01, CINTC-02, CINTC-16; OQ-179).
+
+import back_c;
+import check;
+import decl;
+import fold;
+import limits;
+import lowering;
+import main;
+import parse;
+import resolve;
+import scan;
+
+// Compiles module `module` from src. Every import node names module 0, which the host
+// compiles first into the same declaration view. Returns 0 when every pass succeeds, or
+// the pass that stopped: 1 scan, 2 parse, 3 check, 4 layout or declarations, 5 lowering,
+// and 6 when the text view cannot hold the source. stats: 0 parse tokens, 1 parse frames
+// used at most, 2 checker frames used at most (above the interval rows), 3 literal bytes,
+// 4 lowering frames used at most, 5 text bytes, 6 nodes, 7 the stopping pass, 8 SIR rows
+// written. The three passes' frames are separate views here (frames, work, lst), so that
+// each can be shortened alone; in a build they are one table, the frame region (KR-03).
+export I64 run[n, tx](in U8[n] src, in U8[_] path, I64 module, Bool is_root, inout U8[tx] text,
+        inout scan.Token[_] toks, inout parse.Node[_] nodes, inout parse.Frame[_] frames,
+        inout limits.CompilerDiag[_] diag, inout resolve.Sem[_] sem, inout resolve.Sym[_] syms,
+        inout resolve.Name[_] names, inout parse.Frame[_] work, inout U8[_] lits, inout U8[_] faults,
+        inout limits.Decl[_] decls, inout lowering.Sir[_] sir, inout lowering.SirFunc[_] funcs,
+        inout lowering.SirSlot[_] slots, inout parse.Frame[_] lst, inout lowering.LState[_] ls,
+        inout I64[_] stats) {
+    limits.diag_clear(diag);
+    for i in 0..9 {
+        stats[i] = 0;
+    }
+    if (n > tx) {
+        stats[7] = 6;
+        return 6;
+    }
+    for i in 0..n {
+        text[i] = src[i];
+    }
+    stats[7] = 1;
+    if (module == 0 && !decl.header(decls)) {
+        return 4;
+    }
+    if (scan.check_text(src, diag, module) != 0) {
+        return 1;
+    }
+    I64 nt = scan.scan(src, toks, diag, module);
+    if (nt < 0) {
+        return 1;
+    }
+    stats[7] = 2;
+    parse.PState[1] ps;
+    I64 root = parse.parse(src, toks, nt, nodes, frames, diag, ps, module);
+    stats[0] = ps[0].ntok;
+    stats[1] = ps[0].max_sp;
+    stats[6] = ps[0].nn;
+    if (root < 0) {
+        return 2;
+    }
+    I64 x = nodes[root].a as I64;
+    while (x >= 0) {
+        if (nodes[x].kind == parse.N_IMPORT) {
+            nodes[x].e = 0;
+        }
+        x = nodes[x].next as I64;
+    }
+    stats[7] = 3;
+    resolve.RState[1] rs;
+    check.CState[1] cs;
+    fold.Folded[1] fres;
+    fold.Work[1] z;
+    I64 err = check.check_module(src, toks, nodes, ps[0].nn, root, sem, syms, names, work, lits, diag, faults,
+        fres, z, path, rs, cs, module, decls);
+    stats[2] = cs[0].max_sp;
+    stats[3] = cs[0].lit_used;
+    if (err != 0) {
+        return 3;
+    }
+    stats[7] = 4;
+    if (!check.record_layout(toks, nodes, sem, syms, diag, rs, root)) {
+        return 4;
+    }
+    if (!decl.write_block(src, toks, nodes, sem, syms, root, module, decls, diag)) {
+        return 4;
+    }
+    stats[7] = 5;
+    I64 lowered = lowering.lower_module(text, toks, nodes, sem, root, n, sir, funcs, slots, lst, diag, ls,
+        module, ps[0].nn, decls, is_root);
+    stats[4] = ls[0].max_sp;
+    stats[5] = ls[0].textn;
+    stats[8] = ls[0].nsir;
+    if (lowered != 0) {
+        return 5;
+    }
+    stats[7] = 0;
+    return 0;
+}
+
+// The two calls of main.compile that the bridge makes for a build of one module (CINTC-05):
+// the discovery pass, then the full pass, so that a host can shorten the tables whose
+// writers live in main.ci. Returns 0, 1 when the discovery pass stops, or 2 when the full
+// pass stops. frames is the frame region, row 14; rows 5 and 9 are unused (KR-03).
+export I64 build(in U8[_] src, in U8[_] path, inout back_c.PMod[_] pm, inout U8[_] pbytes, inout U8[_] text,
+        inout scan.Token[_] toks, inout parse.Node[_] nodes, inout lowering.Sir[_] sir,
+        inout lowering.SirFunc[_] funcs, inout lowering.SirSlot[_] slots, inout lowering.LState[_] ls,
+        inout resolve.Sem[_] sem, inout resolve.Sym[_] syms, inout resolve.Name[_] names,
+        inout parse.Frame[_] frames, inout U8[_] lits, inout limits.Decl[_] decls,
+        inout limits.CompilerDiag[101] diag, inout U8[_] faults) {
+    U8[1] unused5;
+    U8[1] unused9;
+    if (main.compile(0, src, path, pm, pbytes, text, toks, nodes, unused5, sir, funcs, slots, unused9, ls, sem,
+            syms, names, frames, lits, decls, diag, faults) != 0) {
+        return 1;
+    }
+    if (main.compile(0, src, path, pm, pbytes, text, toks, nodes, unused5, sir, funcs, slots, unused9, ls, sem,
+            syms, names, frames, lits, decls, diag, faults) != 0) {
+        return 2;
+    }
+    return 0;
+}

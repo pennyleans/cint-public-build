@@ -1,0 +1,7 @@
+case memory/c4012_arena_in_function
+clause SPEC-03 M-20; SPEC-04 LS-113; decision 2026-10-05, BX12-05; ref/OPEN.md REF-OQ-45
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C4012
+diagnostic.position memory/c4012_arena_in_function.ci:8:5

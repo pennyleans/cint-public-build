@@ -1,0 +1,10 @@
+// case: arith/bitwise_not
+// clause: SPEC-01 4.7
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 -6 (~x == -x - 1 for signed x)
+
+export I64 run() {
+    I64 x = 5;
+    return ~x;
+}

@@ -1,0 +1,16 @@
+// case: kernel/total_exact_sum
+// clause: SPEC-02 R-1, R-5, 8.5 (the total_exact row)
+// subset: cint-core-1 (kernel)
+// entry: run; args: none
+// spec outcome: value I64 9223372036854775807; fuel 4. Box 09 ruling R7
+
+kernel total_exact[n](in I64[n] x, out I64 s) over [i: n] {
+    reduce s = sum(x[i]);
+}
+
+export I64 run() {
+    I64[3] x = [9223372036854775807, 1, -1];
+    I64 s = 0;
+    total_exact(x, s);
+    return s;
+}

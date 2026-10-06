@@ -1,0 +1,19 @@
+// case: errors/combined_set_once_at_first_position
+// clause: SPEC-04 LS-97, LS-129; SPEC-09 CONF-11 rule 12; decision 2026-10-05, BX12-03, BX12-21
+// subset: cint-core-1 (error sets, combined sets, `try`)
+// entry: run; args: none
+// spec outcome: error (format 3): error.set errors.combined_set_once_at_first_position.Front, error.value bad_byte, error.tag U16 4. Front is Parse, then LexOrParse, whose Parse is included once, at its first position: Parse.empty 1, Parse.deep 2, Lex.eof 3, Lex.bad_byte 4, so `try` converts LexOrParse tag 2 to Front tag 4; stdout 0 bytes; fuel 2
+
+error Lex { eof, bad_byte }
+error Parse { empty, deep }
+error LexOrParse = Lex | Parse;
+error Front = Parse | LexOrParse;
+
+LexOrParse!I64 scan() {
+    return .bad_byte;
+}
+
+export Front!I64 run() {
+    I64 n = try scan();
+    return n;
+}

@@ -1,0 +1,6 @@
+case view/shape_mismatch_c2012
+clause SPEC-04 LS-117 (two views bind one size parameter to different static extents: C2012)
+source compile-error
+outcome compile-error
+diagnostic.code C2012
+diagnostic.position view/shape_mismatch_c2012.ci:14:25

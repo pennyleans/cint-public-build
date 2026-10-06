@@ -1,0 +1,23 @@
+// case: kernel/dispatch_number_second
+// clause: SPEC-02 F-1, F-3 (the second dispatch of an entry has number 1)
+// subset: cint-core-1 (kernel)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 12:16, phase work-item, address dispatch 1, work-item 1, step 1, operation fold_checked.add.i64 (as kernel/total_checked_fold); stack depth 1, stack 21:5; fuel 7. Box 09 rulings R7 and R9
+
+kernel advance[n](in I64[n] old, in I64[n] increment, out I64[n] next) {
+    next = old + increment;
+}
+
+kernel total_checked[n](in I64[n] x, out I64 s) over [i: n] {
+    reduce s = fold_checked(add, 0, x[i]);
+}
+
+export I64 run() {
+    I64[3] a = [9223372036854775806, 0, 0];
+    I64[3] d = [1, 1, -1];
+    I64[3] b;
+    advance(a, d, b);
+    I64 s = 0;
+    total_checked(b, s);
+    return s;
+}

@@ -1,0 +1,66 @@
+// Exercises the declaration writer after the real scan, parse, check and layout passes.
+
+import check;
+import decl;
+import fold;
+import limits;
+import parse;
+import resolve;
+import scan;
+
+// Returns 1 for a committed block, 0 for a declaration capacity refusal, or -1 if
+// an earlier phase refuses the source. The caller controls the physical Decl extent.
+export I64 checked_block(in U8[_] src, in U8[_] path, I64 module, Bool first,
+        inout scan.Token[_] toks, inout parse.Node[_] nodes, inout parse.Frame[_] frames,
+        inout limits.CompilerDiag[_] diag, inout resolve.Sem[_] sem, inout resolve.Sym[_] syms,
+        inout resolve.Name[_] names, inout parse.Frame[_] work, inout U8[_] lits,
+        inout U8[_] faults, inout limits.Decl[_] decls) {
+    limits.diag_clear(diag);
+    if (scan.check_text(src, diag, module) != 0) {
+        return -1;
+    }
+    I64 nt = scan.scan(src, toks, diag, module);
+    if (nt < 0) {
+        return -1;
+    }
+    parse.PState[1] ps;
+    I64 root = parse.parse(src, toks, nt, nodes, frames, diag, ps, module);
+    if (root < 0) {
+        return -1;
+    }
+    resolve.RState[1] rs;
+    check.CState[1] cs;
+    fold.Folded[1] fres;
+    fold.Work[1] z;
+    limits.Decl[1] no_imports;
+    no_imports[0].kind = 0;
+    I64 err = check.check_module(src, toks, nodes, ps[0].nn, root, sem, syms, names,
+        work, lits, diag, faults, fres, z, path, rs, cs, module, no_imports);
+    if (err != 0) {
+        return -1;
+    }
+    if (!check.record_layout(toks, nodes, sem, syms, diag, rs, root)) {
+        return -1;
+    }
+    if (first && !decl.header(decls)) {
+        return -1;
+    }
+    I64 first_struct = nodes[root].a as I64;
+    while (first_struct >= 0 && nodes[first_struct].kind != parse.N_STRUCT) {
+        first_struct = nodes[first_struct].next as I64;
+    }
+    I64 before_struct = 0;
+    if (first_struct >= 0) {
+        before_struct = sem[first_struct].lit_at;
+    }
+    if (decl.write_block(src, toks, nodes, sem, syms, root, module, decls, diag)) {
+        return 1;
+    }
+    if (first_struct >= 0 && sem[first_struct].lit_at != before_struct) {
+        return -2;
+    }
+    if (decl.block_of(decls, module) >= 0) {
+        return -3;
+    }
+    return 0;
+}

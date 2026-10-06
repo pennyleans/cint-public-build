@@ -1,0 +1,18 @@
+case view/rank2_index_dim1_bounds
+clause SPEC-04 LS-64; SPEC-01 IM-186 (a rank-2 index out of range in dimension 1)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_BOUNDS
+fault.operation index.checked.i64
+fault.operand I64 1
+fault.operand I64 3
+fault.exact none
+fault.limit I64 3
+fault.position view/rank2_index_dim1_bounds.ci:11:13
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

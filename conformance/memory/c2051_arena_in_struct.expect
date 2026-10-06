@@ -1,0 +1,7 @@
+case memory/c2051_arena_in_struct
+clause SPEC-03 M-21; SPEC-04 LS-106; ref/OPEN.md REF-OQ-45
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2051
+diagnostic.position memory/c2051_arena_in_struct.ci:7:17

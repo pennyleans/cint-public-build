@@ -1,0 +1,11 @@
+// case: module/c3009_case_mismatch
+// clause: SPEC-09 CINTC-12, CINTC-15 (a name is resolved byte for byte against the directory entry); SPEC-04 LS-225
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C3009 at 7:8 on every host: the file is module/lib/plain_math.ci, not Plain_math.ci
+
+import module.lib.Plain_math;
+
+export I64 run() {
+    return Plain_math.SCALE;
+}

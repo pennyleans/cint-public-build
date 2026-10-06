@@ -1,0 +1,8 @@
+case errors/catch_value_and_discard
+clause SPEC-04 LS-95, LS-130, LS-132
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 49
+fuel-consumed 4

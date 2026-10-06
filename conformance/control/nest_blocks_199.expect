@@ -1,0 +1,7 @@
+case control/nest_blocks_199
+clause SPEC-09 SEED-11, CINTC-02; seed/OPEN.md SEED-OQ-16
+source reference
+outcome value
+stdout-bytes 0
+return I64 2
+fuel-consumed 1

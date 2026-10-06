@@ -1,0 +1,17 @@
+// case: view/inout_writes_visible
+// clause: SPEC-04 LS-119, LS-120 (an `inout` view writes the caller's array)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 321 (the callee writes 1, 2, 3 into the caller's array)
+
+void count_up[n](inout I64[n] xs) {
+    for i in 0..n {
+        xs[i] = i + 1;
+    }
+}
+
+export I64 run() {
+    I64[3] a;
+    count_up(a);
+    return a[2] * 100 + a[1] * 10 + a[0];
+}

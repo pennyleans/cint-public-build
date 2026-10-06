@@ -1,0 +1,9 @@
+// case: view/record_array_readonly_element
+// clause: SPEC-04 LS-119, LS-120, LS-313
+// subset: cint-boot-1
+// entry: run; args: none
+
+struct Box { Item[2] items; }
+struct Item { I64 value; }
+void change(in Box[1] boxes) { boxes[0].items[1] = Item(7); }
+export I64 run() { return 0; }

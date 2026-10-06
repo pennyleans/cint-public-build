@@ -1,0 +1,6 @@
+case control/for_range_full_i8
+clause SPEC-01 IM-7; SPEC-04 LS-172, LS-175 (ruling on OQ-128, slice 2 patch D-12)
+source compile-error
+outcome compile-error
+diagnostic.code C2001
+diagnostic.position control/for_range_full_i8.ci:9:14

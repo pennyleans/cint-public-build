@@ -1,0 +1,19 @@
+case arith/stores_before_fault
+clause SPEC-01 8.2 (fixture 108), 9.5
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 2
+fault.code E_DIV_ZERO
+fault.operation div.checked.i64
+fault.operand I64 1
+fault.operand I64 0
+fault.exact none
+fault.limit none
+fault.position arith/stores_before_fault.ci:16:17
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0
+state.global arith.stores_before_fault counter I64 1

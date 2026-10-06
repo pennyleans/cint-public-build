@@ -1,0 +1,12 @@
+// case: cleanup/defer_reverse_order
+// clause: SPEC-04 LS-185
+// subset: cint-core-1 (`defer`, print)
+// entry: run; args: none
+// spec outcome: value with no return line: stdout is the 8 bytes `0\n3\n2\n1\n`, the body's print and then the deferred prints in reverse order of declaration; fuel 1
+
+export void run() {
+    defer { "1\n"; }
+    defer { "2\n"; }
+    defer { "3\n"; }
+    "0\n";
+}

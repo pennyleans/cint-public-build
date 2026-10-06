@@ -1,0 +1,20 @@
+case struct/nested_argument_fault
+clause SPEC-04 LS-77, LS-141; SPEC-01 IM-107
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 3
+fault.code E_DIV_ZERO
+fault.operation div.checked.i64
+fault.operand I64 10
+fault.operand I64 0
+fault.exact none
+fault.limit none
+fault.position struct/nested_argument_fault.ci:11:31
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 1
+fault.stack struct/nested_argument_fault.ci:12:54
+state.global struct.nested_argument_fault seen I64 1

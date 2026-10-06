@@ -1,0 +1,7 @@
+case struct/assignment_copies
+clause SPEC-04 4.4 (assignment copies the whole struct)
+source reference
+outcome value
+stdout-bytes 0
+return I32 1
+fuel-consumed 1

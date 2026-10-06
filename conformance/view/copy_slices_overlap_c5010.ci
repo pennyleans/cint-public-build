@@ -1,0 +1,11 @@
+// case: view/copy_slices_overlap_c5010
+// clause: SPEC-04 LS-70 (the LS-70 example: same buffer, intersecting bounding intervals, gcd test fails)
+// subset: cint-core-1 (array slices, built-in copy)
+// entry: run; args: none
+// spec outcome: compile error C5010 at 9:24, the source argument
+
+export I64 run() {
+    I64[16] x;
+    copy(x[0..8 by 2], x[0..4]);
+    return x[0];
+}

@@ -1,0 +1,11 @@
+// case: module/import_private_c3008
+// clause: SPEC-04 LS-227 (only exported declarations are visible to importers); SPEC-04 LS-313
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C3008 at 10:23, the name `hidden`, which module.lib.plain_math does not export
+
+import module.lib.plain_math;
+
+export I64 run() {
+    return plain_math.hidden();
+}

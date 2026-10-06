@@ -1,0 +1,7 @@
+case control/cond_select_runtime
+clause SPEC-04 LS-154, LS-54
+source reference
+outcome value
+stdout-bytes 0
+return I64 424
+fuel-consumed 1

@@ -1,0 +1,13 @@
+// case: boot/refuse_type_alias
+// clause: SPEC-09 BOOT-01 (type_decl), SEED-06; SPEC-04 LS-102
+// subset: cint-core-1
+// entry: run; args: none
+// seed outcome: C9100 at 8:1
+// spec outcome: value I64 3 under cint-core-1; the seed refuses the type alias declaration
+
+type Count = I64;
+
+export I64 run() {
+    Count c = 3;
+    return c;
+}

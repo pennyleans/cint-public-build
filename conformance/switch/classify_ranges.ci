@@ -1,0 +1,43 @@
+// case: switch/classify_ranges
+// clause: SPEC-04 8.5; SPEC-09 5.2, 5.4 (example and its boundary)
+// subset: cint-boot-1
+// entry: classify_nine, classify_slash, classify_z, classify_brace, classify_space; args: none
+// spec outcome: values I32 2 (TK_INT), I32 3 (TK_PUNCT), I32 1 (TK_IDENT, inclusive range end), I32 3, I32 0 (default)
+
+const I32 TK_NONE = 0;
+const I32 TK_IDENT = 1;
+const I32 TK_INT = 2;
+const I32 TK_PUNCT = 3;
+
+I32 classify(U8 c) {
+    switch (c) {
+        case 'a'..='z', 'A'..='Z', '_':
+            return TK_IDENT;
+        case '0'..='9':
+            return TK_INT;
+        case '!'..='/', ':'..='@', '['..='^', '{'..='~':
+            return TK_PUNCT;
+        default:
+            return TK_NONE;
+    }
+}
+
+export I32 classify_nine() {
+    return classify('9');
+}
+
+export I32 classify_slash() {
+    return classify('0' - 1);
+}
+
+export I32 classify_z() {
+    return classify('z');
+}
+
+export I32 classify_brace() {
+    return classify('{');
+}
+
+export I32 classify_space() {
+    return classify(' ');
+}

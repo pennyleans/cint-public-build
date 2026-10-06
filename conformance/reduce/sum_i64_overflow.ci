@@ -1,0 +1,10 @@
+// case: reduce/sum_i64_overflow
+// clause: SPEC-01 IM-78, IM-81; SPEC-02 8.5 (the total_exact overflow row, sequentially)
+// subset: cint-core-1 (built-in sum)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 9:12, operation sum.checked.i64.i64, operand I64 2, exact 9223372036854775808, limit I64 9223372036854775807; stack depth 0; fuel 2. Box 09 ruling R5
+
+export I64 run() {
+    I64[2] a = [9223372036854775807, 1];
+    return sum(a);
+}

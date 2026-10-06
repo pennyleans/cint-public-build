@@ -1,0 +1,16 @@
+// case: boot/refuse_where
+// clause: SPEC-09 BOOT-01 (where), SEED-06; SPEC-04 LS-118
+// subset: cint-core-1
+// entry: run; args: none
+// seed outcome: C9100 at 8:26
+// spec outcome: value I64 5 under cint-core-1; the seed refuses the `where` clause
+
+I64 head[n](in I64[n] a) where n >= 1 {
+    return a[0];
+}
+
+export I64 run() {
+    I64[3] a;
+    a[0] = 5;
+    return head(a);
+}

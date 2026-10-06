@@ -1,0 +1,40 @@
+# Cases that an implementation refuses under a documented limit of its own
+# (SPEC-09 CONF-14, category "unsupported by this implementation";
+# decision 2026-10-03, slice 2 patch D-8). Each line is
+#   <case> <compiler> <code> <limit-id> <reason>
+# and lines are sorted by case, then compiler. A listed case that the compiler
+# accepts fails a run until this list is corrected.
+# cintc (B1, plan task 2.12a): each C9102 line names the open item of compiler/OPEN.md
+# under which B1 refuses the construct, and the plan task that lifts the limit.
+# Box 09 (2026-10-05, OQ-197): B1 refused the box 09 forms with C9102 until its
+# box 09 work; since then it compiles them, and the 75 box 09 expectations frozen
+# from cint_ref (kernel/where_violation since OQ-203), the two local arrays sized by a
+# parameter (OQ-191) and errors/error_values_in_array_struct_param left this list.
+# Box 12 (2026-10-05, OQ-206): B1 refused the box 12 forms with C9102 until its
+# box 12 work; since the box 12 compiler step (compiler/OPEN.md CINTC-OQ-63) it
+# compiles them, and the 34 box 12 expectations frozen from cint_ref left this list.
+# Box 12 memory lifetimes (2026-10-06, OQ-210): the three frame arena cases, frozen
+# from cint_ref, declare local arrays of 1,000,000 elements or more; the seed refuses them
+# under EMIT-30. B1 refused them under its rank-1 extent limit until its frame arena work
+# (OQ-213, compiler/OPEN.md CINTC-OQ-64 item 13), which compiles them, and its three
+# lines left this list.
+arith/const_narrow_literal_2p3000 cint-seed C9102 SEED-16 the seed holds a literal in 64 bits and refuses a checked as of a literal of 2^64 or more
+arith/const_narrow_literal_max cint-seed C9102 SEED-16 the seed holds a literal in 64 bits and refuses a checked as of a literal of 2^64 or more
+arith/literal_conversion_skipped_operand cint-seed C9102 SEED-16 the seed holds a literal in 64 bits and refuses a checked as of a literal of 2^64 or more
+control/nest_blocks_200 cint-seed C9004 SEED-15 the seed compiles at most 199 nested blocks
+control/nest_blocks_256 cint-seed C9004 SEED-15 the seed compiles at most 199 nested blocks
+control/nest_blocks_257 cint-seed C9004 SEED-15 the seed compiles at most 199 nested blocks
+control/nest_for_256 cint-seed C9004 SEED-15 the seed compiles at most 49 nested for loops
+control/nest_whiles_256 cint-seed C9004 SEED-15 the seed compiles at most 66 nested while loops
+control/nest_whiles_67 cint-seed C9004 SEED-15 the seed compiles at most 66 nested while loops
+memory/frame_arena_counts_elements cint-seed C9003 EMIT-30 the seed admits a local array of at most 4,096 bytes
+memory/frame_arena_recursion_exhausts cint-seed C9003 EMIT-30 the seed admits a local array of at most 4,096 bytes
+memory/frame_arena_released_at_block_exit cint-seed C9003 EMIT-30 the seed admits a local array of at most 4,096 bytes
+struct/constructor_shape_later_fault cint-seed C9102 SEED-OQ-06 the seed does not support an array-field constructor argument
+struct/constructor_shape_order cint-seed C9102 SEED-OQ-06 the seed does not support an array-field constructor argument
+struct/constructor_shape_runtime cint-seed C9102 SEED-OQ-06 the seed does not support an array-field constructor argument
+struct/constructor_shape_zero_elements cint-seed C9102 SEED-OQ-06 the seed does not support an array-field constructor argument
+view/copy_shape_assignment cint-seed C9102 SEED-OQ-06 the seed refuses whole-array assignment
+view/copy_shape_empty_source cint-seed C9102 SEED-OQ-06 the seed refuses whole-array assignment
+view/copy_shape_zero_elements cint-seed C9102 SEED-OQ-06 the seed refuses whole-array assignment
+view/shape_mismatch_runtime cint-seed C9102 SEED-OQ-05 the seed checks the shapes of views passed between CINT functions at compile time only

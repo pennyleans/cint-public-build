@@ -1,0 +1,18 @@
+// rt/tests/roundtrip/touch.ci: a table of structs changed in place through the
+// cint-abi-1 wrapper the seed emits (slice 2 task 2.6, test a). The host
+// rt/tests/roundtrip/host.c registers the rows, calls cx_5_touch_5_touch, and
+// checks every byte afterward.
+
+export struct Tok {
+    I32 kind;
+    I32 len;
+    U8[3] tag;
+}
+
+export void touch[n](inout Tok[n] t, in I64[n] w) {
+    for i in 0..n {
+        t[i].kind = (w[i] as I32) + 1;
+        t[i].len = t[i].len * 2;
+        t[i].tag[1] = t[i].tag[0] + t[i].tag[2];
+    }
+}

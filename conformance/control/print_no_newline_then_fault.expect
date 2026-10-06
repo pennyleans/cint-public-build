@@ -1,0 +1,17 @@
+case control/print_no_newline_then_fault
+clause SPEC-04 LS-193, LS-197, LS-218; SPEC-01 IM-30, IM-106; SPEC-06 3.4a; decision 2026-10-03, slice 2 patch D-19
+source reference
+outcome fault
+stdout-bytes 32
+stdout-sha256 7811a932d969f725a4cb0acccec5d2e138026860a670821ddd28ae7d209f2476
+fuel-consumed 1
+fault.code E_OVERFLOW
+fault.operation add.checked.i64
+fault.operand I64 9223372036854775807
+fault.operand I64 1
+fault.exact 9223372036854775808
+fault.limit I64 9223372036854775807
+fault.position control/print_no_newline_then_fault.ci:8:13
+fault.revision self
+fault.address none
+fault.stack-depth 0

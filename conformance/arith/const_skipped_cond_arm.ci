@@ -1,0 +1,10 @@
+// case: arith/const_skipped_cond_arm
+// clause: SPEC-01 IM-23; SPEC-04 LS-264 (decision 2026-10-03, slice 2 patch D-9)
+// subset: cint-core-1 (?:)
+// entry: run; args: none
+// spec outcome: value I64 1: `true ? 1 : 1 / 0` does not evaluate the arm it skips
+
+export I64 run() {
+    I64 v = true ? 1 : 1 / 0;
+    return v;
+}

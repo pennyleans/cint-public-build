@@ -1,0 +1,18 @@
+case arith/builtin_rotl_count
+clause SPEC-01 4.6, 9.2, IM-134
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_SHIFT
+fault.operation rotl.checked.u16
+fault.operand U16 4660
+fault.operand I32 16
+fault.exact none
+fault.limit I64 15
+fault.position arith/builtin_rotl_count.ci:10:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

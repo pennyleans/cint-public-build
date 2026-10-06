@@ -1,0 +1,21 @@
+// case: reduce/loop_sum_wide_accumulator
+// clause: SPEC-01 IM-77, IM-80, IM-101 (an exact total in a wider accumulator, narrowed once; the twin of reduce/sum_i32_exact)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I32 2147483647 (the partial total 2147483648 exists only in the I64 accumulator); fuel 5 (two calls, three iterations)
+
+I32 total[n](in I32[n] xs) {
+    I64 acc = 0;
+    for i in 0..n {
+        acc = acc + (xs[i] as I64);
+    }
+    return acc as I32;
+}
+
+export I32 run() {
+    I32[3] a;
+    a[0] = 2147483647;
+    a[1] = 1;
+    a[2] = -1;
+    return total(a);
+}

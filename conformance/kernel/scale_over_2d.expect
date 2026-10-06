@@ -1,0 +1,8 @@
+case kernel/scale_over_2d
+clause SPEC-02 K-1, K-8, K-9 (the K-1 `scale` kernel, indexed form over a rank-2 space)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 4214
+fuel-consumed 7

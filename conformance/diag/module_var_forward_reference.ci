@@ -1,0 +1,11 @@
+// case: diag/module_var_forward_reference
+// clause: SPEC-04 LS-112, LS-218, LS-219, LS-312 (decision 2026-10-03, slice 2 patch D-22)
+// subset: cint-core-1 (module variable)
+// entry: show; args: none
+// spec outcome: value I64 5: a module-level variable is visible in the whole module, also in a function declared before it (LS-112); cint_ref raised an AssertionError here before (ref/OPEN.md REF-OQ-27)
+
+export I64 show() {
+    return balance;
+}
+
+I64 balance = 5;

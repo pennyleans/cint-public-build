@@ -1,0 +1,18 @@
+// case: switch/full_range_fallthrough_default
+// clause: SPEC-04 8.5 (LS-178, LS-182, LS-183: a default after a case that covers the full range is reached only by fallthrough)
+// subset: cint-core-1 (fallthrough is not listed in SPEC-09 5.2)
+// entry: run; args: none
+// spec outcome: value I64 11
+
+export I64 run() {
+    I8 x = -5;
+    I64 r = 0;
+    switch (x) {
+        case -128..=127:
+            r = r + 1;
+            fallthrough;
+        default:
+            r = r + 10;
+    }
+    return r;
+}

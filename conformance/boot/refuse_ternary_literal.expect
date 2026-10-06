@@ -1,0 +1,6 @@
+case boot/refuse_ternary_literal
+clause SPEC-09 BOOT-01 (TERN_INT), SEED-06; SPEC-04 LS-24, LS-30
+source compile-error
+outcome compile-error
+diagnostic.code C9100
+diagnostic.position boot/refuse_ternary_literal.ci:9:13

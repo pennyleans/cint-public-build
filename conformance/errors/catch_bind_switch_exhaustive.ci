@@ -1,0 +1,31 @@
+// case: errors/catch_bind_switch_exhaustive
+// clause: SPEC-04 LS-95, LS-131, LS-182, LS-314; decision 2026-10-05, BX12-09
+// subset: cint-core-1 (error sets, error unions, `catch`, `switch`)
+// entry: run; args: none
+// spec outcome: value I64 688: the bound error selects 100, 200 or 300 in a switch that lists every ParseError value and has no default, and 88 is a success; fuel 9 (the entry, four calls of code and four of parse)
+
+error ParseError { empty, bad_digit, too_large }
+
+ParseError!I64 parse(I64 k) {
+    switch (k) {
+        case 0: return .empty;
+        case 1: return .bad_digit;
+        case 2: return .too_large;
+        default: return k;
+    }
+}
+
+I64 code(I64 k) {
+    I64 v = parse(k) catch (e) {
+        switch (e) {
+            case .empty: return 100;
+            case .bad_digit: return 200;
+            case .too_large: return 300;
+        }
+    };
+    return v;
+}
+
+export I64 run() {
+    return code(0) + code(1) + code(2) + code(88);
+}

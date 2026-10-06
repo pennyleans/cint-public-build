@@ -1,0 +1,19 @@
+// case: switch/exhaustive_u8_without_default
+// clause: SPEC-04 8.5 (exhaustive by covering the full range of the type)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 2
+
+I64 half(U8 x) {
+    switch (x) {
+        case 0..=127:
+            return 1;
+        case 128..=255:
+            return 2;
+    }
+}
+
+export I64 run() {
+    U8 v = 200;
+    return half(v);
+}

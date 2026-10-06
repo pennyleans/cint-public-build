@@ -1,0 +1,12 @@
+// case: memory/pool_capacity_zero
+// clause: SPEC-03 M-19, M-20; decision 2026-10-05, BX12-26; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (pool, handles)
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 10:26 (the member name `insert`), operation pool.insert, operands I64 0, I64 0, I64 0 (occupied, retired, capacity), no exact, no limit; stack depth 0; fuel 1. A pool of capacity 0 is valid and is always full
+
+Pool(I64, 0) none;
+
+export I64 run() {
+    Handle(I64) h = none.insert(1);
+    return 0;
+}

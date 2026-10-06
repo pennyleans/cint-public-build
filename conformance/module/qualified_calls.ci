@@ -1,0 +1,14 @@
+// case: module/qualified_calls
+// clause: SPEC-09 BOOT-01 (import_decl, qualified); SPEC-04 LS-225, LS-227, LS-229; SPEC-09 CINTC-16
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 82 (twice(21) is 42 > BASE, so twice(BASE) 80 plus SMALL 2)
+
+import module.lib.scalars;
+
+export I64 run() {
+    if (scalars.is_big(scalars.twice(21))) {
+        return scalars.twice(scalars.BASE) + (scalars.SMALL as I64);
+    }
+    return 0;
+}

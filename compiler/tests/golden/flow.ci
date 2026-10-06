@@ -1,0 +1,135 @@
+// compiler/tests/golden/flow.ci: the scalar surface that compiler/lowering.ci covers, one
+// export per area, compared with cint_ref by the golden suite (slice 2 task 2.11). The
+// switch exports are in switch.ci, outside compiler/check.ci's subset (CINTC-OQ-45).
+
+const I64 LIMIT = 10;
+const I8 SMALL = -100;
+const I64 TWICE = LIMIT * 2;
+
+I64 square(I64 x) {
+    return x * x;
+}
+
+void touch(I64 x) {
+    _ = x + 1;
+}
+
+export I64 chain(I64 x) {
+    if (x < 0) {
+        return -1;
+    } else if (x == 0) {
+        return 0;
+    } else if (x < LIMIT) {
+        return 1;
+    } else if (x < TWICE) {
+        return 2;
+    } else {
+        return 3;
+    }
+}
+
+export I64 loops(I64 n) {
+    I64 total = 0;
+    I64 i = 0;
+    while (i < n) {
+        i += 1;
+        if (i % 3 == 0) {
+            continue;
+        }
+        if (i > 50) {
+            break;
+        }
+        total += i;
+    }
+    for (I64 j = 0; j < n; j++) {
+        total -= 1;
+    }
+    for k in 0..=n {
+        total += k;
+    }
+    rows: for a in 0..n {
+        for b in 0..n {
+            if (b == 2) {
+                continue rows;
+            }
+            if (a == 4) {
+                break rows;
+            }
+            total += a * b;
+        }
+    }
+    return total;
+}
+
+export I64 to_max(I64 lo) {
+    I64 steps = 0;
+    for i in lo..=I64.max {
+        steps += 1;
+    }
+    for i in (I8.min as I64)..=(I8.max as I64) {
+        steps += 1;
+    }
+    return steps;
+}
+
+export U8 bytes(U8 a, U8 b) {
+    U8 c = a +% b;
+    c = c ^ 0x5A;
+    c = ~c;
+    return (c >> 1) | (a & 3);
+}
+
+export Bool logic(I64 a, I64 b) {
+    Bool p = a > 0 && b > 0;
+    Bool q = a < 0 || b < 0;
+    return (p || q) && !(a == b);
+}
+
+export I32 convert(I64 x) {
+    I16 h = x as% I16;
+    I32 w = h as I32;
+    U32 u = (x as% U32) *% 3;
+    return w + (u as% I32);
+}
+
+export I64 shifts(I64 x, I32 k) {
+    I64 a = x << k;
+    I64 b = x >> 3;
+    U64 c = (x as% U64) <<% 4;
+    I64 d = 1;
+    d <<= 2;
+    return a +% b +% (c as% I64) +% d;
+}
+
+export I64 calls(I64 x) {
+    touch(x);
+    return square(x) + square(x + 1);
+}
+
+export I64 narrow(I64 x) {
+    I8 s = x as I8;
+    return (s as I64) + (SMALL as I64);
+}
+
+export I64 divide(I64 a, I64 b) {
+    return a / b + a % b;
+}
+
+export I64 negate(I64 a) {
+    I64 b = -a;
+    b--;
+    return b;
+}
+
+export U16 widths(U16 a, I16 b) {
+    U16 c = a *% 7;
+    I16 d = b -% 1000;
+    U16 e = (d as% U16) +% c;
+    return e - (1 as U16);
+}
+
+export Bool literal_sources(I64 x) {
+    U64 a = -1 as% U64;
+    I8 b = (300) as% I8;
+    return a == 18446744073709551615 && b == 44 && x != 0;
+}

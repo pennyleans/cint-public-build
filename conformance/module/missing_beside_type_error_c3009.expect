@@ -1,0 +1,7 @@
+case module/missing_beside_type_error_c3009
+clause SPEC-04 LS-225, LS-226 (imports resolve before any module is checked); decision 27 item 3; SPEC-09 CINTC-05
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C3009
+diagnostic.position module/missing_beside_type_error_c3009.ci:8:8

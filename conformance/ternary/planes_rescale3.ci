@@ -1,0 +1,255 @@
+// case: ternary/planes_rescale3
+// clause: SPEC-05 TR-DIG-2 to TR-DIG-5, 4.2 P1 to P5, 9.4 (rescale3, rescale3_rem, shl3 and trit as shifts and reads of two bit planes, against the U64 algorithm of 9.4)
+// subset: cint-core-1 (print statements)
+// entry: run; args: none
+// spec outcome: value I64 0 (for every value and every k from 0 to K the plane shift equals the 9.4 algorithm, and rescale3, shl3 and rescale3_rem recompose x); 69 output lines
+// t27 set 1 (docs/design/notes/2026-10-05-t27-ternary-tests-scoping.md 5.2), with SPEC-05 12.2 RS-01 to RS-06, RS-08 to RS-10, RS-12 to RS-14,
+// RS-16, RS-18 and RS-20 to RS-24. rescale3 deletes the k lowest balanced trits, so on a binary machine it is a right
+// shift of both planes, and on a ternary one a trit shift (SPEC-05 section 10): one outcome.
+// One value per pair of U64 planes: bit i of the plus plane is set where trit i of x is +1, of the minus plane where
+// it is -1, for i from 0 to 41 (U64 values above R(41) need 42 trits). K is 41 for I64 and 42 for U64.
+// The sweep values are listed in run(), then 12 I64 values sm(3, i) as% I64 and 12 U64 values sm(4, i), for i from 0
+// to 11, with sm(s, i) output i (from 0) of SplitMix64 seeded with s, as in ternary/planes_add27.
+// Output: the rescale3, rescale3_rem, shl3 and trit rows, one sweep line per value (rescale3 at k = 1, 3, 4, 7, 20,
+// 27 and 40), then the mismatch count.
+
+const U64 GAMMA = 0x9E37_79B9_7F4A_7C15;
+const I64 M = 3_812_798_742_493;
+const U64 R41 = 18_236_498_188_585_393_201;
+
+U64 mix(U64 z0) {
+    U64 z = (z0 ^ (z0 >> 30)) *% 0xBF58_476D_1CE4_E5B9;
+    z = (z ^ (z >> 27)) *% 0x94D0_49BB_1331_11EB;
+    return z ^ (z >> 31);
+}
+
+U64 sm(U64 seed, I64 i) {
+    return mix(seed +% ((i as U64) +% 1) *% GAMMA);
+}
+
+U64 bit(I64 i) {
+    U64 one = 1;
+    return one << i;
+}
+
+// The two planes of an I64 in p[0] (plus) and p[1] (minus); floor `%` by 3 gives 0, 1 or 2.
+void planes_i64(inout U64[2] p, I64 x) {
+    I64 v = x;
+    p[0] = 0;
+    p[1] = 0;
+    for i in 0..42 {
+        I64 r = v % 3;
+        if (r == 1) {
+            p[0] = p[0] | bit(i);
+        } else if (r == 2) {
+            p[1] = p[1] | bit(i);
+        }
+        v = r == 2 ? v / 3 + 1 : v / 3;
+    }
+}
+
+void planes_u64(inout U64[2] p, U64 x) {
+    U64 v = x;
+    p[0] = 0;
+    p[1] = 0;
+    for i in 0..42 {
+        U64 r = v % 3;
+        if (r == 1) {
+            p[0] = p[0] | bit(i);
+        } else if (r == 2) {
+            p[1] = p[1] | bit(i);
+        }
+        v = r == 2 ? v / 3 + 1 : v / 3;
+    }
+}
+
+// The value of two planes, trit 41 first, with wrapping steps: a partial value may leave the type (I64.min), the
+// final value does not, so its residue modulo 2^64 is exact.
+I64 value_i64(U64 pp, U64 pn) {
+    I64 v = 0;
+    for j in 0..42 {
+        I64 i = 41 - j;
+        v = v *% 3 +% (((pp >> i) & 1) as I64) -% (((pn >> i) & 1) as I64);
+    }
+    return v;
+}
+
+U64 value_u64(U64 pp, U64 pn) {
+    U64 v = 0;
+    for j in 0..42 {
+        I64 i = 41 - j;
+        v = v *% 3 +% ((pp >> i) & 1) -% ((pn >> i) & 1);
+    }
+    return v;
+}
+
+// SPEC-05 9.4 on the magnitude a: quotient by 3^k, then one more when the remainder exceeds R(k).
+U64 rescale_mag(U64 a, I64 k, in U64[41] p3) {
+    if (k >= 42) {
+        return 0;
+    }
+    if (k == 41) {
+        return a > R41 ? 1 : 0;
+    }
+    U64 d = p3[k];
+    U64 q = a / d;
+    U64 r = a - q * d;
+    if (r > (d - 1) / 2) {
+        q = q + 1;
+    }
+    return q;
+}
+
+I64 rescale_i64(I64 x, I64 k, in U64[41] p3) {
+    U64 a = x < 0 ? ((-(x + 1)) as U64) + 1 : x as U64;
+    U64 q = rescale_mag(a, k, p3);
+    if (x >= 0) {
+        return q as I64;
+    }
+    if (q == 0) {
+        return 0;
+    }
+    return -((q - 1) as I64) - 1;
+}
+
+I64 trit_at(U64 pp, U64 pn, I64 i) {
+    return (((pp >> i) & 1) as I64) - (((pn >> i) & 1) as I64);
+}
+
+// rescale3 and rescale3_rem of an I64 as plane operations; checked against 9.4 and against x = shl3(q, k) + r.
+I64 row_i64(I64 x, I64 k, in U64[41] p3) {
+    U64[2] p;
+    planes_i64(p, x);
+    I64 q = value_i64(p[0] >> k, p[1] >> k);
+    I64 r = value_i64(p[0] & (bit(k) - 1), p[1] & (bit(k) - 1));
+    I64 back = value_i64(p[0] >> k << k, p[1] >> k << k) +% r;
+    "rescale3({x}, {k}) = {q}, rescale3_rem = {r}\n";
+    return q != rescale_i64(x, k, p3) || back != x ? 1 : 0;
+}
+
+I64 row_u64(U64 x, I64 k, in U64[41] p3) {
+    U64[2] p;
+    planes_u64(p, x);
+    U64 q = value_u64(p[0] >> k, p[1] >> k);
+    "rescale3({x} as U64, {k}) = {q}\n";
+    return q != rescale_mag(x, k, p3) ? 1 : 0;
+}
+
+// One top-down pass: after trit k the partial value is rescale3(x, k) (4.2 P5), checked for every k.
+I64 sweep_i64(I64 x, in U64[41] p3) {
+    U64[2] p;
+    planes_i64(p, x);
+    I64 bad = 0;
+    I64[42] q;
+    I64 v = 0;
+    for j in 0..42 {
+        I64 k = 41 - j;
+        v = v *% 3 +% trit_at(p[0], p[1], k);
+        q[k] = v;
+        bad += v != rescale_i64(x, k, p3) ? 1 : 0;
+    }
+    bad += rescale_i64(rescale_i64(x, 3, p3), 4, p3) != q[7] ? 1 : 0;
+    "sweep {x}: {q[1]} {q[3]} {q[4]} {q[7]} {q[20]} {q[27]} {q[40]}\n";
+    return bad;
+}
+
+I64 sweep_u64(U64 x, in U64[41] p3) {
+    U64[2] p;
+    planes_u64(p, x);
+    I64 bad = 0;
+    U64[43] q;
+    q[42] = 0;
+    U64 v = 0;
+    for j in 0..42 {
+        I64 k = 41 - j;
+        v = v *% 3 +% ((p[0] >> k) & 1) -% ((p[1] >> k) & 1);
+        q[k] = v;
+    }
+    for k in 0..43 {
+        bad += q[k] != rescale_mag(x, k, p3) ? 1 : 0;
+    }
+    "sweep {x} as U64: {q[1]} {q[3]} {q[4]} {q[7]} {q[20]} {q[27]} {q[40]}\n";
+    return bad;
+}
+
+export I64 run() {
+    I64 bad = 0;
+    U64[41] p3;
+    p3[0] = 1;
+    for k in 1..41 {
+        p3[k] = p3[k - 1] * 3;
+    }
+    I64 imax = 9_223_372_036_854_775_807;
+    I64 imin = -9_223_372_036_854_775_807 - 1;
+    U64 umax = 18_446_744_073_709_551_615;
+
+    bad += row_i64(5, 1, p3);            // RS-01
+    bad += row_i64(-5, 1, p3);           // RS-02
+    bad += row_i64(14, 2, p3);           // RS-03
+    bad += row_i64(-14, 2, p3);          // RS-04
+    bad += row_i64(M, 26, p3);           // RS-05
+    bad += row_i64(M, 27, p3);           // RS-06
+    bad += row_i64(imax, 40, p3);        // RS-08, RS-14
+    bad += row_i64(imin, 40, p3);        // RS-09
+    bad += row_i64(imin, 41, p3);        // RS-10
+    bad += row_i64(122, 5, p3);          // RS-13 (an I8 value)
+    bad += row_i64(4, 1, p3);
+    bad += row_i64(-4, 1, p3);
+    bad += row_i64(13, 2, p3);
+    bad += row_i64(8, 0, p3);
+    bad += row_i64(-M, 26, p3);
+    bad += row_i64(127, 5, p3);
+    bad += row_i64(121, 5, p3);
+    bad += row_u64(umax, 41, p3);        // RS-12
+    bad += row_u64(umax, 42, p3);        // 4.2 P3
+    bad += row_u64(9_223_372_036_854_775_808, 40, p3);   // RS-21
+    bad += row_u64(umax, 40, p3);        // RS-22
+    bad += row_u64(6_078_832_729_528_464_400, 40, p3);   // RS-23, R(40)
+    bad += row_u64(6_078_832_729_528_464_401, 40, p3);   // RS-24
+
+    // shl3 as a left shift of both planes (RS-16), and trit as a read of position i (RS-18, RS-20).
+    U64[2] p;
+    planes_i64(p, 1);
+    I64 e = value_i64(p[0] << 26, p[1] << 26);
+    "shl3(1, 26) = {e}\n";
+    bad += e != 2_541_865_828_329 ? 1 : 0;
+    planes_i64(p, -5);
+    I64 f = value_i64(p[0] << 3, p[1] << 3);
+    "shl3(-5, 3) = {f}\n";
+    bad += f != -135 ? 1 : 0;
+    planes_i64(p, 8);
+    "trit(8, 0..2) = {trit_at(p[0], p[1], 0)} {trit_at(p[0], p[1], 1)} {trit_at(p[0], p[1], 2)}\n";
+    planes_i64(p, imax);
+    "trit({imax}, 40) = {trit_at(p[0], p[1], 40)}\n";
+    planes_i64(p, M);
+    "trit({M}, 26) = {trit_at(p[0], p[1], 26)}\n";
+
+    I64[12] si;
+    si[0] = 5;
+    si[1] = -5;
+    si[2] = 14;
+    si[3] = M;
+    si[4] = -M;
+    si[5] = imax;
+    si[6] = imin;
+    si[7] = 0;
+    si[8] = 1;
+    si[9] = -1;
+    si[10] = 6_078_832_729_528_464_400;
+    si[11] = -6_078_832_729_528_464_401;
+    for i in 0..12 {
+        bad += sweep_i64(si[i], p3);
+    }
+    for i in 0..12 {
+        bad += sweep_i64(sm(3, i) as% I64, p3);
+    }
+    bad += sweep_u64(umax, p3);
+    bad += sweep_u64(9_223_372_036_854_775_808, p3);
+    bad += sweep_u64(R41, p3);
+    bad += sweep_u64(R41 + 1, p3);
+    for i in 0..12 {
+        bad += sweep_u64(sm(4, i), p3);
+    }
+    "mismatches {bad}\n";
+    return bad;
+}

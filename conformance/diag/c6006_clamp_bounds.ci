@@ -1,0 +1,10 @@
+// case: diag/c6006_clamp_bounds
+// clause: SPEC-01 4.8; SPEC-04 17.2 (C6006)
+// subset: cint-core-1 (built-in functions are not in cint-boot-1, SPEC-09 5.2)
+// entry: run; args: none
+// spec outcome: compile error C6006 at 9:12, a clamp whose constant lo exceeds its constant hi
+
+export I64 run() {
+    I64 x = 4;
+    return clamp(x, 5, 3);
+}

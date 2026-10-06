@@ -1,0 +1,8 @@
+case reduce/count_mask
+clause SPEC-01 IM-77 (count of a Bool array, as I64)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 3
+fuel-consumed 2

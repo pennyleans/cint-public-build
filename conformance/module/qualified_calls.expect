@@ -1,0 +1,7 @@
+case module/qualified_calls
+clause SPEC-09 BOOT-01 (import_decl, qualified); SPEC-04 LS-225, LS-227, LS-229; SPEC-09 CINTC-16
+source reference
+outcome value
+stdout-bytes 0
+return I64 82
+fuel-consumed 4

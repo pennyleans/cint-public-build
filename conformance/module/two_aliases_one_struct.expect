@@ -1,0 +1,8 @@
+case module/two_aliases_one_struct
+clause SPEC-04 LS-225, LS-228 (two aliases of one module are two names of it; an `as` alias is outside cint-boot-1, SPEC-09 BOOT-01 import_decl); SPEC-09 CINTC-16; decision 27 item 4 (imported structs)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 10
+fuel-consumed 3

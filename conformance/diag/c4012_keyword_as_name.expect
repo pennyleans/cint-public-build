@@ -1,0 +1,6 @@
+case diag/c4012_keyword_as_name
+clause SPEC-04 LS-167; SPEC-09 BOOT-01 (core-1 static diagnostics apply in boot-1)
+source compile-error
+outcome compile-error
+diagnostic.code C4012
+diagnostic.position diag/c4012_keyword_as_name.ci:8:5

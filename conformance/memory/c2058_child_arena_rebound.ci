@@ -1,0 +1,13 @@
+// case: memory/c2058_child_arena_rebound
+// clause: SPEC-03 M-20; SPEC-04 LS-106, LS-107; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arena, child arenas)
+// entry: run; args: none
+// spec outcome: compile error C2058 at 11:5, the target `part`: an arena variable cannot be rebound, as a view variable cannot (SPEC-04 LS-107)
+
+Arena(I64, 8) scratch;
+
+export I64 run() {
+    Arena(I64) part = scratch.child(2);
+    part = scratch.child(3);
+    return 0;
+}

@@ -1,0 +1,11 @@
+// case: diag/c6010_static_assert_failed
+// clause: SPEC-04 LS-192, 17.2 (C6010)
+// subset: cint-core-1 (static_assert)
+// entry: run; args: none
+// spec outcome: compile error C6010 at 7:1, the `static_assert` keyword
+
+static_assert(2 + 2 == 5, "arithmetic");
+
+export I64 run() {
+    return 4;
+}

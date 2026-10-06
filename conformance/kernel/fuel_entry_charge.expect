@@ -1,0 +1,18 @@
+case kernel/fuel_entry_charge
+clause SPEC-02 X-8 item 1, F-5 check 9, 15.4 E-11 (the dispatch charge exceeds the allowance)
+format 4
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_FUEL
+fault.operation fuel.charge
+fault.exact none
+fault.limit I64 3
+fault.position kernel/fuel_entry_charge.ci:15:5
+fault.revision self
+fault.source-map self
+fault.phase entry
+fault.kernel kernel.fuel_entry_charge.advance
+fault.address 0 none none
+fault.stack-depth 0

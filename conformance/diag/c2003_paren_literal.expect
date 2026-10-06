@@ -1,0 +1,6 @@
+case diag/c2003_paren_literal
+clause SPEC-04 LS-53, LS-278; ref/OPEN.md REF-OQ-25
+source compile-error
+outcome compile-error
+diagnostic.code C2003
+diagnostic.position diag/c2003_paren_literal.ci:8:16

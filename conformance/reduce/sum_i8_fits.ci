@@ -1,0 +1,10 @@
+// case: reduce/sum_i8_fits
+// clause: SPEC-01 IM-77, IM-78 (the IM-79 listing: the exact total 120 fits I8)
+// subset: cint-core-1 (built-in sum, array literal)
+// entry: run; args: none
+// spec outcome: value I8 120; fuel 2 (entry, reduction charge ceil(3 / 64))
+
+export I8 run() {
+    I8[3] v = [120, 120, -120];
+    return sum(v);
+}

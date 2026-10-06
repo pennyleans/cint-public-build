@@ -1,0 +1,14 @@
+// case: boot/refuse_fraction_literal
+// clause: SPEC-09 BOOT-01 (DEC_FRAC), SEED-06; SPEC-04 LS-33, LS-35, LS-38
+// subset: cint-core-1
+// entry: run; args: none
+// seed outcome: C9100 at 9:21
+// spec outcome: value I64 32768 under cint-core-1 (0.5 in Q16.16 has raw 32768); the seed refuses the fraction literal, which comes before the first fixed-point type name in the file
+
+export I64 run() {
+    return half_raw(0.5);
+}
+
+I64 half_raw(Q16.16 h) {
+    return h.raw as I64;
+}

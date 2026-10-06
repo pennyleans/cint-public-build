@@ -1,0 +1,8 @@
+case reduce/fuel_reduction_charge
+clause SPEC-01 IM-139 (a reduction over 65 elements charges ceil(65 / 64) = 2)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 0
+fuel-consumed 3

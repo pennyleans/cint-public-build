@@ -1,0 +1,7 @@
+case switch/break_exits_switch
+clause SPEC-04 8.5, 8.6 (break inside a switch exits the switch)
+source reference
+outcome value
+stdout-bytes 0
+return I64 10
+fuel-consumed 11

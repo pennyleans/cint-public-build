@@ -1,0 +1,7 @@
+case arith/min_rem_minus_one
+clause SPEC-01 4.4, 9.6; plan Review Focus 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 0
+fuel-consumed 1

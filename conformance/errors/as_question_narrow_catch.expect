@@ -1,0 +1,8 @@
+case errors/as_question_narrow_catch
+clause SPEC-04 LS-96, LS-130, LS-133; SPEC-01 IM-188; decision 2026-10-05, BX12-10
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 -901
+fuel-consumed 1

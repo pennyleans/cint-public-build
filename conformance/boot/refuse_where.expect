@@ -1,0 +1,6 @@
+case boot/refuse_where
+clause SPEC-09 BOOT-01 (where), SEED-06; SPEC-04 LS-118
+source compile-error
+outcome compile-error
+diagnostic.code C9100
+diagnostic.position boot/refuse_where.ci:8:26

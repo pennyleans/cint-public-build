@@ -1,0 +1,10 @@
+// case: arith/builtin_isqrt_negative
+// clause: SPEC-01 4.9, 9.2, IM-134; interim decision OQ-01 (E_DOMAIN)
+// subset: cint-core-1 (built-in functions are not in cint-boot-1, SPEC-09 5.2)
+// entry: run; args: none
+// spec outcome: fault E_DOMAIN at 9:12, operation isqrt_round.checked.i16.ceil, operand I16 -4; no exact, no limit
+
+export I16 run() {
+    I16 a = -4;
+    return isqrt_round(a, ceil);
+}

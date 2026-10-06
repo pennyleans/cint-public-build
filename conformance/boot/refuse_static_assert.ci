@@ -1,0 +1,12 @@
+// case: boot/refuse_static_assert
+// clause: SPEC-09 BOOT-01 (static_assert), SEED-06; SPEC-04 LS-192
+// subset: cint-core-1
+// entry: run; args: none
+// seed outcome: C9100 at 8:1
+// spec outcome: value I64 4 under cint-core-1; the seed refuses the `static_assert`
+
+static_assert(2 + 2 == 4, "arithmetic");
+
+export I64 run() {
+    return 4;
+}

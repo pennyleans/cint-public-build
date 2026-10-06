@@ -1,0 +1,8 @@
+case view/slice_column
+clause SPEC-04 LS-161 (m[.., j] is column j, a strided rank-1 view)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 6
+fuel-consumed 5

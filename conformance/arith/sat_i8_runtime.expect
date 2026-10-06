@@ -1,0 +1,7 @@
+case arith/sat_i8_runtime
+clause SPEC-01 4.1, 4.2; outside review section 1
+source reference
+outcome value
+stdout-bytes 0
+return I8 7
+fuel-consumed 1

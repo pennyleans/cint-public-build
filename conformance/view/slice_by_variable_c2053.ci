@@ -1,0 +1,11 @@
+// case: view/slice_by_variable_c2053
+// clause: SPEC-04 LS-161 (`by` takes a compile-time constant)
+// subset: cint-core-1 (array slices, by)
+// entry: run; args: none
+// spec outcome: compile error C2053 at 10:26, the step
+
+export I64 run() {
+    I64[8] a;
+    I64 s = 2;
+    return len(a[0..8 by s]);
+}

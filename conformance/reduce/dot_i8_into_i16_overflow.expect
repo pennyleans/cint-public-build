@@ -1,0 +1,17 @@
+case reduce/dot_i8_into_i16_overflow
+clause SPEC-01 IM-87 (dot of I8 elements into an I16 result: one final range check of the exact total)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 261
+fault.code E_OVERFLOW
+fault.operation dot.checked.i8.i16
+fault.operand I64 256
+fault.exact 32768
+fault.limit I16 32767
+fault.position reduce/dot_i8_into_i16_overflow.ci:15:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

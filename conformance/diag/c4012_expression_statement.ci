@@ -1,0 +1,11 @@
+// case: diag/c4012_expression_statement
+// clause: SPEC-04 8.1; SPEC-04 17.1, 17.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C4012 at 9:5: `x + 1;` is not a statement (position: first character of the offending construct, SPEC-04 17.1; see ref/OPEN.md O-13)
+
+export I64 run() {
+    I64 x = 1;
+    x + 1;
+    return x;
+}

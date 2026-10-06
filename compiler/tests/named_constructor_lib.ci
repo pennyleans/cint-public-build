@@ -1,0 +1,4 @@
+export struct R { I64 first; I64 second; }
+export struct Leaf { I64 value; }
+export struct Outer { Leaf item; I64 tail; }
+export struct Flag { Bool active; I64 value; }

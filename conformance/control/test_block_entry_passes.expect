@@ -1,0 +1,6 @@
+case control/test_block_entry_passes
+clause SPEC-04 LS-191, LS-232, LS-235; SPEC-09 CONF-01 (a test block as the entry); decision OQ-17
+source reference
+outcome value
+stdout-bytes 0
+fuel-consumed 5

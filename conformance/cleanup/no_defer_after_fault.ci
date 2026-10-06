@@ -1,0 +1,16 @@
+// case: cleanup/no_defer_after_fault
+// clause: SPEC-04 LS-188; SPEC-01 IM-118; SPEC-09 CONF-11 rule 10; decision 2026-10-05, BX12-01
+// subset: cint-core-1 (`defer`, module-level variable)
+// entry: run; args: none
+// spec outcome: fault E_DIV_ZERO at 11:15, operation div.checked.i64, operands I64 10 and I64 0, exact none, limit none; stack depth 1, 15:12, the call of risky in run; fuel 2; state cleaned I64 0, because a deferred statement does not run after a fault
+
+I64 cleaned = 0;
+
+I64 risky(I64 d) {
+    defer cleaned = 1;
+    return 10 / d;
+}
+
+export I64 run() {
+    return risky(0);
+}

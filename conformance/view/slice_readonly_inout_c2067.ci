@@ -1,0 +1,19 @@
+// case: view/slice_readonly_inout_c2067
+// clause: SPEC-04 LS-162, LS-121 (a slice of an `in` view is read-only and cannot bind an `inout` parameter)
+// subset: cint-core-1 (array slices)
+// entry: run; args: none
+// spec outcome: compile error C2067 at 12:10, the argument
+
+void bump[n](inout I64[n] ys) {
+    ys[0] = 1;
+}
+
+void touch[n](in I64[n] xs) {
+    bump(xs[0..n]);
+}
+
+export I64 run() {
+    I64[2] a;
+    touch(a);
+    return a[0];
+}

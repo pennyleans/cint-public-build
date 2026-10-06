@@ -1,0 +1,15 @@
+// case: boot/refuse_defer
+// clause: SPEC-09 BOOT-01 (defer_stmt), SEED-06; SPEC-04 LS-185, LS-186
+// subset: cint-core-1
+// entry: run; args: none
+// seed outcome: C9100 at 11:9
+// spec outcome: value I64 71 under cint-core-1 (the deferred store runs when the block exits, after log[1] = 1); the seed refuses the `defer` statement
+
+export I64 run() {
+    I64[2] log;
+    {
+        defer log[0] = 7;
+        log[1] = log[0] + 1;
+    }
+    return log[0] * 10 + log[1];
+}

@@ -1,0 +1,11 @@
+// case: control/assert_message_hole
+// clause: SPEC-04 LS-191, LS-197; SPEC-01 IM-104, IM-134 (decision 2026-10-03: OQ-13)
+// subset: cint-core-1 (assert)
+// entry: run; args: none
+// spec outcome: fault E_ASSERT at 9:12, operands U8 200 and U8 100; the message is not written to stdout (0 bytes)
+
+export U8 run() {
+    U8 a = 200;
+    assert(a <= 100, "a={a}");
+    return a;
+}

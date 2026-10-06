@@ -1,0 +1,12 @@
+// case: diag/c2001_implicit_widening
+// clause: SPEC-04 6.6; SPEC-01 4.1; SPEC-04 17.1, 17.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2001 at 10:24: I64 + I32 mixes types; there is no implicit widening (position: first character of the offending construct, SPEC-04 17.1; see ref/OPEN.md O-13)
+
+export I64 run() {
+    I64 base = 1;
+    I32 extra = 2;
+    I64 total = base + extra;
+    return total;
+}

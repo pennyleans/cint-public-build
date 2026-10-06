@@ -1,0 +1,96 @@
+// ledger.ci: an exact bank ledger. Money is whole cents held in I64.
+// Run it with:  cint run examples/ledger.ci
+// Test it with: cint test examples/ledger.ci
+// There is no floating point anywhere.
+
+// The kinds of entry, as typed constants.
+const I64 DEPOSIT = 0;
+const I64 WITHDRAW = 1;
+const I64 INTEREST = 2;
+
+struct Entry {
+    I64 kind;
+    I64 cents;    // the amount; for INTEREST, the yearly rate in basis points
+}
+
+// One day of interest, rounded half to even, to the cent: the exact
+// quotient of balance * basis_points by 10_000 * 365. muldiv forms the
+// product wider than 64 bits and rounds once; only a result outside I64
+// is a fault.
+I64 daily_interest(I64 balance, I64 basis_points) {
+    return muldiv(I64, balance, basis_points, 3_650_000, half_even);
+}
+
+// Overdrawing is an expected outcome: the entry is rejected.
+Bool overdraws(I64 balance, Entry e) {
+    return e.kind == WITHDRAW && e.cents > balance;
+}
+
+// Apply one entry. Overflow is a fault.
+I64 apply(I64 balance, Entry e) {
+    switch (e.kind) {
+        case DEPOSIT:
+            return balance + e.cents;
+        case WITHDRAW:
+            return balance - e.cents;
+        default:
+            return balance + daily_interest(balance, e.cents);
+    }
+}
+
+// Print cents as exact dollars: 84950 prints as 849.50. The scale /100
+// divides by 100 exactly and prints two digits after the point.
+void print_dollars(I64 cents) {
+    "{cents:/100}";
+}
+
+void print_entry(I64 i, Entry e) {
+    switch (e.kind) {
+        case DEPOSIT:
+            "{i}: deposit  {e.cents:>8}";
+        case WITHDRAW:
+            "{i}: withdraw {e.cents:>8}";
+        default:
+            "{i}: interest {e.cents:>8}";
+    }
+}
+
+void main() {
+    Entry[5] book;
+    book[0] = Entry(DEPOSIT, 125_000);
+    book[1] = Entry(WITHDRAW, 40_050);
+    book[2] = Entry(INTEREST, 450);      // 4.50 % a year, for one day
+    book[3] = Entry(WITHDRAW, 200_000);  // more than the balance: rejected
+    book[4] = Entry(DEPOSIT, 99);
+
+    I64 balance = 0;
+    for i in 0..5 {
+        print_entry(i, book[i]);
+        if (overdraws(balance, book[i])) {
+            " rejected: overdraws\n";
+            continue;
+        }
+        balance = apply(balance, book[i]);
+        " -> ";
+        print_dollars(balance);
+        "\n";
+    }
+    "final balance: ";
+    print_dollars(balance);
+    "\n";
+}
+
+test "interest ties round to even" {
+    assert(daily_interest(1_825_000, 1) == 0);   // exactly half a cent: 0
+    assert(daily_interest(5_475_000, 1) == 2);   // exactly 1.5 cents: 2
+    assert(daily_interest(84_950, 450) == 10);   // 10.47 cents: 10
+}
+
+test "an overdraft is rejected" {
+    assert(overdraws(100, Entry(WITHDRAW, 101)));
+    assert(!overdraws(100, Entry(WITHDRAW, 100)));
+}
+
+test "overflow is a fault" expect_fault E_OVERFLOW {
+    _ = apply(I64.max, Entry(DEPOSIT, 1));
+}

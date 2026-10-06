@@ -1,0 +1,9 @@
+case ternary/planes_add27
+clause SPEC-05 TR-T27-1, TR-T27-2, section 10 (a bit-sliced 27-trit adder: wrapped sum, carry out of trit 26, the same adder subtracting by swapped planes)
+format 2
+source reference
+outcome value
+stdout-bytes 6273
+stdout-sha256 df7540f6b58d72a1e7ba4675030ab1af8ed85f40a68c5ea0d0bf8d95a340764f
+return I64 0
+fuel-consumed 10652

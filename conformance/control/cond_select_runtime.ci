@@ -1,0 +1,16 @@
+// case: control/cond_select_runtime
+// clause: SPEC-04 LS-154, LS-54
+// subset: cint-core-1 (?: is not listed in SPEC-09 5.2)
+// entry: run; args: I64 3
+// spec outcome: value I64 424: each ?: evaluates the selected operand only; literal operands take the context's type
+
+export I64 run(I64 x) {
+    I8 small = x > 2 ? 100 : -100;
+    I64 a = x > 2 ? x * 10 : 0 - x;
+    Bool b = x == 3 ? true : false;
+    I64 c = b ? (x < 0 ? 1 : 2) : 3;
+    I64 d = (x > 0 ? 7 : 8) + a;
+    U8 e = 200;
+    U8 f = x > 100 ? e : e +| e;
+    return a + c + d + (small as I64) + (f as I64);
+}

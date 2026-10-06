@@ -1,0 +1,7 @@
+case errors/c2042_return_wider_value
+clause SPEC-04 LS-97, LS-314; decision 2026-10-05, BX12-28
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2042
+diagnostic.position errors/c2042_return_wider_value.ci:13:12

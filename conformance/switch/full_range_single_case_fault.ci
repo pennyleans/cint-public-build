@@ -1,0 +1,13 @@
+// case: switch/full_range_single_case_fault
+// clause: SPEC-04 8.5 (LS-182); SPEC-01 4.1, 9.2: the scrutinee is evaluated and checked when the switch's one case covers the full range of its type
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 9:15, operation add.checked.i8, operands I8 127 and I8 1; exact 128, limit I8 127
+
+export I64 run() {
+    I8 x = 127;
+    switch (x + 1) {
+        case -128..=127:
+            return 1;
+    }
+}

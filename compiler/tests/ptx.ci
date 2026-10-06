@@ -1,0 +1,67 @@
+// Builds one module through main.compile, then checks its kernels against the capability
+// table of compiler/back_ptx.ci and writes their PTX into a view the host supplies (box 11
+// unit 3; compiler/tests/ptx_suite.py).
+
+import back_c;
+import back_ptx;
+import emit;
+import limits;
+import lowering;
+import main;
+import parse;
+import resolve;
+import scan;
+
+// The bridge's two calls of main.compile for a build of one module (CINTC-05), then
+// back_ptx.check_ptx and both passes of back_ptx.write_ptx, the entries named cint_k_<name>.
+// frames is the frame region, row 14; rows 5 and 9 are unused (KR-03). Returns the bytes
+// written into dest; -1 when a compile call stops (diag holds the diagnostic); -2 when a
+// kernel needs an unsupported capability (why holds its rows, and dest the capability's
+// name, why[6] bytes long); -3 when dest cannot hold the text.
+export I64 run[o](in U8[_] src, in U8[_] path, inout back_c.PMod[_] pm, inout U8[_] pbytes, inout U8[_] text,
+        inout scan.Token[_] toks, inout parse.Node[_] nodes, inout lowering.Sir[_] sir,
+        inout lowering.SirFunc[_] funcs, inout lowering.SirSlot[_] slots, inout lowering.LState[_] ls,
+        inout resolve.Sem[_] sem, inout resolve.Sym[_] syms, inout resolve.Name[_] names,
+        inout parse.Frame[_] frames, inout U8[_] lits, inout limits.Decl[_] decls,
+        inout limits.CompilerDiag[101] diag, inout U8[_] faults, inout U8[o] dest, inout I64[_] why) {
+    for j in 0..back_ptx.WHY_ROWS + 1 {
+        why[j] = 0;
+    }
+    U8[1] unused5;
+    U8[1] unused9;
+    for k in 0..2 {
+        if (main.compile(0, src, path, pm, pbytes, text, toks, nodes, unused5, sir, funcs, slots, unused9, ls, sem,
+                syms, names, frames, lits, decls, diag, faults) != 0) {
+            return -1;
+        }
+    }
+    emit.Writer[1] w;
+    I64 cap = back_ptx.check_ptx(toks, sir, funcs, slots, ls, why);
+    if (cap != back_ptx.CAP_NATIVE) {
+        emit.w_measure(w);
+        back_ptx.cap_name(w, dest, cap);
+        I64 m = w[0].pos;
+        if (m > o) {
+            return -3;
+        }
+        emit.w_emit(w, m);
+        back_ptx.cap_name(w, dest, cap);
+        why[back_ptx.WHY_ROWS] = m;
+        return -2;
+    }
+    emit.w_measure(w);
+    back_ptx.write_ptx(w, dest, text, toks, sir, funcs, slots, ls, "cint_k_");
+    if (emit.w_finish(w) != emit.W_OK) {
+        return -3;
+    }
+    I64 n = w[0].pos;
+    if (n > o) {
+        return -3;
+    }
+    emit.w_emit(w, n);
+    back_ptx.write_ptx(w, dest, text, toks, sir, funcs, slots, ls, "cint_k_");
+    if (emit.w_finish(w) != emit.W_OK) {
+        return -3;
+    }
+    return n;
+}

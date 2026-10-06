@@ -1,0 +1,7 @@
+case cleanup/c4031_errdefer_script_top_level
+clause SPEC-04 LS-219, LS-322; decision 2026-10-05, BX12-25
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C4031
+diagnostic.position cleanup/c4031_errdefer_script_top_level.ci:7:1

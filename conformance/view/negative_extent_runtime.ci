@@ -1,0 +1,15 @@
+// case: view/negative_extent_runtime
+// clause: SPEC-04 LS-62; SPEC-02 V-6; ref/OPEN.md REF-OQ-31 (a local extent computed from a size parameter is negative)
+// subset: cint-core-1 (extent expression, array slices)
+// entry: run; args: none
+// spec outcome: fault E_SHAPE at 8:16 (the declared name), operation decl.shape, operands I64 0 (dimension) and I64 -1 (requested extent), no exact, limit I64 0; stack depth 1, stack 14:12; fuel 2. Record: box 09 ruling R10
+
+I64 g[n](in I64[n] xs) {
+    I64[n - 3] tmp;
+    return n;
+}
+
+export I64 run() {
+    I64[2] a;
+    return g(a[0..2]);
+}

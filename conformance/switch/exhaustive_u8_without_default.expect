@@ -1,0 +1,7 @@
+case switch/exhaustive_u8_without_default
+clause SPEC-04 8.5 (exhaustive by covering the full range of the type)
+source reference
+outcome value
+stdout-bytes 0
+return I64 2
+fuel-consumed 2

@@ -1,0 +1,7 @@
+case boot/refuse_error_union
+clause SPEC-09 BOOT-01 (error_decl), SEED-06; SPEC-04 LS-92, LS-94, LS-130
+source reference
+outcome value
+stdout-bytes 0
+return I64 7
+fuel-consumed 2

@@ -1,0 +1,7 @@
+case boot/literal_octal_binary
+clause SPEC-09 BOOT-01 (OCT_INT, BIN_INT); SPEC-04 LS-24, LS-25, LS-26
+source reference
+outcome value
+stdout-bytes 0
+return I64 932
+fuel-consumed 1

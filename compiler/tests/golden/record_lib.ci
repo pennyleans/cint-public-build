@@ -1,0 +1,4 @@
+export struct Flag { Bool enabled; U8 code; }
+struct Unused { U16 value; Bool[3] flags; }
+export I64 observed() { return 7; }
+export I64 aggregate(in I64[_] a) { return a[0]; }

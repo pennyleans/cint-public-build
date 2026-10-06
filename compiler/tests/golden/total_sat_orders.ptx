@@ -1,0 +1,64 @@
+.version 6.0
+.target sm_52
+.address_size 64
+
+.visible .entry cint_k_total_sat(
+    .param .u64 p_base,
+    .param .u64 p_end,
+    .param .u64 p_fault,
+    .param .u64 p_r0,
+    .param .u64 p_m0,
+    .param .align 8 .b8 a0[88],
+    .param .u64 l1)
+{
+    .reg .pred %p<4>;
+    .reg .b32 %kr<3>;
+    .reg .b64 %x<4>;
+    .reg .b64 %t<13>;
+    .reg .b64 %s<7>;
+    .reg .b64 %ki, %kf;
+    ld.param.u64 %ki, [p_base];
+    mov.u32 %kr0, %ctaid.x;
+    mov.u32 %kr1, %ntid.x;
+    mov.u32 %kr2, %tid.x;
+    mul.wide.u32 %x0, %kr0, %kr1;
+    cvt.u64.u32 %x1, %kr2;
+    add.u64 %x0, %x0, %x1;
+    add.u64 %ki, %ki, %x0;
+    ld.param.u64 %x0, [p_end];
+    setp.ge.u64 %p0, %ki, %x0;
+    @%p0 bra DONE;
+    ld.param.u64 %kf, [p_fault];
+    cvta.to.global.u64 %kf, %kf;
+    ld.volatile.global.u64 %x0, [%kf];
+    setp.gt.u64 %p0, %ki, %x0;
+    @%p0 bra DONE;
+    ld.param.u64 %s3, [l1];
+    mov.b64 %x0, %ki;
+    mov.b64 %s6, %x0;
+    mov.b64 %t7, %s6;
+    ld.param.u64 %x0, [a0+24];
+    setp.ge.u64 %p0, %t7, %x0;
+    @%p0 bra FAULT;
+    ld.param.u64 %x0, [a0+8];
+    ld.param.u64 %x1, [a0+56];
+    mad.lo.s64 %t8, %t7, %x1, %x0;
+    ld.param.u64 %x0, [a0];
+    cvta.to.global.u64 %x0, %x0;
+    mad.lo.s64 %x0, %t8, 1, %x0;
+    ld.global.s8 %t9, [%x0];
+    ld.param.u64 %x0, [p_r0];
+    cvta.to.global.u64 %x0, %x0;
+    mad.lo.s64 %x0, %ki, 8, %x0;
+    st.global.u64 [%x0], %t9;
+    ld.param.u64 %x0, [p_m0];
+    cvta.to.global.u64 %x0, %x0;
+    mad.lo.s64 %x0, %ki, 4, %x0;
+    mov.b64 %x1, 1;
+    st.global.u32 [%x0], %x1;
+    ret;
+FAULT:
+    atom.global.min.u64 %x0, [%kf], %ki;
+DONE:
+    ret;
+}

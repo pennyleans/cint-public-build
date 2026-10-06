@@ -1,0 +1,11 @@
+// case: view/index_negative
+// clause: SPEC-04 LS-64; SPEC-01 IM-186 (a negative index has the same record as one at or above the extent)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 10:13, operation index.checked.i32, operand I64 -1, limit I64 3
+
+export I32 run() {
+    I32[3] a;
+    I64 i = -1;
+    return a[i];
+}

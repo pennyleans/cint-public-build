@@ -1,0 +1,12 @@
+// case: view/rank2_index_dim1_bounds
+// clause: SPEC-04 LS-64; SPEC-01 IM-186 (a rank-2 index out of range in dimension 1)
+// subset: cint-core-1 (rank 2)
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 11:13 (the `[`), operation index.checked.i64, operands I64 1 (dimension) and I64 3 (index), no exact, limit I64 3; stack depth 0; fuel 1. The dimension operand is box 09 ruling R1
+
+export I64 run() {
+    I64[2, 3] m;
+    I64 i = 1;
+    I64 j = 3;
+    return m[i, j];
+}

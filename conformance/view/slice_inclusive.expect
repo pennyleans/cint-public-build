@@ -1,0 +1,8 @@
+case view/slice_inclusive
+clause SPEC-04 LS-161 (a[lo..=hi] includes hi)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 27
+fuel-consumed 18

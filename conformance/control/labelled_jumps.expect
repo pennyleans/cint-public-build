@@ -1,0 +1,7 @@
+case control/labelled_jumps
+clause SPEC-04 LS-184, LS-180
+source reference
+outcome value
+stdout-bytes 0
+return I64 12305
+fuel-consumed 38

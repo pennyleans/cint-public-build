@@ -1,0 +1,7 @@
+case arith/floor_division_literals
+clause SPEC-01 4.4; SPEC-04 4.2 (negative literal), 7.5
+source reference
+outcome value
+stdout-bytes 0
+return I64 -4
+fuel-consumed 1

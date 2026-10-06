@@ -1,0 +1,16 @@
+case control/cond_selected_arm_faults
+clause SPEC-04 LS-154; SPEC-01 4.4
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_DIV_ZERO
+fault.operation div.checked.i64
+fault.operand I64 100
+fault.operand I64 0
+fault.exact none
+fault.limit none
+fault.position control/cond_selected_arm_faults.ci:11:33
+fault.revision self
+fault.address none
+fault.stack-depth 0

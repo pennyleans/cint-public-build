@@ -1,0 +1,8 @@
+case module/reuse_after_large_module
+clause SPEC-09 CINTC-16 (Lookup; a block survives the reuse of the per-module tables); SPEC-04 LS-225, LS-227, LS-229; decision 27 item 4
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 -31908
+fuel-consumed 166

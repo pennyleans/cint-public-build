@@ -1,0 +1,18 @@
+// case: view/index_off_by_one_loop
+// clause: SPEC-04 LS-64, LS-171; SPEC-01 IM-139, IM-186 (an inclusive range one past the extent faults on its last iteration)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 10:19 in `total`, operand I64 3, limit I64 3; stack depth 1; fuel 6 (two calls and four iterations)
+
+I64 total[n](in I64[n] xs) {
+    I64 s = 0;
+    for i in 0..=n {
+        s = s + xs[i];
+    }
+    return s;
+}
+
+export I64 run() {
+    I64[3] a;
+    return total(a);
+}

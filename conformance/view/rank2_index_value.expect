@@ -1,0 +1,8 @@
+case view/rank2_index_value
+clause SPEC-04 LS-62, LS-63, LS-64 (rank-2 element reads and writes)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 75
+fuel-consumed 1

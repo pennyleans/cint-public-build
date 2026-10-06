@@ -1,0 +1,7 @@
+case kernel/coverage_c5031
+clause SPEC-02 K-10a (an `out` element not written on every path)
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C5031
+diagnostic.position kernel/coverage_c5031.ci:9:9

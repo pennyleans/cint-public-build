@@ -1,0 +1,9 @@
+case ternary/tdot_planes
+clause SPEC-05 TR-DOT-1, TR-DOT-2, TR-DOT-7, 9.3, 12.4 (a ternary by ternary dot product through bit planes and a population count, fused and unfused, against the scalar sum at the lane boundaries)
+format 2
+source reference
+outcome value
+stdout-bytes 563
+stdout-sha256 8ac574b5947e9f262429350687693b16b6e3945046f839867758ccc36c8c8b6b
+return I64 0
+fuel-consumed 39369

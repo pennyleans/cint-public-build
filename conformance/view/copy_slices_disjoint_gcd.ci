@@ -1,0 +1,14 @@
+// case: view/copy_slices_disjoint_gcd
+// clause: SPEC-04 LS-70; SPEC-02 A-5 T2 (odd and even elements of one buffer are disjoint by the gcd test)
+// subset: cint-core-1 (array slices, built-in copy)
+// entry: run; args: none
+// spec outcome: value I64 246 (x[1], x[3], x[5], x[7] become 0, 2, 4, 6); fuel 9 (entry, 8 fill iterations; copy charges nothing in fuel-v1, box 09 ruling R7)
+
+export I64 run() {
+    I64[8] x;
+    for i in 0..8 {
+        x[i] = i;
+    }
+    copy(x[1..8 by 2], x[0..8 by 2]);
+    return x[1] * 1000 + x[3] * 100 + x[5] * 10 + x[7];
+}

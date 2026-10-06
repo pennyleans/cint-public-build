@@ -1,0 +1,331 @@
+// compiler/sha256.ci: SHA-256 (FIPS 180-4 sections 4.1.2, 4.2.2, 5.1.1, 5.3.3, 6.2) for
+// source identity, revision identity, and --verify-tree (SPEC-09 10.1). Slice 2 task 2.9.
+//
+// cint-boot-1 has no U32 view parameters (SPEC-09 BOOT-01, row `params`), so the
+// message is taken as U8 views, and the hash state is a one-element view of the
+// struct Sha256, whose fields hold the eight U32 hash words and the partial block.
+// Words use the wrapping `+%` and `<<%` and the logical `>>` of U32 (SPEC-01 4.6);
+// every other operation is checked, so a misuse faults instead of hashing wrong.
+//
+// Use: sha_init(s); sha_update(s, data, start, nbytes) any number of times; then
+// sha_final(s, digest), which writes the 32 digest bytes to digest[0..32). sha_digest
+// does the three for one view. A message holds at most 2^60 - 1 bytes, because the bit
+// length is the checked I64 product total * 8.
+//
+// Bound (SPEC-09 CINTC-13): O(n) in the message bytes; 64 rounds per 64-byte block.
+//
+// Test entry (plan task 2.9): sha_test(vector, word) returns bytes 8 * word to
+// 8 * word + 7 of the digest of test vector `vector`, big-endian, as a U64.
+// compiler/tests/run.py compares every word with Python's hashlib.
+
+export const I64 SHA_DIGEST_BYTES = 32;
+export const I64 SHA_BLOCK_BYTES = 64;
+
+export struct Sha256 {
+    U32[8] h;
+    U8[64] block;
+    I64 fill;
+    I64 total;
+}
+
+// The round constants K0 to K63 (FIPS 180-4 4.2.2).
+U32 round_k(I64 t) {
+    switch (t) {
+        case 0: return 0x428a2f98;
+        case 1: return 0x71374491;
+        case 2: return 0xb5c0fbcf;
+        case 3: return 0xe9b5dba5;
+        case 4: return 0x3956c25b;
+        case 5: return 0x59f111f1;
+        case 6: return 0x923f82a4;
+        case 7: return 0xab1c5ed5;
+        case 8: return 0xd807aa98;
+        case 9: return 0x12835b01;
+        case 10: return 0x243185be;
+        case 11: return 0x550c7dc3;
+        case 12: return 0x72be5d74;
+        case 13: return 0x80deb1fe;
+        case 14: return 0x9bdc06a7;
+        case 15: return 0xc19bf174;
+        case 16: return 0xe49b69c1;
+        case 17: return 0xefbe4786;
+        case 18: return 0x0fc19dc6;
+        case 19: return 0x240ca1cc;
+        case 20: return 0x2de92c6f;
+        case 21: return 0x4a7484aa;
+        case 22: return 0x5cb0a9dc;
+        case 23: return 0x76f988da;
+        case 24: return 0x983e5152;
+        case 25: return 0xa831c66d;
+        case 26: return 0xb00327c8;
+        case 27: return 0xbf597fc7;
+        case 28: return 0xc6e00bf3;
+        case 29: return 0xd5a79147;
+        case 30: return 0x06ca6351;
+        case 31: return 0x14292967;
+        case 32: return 0x27b70a85;
+        case 33: return 0x2e1b2138;
+        case 34: return 0x4d2c6dfc;
+        case 35: return 0x53380d13;
+        case 36: return 0x650a7354;
+        case 37: return 0x766a0abb;
+        case 38: return 0x81c2c92e;
+        case 39: return 0x92722c85;
+        case 40: return 0xa2bfe8a1;
+        case 41: return 0xa81a664b;
+        case 42: return 0xc24b8b70;
+        case 43: return 0xc76c51a3;
+        case 44: return 0xd192e819;
+        case 45: return 0xd6990624;
+        case 46: return 0xf40e3585;
+        case 47: return 0x106aa070;
+        case 48: return 0x19a4c116;
+        case 49: return 0x1e376c08;
+        case 50: return 0x2748774c;
+        case 51: return 0x34b0bcb5;
+        case 52: return 0x391c0cb3;
+        case 53: return 0x4ed8aa4a;
+        case 54: return 0x5b9cca4f;
+        case 55: return 0x682e6ff3;
+        case 56: return 0x748f82ee;
+        case 57: return 0x78a5636f;
+        case 58: return 0x84c87814;
+        case 59: return 0x8cc70208;
+        case 60: return 0x90befffa;
+        case 61: return 0xa4506ceb;
+        case 62: return 0xbef9a3f7;
+        case 63: return 0xc67178f2;
+        default: return 0;
+    }
+}
+
+// ROTR^n(x) for 1 <= n <= 31 (FIPS 180-4 3.2).
+U32 ror(U32 x, I64 n) {
+    return (x >> n) | (x <<% (32 - n));
+}
+
+// The compression function on s[0].block (FIPS 180-4 6.2.2).
+void compress(inout Sha256[_] s) {
+    U32[64] w;
+    for t in 0..16 {
+        I64 j = 4 * t;
+        w[t] = ((s[0].block[j] as U32) << 24) | ((s[0].block[j + 1] as U32) << 16)
+            | ((s[0].block[j + 2] as U32) << 8) | (s[0].block[j + 3] as U32);
+    }
+    for t in 16..64 {
+        U32 x = w[t - 15];
+        U32 y = w[t - 2];
+        U32 s0 = ror(x, 7) ^ ror(x, 18) ^ (x >> 3);
+        U32 s1 = ror(y, 17) ^ ror(y, 19) ^ (y >> 10);
+        w[t] = w[t - 16] +% s0 +% w[t - 7] +% s1;
+    }
+    U32 a = s[0].h[0];
+    U32 b = s[0].h[1];
+    U32 c = s[0].h[2];
+    U32 d = s[0].h[3];
+    U32 e = s[0].h[4];
+    U32 f = s[0].h[5];
+    U32 g = s[0].h[6];
+    U32 h = s[0].h[7];
+    for t in 0..64 {
+        U32 big1 = ror(e, 6) ^ ror(e, 11) ^ ror(e, 25);
+        U32 ch = (e & f) ^ (~e & g);
+        U32 t1 = h +% big1 +% ch +% round_k(t) +% w[t];
+        U32 big0 = ror(a, 2) ^ ror(a, 13) ^ ror(a, 22);
+        U32 maj = (a & b) ^ (a & c) ^ (b & c);
+        U32 t2 = big0 +% maj;
+        h = g;
+        g = f;
+        f = e;
+        e = d +% t1;
+        d = c;
+        c = b;
+        b = a;
+        a = t1 +% t2;
+    }
+    s[0].h[0] = s[0].h[0] +% a;
+    s[0].h[1] = s[0].h[1] +% b;
+    s[0].h[2] = s[0].h[2] +% c;
+    s[0].h[3] = s[0].h[3] +% d;
+    s[0].h[4] = s[0].h[4] +% e;
+    s[0].h[5] = s[0].h[5] +% f;
+    s[0].h[6] = s[0].h[6] +% g;
+    s[0].h[7] = s[0].h[7] +% h;
+}
+
+// The initial hash value H(0) (FIPS 180-4 5.3.3) and an empty message.
+export void sha_init(inout Sha256[_] s) {
+    s[0].h[0] = 0x6a09e667;
+    s[0].h[1] = 0xbb67ae85;
+    s[0].h[2] = 0x3c6ef372;
+    s[0].h[3] = 0xa54ff53a;
+    s[0].h[4] = 0x510e527f;
+    s[0].h[5] = 0x9b05688c;
+    s[0].h[6] = 0x1f83d9ab;
+    s[0].h[7] = 0x5be0cd19;
+    s[0].fill = 0;
+    s[0].total = 0;
+}
+
+// Appends data[start..start + nbytes) to the message.
+export void sha_update[n](inout Sha256[_] s, in U8[n] data, I64 start, I64 nbytes) {
+    for i in start..start + nbytes {
+        s[0].block[s[0].fill] = data[i];
+        s[0].fill += 1;
+        if (s[0].fill == SHA_BLOCK_BYTES) {
+            compress(s);
+            s[0].fill = 0;
+        }
+    }
+    s[0].total += nbytes;
+}
+
+// Pads the message (FIPS 180-4 5.1.1) and writes the digest to digest[0..32).
+export void sha_final[d](inout Sha256[_] s, inout U8[d] digest) {
+    U64 bits = (s[0].total * 8) as U64;
+    s[0].block[s[0].fill] = 0x80;
+    s[0].fill += 1;
+    if (s[0].fill > 56) {
+        while (s[0].fill < SHA_BLOCK_BYTES) {
+            s[0].block[s[0].fill] = 0;
+            s[0].fill += 1;
+        }
+        compress(s);
+        s[0].fill = 0;
+    }
+    while (s[0].fill < 56) {
+        s[0].block[s[0].fill] = 0;
+        s[0].fill += 1;
+    }
+    for i in 0..8 {
+        s[0].block[56 + i] = (bits >> (56 - 8 * i)) as% U8;
+    }
+    compress(s);
+    s[0].fill = 0;
+    for i in 0..8 {
+        U32 v = s[0].h[i];
+        digest[4 * i] = (v >> 24) as% U8;
+        digest[4 * i + 1] = (v >> 16) as% U8;
+        digest[4 * i + 2] = (v >> 8) as% U8;
+        digest[4 * i + 3] = v as% U8;
+    }
+}
+
+// The digest of data[start..start + nbytes), in one call.
+export void sha_digest[n, d](in U8[n] data, I64 start, I64 nbytes, inout U8[d] digest) {
+    Sha256[1] s;
+    sha_init(s);
+    sha_update(s, data, start, nbytes);
+    sha_final(s, digest);
+}
+
+// The state in SHA_STATE_BYTES bytes at buf[at..at + 112), so a hash can continue across
+// bridge calls (the revision identity, SPEC-09 SIR-17): the eight words, the partial
+// block, then fill and total, little-endian. sha_load reads what sha_save wrote.
+export const I64 SHA_STATE_BYTES = 112;
+
+export void sha_save[b](in Sha256[_] s, inout U8[b] buf, I64 at) {
+    for i in 0..8 {
+        U32 v = s[0].h[i];
+        for k in 0..4 {
+            buf[at + 4 * i + k] = (v >> (8 * k)) as% U8;
+        }
+    }
+    for i in 0..SHA_BLOCK_BYTES {
+        buf[at + 32 + i] = s[0].block[i];
+    }
+    U64 nfill = s[0].fill as U64;
+    U64 ntotal = s[0].total as U64;
+    for k in 0..8 {
+        buf[at + 96 + k] = (nfill >> (8 * k)) as% U8;
+        buf[at + 104 + k] = (ntotal >> (8 * k)) as% U8;
+    }
+}
+
+export void sha_load[b](inout Sha256[_] s, in U8[b] buf, I64 at) {
+    for i in 0..8 {
+        U32 v = 0;
+        for k in 0..4 {
+            v = v | ((buf[at + 4 * i + k] as U32) <<% (8 * k));
+        }
+        s[0].h[i] = v;
+    }
+    for i in 0..SHA_BLOCK_BYTES {
+        s[0].block[i] = buf[at + 32 + i];
+    }
+    U64 nfill = 0;
+    U64 ntotal = 0;
+    for k in 0..8 {
+        nfill = nfill | ((buf[at + 96 + k] as U64) <<% (8 * k));
+        ntotal = ntotal | ((buf[at + 104 + k] as U64) <<% (8 * k));
+    }
+    s[0].fill = nfill as I64;
+    s[0].total = ntotal as I64;
+}
+
+// ---------------------------------------------------------------- test entry
+
+// Bytes 8 * word to 8 * word + 7 of a digest, big-endian.
+U64 digest_word[d](in U8[d] digest, I64 word) {
+    U64 v = 0;
+    for i in 0..8 {
+        v = (v <<% 8) | (digest[8 * word + i] as U64);
+    }
+    return v;
+}
+
+// The bytes of vectors 100 + L and 1000 + L: buf[i] = (31 * i + L) % 256 for i < L.
+void pattern[b](inout U8[b] buf, I64 nbytes) {
+    for i in 0..nbytes {
+        buf[i] = ((31 * i + nbytes) % 256) as U8;
+    }
+}
+
+// Test vectors. 0: the empty message; 1: "abc"; 2: the 448-bit message of the FIPS 180-4
+// examples; 3: one million `a`, streamed 64 bytes at a time; 4: the 896-bit two-block
+// message; 5: "abc" one byte at a time; 100 + L, 0 <= L <= 200: L pattern bytes in
+// pieces of 1 to 7 bytes; 1000 + L, 0 <= L <= 200: the same bytes through sha_digest.
+export U64 sha_test(I64 vector, I64 word) {
+    Sha256[1] s;
+    U8[256] buf;
+    U8[32] digest;
+    sha_init(s);
+    if (vector == 1) {
+        sha_update(s, "abc", 0, 3);
+    } else if (vector == 2) {
+        sha_update(s, "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq", 0, 56);
+    } else if (vector == 3) {
+        for i in 0..64 {
+            buf[i] = 'a';
+        }
+        for k in 0..15625 {
+            sha_update(s, buf, 0, 64);
+        }
+    } else if (vector == 4) {
+        sha_update(s, "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu", 0, 112);
+    } else if (vector == 5) {
+        sha_update(s, "a", 0, 1);
+        sha_update(s, "b", 0, 1);
+        sha_update(s, "c", 0, 1);
+    } else if (vector >= 100 && vector <= 300) {
+        I64 nbytes = vector - 100;
+        pattern(buf, nbytes);
+        I64 at = 0;
+        I64 piece = 1;
+        while (at < nbytes) {
+            I64 take = piece;
+            if (take > nbytes - at) {
+                take = nbytes - at;
+            }
+            sha_update(s, buf, at, take);
+            at += take;
+            piece = piece % 7 + 1;
+        }
+    } else if (vector >= 1000 && vector <= 1200) {
+        pattern(buf, vector - 1000);
+        sha_digest(buf, 0, vector - 1000, digest);
+        return digest_word(digest, word);
+    }
+    sha_final(s, digest);
+    return digest_word(digest, word);
+}

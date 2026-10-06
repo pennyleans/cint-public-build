@@ -1,0 +1,9 @@
+case cleanup/defer_charges_no_fuel
+clause SPEC-04 LS-316, LS-317; SPEC-01 IM-139; decision 2026-10-05, BX12-11
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 0
+fuel-consumed 6
+state.global cleanup.defer_charges_no_fuel calls I64 3

@@ -1,0 +1,7 @@
+case module/state_across_import
+clause SPEC-04 LS-113, LS-225, LS-227 (module-level state of an imported module)
+source reference
+outcome value
+stdout-bytes 0
+return I64 3
+fuel-consumed 4

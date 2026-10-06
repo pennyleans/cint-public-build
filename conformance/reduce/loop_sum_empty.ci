@@ -1,0 +1,18 @@
+// case: reduce/loop_sum_empty
+// clause: SPEC-01 IM-79, IM-139; SPEC-04 LS-68, LS-117 (a hand-written total over an empty view is 0, with no iteration charged)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 0; fuel 2 (two calls, no iteration)
+
+I64 total[n](in I64[n] xs) {
+    I64 s = 0;
+    for i in 0..n {
+        s = s + xs[i];
+    }
+    return s;
+}
+
+export I64 run() {
+    I64[0] none;
+    return total(none);
+}

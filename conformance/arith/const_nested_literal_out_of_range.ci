@@ -1,0 +1,10 @@
+// case: arith/const_nested_literal_out_of_range
+// clause: SPEC-01 3.2 (propagation of context type); SPEC-04 4.2 rule 1; plan Review Focus 4
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2003 at 8:18: the literal 40000, typed I16 through the nested expression, does not fit I16
+
+export I16 run() {
+    I16 h = 1 + (40000 - 30000);
+    return h;
+}

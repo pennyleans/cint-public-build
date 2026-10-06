@@ -1,0 +1,16 @@
+// case: cleanup/c4030_break_in_deferred_block
+// clause: SPEC-04 LS-187
+// subset: cint-core-1 (`defer`)
+// entry: run; args: none
+// spec outcome: compile error C4030 at 11:13, the `break` that would leave the deferred statement (position: first character of the offending construct)
+
+export I64 run() {
+    I64 n = 0;
+    for i in 0..3 {
+        defer {
+            break;
+        }
+        n += i;
+    }
+    return n;
+}

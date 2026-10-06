@@ -1,0 +1,7 @@
+case cleanup/c4030_try_in_deferred_statement
+clause SPEC-04 LS-187, LS-320; decision 2026-10-05, BX12-11
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C4030
+diagnostic.position cleanup/c4030_try_in_deferred_statement.ci:18:15

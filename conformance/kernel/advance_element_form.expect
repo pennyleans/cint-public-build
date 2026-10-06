@@ -1,0 +1,8 @@
+case kernel/advance_element_form
+clause SPEC-02 K-1, K-12, P-1, X-8 (element form; outputs published on success)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 332211
+fuel-consumed 4

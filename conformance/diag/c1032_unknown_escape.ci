@@ -1,0 +1,9 @@
+// case: diag/c1032_unknown_escape
+// clause: SPEC-04 3.8 (escapes), LS-278; seed/OPEN.md SEED-OQ-09
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C1032 at 8:13: `\q` is not an escape; the position is the backslash
+
+export U8 run() {
+    return '\q';
+}

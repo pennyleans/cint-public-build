@@ -1,0 +1,10 @@
+// case: reduce/count_mask
+// clause: SPEC-01 IM-77 (count of a Bool array, as I64)
+// subset: cint-core-1 (built-in count)
+// entry: run; args: none
+// spec outcome: value I64 3; fuel 2
+
+export I64 run() {
+    Bool[5] m = [true, false, true, true, false];
+    return count(m);
+}

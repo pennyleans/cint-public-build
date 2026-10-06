@@ -1,0 +1,14 @@
+I64 twice(I64 x) {
+    return x * 2;
+}
+
+void main() {
+    I64 v = twice(21);
+    "v={v} {v == 42} ";
+    for i in 0..3 {
+        "{i}";
+    }
+    "!";
+    I64 w = twice(4611686018427387904);
+    "never {w}";
+}

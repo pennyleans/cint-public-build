@@ -1,0 +1,6 @@
+case switch/overlap_c4021
+clause SPEC-04 8.5
+source compile-error
+outcome compile-error
+diagnostic.code C4021
+diagnostic.position switch/overlap_c4021.ci:12:14

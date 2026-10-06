@@ -1,0 +1,523 @@
+// case: control/nest_for_256
+// clause: SPEC-09 CINTC-02, SEED-15; SPEC-04 LS-311 (decision 2026-10-03, slice 2 patch D-5)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 1, fuel 257; the seed refuses the 50th loop with C9004 (SEED-15, listed in conformance/unsupported.txt)
+
+export I64 run() {
+    I64 a = 0;
+for i0 in 0..1 {
+for i1 in 0..1 {
+for i2 in 0..1 {
+for i3 in 0..1 {
+for i4 in 0..1 {
+for i5 in 0..1 {
+for i6 in 0..1 {
+for i7 in 0..1 {
+for i8 in 0..1 {
+for i9 in 0..1 {
+for i10 in 0..1 {
+for i11 in 0..1 {
+for i12 in 0..1 {
+for i13 in 0..1 {
+for i14 in 0..1 {
+for i15 in 0..1 {
+for i16 in 0..1 {
+for i17 in 0..1 {
+for i18 in 0..1 {
+for i19 in 0..1 {
+for i20 in 0..1 {
+for i21 in 0..1 {
+for i22 in 0..1 {
+for i23 in 0..1 {
+for i24 in 0..1 {
+for i25 in 0..1 {
+for i26 in 0..1 {
+for i27 in 0..1 {
+for i28 in 0..1 {
+for i29 in 0..1 {
+for i30 in 0..1 {
+for i31 in 0..1 {
+for i32 in 0..1 {
+for i33 in 0..1 {
+for i34 in 0..1 {
+for i35 in 0..1 {
+for i36 in 0..1 {
+for i37 in 0..1 {
+for i38 in 0..1 {
+for i39 in 0..1 {
+for i40 in 0..1 {
+for i41 in 0..1 {
+for i42 in 0..1 {
+for i43 in 0..1 {
+for i44 in 0..1 {
+for i45 in 0..1 {
+for i46 in 0..1 {
+for i47 in 0..1 {
+for i48 in 0..1 {
+for i49 in 0..1 {
+for i50 in 0..1 {
+for i51 in 0..1 {
+for i52 in 0..1 {
+for i53 in 0..1 {
+for i54 in 0..1 {
+for i55 in 0..1 {
+for i56 in 0..1 {
+for i57 in 0..1 {
+for i58 in 0..1 {
+for i59 in 0..1 {
+for i60 in 0..1 {
+for i61 in 0..1 {
+for i62 in 0..1 {
+for i63 in 0..1 {
+for i64 in 0..1 {
+for i65 in 0..1 {
+for i66 in 0..1 {
+for i67 in 0..1 {
+for i68 in 0..1 {
+for i69 in 0..1 {
+for i70 in 0..1 {
+for i71 in 0..1 {
+for i72 in 0..1 {
+for i73 in 0..1 {
+for i74 in 0..1 {
+for i75 in 0..1 {
+for i76 in 0..1 {
+for i77 in 0..1 {
+for i78 in 0..1 {
+for i79 in 0..1 {
+for i80 in 0..1 {
+for i81 in 0..1 {
+for i82 in 0..1 {
+for i83 in 0..1 {
+for i84 in 0..1 {
+for i85 in 0..1 {
+for i86 in 0..1 {
+for i87 in 0..1 {
+for i88 in 0..1 {
+for i89 in 0..1 {
+for i90 in 0..1 {
+for i91 in 0..1 {
+for i92 in 0..1 {
+for i93 in 0..1 {
+for i94 in 0..1 {
+for i95 in 0..1 {
+for i96 in 0..1 {
+for i97 in 0..1 {
+for i98 in 0..1 {
+for i99 in 0..1 {
+for i100 in 0..1 {
+for i101 in 0..1 {
+for i102 in 0..1 {
+for i103 in 0..1 {
+for i104 in 0..1 {
+for i105 in 0..1 {
+for i106 in 0..1 {
+for i107 in 0..1 {
+for i108 in 0..1 {
+for i109 in 0..1 {
+for i110 in 0..1 {
+for i111 in 0..1 {
+for i112 in 0..1 {
+for i113 in 0..1 {
+for i114 in 0..1 {
+for i115 in 0..1 {
+for i116 in 0..1 {
+for i117 in 0..1 {
+for i118 in 0..1 {
+for i119 in 0..1 {
+for i120 in 0..1 {
+for i121 in 0..1 {
+for i122 in 0..1 {
+for i123 in 0..1 {
+for i124 in 0..1 {
+for i125 in 0..1 {
+for i126 in 0..1 {
+for i127 in 0..1 {
+for i128 in 0..1 {
+for i129 in 0..1 {
+for i130 in 0..1 {
+for i131 in 0..1 {
+for i132 in 0..1 {
+for i133 in 0..1 {
+for i134 in 0..1 {
+for i135 in 0..1 {
+for i136 in 0..1 {
+for i137 in 0..1 {
+for i138 in 0..1 {
+for i139 in 0..1 {
+for i140 in 0..1 {
+for i141 in 0..1 {
+for i142 in 0..1 {
+for i143 in 0..1 {
+for i144 in 0..1 {
+for i145 in 0..1 {
+for i146 in 0..1 {
+for i147 in 0..1 {
+for i148 in 0..1 {
+for i149 in 0..1 {
+for i150 in 0..1 {
+for i151 in 0..1 {
+for i152 in 0..1 {
+for i153 in 0..1 {
+for i154 in 0..1 {
+for i155 in 0..1 {
+for i156 in 0..1 {
+for i157 in 0..1 {
+for i158 in 0..1 {
+for i159 in 0..1 {
+for i160 in 0..1 {
+for i161 in 0..1 {
+for i162 in 0..1 {
+for i163 in 0..1 {
+for i164 in 0..1 {
+for i165 in 0..1 {
+for i166 in 0..1 {
+for i167 in 0..1 {
+for i168 in 0..1 {
+for i169 in 0..1 {
+for i170 in 0..1 {
+for i171 in 0..1 {
+for i172 in 0..1 {
+for i173 in 0..1 {
+for i174 in 0..1 {
+for i175 in 0..1 {
+for i176 in 0..1 {
+for i177 in 0..1 {
+for i178 in 0..1 {
+for i179 in 0..1 {
+for i180 in 0..1 {
+for i181 in 0..1 {
+for i182 in 0..1 {
+for i183 in 0..1 {
+for i184 in 0..1 {
+for i185 in 0..1 {
+for i186 in 0..1 {
+for i187 in 0..1 {
+for i188 in 0..1 {
+for i189 in 0..1 {
+for i190 in 0..1 {
+for i191 in 0..1 {
+for i192 in 0..1 {
+for i193 in 0..1 {
+for i194 in 0..1 {
+for i195 in 0..1 {
+for i196 in 0..1 {
+for i197 in 0..1 {
+for i198 in 0..1 {
+for i199 in 0..1 {
+for i200 in 0..1 {
+for i201 in 0..1 {
+for i202 in 0..1 {
+for i203 in 0..1 {
+for i204 in 0..1 {
+for i205 in 0..1 {
+for i206 in 0..1 {
+for i207 in 0..1 {
+for i208 in 0..1 {
+for i209 in 0..1 {
+for i210 in 0..1 {
+for i211 in 0..1 {
+for i212 in 0..1 {
+for i213 in 0..1 {
+for i214 in 0..1 {
+for i215 in 0..1 {
+for i216 in 0..1 {
+for i217 in 0..1 {
+for i218 in 0..1 {
+for i219 in 0..1 {
+for i220 in 0..1 {
+for i221 in 0..1 {
+for i222 in 0..1 {
+for i223 in 0..1 {
+for i224 in 0..1 {
+for i225 in 0..1 {
+for i226 in 0..1 {
+for i227 in 0..1 {
+for i228 in 0..1 {
+for i229 in 0..1 {
+for i230 in 0..1 {
+for i231 in 0..1 {
+for i232 in 0..1 {
+for i233 in 0..1 {
+for i234 in 0..1 {
+for i235 in 0..1 {
+for i236 in 0..1 {
+for i237 in 0..1 {
+for i238 in 0..1 {
+for i239 in 0..1 {
+for i240 in 0..1 {
+for i241 in 0..1 {
+for i242 in 0..1 {
+for i243 in 0..1 {
+for i244 in 0..1 {
+for i245 in 0..1 {
+for i246 in 0..1 {
+for i247 in 0..1 {
+for i248 in 0..1 {
+for i249 in 0..1 {
+for i250 in 0..1 {
+for i251 in 0..1 {
+for i252 in 0..1 {
+for i253 in 0..1 {
+for i254 in 0..1 {
+for i255 in 0..1 {
+a = a + 1;
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+    return a;
+}

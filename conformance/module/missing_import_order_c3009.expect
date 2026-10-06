@@ -1,0 +1,7 @@
+case module/missing_import_order_c3009
+clause SPEC-04 LS-225, LS-282; SPEC-09 CINTC-05; compiler/OPEN.md CINTC-OQ-50 (cint_ref loads breadth first from the root)
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C3009
+diagnostic.position module/missing_import_order_c3009.ci:8:8

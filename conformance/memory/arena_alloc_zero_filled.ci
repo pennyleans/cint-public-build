@@ -1,0 +1,16 @@
+// case: memory/arena_alloc_zero_filled
+// clause: SPEC-03 M-14, M-19; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arena, handles)
+// entry: run; args: none
+// spec outcome: value I64 0 (an allocation is zero-filled, though the storage held 9 before `reset`; `alloc(0)` is a valid request); fuel 5 (entry, 4 iterations)
+
+Arena(I64, 4) scratch;
+
+export I64 run() {
+    Handle(I64[]) a = scratch.alloc(4);
+    for i in 0..4 { scratch[a][i] = 9; }
+    scratch.reset();
+    Handle(I64[]) b = scratch.alloc(2);
+    Handle(I64[]) c = scratch.alloc(0);
+    return scratch[b][0] + scratch[b][1];
+}

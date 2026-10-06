@@ -1,0 +1,21 @@
+// case: reduce/loop_dot_product_overflow
+// clause: SPEC-01 IM-87, IM-101, IM-102 (a hand-written dot product faults at the product, which has no wider intermediate; the twin of reduce/dot_exact_product)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 10:22 in `mac` (the `*`), operation mul.checked.i64, operands I64 3037000500 and I64 3037000500, exact 9223372037000250000; stack depth 1; fuel 3
+
+I64 mac[n](in I64[n] a, in I64[n] b) {
+    I64 s = 0;
+    for i in 0..n {
+        s = s + a[i] * b[i];
+    }
+    return s;
+}
+
+export I64 run() {
+    I64[1] a;
+    I64[1] b;
+    a[0] = 3037000500;
+    b[0] = 3037000500;
+    return mac(a, b);
+}

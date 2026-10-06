@@ -1,0 +1,9 @@
+// Helper module of module/state_across_import (not a case). Its module-level variable is
+// state of this module, shared by every function that names it (SPEC-04 LS-113).
+
+I64 calls = 0;
+
+export I64 tick() {
+    calls += 1;
+    return calls;
+}

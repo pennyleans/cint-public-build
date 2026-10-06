@@ -1,0 +1,19 @@
+module hello
+sites hello.ci 1:1:1:fuel.charge 2:1:1:print 3:2:16:mul.checked.i64 4:3:1:print
+script @hello {
+  fuel.charge 1                                  #1 @hello.ci:1:1
+  print.begin                                    #2 @hello.ci:1:1
+  print.bytes "hello, world\n"
+  print.end
+  %t0 = const I64 6
+  %t1 = const I64 7
+  %t2 = mul.checked.i64 %t0, %t1                 #3 @hello.ci:2:16
+  local $answer.0: I64
+  store.local $answer.0, %t2
+  %t3 = load.local $answer.0
+  print.begin                                    #4 @hello.ci:3:1
+  print.bytes "answer="
+  print.value I64 %t3
+  print.bytes "\n"
+  print.end
+}

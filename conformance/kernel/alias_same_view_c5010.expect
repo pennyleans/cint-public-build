@@ -1,0 +1,7 @@
+case kernel/alias_same_view_c5010
+clause SPEC-02 A-8, 15.4 E-5 (the same variable bound to `in` and `out`: compile error)
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C5010
+diagnostic.position kernel/alias_same_view_c5010.ci:14:19

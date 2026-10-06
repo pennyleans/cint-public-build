@@ -1,0 +1,11 @@
+// case: errors/underlying_type_u8
+// clause: SPEC-04 LS-93; SPEC-09 CONF-11 rule 12; decision 2026-10-05, BX12-21
+// subset: cint-core-1 (error sets, error unions)
+// entry: run; args: none
+// spec outcome: error (format 3): error.set errors.underlying_type_u8.IoError, error.value full, error.tag U8 2, the tag in the declared underlying type; stdout 0 bytes; fuel 1
+
+error IoError : U8 { closed, full }
+
+export IoError!I64 run() {
+    return .full;
+}

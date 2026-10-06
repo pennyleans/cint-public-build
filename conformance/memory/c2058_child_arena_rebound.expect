@@ -1,0 +1,7 @@
+case memory/c2058_child_arena_rebound
+clause SPEC-03 M-20; SPEC-04 LS-106, LS-107; ref/OPEN.md REF-OQ-45
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2058
+diagnostic.position memory/c2058_child_arena_rebound.ci:11:5

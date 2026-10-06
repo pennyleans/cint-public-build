@@ -1,0 +1,16 @@
+// case: memory/arena_alloc_full
+// clause: SPEC-03 M-19; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arena, handles)
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 14:31 (the member name `alloc`), operation arena.alloc, operands I64 4, I64 7, I64 10 (requested, used, capacity), no exact, no limit; stack depth 0; fuel 1. `reset` returned the used extent to 0, and 7 + 4 exceeds 10
+
+Arena(I64, 10) scratch;
+
+export I64 run() {
+    Handle(I64[]) a = scratch.alloc(6);
+    Handle(I64[]) b = scratch.alloc(4);
+    scratch.reset();
+    Handle(I64[]) c = scratch.alloc(7);
+    Handle(I64[]) d = scratch.alloc(4);
+    return 0;
+}

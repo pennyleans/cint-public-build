@@ -1,0 +1,8 @@
+case view/slice_strided
+clause SPEC-04 LS-161; SPEC-02 V-4, V-10 (a[1..8 by 3] holds a[1], a[4], a[7])
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 12
+fuel-consumed 15

@@ -1,0 +1,7 @@
+case view/index_sum
+clause SPEC-04 LS-62, LS-64, LS-67, LS-117, LS-119 (a local array read through an `in` view)
+source reference
+outcome value
+stdout-bytes 0
+return I64 30
+fuel-consumed 10

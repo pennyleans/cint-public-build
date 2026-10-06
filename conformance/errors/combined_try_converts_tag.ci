@@ -1,0 +1,21 @@
+// case: errors/combined_try_converts_tag
+// clause: SPEC-04 LS-97, LS-129; SPEC-09 CONF-11 rule 12; decision 2026-10-05, BX12-03, BX12-21
+// subset: cint-core-1 (error sets, combined sets, `try`)
+// entry: run; args: none
+// spec outcome: error (format 3): error.set errors.combined_try_converts_tag.IoOrParse, error.value bad_digit, error.tag U32 4: `try` converts ParseError tag 2 to IoOrParse tag 4, after the two IoError values; stdout 0 bytes; fuel 2
+
+error IoError { closed, full }
+error ParseError { empty, bad_digit, too_large }
+error IoOrParse : U32 = IoError | ParseError;
+
+ParseError!I64 digit(U8 c) {
+    if (c < '0' || c > '9') {
+        return .bad_digit;
+    }
+    return (c - '0') as I64;
+}
+
+export IoOrParse!I64 run() {
+    I64 d = try digit('x');
+    return d;
+}

@@ -1,0 +1,11 @@
+// case: control/test_block_assert_fails
+// clause: SPEC-04 LS-191, LS-232, LS-235; SPEC-01 IM-104, IM-134; SPEC-09 CONF-01; decision OQ-17
+// subset: cint-core-1 (test block, assert)
+// spec outcome: fault E_ASSERT, operation assert.checked.bool, at 9:12 (the first character of the condition), operands I64 8 and I64 9; the print before it writes 4 bytes
+
+test "eight is nine" {
+    I64 a = 8;
+    "a=8\n";
+    assert(a == a + 1);
+    "never\n";
+}

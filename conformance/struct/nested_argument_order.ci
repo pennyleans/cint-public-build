@@ -1,0 +1,11 @@
+// case: struct/nested_argument_order
+// clause: SPEC-04 LS-77, LS-141
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: value I64 2112
+
+struct Pair { Leaf a; Leaf b; }
+struct Leaf { I64 v; }
+I64 seen = 0;
+I64 tick(I64 v) { seen = seen * 10 + v; return v; }
+export I64 run() { Pair a = Pair(b = Leaf(tick(2)), a = Leaf(tick(1))); return seen * 100 + a.a.v * 10 + a.b.v; }

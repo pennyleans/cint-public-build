@@ -1,0 +1,7 @@
+case switch/classify_ranges.classify_z
+clause SPEC-04 8.5; SPEC-09 5.2, 5.4 (example and its boundary)
+source reference
+outcome value
+stdout-bytes 0
+return I32 1
+fuel-consumed 2

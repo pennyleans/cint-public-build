@@ -1,0 +1,24 @@
+// case: cleanup/defer_consumes_error_union
+// clause: SPEC-04 LS-95, LS-320; decision 2026-10-05, BX12-11
+// subset: cint-core-1 (error sets, `catch`, `defer`, module-level variable)
+// entry: run; args: none
+// spec outcome: value I64 5, state trail I64 4: the deferred block consumes one error union with `catch` and discards another with `_ =`; fuel 3
+
+error ParseError { empty, bad_digit, too_large }
+
+I64 trail = 0;
+
+ParseError!I64 digit(U8 c) {
+    if (c < '0' || c > '9') {
+        return .bad_digit;
+    }
+    return (c - '0') as I64;
+}
+
+export I64 run() {
+    defer {
+        trail = digit('x') catch 4;
+        _ = digit('2');
+    }
+    return 5;
+}

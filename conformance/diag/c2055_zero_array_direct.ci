@@ -1,0 +1,8 @@
+// case: diag/c2055_zero_array_direct
+// clause: SPEC-04 LS-68, LS-73
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile-error C2055
+
+struct Record { U8 live; Record[0] none; }
+export I64 run() { return 0; }

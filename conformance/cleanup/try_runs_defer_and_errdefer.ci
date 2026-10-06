@@ -1,0 +1,24 @@
+// case: cleanup/try_runs_defer_and_errdefer
+// clause: SPEC-04 LS-129, LS-185, LS-189; SPEC-09 CONF-11 rule 12; decision 2026-10-05, BX12-08, BX12-21
+// subset: cint-core-1 (error sets, `try`, `defer`, `errdefer`, module-level variable)
+// entry: run; args: none
+// spec outcome: error (format 3): error.set cleanup.try_runs_defer_and_errdefer.ParseError, error.value bad_digit, error.tag U16 2; state trail I64 132: the propagation runs the errdefer, then the defer, in reverse order of declaration; stdout 0 bytes; fuel 2
+
+error ParseError { empty, bad_digit, too_large }
+
+I64 trail = 0;
+
+ParseError!I64 digit(U8 c) {
+    if (c < '0' || c > '9') {
+        return .bad_digit;
+    }
+    return (c - '0') as I64;
+}
+
+export ParseError!I64 run() {
+    trail = 1;
+    defer trail = trail * 10 + 2;
+    errdefer trail = trail * 10 + 3;
+    I64 d = try digit('q');
+    return d;
+}

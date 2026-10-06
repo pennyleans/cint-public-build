@@ -1,0 +1,18 @@
+// case: struct/missing_field_c2020
+// clause: SPEC-04 4.4 (every field must be supplied)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2020 at 16:15: the constructor supplies 4 of 5 fields
+
+export struct Token {
+    I32 kind;
+    I32 start;
+    I32 length;
+    I32 line;
+    I32 column;
+}
+
+export I32 run() {
+    Token t = Token(1, 0, 7, 3);
+    return t.kind;
+}

@@ -1,0 +1,16 @@
+// case: struct/constructor_shape_zero_elements
+// clause: SPEC-01 IM-187; SPEC-04 LS-68, LS-77, LS-278
+// subset: cint-boot-1
+// entry: run; args: none; fuel 2
+// spec outcome: fault E_SHAPE copy.shape, logical source 3, destination 2
+
+struct Empty { I64[0] none; }
+struct R { Empty[2] data; }
+void take(in Empty[_] source) {
+    R r = R(source);
+}
+export I64 run() {
+    Empty[3] source;
+    take(source);
+    return 0;
+}

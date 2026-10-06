@@ -1,0 +1,19 @@
+// case: errors/test_try_any_set
+// clause: SPEC-04 LS-129, LS-235, LS-315; SPEC-09 CONF-11 rule 12; decision 2026-10-05, BX12-13, BX12-21, BX12-30
+// subset: cint-core-1 (error sets, `try` in a test block)
+// spec outcome: error (format 3): the error leaves the test by `try` and fails it, and the assert does not run: error.set errors.test_try_any_set.ParseError, error.value bad_digit, error.tag U16 2; stdout 0 bytes; fuel 3. A test block has no result type, so error.set is the set of the error that leaves, the set that the failure report names (decision 2026-10-05, BX12-30)
+
+error ParseError { empty, bad_digit, too_large }
+
+ParseError!I64 digit(U8 c) {
+    if (c < '0' || c > '9') {
+        return .bad_digit;
+    }
+    return (c - '0') as I64;
+}
+
+test "two digits" {
+    I64 a = try digit('7');
+    I64 b = try digit('z');
+    assert(a + b == 7);
+}

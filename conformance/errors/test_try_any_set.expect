@@ -1,0 +1,10 @@
+case errors/test_try_any_set
+clause SPEC-04 LS-129, LS-235, LS-315; SPEC-09 CONF-11 rule 12; decision 2026-10-05, BX12-13, BX12-21, BX12-30
+format 3
+source reference
+outcome error
+stdout-bytes 0
+fuel-consumed 3
+error.set errors.test_try_any_set.ParseError
+error.value bad_digit
+error.tag U16 2

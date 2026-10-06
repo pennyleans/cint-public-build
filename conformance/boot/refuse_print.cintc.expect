@@ -1,0 +1,8 @@
+case boot/refuse_print
+clause SPEC-09 BOOT-01 (hole, print_stmt), SEED-06, SEED-14; SPEC-04 LS-193
+source reference
+outcome value
+stdout-bytes 7
+stdout-sha256 c538d965221a12ea46b2e299d273de2d18fffdb1eee41d1d9dfd0d834bb6681c
+return I64 2
+fuel-consumed 1

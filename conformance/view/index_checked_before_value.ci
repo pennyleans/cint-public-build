@@ -1,0 +1,13 @@
+// case: view/index_checked_before_value
+// clause: SPEC-04 LS-139 (the place's index is evaluated and checked before the value)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 11:6, operand I64 -1, limit I64 4; the division by zero on the right is never evaluated
+
+export I64 run() {
+    I64[4] a;
+    I64 z = 0;
+    I64 i = -1;
+    a[i] = 1 / z;
+    return 0;
+}

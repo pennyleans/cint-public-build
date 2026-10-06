@@ -1,0 +1,15 @@
+case arith/narrow_runtime
+clause SPEC-01 IM-50
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_NARROW
+fault.operation as.checked.i64.i32
+fault.operand I64 2147483648
+fault.exact 2147483648
+fault.limit I32 2147483647
+fault.position arith/narrow_runtime.ci:9:15
+fault.revision self
+fault.address none
+fault.stack-depth 0

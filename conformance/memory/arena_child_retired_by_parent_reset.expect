@@ -1,0 +1,23 @@
+case memory/arena_child_retired_by_parent_reset
+clause SPEC-03 M-13, M-17, M-20; ref/OPEN.md REF-OQ-45
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_STALE_HANDLE
+fault.operation handle.check
+fault.operand U64 0
+fault.operand I64 2
+fault.operand U64 0
+fault.operand U32 3
+fault.operand U8 1
+fault.operand U64 0
+fault.operand U8 2
+fault.exact none
+fault.limit none
+fault.position memory/arena_child_retired_by_parent_reset.ci:17:16
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

@@ -1,0 +1,7 @@
+case boot/decl_extent_view_unbound_size_before_result
+clause SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2065
+diagnostic.position boot/decl_extent_view_unbound_size_before_result.ci:7:11

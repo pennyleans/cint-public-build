@@ -1,0 +1,13 @@
+// case: cleanup/defer_runs_at_block_exit
+// clause: SPEC-04 LS-185
+// subset: cint-core-1 (`defer`, print)
+// entry: run; args: none
+// spec outcome: value with no return line: stdout is the 6 bytes `0\n1\n2\n`: the deferred print runs when its inner block exits, before the print that follows the block; fuel 1
+
+export void run() {
+    {
+        defer { "1\n"; }
+        "0\n";
+    }
+    "2\n";
+}

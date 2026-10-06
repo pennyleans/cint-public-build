@@ -1,0 +1,29 @@
+// case: cleanup/defer_in_catch_block
+// clause: SPEC-04 LS-131, LS-319; decision 2026-10-05, BX12-11
+// subset: cint-core-1 (error sets, `catch`, `defer`, module-level variable)
+// entry: run; args: none
+// spec outcome: value I64 17175, state trail I64 17175: in each iteration the deferred statement of the catch block runs when that block exits by `continue`, before the next iteration, so trail goes 1, 17, 171, 1717, then 17175 after the loop; fuel 5 (the entry, two iterations, two calls)
+
+error ParseError { empty, bad_digit, too_large }
+
+I64 trail = 0;
+
+ParseError!I64 digit(U8 c) {
+    if (c < '0' || c > '9') {
+        return .bad_digit;
+    }
+    return (c - '0') as I64;
+}
+
+export I64 run() {
+    for i in 0..2 {
+        I64 d = digit('x') catch (e) {
+            defer trail = trail * 10 + 7;
+            trail = trail * 10 + 1;
+            continue;
+        };
+        trail = 99;
+    }
+    trail = trail * 10 + 5;
+    return trail;
+}

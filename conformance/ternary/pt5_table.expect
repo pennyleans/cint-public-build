@@ -1,0 +1,9 @@
+case ternary/pt5_table
+clause SPEC-05 TR-PT5-1 to TR-PT5-4, TR-VAL-4, 9.1 (the 256-entry PT5 decode table built from TR-PT5-1 and checked for every U8 value; padding judged by the row length)
+format 2
+source reference
+outcome value
+stdout-bytes 5336
+stdout-sha256 9fa070e67d8a356530ca2a0f5851a97371b9da664465c6b42d31ab2b68a2f5f2
+return I64 0
+fuel-consumed 27054

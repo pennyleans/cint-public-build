@@ -1,0 +1,12 @@
+// case: view/transpose_view
+// clause: SPEC-01 IM-76; SPEC-02 V-10; SPEC-04 LS-106, LS-145 `extent` (a transposed view swaps strides, no copy)
+// subset: cint-core-1 (rank 2, local view, transpose)
+// entry: run; args: none
+// spec outcome: value I64 73 (t[2, 0] = m[0, 2] = 7; extent(t, 0) = 3); fuel 1. Spelling: box 09 ruling R4
+
+export I64 run() {
+    I64[2, 3] m;
+    m[0, 2] = 7;
+    in I64[_, _] t = transpose(m);
+    return t[2, 0] * 10 + extent(t, 0);
+}

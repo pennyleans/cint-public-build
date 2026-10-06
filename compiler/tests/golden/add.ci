@@ -1,0 +1,4 @@
+// add.ci
+export I64 add3(I64 a, I64 b, I64 c) {
+    return a + b + c;
+}

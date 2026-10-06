@@ -1,0 +1,17 @@
+// case: arith/stores_before_fault
+// clause: SPEC-01 8.2 (fixture 108), 9.5
+// subset: cint-core-1 (module-level variable)
+// entry: step; args: I64 0
+// spec outcome: fault E_DIV_ZERO at 16:17; afterward counter is 1 and y is not stored
+
+I64 counter = 0;
+
+I64 g() {
+    counter = counter + 1;
+    return 5;
+}
+
+export void step(I64 z) {
+    I64 y = 7;
+    y = g() + 1 / z;
+}

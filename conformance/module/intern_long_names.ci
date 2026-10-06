@@ -1,0 +1,19 @@
+// case: module/intern_long_names
+// clause: SPEC-09 CINTC-16 Lookup; SPEC-04 LS-15, LS-227, LS-228
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 3991
+
+import module.lib.intern_names;
+import module.lib.intern_other;
+struct Box { intern_names.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax item; }
+export I64 run() {
+    intern_names.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax p = intern_names.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax(33);
+    intern_names.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax q = intern_names.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax(65);
+    Box b = Box(p);
+    I64 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax = 1;
+    return intern_names.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaax() + intern_names.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax + p.v + q.v
+        + intern_names.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax + intern_names.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaz
+        + intern_names.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax + intern_names.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaz
+        + intern_other.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax + aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax;
+}

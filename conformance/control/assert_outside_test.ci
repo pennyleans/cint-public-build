@@ -1,0 +1,12 @@
+// case: control/assert_outside_test
+// clause: SPEC-04 8.9; SPEC-01 IM-104, IM-134 (decision 2026-10-03: OQ-13, OQ-124, OQ-126)
+// subset: cint-core-1 (assert)
+// entry: run; args: none
+// spec outcome: fault E_ASSERT, operation assert.checked.bool, at 10:12 (the first character of the condition), carrying the comparison operands I64 3 and I64 4
+
+export I64 run() {
+    I64 a = 3;
+    I64 b = 4;
+    assert(a == b);
+    return a;
+}

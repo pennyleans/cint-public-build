@@ -1,0 +1,11 @@
+// case: module/private_const_nested_c3008
+// clause: SPEC-04 LS-227 (only exported declarations are visible to importers), LS-313; SPEC-09 CINTC-16
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C3008 at 10:34, the private constant `SECRET` as the argument of an exported function of the same module
+
+import module.lib.scalars;
+
+export I64 run() {
+    return scalars.twice(scalars.SECRET) + scalars.BASE;
+}

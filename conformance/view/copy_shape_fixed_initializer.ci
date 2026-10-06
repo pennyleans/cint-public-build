@@ -1,0 +1,14 @@
+// case: view/copy_shape_fixed_initializer
+// clause: SPEC-01 IM-187; SPEC-04 LS-70, LS-278
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: fault E_SHAPE copy.shape at the declaration equals token
+
+void move(in I64[_] src) {
+    I64[2] dst = src;
+}
+export I64 run() {
+    I64[3] src;
+    move(src);
+    return 0;
+}

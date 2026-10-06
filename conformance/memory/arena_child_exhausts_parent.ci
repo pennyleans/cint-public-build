@@ -1,0 +1,13 @@
+// case: memory/arena_child_exhausts_parent
+// clause: SPEC-03 M-19, M-20; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arena, child arena)
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 11:31 (the member name `child`), operation arena.alloc, operands I64 4, I64 5, I64 8 (requested, used, capacity), no exact, no limit; stack depth 0; fuel 1. `child(n)` charges `n` elements to the parent as `alloc(n)` does
+
+Arena(I64, 8) scratch;
+
+export I64 run() {
+    Arena(I64) part = scratch.child(5);
+    Arena(I64) more = scratch.child(4);
+    return 0;
+}

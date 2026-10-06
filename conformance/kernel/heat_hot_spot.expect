@@ -1,0 +1,8 @@
+case kernel/heat_hot_spot
+clause SPEC-02 15.1, 15.2, 15.3 RF-1 (one step from a hot spot conserves heat)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 65536032768
+fuel-consumed 65

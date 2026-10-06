@@ -1,0 +1,18 @@
+// case: kernel/coverage_c5031
+// clause: SPEC-02 K-10a (an `out` element not written on every path)
+// subset: cint-core-1 (kernel)
+// entry: run; args: none
+// spec outcome: compile error C5031 at 9:9, the write place whose coverage is not established
+
+kernel partial[n](in I64[n] a, out I64[n] b) over [i: n] {
+    if (i > 0) {
+        b[i] = a[i];
+    }
+}
+
+export I64 run() {
+    I64[3] a;
+    I64[3] b;
+    partial(a, b);
+    return b[0];
+}

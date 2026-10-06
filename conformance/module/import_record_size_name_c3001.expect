@@ -1,0 +1,7 @@
+case module/import_record_size_name_c3001
+clause SPEC-04 LS-117, LS-228; SPEC-09 CINTC-16 Lookup
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C3001
+diagnostic.position module/import_record_size_name_c3001.ci:8:10

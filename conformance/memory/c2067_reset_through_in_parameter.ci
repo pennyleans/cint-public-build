@@ -1,0 +1,16 @@
+// case: memory/c2067_reset_through_in_parameter
+// clause: SPEC-03 M-14a, M-20; SPEC-04 LS-119; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arena, arena parameters)
+// entry: run; args: none
+// spec outcome: compile error C2067 at 10:5, the receiver `a` of `reset`, an `in` parameter, which is not writable
+
+Arena(I64, 8) scratch;
+
+void clear(in Arena(I64) a) {
+    a.reset();
+}
+
+export I64 run() {
+    clear(scratch);
+    return 0;
+}

@@ -1,0 +1,23 @@
+// overflow_hunt_wrapped.ci: overflow_hunt.ci with the total added with +% (wrapping).
+// Run it with: cint run examples/overflow_hunt_wrapped.ci
+// Tutorial 03 compares it with the other two fixes.
+
+// The total size, in bytes, of a list of files.
+I32 total_bytes[n](in I32[n] sizes) {
+    I32 total = 0;
+    for i in 0..n {
+        total = total +% sizes[i];
+    }
+    return total;
+}
+
+void main() {
+    I32[4] sizes;
+    sizes[0] = 700_000_000;    // four files of a backup, in bytes
+    sizes[1] = 900_000_000;
+    sizes[2] = 650_000_000;
+    sizes[3] = 120_000_000;
+    "files: 4\n";
+    I32 total = total_bytes(sizes);
+    "total: {total} bytes\n";
+}

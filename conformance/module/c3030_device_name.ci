@@ -1,0 +1,11 @@
+// case: module/c3030_device_name
+// clause: SPEC-09 CINTC-12 (no segment is a Windows device name); SPEC-04 LS-225, LS-278
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C3030 at module/lib/aux.ci:1:1, before any file is read
+
+import module.lib.aux;
+
+export I64 run() {
+    return 1;
+}

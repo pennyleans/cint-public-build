@@ -1,0 +1,10 @@
+// case: memory/c4012_arena_in_function
+// clause: SPEC-03 M-20; SPEC-04 LS-113; decision 2026-10-05, BX12-05; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arena)
+// entry: run; args: none
+// spec outcome: compile error C4012 at 8:5, an arena declaration inside a function, which is not a statement form (arenas and pools are module-level)
+
+export I64 run() {
+    Arena(I64, 8) scratch;
+    return 0;
+}

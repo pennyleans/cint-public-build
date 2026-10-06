@@ -1,0 +1,8 @@
+case errors/widen_in_assignment_and_compare
+clause SPEC-04 LS-97, LS-314; decision 2026-10-05, BX12-09, BX12-28
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 51
+fuel-consumed 2

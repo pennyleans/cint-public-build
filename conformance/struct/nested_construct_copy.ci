@@ -1,0 +1,10 @@
+// case: struct/nested_construct_copy
+// clause: SPEC-04 LS-73, LS-77, LS-139; SPEC-09 BOOT-01
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 709
+
+struct A { B b; }
+struct B { C c; }
+struct C { I64 v; }
+export I64 run() { A a = A(B(C(7))); A b = a; b.b.c.v = 9; I64 old = a.b.c.v; a.b = b.b; return old * 100 + a.b.c.v; }

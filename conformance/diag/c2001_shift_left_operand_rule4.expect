@@ -1,0 +1,6 @@
+case diag/c2001_shift_left_operand_rule4
+clause SPEC-01 IM-23; SPEC-04 LS-264 (decision 2026-10-03, slice 2 patch D-9); SPEC-04 LS-57
+source compile-error
+outcome compile-error
+diagnostic.code C2001
+diagnostic.position diag/c2001_shift_left_operand_rule4.ci:9:16

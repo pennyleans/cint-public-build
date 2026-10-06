@@ -1,0 +1,15 @@
+// case: module/alias_param_c3001
+// clause: SPEC-04 LS-228 (a parameter may not take a visible alias: C3001); SPEC-09 CINTC-16
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C3001 at 9:11, the parameter named like the alias `scalars`
+
+import module.lib.scalars;
+
+I64 f(I64 scalars) {
+    return scalars;
+}
+
+export I64 run() {
+    return f(1);
+}

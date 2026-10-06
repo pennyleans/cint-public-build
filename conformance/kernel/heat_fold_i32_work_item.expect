@@ -1,0 +1,22 @@
+case kernel/heat_fold_i32_work_item
+clause SPEC-02 15.5 (diffuse32f: the checked fold leaves I32 at work-item 1, step 4)
+format 4
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 137
+fault.code E_OVERFLOW
+fault.operation fold_checked.add.i32
+fault.operand I64 1
+fault.operand I32 2147483647
+fault.operand I32 2147483647
+fault.exact 4294967294
+fault.limit I32 2147483647
+fault.position kernel/heat_fold_i32_work_item.ci:23:20
+fault.revision self
+fault.source-map self
+fault.phase work-item
+fault.kernel kernel.heat_fold_i32_work_item.diffuse32
+fault.address 0 1 4
+fault.stack-depth 1
+fault.stack kernel/heat_fold_i32_work_item.ci:35:5

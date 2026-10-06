@@ -1,0 +1,11 @@
+// case: control/expect_fault_test_entry
+// clause: SPEC-04 LS-232, LS-236, LS-240; SPEC-01 IM-30, IM-106; SPEC-09 CONF-01
+// subset: cint-core-1 (test block, expect_fault)
+// spec outcome: fault E_OVERFLOW add.checked.i8 at 9:14: run as the entry (cint_ref run), the test's body faults; expect_fault decides only the verdict of cint test
+
+test "i8 overflow" expect_fault E_OVERFLOW at 9 {
+    I8 a = 127;
+    I8 b = 1;
+    I8 c = a + b;
+    _ = c;
+}

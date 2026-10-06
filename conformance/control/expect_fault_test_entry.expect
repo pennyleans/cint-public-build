@@ -1,0 +1,16 @@
+case control/expect_fault_test_entry
+clause SPEC-04 LS-232, LS-236, LS-240; SPEC-01 IM-30, IM-106; SPEC-09 CONF-01
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_OVERFLOW
+fault.operation add.checked.i8
+fault.operand I8 127
+fault.operand I8 1
+fault.exact 128
+fault.limit I8 127
+fault.position control/expect_fault_test_entry.ci:9:14
+fault.revision self
+fault.address none
+fault.stack-depth 0

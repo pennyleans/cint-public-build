@@ -1,0 +1,12 @@
+// case: module/import_twice_c3001
+// clause: SPEC-04 LS-228 (one module imported twice binds its alias twice: C3001); SPEC-09 CINTC-16
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C3001 at 8:19, the alias of the second import
+
+import module.lib.scalars;
+import module.lib.scalars;
+
+export I64 run() {
+    return scalars.BASE;
+}

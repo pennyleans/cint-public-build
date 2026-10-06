@@ -1,0 +1,13 @@
+// case: reduce/sum_strided_view
+// clause: SPEC-01 IM-74; SPEC-04 LS-161 (a reduction over a strided slice reads its logical elements)
+// subset: cint-core-1 (array slices, built-in sum)
+// entry: run; args: none
+// spec outcome: value I64 12 (1 + 4 + 7); fuel 12 (entry, 10 fill iterations, one reduction charge)
+
+export I64 run() {
+    I64[10] a;
+    for i in 0..10 {
+        a[i] = i;
+    }
+    return sum(a[1..10 by 3]);
+}

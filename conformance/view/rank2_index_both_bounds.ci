@@ -1,0 +1,12 @@
+// case: view/rank2_index_both_bounds
+// clause: SPEC-04 LS-64; SPEC-01 IM-186 (both indices out of range: the lowest dimension is reported)
+// subset: cint-core-1 (rank 2)
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 11:13, operation index.checked.i64, operands I64 0 (dimension) and I64 2 (index), no exact, limit I64 2; stack depth 0; fuel 1. Box 09 ruling R1
+
+export I64 run() {
+    I64[2, 3] m;
+    I64 i = 2;
+    I64 j = 3;
+    return m[i, j];
+}

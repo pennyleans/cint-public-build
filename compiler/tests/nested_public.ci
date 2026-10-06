@@ -1,0 +1,21 @@
+// SPEC-04 LS-73; SPEC-03 A-12, A-14, H-12: forward records and public Bool validation.
+struct Outer { U8 marker; Middle item; }
+struct Middle { Leaf item; Bool gate; }
+struct Leaf { Bool active; I64 value; }
+struct Unused { U16 tag; }
+
+export Outer echo(Outer input) {
+    return input;
+}
+
+export I64 touch(inout Outer[1] rows) {
+    rows[0].item.item.value += 1;
+    return rows[0].item.item.value;
+}
+
+export Outer change(inout Outer input, I64 divisor) {
+    input.item.item.value = 33;
+    Outer result = input;
+    result.item.item.value = 10 / divisor;
+    return result;
+}

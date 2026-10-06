@@ -1,0 +1,16 @@
+case arith/shr_negative_count
+clause SPEC-01 4.6; plan Review Focus 3
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_SHIFT
+fault.operation shr.checked.i64
+fault.operand I64 1
+fault.operand I64 -1
+fault.exact none
+fault.limit I64 63
+fault.position arith/shr_negative_count.ci:10:14
+fault.revision self
+fault.address none
+fault.stack-depth 0

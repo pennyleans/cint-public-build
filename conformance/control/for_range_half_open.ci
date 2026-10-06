@@ -1,0 +1,13 @@
+// case: control/for_range_half_open
+// clause: SPEC-04 8.4; SPEC-09 5.2 (for i in 0..n)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 45 (0 + 1 + ... + 9)
+
+export I64 run() {
+    I64 s = 0;
+    for i in 0..10 {
+        s = s + i;
+    }
+    return s;
+}

@@ -1,0 +1,6 @@
+case diag/c3021_expect_fault_statement
+clause SPEC-04 LS-237, 17.2 (C3021)
+source compile-error
+outcome compile-error
+diagnostic.code C3021
+diagnostic.position diag/c3021_expect_fault_statement.ci:8:5

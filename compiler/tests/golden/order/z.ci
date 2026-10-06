@@ -1,0 +1,10 @@
+// compiler/tests/golden/order/z.ci: the module that a.ci comes before in byte order of path
+// but after in compile order (owner decision 27, item 3; the golden suite's revision order item).
+
+I64 scale(I64 x) {
+    return x * 3;
+}
+
+export I64 seven(I64 x) {
+    return scale(x) + 7;
+}

@@ -1,0 +1,17 @@
+// case: kernel/advance_element_form
+// clause: SPEC-02 K-1, K-12, P-1, X-8 (element form; outputs published on success)
+// subset: cint-core-1 (kernel)
+// entry: run; args: none
+// spec outcome: value I64 332211 (next = [11, 22, 33]); fuel 4 (entry, dispatch charge N = 3). Kernel fuel: box 09 ruling R7
+
+kernel advance[n](in I64[n] old, in I64[n] increment, out I64[n] next) {
+    next = old + increment;
+}
+
+export I64 run() {
+    I64[3] a = [1, 2, 3];
+    I64[3] d = [10, 20, 30];
+    I64[3] b;
+    advance(a, d, b);
+    return b[0] + b[1] * 100 + b[2] * 10000;
+}

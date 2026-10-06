@@ -1,0 +1,7 @@
+case struct/construct_and_read
+clause SPEC-04 4.4 (constructor by position); SPEC-09 5.2
+source reference
+outcome value
+stdout-bytes 0
+return I32 7
+fuel-consumed 1

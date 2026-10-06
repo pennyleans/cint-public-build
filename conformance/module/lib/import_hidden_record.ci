@@ -1,0 +1,3 @@
+struct Hidden { I64 value; }
+export Hidden produce() { return Hidden(19); }
+export I64 consume(Hidden value) { return value.value; }

@@ -1,0 +1,12 @@
+case arith/seed08_const_div_zero
+clause SPEC-09 SEED-08 row 6; SPEC-01 4.4, 8.4
+source compile-error
+outcome compile-error
+diagnostic.code C6001
+diagnostic.position arith/seed08_const_div_zero.ci:8:15
+diagnostic.fault.code E_DIV_ZERO
+diagnostic.fault.operation div.checked.i64
+diagnostic.fault.operand I64 1
+diagnostic.fault.operand I64 0
+diagnostic.fault.exact none
+diagnostic.fault.limit none

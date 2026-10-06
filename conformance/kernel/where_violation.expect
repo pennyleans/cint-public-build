@@ -1,0 +1,21 @@
+case kernel/where_violation
+clause SPEC-02 K-1, K-6, F-5 check 5 (a false `where` constraint faults at entry)
+format 4
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_SHAPE
+fault.operation bind.where
+fault.operand I64 0
+fault.operand I64 1
+fault.operand I64 2
+fault.exact none
+fault.limit none
+fault.position kernel/where_violation.ci:14:5
+fault.revision self
+fault.source-map self
+fault.phase entry
+fault.kernel kernel.where_violation.diffuse1
+fault.address 0 none none
+fault.stack-depth 0

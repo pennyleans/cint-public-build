@@ -1,0 +1,25 @@
+// case: struct/layout_static_assert
+// clause: SPEC-04 4.4 (layout and bit fields)
+// subset: cint-core-1 (Q32.32 field, bit fields, static_assert)
+// entry: run; args: none
+// spec outcome: value I64 38 (32 + 6); both static_assert hold
+
+struct Body {
+    I64    id;
+    Q32.32 mass;
+    I32[3] pos_mm;
+    U16    flags;
+}
+
+struct Status {
+    U16  mode  : 3;
+    Bool armed : 1;
+    I16  trim  : 12;
+}
+
+static_assert(Body.bytes == 32);
+static_assert(Status.bytes == 6);
+
+export I64 run() {
+    return Body.bytes + Status.bytes;
+}

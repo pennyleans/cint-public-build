@@ -1,0 +1,10 @@
+export I64 weigh[n](in U8[n] text) {
+    I64 acc = 0;
+    for i in 0..n { acc += (i + 1) * (text[i] as I64); }
+    return acc;
+}
+
+export I64 first(in U8[_] text) { return text[0] as I64; }
+export I64 fixed(in U8[3] text) { return text[2] as I64; }
+export I64 paired[n](in U8[n] a, in U8[n] b) { return n; }
+I64 private_text(in U8[_] text) { return 0; }

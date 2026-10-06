@@ -1,0 +1,7 @@
+case errors/c2044_shared_name_short_form
+clause SPEC-04 LS-97; decision 2026-10-05, BX12-27
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2044
+diagnostic.position errors/c2044_shared_name_short_form.ci:12:12

@@ -1,0 +1,20 @@
+// Helper module of module/qualified_calls, module/qualified_private_c3008 and
+// module/qualified_missing_c3005 (task 2.13 part (iii)). It is not a case: it sits in a
+// subdirectory of the category. It is read as module.lib.scalars from the source root
+// conformance/, and its path sorts before every importer, so B1 compiles it first.
+
+export const I64 BASE = 40;
+export const U8 SMALL = 2;
+const I64 SECRET = 7;
+
+export I64 twice(I64 x) {
+    return x + x;
+}
+
+export Bool is_big(I64 x) {
+    return x > BASE;
+}
+
+I64 hidden_add(I64 x) {
+    return x + SECRET;
+}

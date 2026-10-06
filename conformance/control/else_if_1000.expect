@@ -1,0 +1,7 @@
+case control/else_if_1000
+clause SPEC-04 LS-168, LS-311; SPEC-09 CINTC-02, CINTC-03 (decision 2026-10-03, slice 2 patch D-5)
+source reference
+outcome value
+stdout-bytes 0
+return I64 1998
+fuel-consumed 2

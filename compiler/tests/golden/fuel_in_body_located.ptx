@@ -1,0 +1,115 @@
+.version 6.0
+.target sm_52
+.address_size 64
+
+.visible .entry cint_k_rowsum(
+    .param .u64 p_base,
+    .param .u64 p_end,
+    .param .u64 p_fault,
+    .param .u64 p_fuel,
+    .param .u64 p_allow,
+    .param .align 8 .b8 a0[88],
+    .param .u64 l1,
+    .param .u64 l2,
+    .param .align 8 .b8 l4[88])
+{
+    .reg .pred %p<4>;
+    .reg .b32 %kr<3>;
+    .reg .b64 %x<4>;
+    .reg .b64 %t<30>;
+    .reg .b64 %s<11>;
+    .reg .b64 %ki, %kf;
+    .reg .b64 %kc, %ka, %ks;
+    ld.param.u64 %ki, [p_base];
+    mov.u32 %kr0, %ctaid.x;
+    mov.u32 %kr1, %ntid.x;
+    mov.u32 %kr2, %tid.x;
+    mul.wide.u32 %x0, %kr0, %kr1;
+    cvt.u64.u32 %x1, %kr2;
+    add.u64 %x0, %x0, %x1;
+    add.u64 %ki, %ki, %x0;
+    ld.param.u64 %x0, [p_end];
+    setp.ge.u64 %p0, %ki, %x0;
+    @%p0 bra DONE;
+    ld.param.u64 %kf, [p_fault];
+    cvta.to.global.u64 %kf, %kf;
+    ld.volatile.global.u64 %x0, [%kf];
+    setp.gt.u64 %p0, %ki, %x0;
+    @%p0 bra DONE;
+    ld.param.u64 %ks, [p_fuel];
+    cvta.to.global.u64 %ks, %ks;
+    mad.lo.s64 %ks, %ki, 8, %ks;
+    ld.param.u64 %ka, [p_allow];
+    mov.u64 %kc, 0;
+    ld.param.u64 %s3, [l1];
+    ld.param.u64 %s4, [l2];
+    mov.b64 %x0, %ki;
+    mov.b64 %s8, %x0;
+    mov.b64 %t9, 0;
+    mov.b64 %s9, %t9;
+    mov.b64 %t10, 0;
+    mov.b64 %t11, %s3;
+    mov.b64 %s10, %t10;
+L31_h:
+    mov.b64 %t12, %s10;
+    setp.lt.s64 %p0, %t12, %t11;
+    selp.u64 %t13, 1, 0, %p0;
+    setp.eq.u64 %p0, %t13, 0;
+    @%p0 bra L31_e;
+    add.u64 %kc, %kc, 1;
+    setp.gt.u64 %p0, %kc, %ka;
+    @%p0 bra STOP;
+    mov.b64 %t14, %s9;
+    mov.b64 %t15, %s8;
+    mov.b64 %t16, %s10;
+    ld.param.u64 %x0, [a0+24];
+    setp.ge.u64 %p0, %t15, %x0;
+    @%p0 bra FAULT;
+    ld.param.u64 %x0, [a0+32];
+    setp.ge.u64 %p0, %t16, %x0;
+    @%p0 bra FAULT;
+    ld.param.u64 %x0, [a0+8];
+    ld.param.u64 %x1, [a0+56];
+    mad.lo.s64 %t17, %t15, %x1, %x0;
+    ld.param.u64 %x1, [a0+64];
+    mad.lo.s64 %t18, %t16, %x1, %t17;
+    ld.param.u64 %x0, [a0];
+    cvta.to.global.u64 %x0, %x0;
+    mad.lo.s64 %x0, %t18, 8, %x0;
+    ld.global.s64 %t19, [%x0];
+    add.s64 %t20, %t14, %t19;
+    xor.b64 %x0, %t14, %t20;
+    xor.b64 %x1, %t19, %t20;
+    and.b64 %x0, %x0, %x1;
+    setp.lt.s64 %p0, %x0, 0;
+    @%p0 bra FAULT;
+    mov.b64 %s9, %t20;
+    mov.b64 %t21, %s10;
+    mov.b64 %t22, 1;
+    add.s64 %t23, %t21, %t22;
+    mov.b64 %s10, %t23;
+    bra L31_h;
+L31_e:
+    mov.b64 %t24, %s8;
+    ld.param.u64 %x0, [l4+24];
+    setp.ge.u64 %p0, %t24, %x0;
+    @%p0 bra FAULT;
+    ld.param.u64 %x0, [l4+8];
+    ld.param.u64 %x1, [l4+56];
+    mad.lo.s64 %t25, %t24, %x1, %x0;
+    mov.b64 %t26, %s9;
+    ld.param.u64 %x0, [l4];
+    cvta.to.global.u64 %x0, %x0;
+    mad.lo.s64 %x0, %t25, 8, %x0;
+    st.global.s64 [%x0], %t26;
+    st.global.u64 [%ks], %kc;
+    ret;
+FAULT:
+    atom.global.min.u64 %x0, [%kf], %ki;
+DONE:
+    ret;
+STOP:
+    min.u64 %kc, %kc, 0x7fffffffffffffff;
+    st.global.u64 [%ks], %kc;
+    ret;
+}

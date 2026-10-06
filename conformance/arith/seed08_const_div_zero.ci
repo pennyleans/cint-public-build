@@ -1,0 +1,10 @@
+// case: arith/seed08_const_div_zero
+// clause: SPEC-09 SEED-08 row 6; SPEC-01 4.4, 8.4
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C6001 E_DIV_ZERO at 8:15, operation div.checked.i64
+
+export I64 run() {
+    I64 d = 1 / 0;
+    return d;
+}

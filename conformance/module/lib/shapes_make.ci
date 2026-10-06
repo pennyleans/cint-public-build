@@ -1,0 +1,15 @@
+// Helper module of module/imported_struct_returned (G-C1 fixture, not a case): an export
+// that returns a struct.
+
+export struct Pt {
+    I64 x;
+    I64 y;
+}
+
+export Pt make(I64 x, I64 y) {
+    return Pt(x, y);
+}
+
+export I64 norm1(Pt p) {
+    return p.x + p.y;
+}

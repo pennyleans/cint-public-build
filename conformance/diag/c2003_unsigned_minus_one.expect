@@ -1,0 +1,6 @@
+case diag/c2003_unsigned_minus_one
+clause SPEC-01 3.2; SPEC-04 4.2; SPEC-04 17.1, 17.2
+source compile-error
+outcome compile-error
+diagnostic.code C2003
+diagnostic.position diag/c2003_unsigned_minus_one.ci:8:12

@@ -1,0 +1,18 @@
+// case: kernel/bounds_in_block
+// clause: SPEC-02 K-10, K-10a pattern 2, F-6, X-8 (an in-body read past the extent; in-body loop charges)
+// subset: cint-core-1 (kernel)
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 9:20, phase work-item, address dispatch 0, work-item 0, step 5 (per iteration: place, `j + 1`, read), operation index.checked.i64, operands I64 1 (dimension) and I64 2, no exact, limit I64 2; stack depth 1, stack 16:5; fuel 5 (entry, N = 2, iterations j = 0 and j = 1 of work-item 0). Box 09 rulings R1, R7, R9
+
+kernel rows[n, k](in I64[n, k] a, out I64[n, k] b) over [i: n] {
+    for j in 0..k {
+        b[i, j] = a[i, j + 1];
+    }
+}
+
+export I64 run() {
+    I64[2, 2] a;
+    I64[2, 2] b;
+    rows(a, b);
+    return b[0, 0];
+}

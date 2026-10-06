@@ -1,0 +1,16 @@
+case reduce/fuel_reduction_e_fuel
+clause SPEC-01 IM-139, IM-141 (the reduction charge exceeds the allowance; no element is read)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_FUEL
+fault.operation fuel.charge
+fault.exact none
+fault.limit I64 2
+fault.position reduce/fuel_reduction_e_fuel.ci:9:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

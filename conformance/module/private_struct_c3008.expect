@@ -1,0 +1,7 @@
+case module/private_struct_c3008
+clause SPEC-04 LS-227 (only exported declarations are visible to importers), LS-313; SPEC-09 CINTC-16
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C3008
+diagnostic.position module/private_struct_c3008.ci:10:12

@@ -1,0 +1,46 @@
+import named_constructor_lib as records;
+
+struct Local { I64 value; }
+
+export I64 local() { return Local(7).value; }
+export I64 imported() { return records.Leaf(value = 7).value; }
+export I64 nested() { return records.Outer(records.Leaf(7), 0).item.value; }
+export Bool flag() { return records.Flag(true, 7).active; }
+
+export I64 copied() {
+    records.Leaf r = records.Outer(records.Leaf(7), 0).item;
+    return r.value;
+}
+
+I64 step(inout I64[1] a) { a[0] += 1; return a[0]; }
+
+export I64 written_order() {
+    I64[1] a;
+    return records.R(step(a), step(a)).second * 10 + a[0];
+}
+
+I64 take(records.Leaf first, I64 second) { return first.value; }
+I64 mutate(inout I64[1] a) { a[0] = 9; return 0; }
+
+export I64 snapshot() {
+    I64[1] a;
+    a[0] = 1;
+    return take(records.Outer(records.Leaf(a[0]), 0).item, mutate(a));
+}
+
+export I64 early_bounds(I64 index) {
+    I64[1] a;
+    return records.R(a[index], step(a)).first;
+}
+
+export I64 unread_field_fault() {
+    I64[1] a;
+    return records.R(7, I64.max + step(a)).first;
+}
+
+export I64 short_circuit() {
+    I64[1] a;
+    Bool b = false && records.Flag(true, I64.max + step(a)).active;
+    if (b) { return 1; }
+    return a[0];
+}

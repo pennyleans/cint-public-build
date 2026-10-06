@@ -1,0 +1,26 @@
+// case: determinism/site_numbering
+// clause: SPEC-09 7.6, 9.5 (CONF-05), SEED-10
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 6242; emitted C identical across runs, working directories and hosts
+
+I64 step(I64 a, I64 b) {
+    I64 c = a + b;
+    I64 d = c * 2;
+    I64 e = d - a;
+    I64 f = e / 3;
+    I64 g = f % 7;
+    I64 h = (g << 2) >> 1;
+    I64 i = h +% c;
+    I64 j = i -% d;
+    I64 k = j *% 3;
+    return k & 255;
+}
+
+export I64 run() {
+    I64 s = 0;
+    for i in 0..50 {
+        s = s + step(i, 50 - i);
+    }
+    return s;
+}

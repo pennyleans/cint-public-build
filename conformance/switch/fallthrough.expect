@@ -1,0 +1,7 @@
+case switch/fallthrough
+clause SPEC-04 8.5 (fallthrough)
+source reference
+outcome value
+stdout-bytes 0
+return I64 11
+fuel-consumed 1

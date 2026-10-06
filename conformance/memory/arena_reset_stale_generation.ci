@@ -1,0 +1,14 @@
+// case: memory/arena_reset_stale_generation
+// clause: SPEC-03 M-14, M-17; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arena, handles)
+// entry: run; args: none
+// spec outcome: fault E_STALE_HANDLE at 13:19 (the `[` of `scratch[tmp]`), operation handle.check, operands U64 0, I64 4, U64 0, U32 1, U8 1 (the handle: slot, length, generation, container, kind), U64 1 (the current generation), U8 3 (generation), no exact, no limit; stack depth 0; fuel 1. `reset` raised the arena to generation 1
+
+Arena(I64, 8) scratch;
+
+export I64 run() {
+    Handle(I64[]) tmp = scratch.alloc(4);
+    scratch[tmp][0] = 3;
+    scratch.reset();
+    return scratch[tmp][0];
+}

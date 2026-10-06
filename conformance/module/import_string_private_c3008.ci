@@ -1,0 +1,8 @@
+// case: module/import_string_private_c3008
+// clause: SPEC-09 BOOT-02, CINTC-16 Lookup; SPEC-04 LS-227
+// subset: cint-boot-1
+// entry: run; args: none
+
+import module.lib.string_views;
+
+export I64 run() { return string_views.private_text("x"); }

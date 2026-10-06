@@ -1,0 +1,13 @@
+// case: errors/c2044_shared_name_short_form
+// clause: SPEC-04 LS-97; decision 2026-10-05, BX12-27
+// subset: cint-core-1 (error sets, combined sets)
+// entry: run; args: none
+// spec outcome: compile error C2044 at 12:12, the short form `.full`, a name that IoError and QueueError both declare (position: first character of the offending construct, SPEC-04 LS-278)
+
+error IoError { closed, full }
+error QueueError { full, stalled }
+error IoOrQueue = IoError | QueueError;
+
+export IoOrQueue!I64 run() {
+    return .full;
+}

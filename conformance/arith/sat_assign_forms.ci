@@ -1,0 +1,21 @@
+// case: arith/sat_assign_forms
+// clause: SPEC-04 LS-48, LS-157, LS-165; SPEC-01 4.1
+// subset: cint-core-1 (saturating operators are outside cint-boot-1)
+// entry: run; args: I64 1
+// spec outcome: value I64 1061: +|= -|= *|= clamp to MIN(T) or MAX(T) on I8, U8 and I64
+
+export I64 run(I64 x) {
+    I8 s = 5;
+    s +|= 125;
+    s -|= -100;
+    I8 t = -100;
+    t -|= 100;
+    t *|= 2;
+    U8 u = 10;
+    u -|= 20;
+    u +|= 250;
+    u *|= 2;
+    I64 big = 9223372036854775807;
+    big +|= x;
+    return (s as I64) + (t as I64) + (u as I64) + (big - 9223372036854775000);
+}

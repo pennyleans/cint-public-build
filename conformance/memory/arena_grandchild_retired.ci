@@ -1,0 +1,17 @@
+// case: memory/arena_grandchild_retired
+// clause: SPEC-03 M-17, M-20; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arena, child arenas, handles)
+// entry: run; args: none
+// spec outcome: fault E_STALE_HANDLE at 16:26 (the `[` of `piece[t]`), operation handle.check, operands U64 0, I64 1, U64 0, U32 3, U8 1 (the handle: slot, length, generation, container, kind), U64 0 (the current generation), U8 2 (retired), no exact, no limit; stack depth 0; fuel 1. Resetting `part` retires its child `piece` (arena 3); `before` is 4 and is not observed
+
+Arena(I64, 8) scratch;
+
+export I64 run() {
+    Arena(I64) part = scratch.child(6);
+    Arena(I64) piece = part.child(2);
+    Handle(I64[]) t = piece.alloc(1);
+    piece[t][0] = 4;
+    I64 before = piece[t][0];
+    part.reset();
+    return before + piece[t][0];
+}

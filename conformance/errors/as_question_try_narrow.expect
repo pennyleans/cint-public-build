@@ -1,0 +1,10 @@
+case errors/as_question_try_narrow
+clause SPEC-04 LS-96, LS-129, LS-130, LS-133; SPEC-01 IM-188; SPEC-09 CONF-11 rule 12; decision 2026-10-05, BX12-10, BX12-21
+format 3
+source reference
+outcome error
+stdout-bytes 0
+fuel-consumed 2
+error.set ArithError
+error.value narrow
+error.tag U16 4

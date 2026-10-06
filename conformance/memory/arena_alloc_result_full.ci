@@ -1,0 +1,20 @@
+// case: memory/arena_alloc_result_full
+// clause: SPEC-03 M-19; SPEC-04 LS-130, LS-145; decision 2026-10-05, BX12-04; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arena, handles, error unions, `catch`)
+// entry: run; args: none
+// spec outcome: value I64 392 (4, then -1 when 4 + 4 exceeds 6, then 2); fuel 12 (entry; 3 calls; 6 iterations; 2 reductions)
+
+Arena(I64, 6) scratch;
+
+AllocError!I64 total(I64 n) {
+    Handle(I64[]) h = try scratch.alloc_result(n);
+    for i in 0..n { scratch[h][i] = 1; }
+    return sum(scratch[h]);
+}
+
+export I64 run() {
+    I64 a = total(4) catch -1;
+    I64 b = total(4) catch -1;
+    I64 c = total(2) catch -1;
+    return a * 100 + b * 10 + c;
+}

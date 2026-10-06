@@ -1,0 +1,133 @@
+// case: ternary/planes_adders
+// clause: SPEC-05 TR-PRIN-1, TR-DIG-1 (a balanced-ternary half adder and full adder on U64 bit planes, every trit pair and every triple)
+// subset: cint-core-1 (print statements)
+// entry: run; args: none
+// spec outcome: value I64 0 (every lane gives a + b = s + 3c and a + b + c = s + 3 carry with s, c, carry in {-1, 0, 1}); 39 output lines
+// t27 set 1 (docs/design/notes/2026-10-05-t27-ternary-tests-scoping.md 5.2): the falsifier of the hostile check of 2026-10-03, section 8, item 3.
+// A trit occupies one bit position in two U64 planes: bit L of the plus plane is set where lane L holds +1, bit L of
+// the minus plane where it holds -1, and no lane sets both. Half adder lane L (0 to 8) holds a = L % 3 - 1 and
+// b = L / 3 - 1; full adder lane L (0 to 26) holds a = L % 3 - 1, b = L / 3 % 3 - 1 and the carry in c = L / 9 - 1.
+// Output: one line per adder with its four result planes in hex, one line per lane, then the mismatch count.
+
+U64 bit(I64 lane) {
+    U64 one = 1;
+    return one << lane;
+}
+
+// The plane words of the trits of 64 lanes, set one lane at a time.
+U64 plus_of(I64 t, I64 lane) {
+    if (t == 1) {
+        return bit(lane);
+    }
+    return 0;
+}
+
+U64 minus_of(I64 t, I64 lane) {
+    if (t == -1) {
+        return bit(lane);
+    }
+    return 0;
+}
+
+I64 trit_at(U64 p, U64 n, I64 lane) {
+    return (((p >> lane) & 1) as I64) - (((n >> lane) & 1) as I64);
+}
+
+// Half adder, a + b = s + 3c. The sum trit is +1 for (+1, 0), (0, +1) and (-1, -1), and -1 for
+// (-1, 0), (0, -1) and (+1, +1); the carry is +1 for (+1, +1) and -1 for (-1, -1).
+U64 ha_sum_plus(U64 ap, U64 an, U64 bp, U64 bn) {
+    U64 az = ~(ap | an);
+    U64 bz = ~(bp | bn);
+    return (ap & bz) | (az & bp) | (an & bn);
+}
+
+U64 ha_sum_minus(U64 ap, U64 an, U64 bp, U64 bn) {
+    U64 az = ~(ap | an);
+    U64 bz = ~(bp | bn);
+    return (an & bz) | (az & bn) | (ap & bp);
+}
+
+// A checked lane: its two trits are in {-1, 0, 1} (no lane sets both planes) and a + b + c = s + 3k.
+I64 lane_bad(I64 total, U64 sp, U64 sn, U64 kp, U64 kn, I64 lane) {
+    I64 s = trit_at(sp, sn, lane);
+    I64 k = trit_at(kp, kn, lane);
+    if (((((sp & sn) | (kp & kn)) >> lane) & 1) != 0) {
+        return 1;
+    }
+    if (total != s + 3 * k) {
+        return 1;
+    }
+    return 0;
+}
+
+export I64 run() {
+    I64 bad = 0;
+
+    U64 ap = 0;
+    U64 an = 0;
+    U64 bp = 0;
+    U64 bn = 0;
+    for lane in 0..9 {
+        ap = ap | plus_of(lane % 3 - 1, lane);
+        an = an | minus_of(lane % 3 - 1, lane);
+        bp = bp | plus_of(lane / 3 - 1, lane);
+        bn = bn | minus_of(lane / 3 - 1, lane);
+    }
+    U64 sp = ha_sum_plus(ap, an, bp, bn);
+    U64 sn = ha_sum_minus(ap, an, bp, bn);
+    U64 cp = ap & bp;
+    U64 cn = an & bn;
+    "half adder, 9 lanes: s+ {sp:#x} s- {sn:#x} c+ {cp:#x} c- {cn:#x}\n";
+    for lane in 0..9 {
+        I64 a = lane % 3 - 1;
+        I64 b = lane / 3 - 1;
+        "lane {lane}: a {a} b {b} s {trit_at(sp, sn, lane)} c {trit_at(cp, cn, lane)}\n";
+        bad += lane_bad(a + b, sp, sn, cp, cn, lane);
+    }
+    if (((sp | sn | cp | cn) >> 9) != 0) {
+        bad += 1;
+    }
+
+    // Full adder: two half adders, then the two carries added by a third, whose own carry is
+    // always 0 (a carry +1 leaves the sum trit -1, so the second carry cannot also be +1).
+    U64 xp = 0;
+    U64 xn = 0;
+    U64 yp = 0;
+    U64 yn = 0;
+    U64 zp = 0;
+    U64 zn = 0;
+    for lane in 0..27 {
+        xp = xp | plus_of(lane % 3 - 1, lane);
+        xn = xn | minus_of(lane % 3 - 1, lane);
+        yp = yp | plus_of(lane / 3 % 3 - 1, lane);
+        yn = yn | minus_of(lane / 3 % 3 - 1, lane);
+        zp = zp | plus_of(lane / 9 - 1, lane);
+        zn = zn | minus_of(lane / 9 - 1, lane);
+    }
+    U64 s1p = ha_sum_plus(xp, xn, yp, yn);
+    U64 s1n = ha_sum_minus(xp, xn, yp, yn);
+    U64 c1p = xp & yp;
+    U64 c1n = xn & yn;
+    U64 fsp = ha_sum_plus(s1p, s1n, zp, zn);
+    U64 fsn = ha_sum_minus(s1p, s1n, zp, zn);
+    U64 c2p = s1p & zp;
+    U64 c2n = s1n & zn;
+    U64 fcp = ha_sum_plus(c1p, c1n, c2p, c2n);
+    U64 fcn = ha_sum_minus(c1p, c1n, c2p, c2n);
+    if (((c1p & c2p) | (c1n & c2n)) != 0) {
+        bad += 1;
+    }
+    "full adder, 27 lanes: s+ {fsp:#x} s- {fsn:#x} carry+ {fcp:#x} carry- {fcn:#x}\n";
+    for lane in 0..27 {
+        I64 a = lane % 3 - 1;
+        I64 b = lane / 3 % 3 - 1;
+        I64 c = lane / 9 - 1;
+        "lane {lane}: a {a} b {b} c {c} s {trit_at(fsp, fsn, lane)} carry {trit_at(fcp, fcn, lane)}\n";
+        bad += lane_bad(a + b + c, fsp, fsn, fcp, fcn, lane);
+    }
+    if (((fsp | fsn | fcp | fcn) >> 27) != 0) {
+        bad += 1;
+    }
+    "mismatches {bad}\n";
+    return bad;
+}

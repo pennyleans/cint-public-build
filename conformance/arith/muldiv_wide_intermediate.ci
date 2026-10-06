@@ -1,0 +1,12 @@
+// case: arith/muldiv_wide_intermediate
+// clause: SPEC-01 8.3, 4.10
+// subset: cint-core-1 (muldiv is not in cint-boot-1, SPEC-09 5.2)
+// entry: run; args: none
+// spec outcome: value I32 1000000000
+
+export I32 run() {
+    I32 a = 2_000_000_000;
+    I32 b = 2;
+    I32 e = muldiv(I32, a, b, 4, floor);
+    return e;
+}

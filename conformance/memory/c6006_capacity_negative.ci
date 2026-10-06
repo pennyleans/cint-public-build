@@ -1,0 +1,12 @@
+// case: memory/c6006_capacity_negative
+// clause: SPEC-03 M-20; SPEC-04 C6006 row; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arena)
+// entry: run; args: none
+// spec outcome: compile error C6006 at 8:12, the capacity `N - 4`, which is -1
+
+const I64 N = 3;
+Arena(I64, N - 4) scratch;
+
+export I64 run() {
+    return 0;
+}

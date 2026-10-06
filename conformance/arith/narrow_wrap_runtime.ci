@@ -1,0 +1,11 @@
+// case: arith/narrow_wrap_runtime
+// clause: SPEC-01 4.9
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I32 -2147483648
+
+export I32 run() {
+    I64 x = 2147483648;
+    I32 y = x as% I32;
+    return y;
+}

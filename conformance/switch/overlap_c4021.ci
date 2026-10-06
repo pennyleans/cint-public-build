@@ -1,0 +1,17 @@
+// case: switch/overlap_c4021
+// clause: SPEC-04 8.5
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C4021 at 12:14: the item 4 overlaps the range 1..=5
+
+export I64 run() {
+    I64 x = 3;
+    switch (x) {
+        case 1..=5:
+            return 1;
+        case 4:
+            return 2;
+        default:
+            return 0;
+    }
+}

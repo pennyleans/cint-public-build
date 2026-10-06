@@ -1,0 +1,15 @@
+// case: errors/c2001_narrow_value
+// clause: SPEC-04 LS-97; decision 2026-10-05, BX12-28
+// subset: cint-core-1 (error sets, combined sets, error-set values)
+// entry: run; args: none
+// spec outcome: compile error C2001 at 13:20, the initializer: a value of IoOrParse never converts to ParseError, even one that holds a ParseError value (position: first character of the offending construct)
+
+error IoError { closed, full }
+error ParseError { empty, bad_digit, too_large }
+error IoOrParse = IoError | ParseError;
+
+export I64 run() {
+    IoOrParse w = ParseError.empty;
+    ParseError p = w;
+    return 0;
+}

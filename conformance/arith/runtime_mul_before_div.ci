@@ -1,0 +1,12 @@
+// case: arith/runtime_mul_before_div
+// clause: SPEC-01 IM-101 (no wider intermediate)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 10:15, operation mul.checked.i32, operands I32 2000000000 and I32 2, exact 4000000000, limit I32 2147483647
+
+export I32 run() {
+    I32 a = 2_000_000_000;
+    I32 b = 2;
+    I32 c = a * b / 4;
+    return c;
+}

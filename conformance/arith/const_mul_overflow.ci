@@ -1,0 +1,10 @@
+// case: arith/const_mul_overflow
+// clause: SPEC-01 3.2 (fixture 97), 8.3, 8.4
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C6001 E_OVERFLOW at 8:27 (the *), operation mul.checked.i32, exact 4000000000
+
+export I32 run() {
+    I32 v = 2_000_000_000 * 2 / 4;
+    return v;
+}

@@ -1,0 +1,16 @@
+case arith/seed08_runtime_overflow
+clause SPEC-09 SEED-08 row 4; SPEC-01 IM-30, IM-106
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_OVERFLOW
+fault.operation add.checked.i64
+fault.operand I64 9223372036854775807
+fault.operand I64 1
+fault.exact 9223372036854775808
+fault.limit I64 9223372036854775807
+fault.position arith/seed08_runtime_overflow.ci:9:15
+fault.revision self
+fault.address none
+fault.stack-depth 0

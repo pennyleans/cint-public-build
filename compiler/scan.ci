@@ -1,0 +1,1233 @@
+// compiler/scan.ci: source text to tokens (SPEC-04 3.1 to 3.9 and 18.1; SPEC-09 CINTC-01,
+// CINTC-02, DIAG-01; slice 2 task 2.10a).
+//
+// Two phases, as SPEC-04 LS-282 orders diagnostics by the earliest phase that finds one
+// (decision patch D-11). check_text applies the source-text rules of SPEC-04 3.1 and 3.2
+// to the whole file: C1002 (a byte-order mark, invalid UTF-8, a NUL byte), C1003 (a
+// forbidden invisible or bidirectional character), C1004 (a control character or a CR not
+// followed by LF). Only a file without such an error is lexed. The lexer then produces one
+// Token per token of SPEC-04 18.1 and a final TK_EOF, and reports C1005, C1012, C1013,
+// C1020 to C1024, C1030 to C1032, C1034, C1038, and C1050. Each token gets at most one
+// diagnostic, the first that `cint_ref` would raise for it, and scanning resumes after it,
+// so the least diagnostic is the one `cint_ref` reports.
+//
+// Positions (DIAG-01): lines are 1-based; columns are 1-based and nscalar Unicode scalar
+// values, so a UTF-8 continuation byte does not advance the column and a tab counts one.
+// A CR LF pair is one line end. Token.start and Token.len are byte offsets into the source.
+//
+// Literals. A literal of more than 4,096 bits of magnitude is C1023 at its first character
+// (SPEC-04 LS-31, decision patch D-17). The scanner decides this from the digits alone: for
+// radixes 16, 8 and 2 from the digit nscalar and the leading digit, for radix 10 and the
+// balanced ternary of radix 3 by comparing the digits with those of 2^4096. Literal values
+// are converted by fold.ci. A character literal's scalar value is in Token.aux.
+//
+// Holes. scan_hole lexes the text of an interpolation hole for the parser (SPEC-04 9.2) in
+// the way `cint_ref` lexes it: on demand, so a lexing error is no diagnostic but a TK_ERROR
+// token that ends the hole's tokens, whose start is the offset where that token began
+// (whitespace included) and whose position is where the lexer stopped.
+//
+// Divergences from `cint_ref` (compiler/OPEN.md CINTC-OQ-06): a digit is an ASCII digit
+// (SPEC-04 18.1 `digit`), where `cint_ref` also takes other Unicode decimal digits after a
+// numeral's `.` and in a fixed-point type name.
+//
+// Bound (CINTC-13): O(n) for n source bytes; a C1023 comparison is O(1,234) or O(2,585).
+
+import limits;
+
+// One token: kind (TK_*), sub (OP_*, KW_*, or a literal's radix), the byte offset and
+// length of its text, its line and column, the index after its matching bracket (parse.ci
+// sets it for `(` and `[`), and aux (an identifier's class, a character's scalar value).
+export struct Token {
+    I32 kind;
+    I32 sub;
+    I32 start;
+    I32 len;
+    I32 line;
+    I32 col;
+    I32 match;
+    I32 aux;
+}
+
+// Bytes of one Token: the element size of the token table (CINTC-02, CINTC-14).
+export const I64 TOKEN_BYTES = 32;
+
+// Token kinds. TK_ERROR occurs only in the tokens of a hole.
+export const I32 TK_EOF = 0;
+export const I32 TK_IDENT = 1;
+export const I32 TK_KEYWORD = 2;
+export const I32 TK_INT = 3;
+export const I32 TK_FRAC = 4;
+export const I32 TK_CHAR = 5;
+export const I32 TK_STRING = 6;
+export const I32 TK_BYTES = 7;
+export const I32 TK_FIXED = 8;
+export const I32 TK_OP = 9;
+export const I32 TK_ERROR = 10;
+
+// Operators (Token.sub of TK_OP), SPEC-04 3.9 and 18.6.
+export const I32 OP_ADD = 1;
+export const I32 OP_SUB = 2;
+export const I32 OP_MUL = 3;
+export const I32 OP_DIV = 4;
+export const I32 OP_REM = 5;
+export const I32 OP_LT = 6;
+export const I32 OP_GT = 7;
+export const I32 OP_BAND = 8;
+export const I32 OP_BOR = 9;
+export const I32 OP_BXOR = 10;
+export const I32 OP_TILDE = 11;
+export const I32 OP_BANG = 12;
+export const I32 OP_QUESTION = 13;
+export const I32 OP_COLON = 14;
+export const I32 OP_ASSIGN = 15;
+export const I32 OP_LPAREN = 16;
+export const I32 OP_RPAREN = 17;
+export const I32 OP_LBRACKET = 18;
+export const I32 OP_RBRACKET = 19;
+export const I32 OP_LBRACE = 20;
+export const I32 OP_RBRACE = 21;
+export const I32 OP_COMMA = 22;
+export const I32 OP_SEMI = 23;
+export const I32 OP_DOT = 24;
+export const I32 OP_AT = 25;
+export const I32 OP_SHL = 26;
+export const I32 OP_SHR = 27;
+export const I32 OP_ADD_WRAP = 28;
+export const I32 OP_SUB_WRAP = 29;
+export const I32 OP_MUL_WRAP = 30;
+export const I32 OP_ADD_SAT = 31;
+export const I32 OP_SUB_SAT = 32;
+export const I32 OP_MUL_SAT = 33;
+export const I32 OP_EQ = 34;
+export const I32 OP_NE = 35;
+export const I32 OP_LE = 36;
+export const I32 OP_GE = 37;
+export const I32 OP_AND = 38;
+export const I32 OP_OR = 39;
+export const I32 OP_INC = 40;
+export const I32 OP_DEC = 41;
+export const I32 OP_ADD_ASSIGN = 42;
+export const I32 OP_SUB_ASSIGN = 43;
+export const I32 OP_MUL_ASSIGN = 44;
+export const I32 OP_DIV_ASSIGN = 45;
+export const I32 OP_REM_ASSIGN = 46;
+export const I32 OP_BAND_ASSIGN = 47;
+export const I32 OP_BOR_ASSIGN = 48;
+export const I32 OP_BXOR_ASSIGN = 49;
+export const I32 OP_RANGE = 50;
+export const I32 OP_SHL_ASSIGN = 51;
+export const I32 OP_SHR_ASSIGN = 52;
+export const I32 OP_ADD_WRAP_ASSIGN = 53;
+export const I32 OP_SUB_WRAP_ASSIGN = 54;
+export const I32 OP_MUL_WRAP_ASSIGN = 55;
+export const I32 OP_ADD_SAT_ASSIGN = 56;
+export const I32 OP_SUB_SAT_ASSIGN = 57;
+export const I32 OP_MUL_SAT_ASSIGN = 58;
+export const I32 OP_RANGE_INCL = 59;
+export const I32 OP_SHL_WRAP = 60;
+export const I32 OP_SHL_WRAP_ASSIGN = 61;
+export const I32 OP_AS_WRAP = 62;
+export const I32 OP_AS_SAT = 63;
+export const I32 OP_AS_TRY = 64;
+
+// Keywords (Token.sub of TK_KEYWORD), the reserved words of SPEC-04 3.4.
+export const I32 KW_AS = 1;
+export const I32 KW_ASSERT = 2;
+export const I32 KW_BREAK = 3;
+export const I32 KW_BY = 4;
+export const I32 KW_CASE = 5;
+export const I32 KW_CATCH = 6;
+export const I32 KW_CONST = 7;
+export const I32 KW_CONTINUE = 8;
+export const I32 KW_DEFAULT = 9;
+export const I32 KW_DEFER = 10;
+export const I32 KW_DO = 11;
+export const I32 KW_ELSE = 12;
+export const I32 KW_ENUM = 13;
+export const I32 KW_ERROR = 14;
+export const I32 KW_EXPECT_FAULT = 15;
+export const I32 KW_EXPORT = 16;
+export const I32 KW_FALLTHROUGH = 17;
+export const I32 KW_FALSE = 18;
+export const I32 KW_FOR = 19;
+export const I32 KW_IF = 20;
+export const I32 KW_IMPORT = 21;
+export const I32 KW_IN = 22;
+export const I32 KW_IN_PLACE = 23;
+export const I32 KW_INOUT = 24;
+export const I32 KW_KERNEL = 25;
+export const I32 KW_OUT = 26;
+export const I32 KW_OVER = 27;
+export const I32 KW_PROFILE = 28;
+export const I32 KW_REDUCE = 29;
+export const I32 KW_RETURN = 30;
+export const I32 KW_SCHEDULE = 31;
+export const I32 KW_STATIC_ASSERT = 32;
+export const I32 KW_STRUCT = 33;
+export const I32 KW_SWITCH = 34;
+export const I32 KW_TEST = 35;
+export const I32 KW_TRUE = 36;
+export const I32 KW_TRY = 37;
+export const I32 KW_TYPE = 38;
+export const I32 KW_VAR = 39;
+export const I32 KW_VOID = 40;
+export const I32 KW_WHERE = 41;
+export const I32 KW_WHILE = 42;
+export const I32 KW_DISTINCT = 43;
+export const I32 KW_SECRET = 44;
+export const I32 KW_ERRDEFER = 45;
+
+// Identifier classes (Token.aux of TK_IDENT, low byte); IDC_RESERVED_BIT is set when the
+// name has the form [IUQT][0-9]+, which a declaration may not use (C1010, SPEC-04 LS-17).
+export const I32 IDC_PLAIN = 0;
+export const I32 IDC_I8 = 1;
+export const I32 IDC_I16 = 2;
+export const I32 IDC_I32 = 3;
+export const I32 IDC_I64 = 4;
+export const I32 IDC_I128 = 5;
+export const I32 IDC_I256 = 6;
+export const I32 IDC_I512 = 7;
+export const I32 IDC_I1024 = 8;
+export const I32 IDC_U8 = 9;
+export const I32 IDC_U16 = 10;
+export const I32 IDC_U32 = 11;
+export const I32 IDC_U64 = 12;
+export const I32 IDC_BOOL = 13;
+export const I32 IDC_STR = 14;
+export const I32 IDC_T1 = 15;
+export const I32 IDC_T27 = 16;
+export const I32 IDC_PT5 = 17;
+export const I32 IDC_PT4 = 18;
+export const I32 IDC_ARENA = 19;
+export const I32 IDC_POOL = 20;
+export const I32 IDC_HANDLE = 21;
+export const I32 IDC_UNDERSCORE = 22;
+export const I32 IDC_ROUND = 23;
+export const I32 IDC_AT = 24;
+export const I32 IDC_RESERVED_BIT = 256;
+
+// Keeps contextual token classes for parsing; elsewhere these names are ordinary.
+export Bool ordinary_name_class(I32 cls) {
+    return cls == IDC_PLAIN || cls == IDC_ROUND || cls == IDC_AT;
+}
+
+// Diagnostic codes of SPEC-04 17.2 that the scanner reports.
+export const I64 C_SOURCE_BYTES = 1002;
+export const I64 C_FORBIDDEN = 1003;
+export const I64 C_CONTROL = 1004;
+export const I64 C_COMMENT = 1005;
+export const I64 C_IDENT_LONG = 1012;
+export const I64 C_NON_ASCII = 1013;
+export const I64 C_RADIX_CASE = 1020;
+export const I64 C_SEPARATOR = 1021;
+export const I64 C_LEADING_ZERO = 1022;
+export const I64 C_LITERAL_BITS = 1023;
+export const I64 C_DIGIT = 1024;
+export const I64 C_CHAR_COUNT = 1030;
+export const I64 C_SCALAR = 1031;
+export const I64 C_ESCAPE = 1032;
+export const I64 C_HOLE_PLACE = 1033;
+export const I64 C_LINE_BREAK = 1034;
+export const I64 C_HOLE = 1035;
+export const I64 C_UNTERMINATED = 1038;
+export const I64 C_LONE_BRACE = 1039;
+export const I64 C_SYNTAX = 1050;
+
+// The lexer's cursor: byte offset i in [.., end), its line and column, and the position of
+// the current token's error.
+export struct Lex {
+    I64 i;
+    I64 end;
+    I64 line;
+    I64 col;
+    I64 err_line;
+    I64 err_col;
+}
+
+// ---------------------------------------------------------------- characters
+
+// The byte at i + k, or -1 at or after the end.
+I64 at[n](in U8[n] src, in Lex[_] lx, I64 k) {
+    I64 j = lx[0].i + k;
+    if (j >= lx[0].end) {
+        return -1;
+    }
+    return src[j] as I64;
+}
+
+Bool is_digit(I64 c) {
+    return c >= '0' && c <= '9';
+}
+
+Bool is_hex(I64 c) {
+    return is_digit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
+Bool is_letter(I64 c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+}
+
+Bool is_word(I64 c) {
+    return is_letter(c) || is_digit(c);
+}
+
+// A line end: LF, or the CR of a CR LF pair (check_text refuses any other CR).
+Bool is_nl(I64 c) {
+    return c == 10 || c == 13;
+}
+
+// The value of a hexadecimal digit.
+export I64 hex_value(I64 c) {
+    if (c <= '9') {
+        return c - '0';
+    }
+    if (c <= 'F') {
+        return c - 'A' + 10;
+    }
+    return c - 'a' + 10;
+}
+
+// The length in bytes of the UTF-8 sequence that starts with lead byte c.
+export I64 scalar_len(I64 c) {
+    if (c < 0x80) {
+        return 1;
+    }
+    if (c < 0xE0) {
+        return 2;
+    }
+    if (c < 0xF0) {
+        return 3;
+    }
+    return 4;
+}
+
+// The scalar value at src[i], which check_text has validated.
+export I64 scalar_at[n](in U8[n] src, I64 i) {
+    I64 c = src[i] as I64;
+    if (c < 0x80) {
+        return c;
+    }
+    if (c < 0xE0) {
+        return ((c & 0x1F) << 6) | ((src[i + 1] as I64) & 0x3F);
+    }
+    if (c < 0xF0) {
+        return ((c & 0x0F) << 12) | (((src[i + 1] as I64) & 0x3F) << 6) | ((src[i + 2] as I64) & 0x3F);
+    }
+    return ((c & 0x07) << 18) | (((src[i + 1] as I64) & 0x3F) << 12) | (((src[i + 2] as I64) & 0x3F) << 6) |
+        ((src[i + 3] as I64) & 0x3F);
+}
+
+// Moves the cursor past one scalar value; a line end starts the next line.
+void adv[n](in U8[n] src, inout Lex[_] lx) {
+    I64 i = lx[0].i;
+    I64 c = src[i] as I64;
+    if (c == 10 || (c == 13 && i + 1 < lx[0].end && src[i + 1] == 10)) {
+        lx[0].line += 1;
+        lx[0].col = 1;
+        if (c == 13) {
+            lx[0].i = i + 2;
+        } else {
+            lx[0].i = i + 1;
+        }
+        return;
+    }
+    lx[0].col += 1;
+    lx[0].i = i + scalar_len(c);
+}
+
+void adv_n[n](in U8[n] src, inout Lex[_] lx, I64 k) {
+    for j in 0..k {
+        adv(src, lx);
+    }
+}
+
+// ---------------------------------------------------------------- phase 1: source text
+
+// The scalar value and length of the UTF-8 sequence at src[i], as value * 8 + length, or -1
+// when it is not valid UTF-8 (RFC 3629: no overlong form, no surrogate, at most U+10FFFF).
+I64 decode_utf8[n](in U8[n] src, I64 i) {
+    I64 c = src[i] as I64;
+    I64 blen = 0;
+    I64 lo = 0x80;
+    I64 hi = 0xBF;
+    I64 v = 0;
+    if (c >= 0xC2 && c <= 0xDF) {
+        blen = 2;
+        v = c & 0x1F;
+    } else if (c >= 0xE0 && c <= 0xEF) {
+        blen = 3;
+        v = c & 0x0F;
+        if (c == 0xE0) {
+            lo = 0xA0;
+        } else if (c == 0xED) {
+            hi = 0x9F;
+        }
+    } else if (c >= 0xF0 && c <= 0xF4) {
+        blen = 4;
+        v = c & 0x07;
+        if (c == 0xF0) {
+            lo = 0x90;
+        } else if (c == 0xF4) {
+            hi = 0x8F;
+        }
+    } else {
+        return -1;
+    }
+    if (i + blen > n) {
+        return -1;
+    }
+    for k in 1..blen {
+        I64 b = src[i + k] as I64;
+        if (k == 1 && (b < lo || b > hi)) {
+            return -1;
+        }
+        if (b < 0x80 || b > 0xBF) {
+            return -1;
+        }
+        v = (v << 6) | (b & 0x3F);
+    }
+    return v * 8 + blen;
+}
+
+// Default_Ignorable_Code_Point, the bidirectional controls, and the line and paragraph
+// separators: C1003 (SPEC-04 3.1), the ranges `cint_ref` lists.
+export Bool forbidden(I64 cp) {
+    switch (cp) {
+        case 0x00AD, 0x034F, 0x061C, 0x115F..=0x1160, 0x17B4..=0x17B5, 0x180B..=0x180F,
+                0x200B..=0x200F, 0x2028..=0x2029, 0x202A..=0x202E, 0x2060..=0x206F, 0x3164,
+                0xFE00..=0xFE0F, 0xFEFF, 0xFFA0, 0xFFF0..=0xFFF8, 0x1BCA0..=0x1BCA3,
+                0x1D173..=0x1D17A, 0xE0000..=0xE0FFF:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// SPEC-04 3.1 and 3.2 over the whole file. Returns the number of diagnostics added; the
+// file is lexed only when it is 0. A byte-order mark is the only diagnostic it gives.
+export I64 check_text[n, r](in U8[n] src, inout limits.CompilerDiag[r] diag, I64 module) {
+    if (n >= 3 && src[0] == 0xEF && src[1] == 0xBB && src[2] == 0xBF) {
+        _ = limits.diag_add(diag, C_SOURCE_BYTES, module, 1, 1, 0, 0);
+        return 1;
+    }
+    I64 errors = 0;
+    I64 i = 0;
+    I64 line = 1;
+    I64 col = 1;
+    while (i < n) {
+        I64 c = src[i] as I64;
+        I64 code = 0;
+        I64 blen = 1;
+        if (c == 10) {
+            line += 1;
+            col = 1;
+            i += 1;
+            continue;
+        }
+        if (c == 13 && i + 1 < n && src[i + 1] == 10) {
+            line += 1;
+            col = 1;
+            i += 2;
+            continue;
+        }
+        if (c < 0x80) {
+            if (c == 0) {
+                code = C_SOURCE_BYTES;
+            } else if (c != 9 && (c < 0x20 || c == 0x7F)) {
+                code = C_CONTROL;
+            }
+        } else {
+            I64 d = decode_utf8(src, i);
+            if (d < 0) {
+                code = C_SOURCE_BYTES;
+            } else {
+                I64 cp = d / 8;
+                blen = d % 8;
+                if (cp <= 0x9F) {
+                    code = C_CONTROL;
+                } else if (forbidden(cp)) {
+                    code = C_FORBIDDEN;
+                }
+            }
+        }
+        if (code != 0) {
+            _ = limits.diag_add(diag, code, module, line, col, 0, 0);
+            errors += 1;
+        }
+        col += 1;
+        i += blen;
+    }
+    return errors;
+}
+
+// ---------------------------------------------------------------- whitespace and comments
+
+// Skips whitespace and comments. Returns 0, or C_COMMENT with the error at the comment's
+// start when a block comment does not end; block comments nest (SPEC-04 LS-14, as
+// `cint_ref` reads them).
+I64 skip[n](in U8[n] src, inout Lex[_] lx) {
+    while (lx[0].i < lx[0].end) {
+        I64 c = at(src, lx, 0);
+        if (c == ' ' || c == 9 || is_nl(c)) {
+            adv(src, lx);
+        } else if (c == '/' && at(src, lx, 1) == '/') {
+            while (lx[0].i < lx[0].end && !is_nl(at(src, lx, 0))) {
+                adv(src, lx);
+            }
+        } else if (c == '/' && at(src, lx, 1) == '*') {
+            lx[0].err_line = lx[0].line;
+            lx[0].err_col = lx[0].col;
+            I64 depth = 0;
+            while (true) {
+                if (lx[0].i >= lx[0].end) {
+                    return C_COMMENT;
+                }
+                if (at(src, lx, 0) == '/' && at(src, lx, 1) == '*') {
+                    depth += 1;
+                    adv_n(src, lx, 2);
+                } else if (at(src, lx, 0) == '*' && at(src, lx, 1) == '/') {
+                    depth -= 1;
+                    adv_n(src, lx, 2);
+                    if (depth == 0) {
+                        break;
+                    }
+                } else {
+                    adv(src, lx);
+                }
+            }
+        } else {
+            break;
+        }
+    }
+    return 0;
+}
+
+// ---------------------------------------------------------------- escapes
+
+// The escape that starts with the backslash at src[i], before `end` (SPEC-04 3.8, as
+// `cint_ref` consumes and checks it). Returns its value, or -C_ESCAPE or -C_SCALAR;
+// res[0] is the offset after it and res[1] the number of scalar values it spans. In a byte
+// string (`bytes`) `\xHH` may be 00 to FF and `\u{...}` is not an escape (LS-42).
+export I64 escape_at[n](in U8[n] src, I64 i, I64 end, Bool bytes, inout I64[_] res) {
+    I64 j = i + 1;
+    I64 scalars = 1;
+    I64 c = -1;
+    if (j < end) {
+        c = src[j] as I64;
+    }
+    if (c == 'x') {
+        j += 1;
+        scalars += 1;
+        for k in 0..2 {
+            if (j < end && is_hex(src[j] as I64)) {
+                j += 1;
+                scalars += 1;
+            }
+        }
+    } else if (c == 'u' && j + 1 < end && src[j + 1] == '{') {
+        j += 2;
+        scalars += 2;
+        while (j < end && src[j] != '}' && src[j] != 39 && src[j] != '"' && !is_nl(src[j] as I64)) {
+            j += scalar_len(src[j] as I64);
+            scalars += 1;
+        }
+        if (j < end && src[j] == '}') {
+            j += 1;
+            scalars += 1;
+        }
+    } else if (c >= 0 && !is_nl(c)) {
+        j += scalar_len(c);
+        scalars += 1;
+    }
+    res[0] = j;
+    res[1] = scalars;
+    I64 blen = j - i;
+    if (blen == 2) {
+        switch (c) {
+            case 92: return 92;
+            case '"': return 34;
+            case 39: return 39;
+            case 'n': return 10;
+            case 'r': return 13;
+            case 't': return 9;
+            case '0': return 0;
+            default: return -C_ESCAPE;
+        }
+    }
+    if (c == 'x' && blen == 4) {
+        I64 v = hex_value(src[i + 2] as I64) * 16 + hex_value(src[i + 3] as I64);
+        if (v <= 0x7F || bytes) {
+            return v;
+        }
+        return -C_ESCAPE;
+    }
+    if (c == 'u' && !bytes && blen >= 5 && src[j - 1] == '}' && scalars - 4 >= 1 && scalars - 4 <= 6) {
+        I64 v = 0;
+        for k in i + 3..j - 1 {
+            if (!is_hex(src[k] as I64)) {
+                return -C_ESCAPE;
+            }
+            v = v * 16 + hex_value(src[k] as I64);
+        }
+        if ((v >= 0xD800 && v <= 0xDFFF) || v > 0x10FFFF) {
+            return -C_SCALAR;
+        }
+        return v;
+    }
+    return -C_ESCAPE;
+}
+
+// ---------------------------------------------------------------- literals
+
+// SPEC-04 3.5 rule 2 on the digits src[a..b) of radix `radix` (3 for balanced ternary):
+// 0, C_DIGIT for no digit or an invalid one, or C_SEPARATOR for a misplaced `_`.
+I64 check_digits[n](in U8[n] src, I64 a, I64 b, I64 radix) {
+    if (a == b) {
+        return C_DIGIT;
+    }
+    if (src[a] == '_' || src[b - 1] == '_') {
+        return C_SEPARATOR;
+    }
+    for k in a + 1..b {
+        if (src[k] == '_' && src[k - 1] == '_') {
+            return C_SEPARATOR;
+        }
+    }
+    for k in a..b {
+        I64 c = src[k] as I64;
+        Bool ok = c == '_';
+        if (radix == 16) {
+            ok = ok || is_hex(c);
+        } else if (radix == 10) {
+            ok = ok || is_digit(c);
+        } else if (radix == 8) {
+            ok = ok || (c >= '0' && c <= '7');
+        } else if (radix == 2) {
+            ok = ok || c == '0' || c == '1';
+        } else {
+            ok = ok || c == 'N' || c == '0' || c == 'P';
+        }
+        if (!ok) {
+            return C_DIGIT;
+        }
+    }
+    return 0;
+}
+
+// The order of balanced ternary digits after the flip that makes the leading digit P.
+I64 trit(I64 c, Bool flip) {
+    I64 v = 1;
+    if (c == 'P') {
+        v = 2;
+    } else if (c == 'N') {
+        v = 0;
+    }
+    if (flip) {
+        return 2 - v;
+    }
+    return v;
+}
+
+// Whether the digits src[a..b) (with `_`, radix 10 or 3) are at least those of 2^4096 in
+// `limit`, the digits of 2^4096 in that radix, when both have limit's digit nscalar.
+Bool at_least[n, m](in U8[n] src, I64 a, I64 b, in U8[m] limit, Bool ternary, Bool flip) {
+    I64 k = 0;
+    for j in a..b {
+        I64 c = src[j] as I64;
+        if (c != '_') {
+            I64 x = c;
+            I64 y = limit[k] as I64;
+            if (ternary) {
+                x = trit(c, flip);
+                y = trit(y, false);
+            }
+            if (x != y) {
+                return x > y;
+            }
+            k += 1;
+        }
+    }
+    return true;
+}
+
+// Whether the literal with digits src[a..b) of radix `radix` has more than 4,096 bits of
+// magnitude (C1023, SPEC-04 LS-31). The digits are valid.
+Bool too_wide[n](in U8[n] src, I64 a, I64 b, I64 radix) {
+    I64 first = a;
+    while (first < b && (src[first] == '0' || src[first] == '_')) {
+        first += 1;
+    }
+    I64 digits = 0;
+    for j in first..b {
+        if (src[j] != '_') {
+            digits += 1;
+        }
+    }
+    if (digits == 0) {
+        return false;
+    }
+    if (radix == 10) {
+        if (digits != 1234) {
+            return digits > 1234;
+        }
+        return at_least(src, first, b, "1044388881413152506691752710716624382579964249047383780384233483283953907971557456848826811934997558340890106714439262837987573438185793607263236087851365277945956976543709998340361590134383718314428070011855946226376318839397712745672334684344586617496807908705803704071284048740118609114467977783598029006686938976881787785946905630190260940599579453432823469303026696443059025015972399867714215541693835559885291486318237914434496734087811872639496475100189041349008417061675093668333850551032972088269550769983616369411933015213796825837188091833656751221318492846368125550225998300412344784862595674492194617023806505913245610825731835380087608622102834270197698202313169017678006675195485079921636419370285375124784014907159135459982790513399611551794271106831134090584272884279791554849782954323534517065223269061394905987693002122963395687782878948440616007412945674919823050571642377154816321380631045902916136926708342856440730447899971901781465763473223850267253059899795996090799469201774624817718449867455659250178329070473119433165550807568221846571746373296884912819520317457002440926616910874148385078411929804522981857338977648103126085903001302413467189726673216491511131602920781738033436090243804708340403154190336", false, false);
+    }
+    if (radix == 3) {
+        if (digits != 2585) {
+            return digits > 2585;
+        }
+        return at_least(src, first, b, "PP0P0PNN0NN0NP0NNNP00PN0PNP0PPP0P00NNPN0PPNP0N0PPP0P0NN0N00PPNNP00NPNN0PNNP00000P00NNP0NNN0000P00P0NP0P0NP00PP0NP0NPPP0NNNNN0PP00000NPNP00NNN0P00PP0NP0N0NPNN0PNNPPPPN0NPP0PNPPPPP0N00N0PPNNPNP0P00NN0PN00NPPN0PPPN0PNN00PP0N000PP0PNPPN0PP00NN0N00N0NNNNPNPP0NP0PN0P0PNN0P000PNNPPPN0PNN0PP00N0NN00PPPNNPNN00NP0NPN00N0000NPP00NNPNPP0NN000PNPPPPN0P0NP0PPPNP00N0PNPNNNNNNNPNN00PPNNP0PP0P00N00N0NPN0NPP0PNN0N00PNNPNP000PPNNN00N0N0N0PP0PNNP00PN0PPNP0P0PP0N0PN0PNPPPNNNN0PN00P000NNPPNNPN00NPNPN00N0PNN0PNPPN00PN0PP0NNNP0N00N0P00NPNPNPNP0N0NN00N0NNPP00NNNPPPP0P0NPP0NP00NP000PNNN0NP0NN0N0N0N0PN0NPNP00PNPP0PP00NN0P0PNNPPPNNPPNPN0PNPN0NNPPNNNNPP0NP00N0NP000P0NP0PP0P0PN0PNN000PPN0NP0NNPP0NNNPPPN0PPPP0PPN00P0NPNN0NNN0PPPP0N00N0NNPN00P000P0NNNPPPNN00PPN0PPPP0N0PPNPPNNPPP00NPP0000PNPNPN000N0PPN0000P0PNNPP0PPP0PNP00000NN0NNN0NN0NPNPN0P00NNN0N0N0PPNNNPN00P00NPNP0PNNNPPNP000PNNNN0P00N00N00PN0PPP00PPNPNNPNNPP0NPPNPNNNP000P0P00PP0P000N00N0N00PP000NPNPPNPP00N00P0P0PNNPPN0N0P00PPN0PNNPNN0NN0NN0N0PP0NNP0NNPN0P00PNN000N00NNNN0N0PNPNN00N0000NNP000PPPPN00PNNNP000PPPPNPN0NPPPNNNN0P0N00NNN0PN0NPNNPNN0P00P0PPNP0P0N000NP0NP0PPPPPPN0P0P0NPNP0N0NP00N00PNPNN0NNNP0N0N0NNN00PNPPN0NN0PN0NN0NNN0NPNPP0P0000PNP0NPN0PP00P0NP0000PNP0P0N0PPP00P0PN000PNN00NPPN0NPPN00NPNPNNNN00P0PPN00PPPPNNNN0000NNPNP0PP00N0N00PNNPPNNNNN0PN00P0N0NNPNPP000P0N0N0PPPN00PNNN00PNPPN0P0N0N0NN0N0NP0P00P0P0PP0P0NN0PNNPPP0N0000PP00PNPNP00NP0NNNPPNNPPP0P00NPP0NNNN0NNPPN000NPP0N00PPP0P0N0P0NPPNPN000N0PNNPP000NN0PNN00N0N0PNN0N0NPN0PNPNN00NP0NN0N0NP0P0PNP0P0P0PNP0NP0PNN0PNN00PN0P000PP00N0N0PNN0PPPN0PNPPPP0NPNNNPNPPPN0P0PN0P0NNPPNPN0NN0P0P00NP000P00NNNPNNP00PPN0NPPN0PPPPP0NN00NPN0PPPPPNPNN0N0N0PP0NNNPNPPNP00NPNP0PNP00NP0PN000PP00PNP0PN0PNPNN0NN0P000NN00PNNPPNPP0000NNP0P0PN00NNP0P0PPP0P0P0PPPPN0P0P0NN0NNNP0NN0000PNN00NP0PP0PN0NNPP00NPNN000PPPPN000P0N0NPPPPP0NNNNN0NPPN00N0P0NPNNN00PN0P0PN0N0PNP000N0NN0NN0N00PPP0N0NPP0PPPPNNPNPPNN0PNPPN0NPN0PPNN0NN0PP00NNN0NN0PPNN0P0PNP0N00NPNNNNPP0NNNNP0PP0N00P0N0N0NNPPPP00000P00N00N0P0NPP0NNP0PP0NN0PNPP000N00PPNNNPPNPNPPPN00PNNN0P0P0P0PP0P0NNPN00N0N0N00NNN0PNN0PNPPP0PNPN0P00PNPNNPPP0NN00PN0N0NP00NNPNP0PPN0PPPPN00PP00N00N0P0P0N0PNPP00PN00P0N0NNP0NPP0000NPN0PNNPNNNP0000NNPPNP0NN0N00NN0N0N0N0N00PN0NNNN0P0PPP0N0PPPNNPPPNNPN00NNPNN0NP0NPNPN0NNPPPPNPNP0NN0PN0PN00NN0PNPP0PP00NPN000NNPNPP0NNPN0NPNP0PPN0NPP0P000PNNN0NPP0N0NNP0PNP0PP00N000PN0NNPN00P0P00NPPNNNPN0N0PP0PPPPPNNN0NNN000PPNNP00PPPPP00PPPNP00NPNP0P00PNPN0NPPPP0PPNN0NN0NNPPNPPNNN0PN0NN000NP0NN0P0NNPPP0NPN00PNPP00PNP0P00PP000NP00P0P0N00N0NNPN0NP0N0PN0000P00N0N00NPNN0PN0NNP0PN0NPPN0N000000PP0000PN00P0NP0N000PPPP00P00NP00P0PN0000P0NPPPP0NP0P0NP", true, src[first] == 'N');
+    }
+    I64 per = 4;
+    if (radix == 8) {
+        per = 3;
+    } else if (radix == 2) {
+        per = 1;
+    }
+    I64 lead = hex_value(src[first] as I64);
+    I64 bits = (digits - 1) * per;
+    while (lead > 0) {
+        bits += 1;
+        lead = lead / 2;
+    }
+    return bits > 4096;
+}
+
+// SPEC-04 3.5 for the numeral word src[a..b): 0, or the first error `cint_ref` raises.
+// res[0] is the radix.
+I64 check_int[n](in U8[n] src, I64 a, I64 b, inout I64[_] res) {
+    I64 c0 = src[a] as I64;
+    I64 c1 = -1;
+    if (b - a >= 2) {
+        c1 = src[a + 1] as I64;
+    }
+    res[0] = 10;
+    if (c0 == '0' && (c1 == 'X' || c1 == 'B' || c1 == 'O' || c1 == 'T')) {
+        return C_RADIX_CASE;
+    }
+    I64 from = a;
+    if (c0 == '0' && (c1 == 'x' || c1 == 'b' || c1 == 'o' || c1 == 't')) {
+        if (c1 == 'x') {
+            res[0] = 16;
+        } else if (c1 == 'b') {
+            res[0] = 2;
+        } else if (c1 == 'o') {
+            res[0] = 8;
+        } else {
+            res[0] = 3;
+        }
+        from = a + 2;
+    } else if (c0 == '0' && (is_digit(c1) || c1 == '_')) {
+        return C_LEADING_ZERO;
+    }
+    I64 e = check_digits(src, from, b, res[0]);
+    if (e != 0) {
+        return e;
+    }
+    if (too_wide(src, from, b, res[0])) {
+        return C_LITERAL_BITS;
+    }
+    return 0;
+}
+
+// ---------------------------------------------------------------- keywords and names
+
+// Whether src[s..s + k) spells `word`.
+Bool spells[n, k](in U8[n] src, I64 s, I64 blen, in U8[k] word) {
+    if (blen != k) {
+        return false;
+    }
+    for j in 0..k {
+        if (src[s + j] != word[j]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// The keyword id of src[s..s + blen), or 0.
+export I32 keyword[n](in U8[n] src, I64 s, I64 blen) {
+    switch (blen) {
+        case 2:
+            if (spells(src, s, blen, "as")) { return KW_AS; }
+            if (spells(src, s, blen, "by")) { return KW_BY; }
+            if (spells(src, s, blen, "do")) { return KW_DO; }
+            if (spells(src, s, blen, "if")) { return KW_IF; }
+            if (spells(src, s, blen, "in")) { return KW_IN; }
+        case 3:
+            if (spells(src, s, blen, "for")) { return KW_FOR; }
+            if (spells(src, s, blen, "out")) { return KW_OUT; }
+            if (spells(src, s, blen, "try")) { return KW_TRY; }
+            if (spells(src, s, blen, "var")) { return KW_VAR; }
+        case 4:
+            if (spells(src, s, blen, "case")) { return KW_CASE; }
+            if (spells(src, s, blen, "else")) { return KW_ELSE; }
+            if (spells(src, s, blen, "enum")) { return KW_ENUM; }
+            if (spells(src, s, blen, "over")) { return KW_OVER; }
+            if (spells(src, s, blen, "test")) { return KW_TEST; }
+            if (spells(src, s, blen, "true")) { return KW_TRUE; }
+            if (spells(src, s, blen, "type")) { return KW_TYPE; }
+            if (spells(src, s, blen, "void")) { return KW_VOID; }
+        case 5:
+            if (spells(src, s, blen, "break")) { return KW_BREAK; }
+            if (spells(src, s, blen, "catch")) { return KW_CATCH; }
+            if (spells(src, s, blen, "const")) { return KW_CONST; }
+            if (spells(src, s, blen, "defer")) { return KW_DEFER; }
+            if (spells(src, s, blen, "error")) { return KW_ERROR; }
+            if (spells(src, s, blen, "false")) { return KW_FALSE; }
+            if (spells(src, s, blen, "inout")) { return KW_INOUT; }
+            if (spells(src, s, blen, "where")) { return KW_WHERE; }
+            if (spells(src, s, blen, "while")) { return KW_WHILE; }
+        case 6:
+            if (spells(src, s, blen, "assert")) { return KW_ASSERT; }
+            if (spells(src, s, blen, "export")) { return KW_EXPORT; }
+            if (spells(src, s, blen, "import")) { return KW_IMPORT; }
+            if (spells(src, s, blen, "kernel")) { return KW_KERNEL; }
+            if (spells(src, s, blen, "reduce")) { return KW_REDUCE; }
+            if (spells(src, s, blen, "return")) { return KW_RETURN; }
+            if (spells(src, s, blen, "secret")) { return KW_SECRET; }
+            if (spells(src, s, blen, "struct")) { return KW_STRUCT; }
+            if (spells(src, s, blen, "switch")) { return KW_SWITCH; }
+        case 7:
+            if (spells(src, s, blen, "default")) { return KW_DEFAULT; }
+            if (spells(src, s, blen, "profile")) { return KW_PROFILE; }
+        case 8:
+            if (spells(src, s, blen, "continue")) { return KW_CONTINUE; }
+            if (spells(src, s, blen, "distinct")) { return KW_DISTINCT; }
+            if (spells(src, s, blen, "in_place")) { return KW_IN_PLACE; }
+            if (spells(src, s, blen, "schedule")) { return KW_SCHEDULE; }
+            if (spells(src, s, blen, "errdefer")) { return KW_ERRDEFER; }
+        case 11:
+            if (spells(src, s, blen, "fallthrough")) { return KW_FALLTHROUGH; }
+        case 12:
+            if (spells(src, s, blen, "expect_fault")) { return KW_EXPECT_FAULT; }
+        case 13:
+            if (spells(src, s, blen, "static_assert")) { return KW_STATIC_ASSERT; }
+        default:
+            return 0;
+    }
+    return 0;
+}
+
+// The identifier class of src[s..s + blen) (IDC_*), with IDC_RESERVED_BIT for [IUQT][0-9]+.
+export I32 ident_class[n](in U8[n] src, I64 s, I64 blen) {
+    I32 reserved = 0;
+    I64 c0 = src[s] as I64;
+    if (blen >= 2 && (c0 == 'I' || c0 == 'U' || c0 == 'Q' || c0 == 'T')) {
+        reserved = IDC_RESERVED_BIT;
+        for j in s + 1..s + blen {
+            if (!is_digit(src[j] as I64)) {
+                reserved = 0;
+            }
+        }
+    }
+    I32 cls = IDC_PLAIN;
+    if (spells(src, s, blen, "I8")) { cls = IDC_I8; }
+    else if (spells(src, s, blen, "I16")) { cls = IDC_I16; }
+    else if (spells(src, s, blen, "I32")) { cls = IDC_I32; }
+    else if (spells(src, s, blen, "I64")) { cls = IDC_I64; }
+    else if (spells(src, s, blen, "I128")) { cls = IDC_I128; }
+    else if (spells(src, s, blen, "I256")) { cls = IDC_I256; }
+    else if (spells(src, s, blen, "I512")) { cls = IDC_I512; }
+    else if (spells(src, s, blen, "I1024")) { cls = IDC_I1024; }
+    else if (spells(src, s, blen, "U8")) { cls = IDC_U8; }
+    else if (spells(src, s, blen, "U16")) { cls = IDC_U16; }
+    else if (spells(src, s, blen, "U32")) { cls = IDC_U32; }
+    else if (spells(src, s, blen, "U64")) { cls = IDC_U64; }
+    else if (spells(src, s, blen, "Bool")) { cls = IDC_BOOL; }
+    else if (spells(src, s, blen, "Str")) { cls = IDC_STR; }
+    else if (spells(src, s, blen, "T1")) { cls = IDC_T1; }
+    else if (spells(src, s, blen, "T27")) { cls = IDC_T27; }
+    else if (spells(src, s, blen, "PT5")) { cls = IDC_PT5; }
+    else if (spells(src, s, blen, "PT4")) { cls = IDC_PT4; }
+    else if (spells(src, s, blen, "Arena")) { cls = IDC_ARENA; }
+    else if (spells(src, s, blen, "Pool")) { cls = IDC_POOL; }
+    else if (spells(src, s, blen, "Handle")) { cls = IDC_HANDLE; }
+    else if (spells(src, s, blen, "_")) { cls = IDC_UNDERSCORE; }
+    else if (spells(src, s, blen, "round")) { cls = IDC_ROUND; }
+    else if (spells(src, s, blen, "at")) { cls = IDC_AT; }
+    return cls | reserved;
+}
+
+// ---------------------------------------------------------------- operators
+
+// The longest operator at the cursor (SPEC-04 3.9, maximal munch), as id * 8 + length, or 0.
+I64 operator_at[n](in U8[n] src, in Lex[_] lx) {
+    I64 c = at(src, lx, 0);
+    I64 d = at(src, lx, 1);
+    I64 e = at(src, lx, 2);
+    I64 f = at(src, lx, 3);
+    switch (c) {
+        case '+', '-', '*':
+            I64 base = OP_ADD as I64;
+            I64 wrap = OP_ADD_WRAP as I64;
+            I64 sat = OP_ADD_SAT as I64;
+            I64 assign = OP_ADD_ASSIGN as I64;
+            I64 wrap_assign = OP_ADD_WRAP_ASSIGN as I64;
+            I64 sat_assign = OP_ADD_SAT_ASSIGN as I64;
+            I64 off = 0;
+            if (c == '-') {
+                off = 1;
+            } else if (c == '*') {
+                off = 2;
+            }
+            if (d == '%' && e == '=') { return (wrap_assign + off) * 8 + 3; }
+            if (d == '|' && e == '=') { return (sat_assign + off) * 8 + 3; }
+            if (d == '%') { return (wrap + off) * 8 + 2; }
+            if (d == '|') { return (sat + off) * 8 + 2; }
+            if (d == '=') { return (assign + off) * 8 + 2; }
+            if (c == '+' && d == '+') { return (OP_INC as I64) * 8 + 2; }
+            if (c == '-' && d == '-') { return (OP_DEC as I64) * 8 + 2; }
+            return (base + off) * 8 + 1;
+        case '<':
+            if (d == '<' && e == '%' && f == '=') { return (OP_SHL_WRAP_ASSIGN as I64) * 8 + 4; }
+            if (d == '<' && e == '%') { return (OP_SHL_WRAP as I64) * 8 + 3; }
+            if (d == '<' && e == '=') { return (OP_SHL_ASSIGN as I64) * 8 + 3; }
+            if (d == '<') { return (OP_SHL as I64) * 8 + 2; }
+            if (d == '=') { return (OP_LE as I64) * 8 + 2; }
+            return (OP_LT as I64) * 8 + 1;
+        case '>':
+            if (d == '>' && e == '=') { return (OP_SHR_ASSIGN as I64) * 8 + 3; }
+            if (d == '>') { return (OP_SHR as I64) * 8 + 2; }
+            if (d == '=') { return (OP_GE as I64) * 8 + 2; }
+            return (OP_GT as I64) * 8 + 1;
+        case '.':
+            if (d == '.' && e == '=') { return (OP_RANGE_INCL as I64) * 8 + 3; }
+            if (d == '.') { return (OP_RANGE as I64) * 8 + 2; }
+            return (OP_DOT as I64) * 8 + 1;
+        case '=':
+            if (d == '=') { return (OP_EQ as I64) * 8 + 2; }
+            return (OP_ASSIGN as I64) * 8 + 1;
+        case '!':
+            if (d == '=') { return (OP_NE as I64) * 8 + 2; }
+            return (OP_BANG as I64) * 8 + 1;
+        case '&':
+            if (d == '&') { return (OP_AND as I64) * 8 + 2; }
+            if (d == '=') { return (OP_BAND_ASSIGN as I64) * 8 + 2; }
+            return (OP_BAND as I64) * 8 + 1;
+        case '|':
+            if (d == '|') { return (OP_OR as I64) * 8 + 2; }
+            if (d == '=') { return (OP_BOR_ASSIGN as I64) * 8 + 2; }
+            return (OP_BOR as I64) * 8 + 1;
+        case '/':
+            if (d == '=') { return (OP_DIV_ASSIGN as I64) * 8 + 2; }
+            return (OP_DIV as I64) * 8 + 1;
+        case '%':
+            if (d == '=') { return (OP_REM_ASSIGN as I64) * 8 + 2; }
+            return (OP_REM as I64) * 8 + 1;
+        case '^':
+            if (d == '=') { return (OP_BXOR_ASSIGN as I64) * 8 + 2; }
+            return (OP_BXOR as I64) * 8 + 1;
+        case '~': return (OP_TILDE as I64) * 8 + 1;
+        case '?': return (OP_QUESTION as I64) * 8 + 1;
+        case ':': return (OP_COLON as I64) * 8 + 1;
+        case '(': return (OP_LPAREN as I64) * 8 + 1;
+        case ')': return (OP_RPAREN as I64) * 8 + 1;
+        case '[': return (OP_LBRACKET as I64) * 8 + 1;
+        case ']': return (OP_RBRACKET as I64) * 8 + 1;
+        case '{': return (OP_LBRACE as I64) * 8 + 1;
+        case '}': return (OP_RBRACE as I64) * 8 + 1;
+        case ',': return (OP_COMMA as I64) * 8 + 1;
+        case ';': return (OP_SEMI as I64) * 8 + 1;
+        case '@': return (OP_AT as I64) * 8 + 1;
+        default: return 0;
+    }
+}
+
+// ---------------------------------------------------------------- tokens
+
+void set_token[t](inout Token[t] toks, I64 k, I32 kind, I64 sub, I64 start, I64 end, I64 line, I64 col) {
+    toks[k].kind = kind;
+    toks[k].sub = sub as I32;
+    toks[k].start = start as I32;
+    toks[k].len = (end - start) as I32;
+    toks[k].line = line as I32;
+    toks[k].col = col as I32;
+    toks[k].match = 0;
+    toks[k].aux = 0;
+}
+
+// Consumes a string body after its opening quote (SPEC-04 3.8). 0, or C_UNTERMINATED or
+// C_LINE_BREAK, both at the literal's first character.
+I64 string_body[n](in U8[n] src, inout Lex[_] lx) {
+    while (true) {
+        I64 c = at(src, lx, 0);
+        if (c < 0) {
+            return C_UNTERMINATED;
+        }
+        if (is_nl(c)) {
+            return C_LINE_BREAK;
+        }
+        if (c == '"') {
+            adv(src, lx);
+            return 0;
+        }
+        I64 d = at(src, lx, 1);
+        adv(src, lx);
+        if (c == 92 && d >= 0 && !is_nl(d)) {
+            adv(src, lx);
+        }
+    }
+    return 0;
+}
+
+// Consumes a character literal (SPEC-04 3.7). 0, or an error code with its position in
+// lx; aux[0] is the scalar value. The cursor stops where `cint_ref`'s lexer stops.
+I64 char_literal[n](in U8[n] src, inout Lex[_] lx, inout I64[_] aux) {
+    I64 sl = lx[0].line;
+    I64 sc = lx[0].col;
+    adv(src, lx);
+    I64 nscalar = 0;
+    I64[2] res;
+    while (true) {
+        I64 c = at(src, lx, 0);
+        if (c < 0 || is_nl(c)) {
+            lx[0].err_line = sl;
+            lx[0].err_col = sc;
+            return C_UNTERMINATED;
+        }
+        if (c == 39) {
+            adv(src, lx);
+            break;
+        }
+        if (c == 92) {
+            I64 el = lx[0].line;
+            I64 ec = lx[0].col;
+            I64 v = escape_at(src, lx[0].i, lx[0].end, false, res);
+            lx[0].col += res[1];
+            lx[0].i = res[0];
+            if (v < 0) {
+                lx[0].err_line = el;
+                lx[0].err_col = ec;
+                return -v;
+            }
+            aux[0] = v;
+        } else {
+            aux[0] = scalar_at(src, lx[0].i);
+            adv(src, lx);
+        }
+        nscalar += 1;
+    }
+    if (nscalar != 1) {
+        lx[0].err_line = sl;
+        lx[0].err_col = sc;
+        return C_CHAR_COUNT;
+    }
+    return 0;
+}
+
+// Lexes the next token into toks[k]. 0, or the code of the token's error, with its
+// position in lx[0].err_line and err_col and the cursor where `cint_ref`'s lexer stops.
+I64 next_token[n, t](in U8[n] src, inout Lex[_] lx, inout Token[t] toks, I64 k) {
+    I64 e = skip(src, lx);
+    if (e != 0) {
+        return e;
+    }
+    I64 start = lx[0].i;
+    I64 line = lx[0].line;
+    I64 col = lx[0].col;
+    lx[0].err_line = line;
+    lx[0].err_col = col;
+    if (start >= lx[0].end) {
+        set_token(toks, k, TK_EOF, 0, start, start, line, col);
+        return 0;
+    }
+    I64 c = at(src, lx, 0);
+    I64[2] res;
+    if (is_letter(c)) {
+        if (c == 'b' && at(src, lx, 1) == '"') {
+            adv_n(src, lx, 2);
+            e = string_body(src, lx);
+            set_token(toks, k, TK_BYTES, 0, start, lx[0].i, line, col);
+            return e;
+        }
+        while (is_word(at(src, lx, 0))) {
+            adv(src, lx);
+        }
+        I64 blen = lx[0].i - start;
+        I64 x = at(src, lx, 0);
+        if (blen == 2 && c == 'a' && src[start + 1] == 's' && (x == '%' || x == '|' || x == '?')) {
+            adv(src, lx);
+            I32 op = OP_AS_WRAP;
+            if (x == '|') {
+                op = OP_AS_SAT;
+            } else if (x == '?') {
+                op = OP_AS_TRY;
+            }
+            set_token(toks, k, TK_OP, op as I64, start, lx[0].i, line, col);
+            return 0;
+        }
+        if (blen >= 2 && c == 'Q' && src[start + 1] != '0' && x == '.' && is_digit(at(src, lx, 1))) {
+            Bool digits = true;
+            for j in start + 1..start + blen {
+                if (!is_digit(src[j] as I64)) {
+                    digits = false;
+                }
+            }
+            if (digits) {
+                adv(src, lx);
+                while (is_digit(at(src, lx, 0))) {
+                    adv(src, lx);
+                }
+                set_token(toks, k, TK_FIXED, 0, start, lx[0].i, line, col);
+                return 0;
+            }
+        }
+        if (blen > 255) {
+            return C_IDENT_LONG;
+        }
+        I32 kw = keyword(src, start, blen);
+        if (kw != 0) {
+            set_token(toks, k, TK_KEYWORD, kw as I64, start, lx[0].i, line, col);
+        } else {
+            set_token(toks, k, TK_IDENT, 0, start, lx[0].i, line, col);
+            toks[k].aux = ident_class(src, start, blen);
+        }
+        return 0;
+    }
+    if (is_digit(c)) {
+        while (is_word(at(src, lx, 0))) {
+            adv(src, lx);
+        }
+        e = check_int(src, start, lx[0].i, res);
+        if (e != 0) {
+            return e;
+        }
+        I64 radix = res[0];
+        I64 d = at(src, lx, 1);
+        if (at(src, lx, 0) == '.' && (radix == 16 || radix == 10) &&
+                ((radix == 16 && is_hex(d)) || (radix == 10 && is_digit(d)))) {
+            adv(src, lx);
+            I64 fstart = lx[0].i;
+            while (is_word(at(src, lx, 0))) {
+                adv(src, lx);
+            }
+            e = check_digits(src, fstart, lx[0].i, radix);
+            if (e != 0) {
+                return e;
+            }
+            set_token(toks, k, TK_FRAC, radix, start, lx[0].i, line, col);
+            return 0;
+        }
+        set_token(toks, k, TK_INT, radix, start, lx[0].i, line, col);
+        return 0;
+    }
+    if (c == 39) {
+        I64[1] value;
+        e = char_literal(src, lx, value);
+        set_token(toks, k, TK_CHAR, 0, start, lx[0].i, line, col);
+        toks[k].aux = value[0] as I32;
+        return e;
+    }
+    if (c == '"') {
+        adv(src, lx);
+        e = string_body(src, lx);
+        set_token(toks, k, TK_STRING, 0, start, lx[0].i, line, col);
+        return e;
+    }
+    I64 op = operator_at(src, lx);
+    if (op != 0) {
+        adv_n(src, lx, op % 8);
+        set_token(toks, k, TK_OP, op / 8, start, lx[0].i, line, col);
+        return 0;
+    }
+    if (c >= 0x80) {
+        return C_NON_ASCII;
+    }
+    return C_SYNTAX;
+}
+
+// Lexes a whole module (phase 2, after check_text found no error) into toks[0..] with a
+// final TK_EOF. Returns the number of tokens, or -1 when a diagnostic was added: a lexing
+// error, or C9001 when the token table is full.
+export I64 scan[n, t, r](in U8[n] src, inout Token[t] toks, inout limits.CompilerDiag[r] diag, I64 module) {
+    Lex[1] lx;
+    lx[0].i = 0;
+    lx[0].end = n;
+    lx[0].line = 1;
+    lx[0].col = 1;
+    I64 k = 0;
+    Bool failed = false;
+    while (true) {
+        if (limits.table_full(diag, module, lx[0].line, lx[0].col, limits.LIM_TOKENS, k, t)) {
+            return -1;
+        }
+        I64 e = next_token(src, lx, toks, k);
+        if (e != 0) {
+            _ = limits.diag_add(diag, e, module, lx[0].err_line, lx[0].err_col, 0, 0);
+            failed = true;
+            if (e == C_NON_ASCII || e == C_SYNTAX) {
+                adv(src, lx);
+            } else if (e == C_ESCAPE || e == C_SCALAR) {
+                while (lx[0].i < n && at(src, lx, 0) != 39 && !is_nl(at(src, lx, 0))) {
+                    adv(src, lx);
+                }
+                if (lx[0].i < n && at(src, lx, 0) == 39) {
+                    adv(src, lx);
+                }
+            }
+            continue;
+        }
+        k += 1;
+        if (toks[k - 1].kind == TK_EOF) {
+            break;
+        }
+    }
+    if (failed) {
+        return -1;
+    }
+    return k;
+}
+
+// A token and its EOF through the real scanner with physical one- and two-row views.
+export I64 scan_capacity_test(I64 scenario, I64 field) {
+    limits.CompilerDiag[2] diag;
+    limits.diag_clear(diag);
+    I64 result = 0;
+    if (scenario == 0) {
+        Token[1] toks;
+        result = scan("a", toks, diag, 0);
+    } else {
+        Token[2] toks;
+        result = scan("a", toks, diag, 0);
+    }
+    switch (field) {
+        case 0: return result;
+        case 1: return diag[0].detail[0];
+        case 2: return diag[0].detail[1];
+        case 3: return diag[1].code;
+        case 4: return diag[1].module;
+        case 5: return diag[1].line;
+        case 6: return diag[1].column;
+        case 7: return diag[1].detail[0];
+        case 8: return diag[1].detail[1];
+        case 9: return diag[1].detail[2];
+        default: return diag[1].detail[3];
+    }
+}
+
+// Lexes the text src[begin..end) of a hole, which starts at line:col, into toks[first..]
+// (SPEC-04 9.2). Returns the index of its last token, TK_EOF or TK_ERROR, or -1 when the
+// token table is full. Adds no diagnostic.
+export I64 scan_hole[n, t](in U8[n] src, I64 begin, I64 end, I64 line, I64 col, inout Token[t] toks,
+        I64 first) {
+    Lex[1] lx;
+    lx[0].i = begin;
+    lx[0].end = end;
+    lx[0].line = line;
+    lx[0].col = col;
+    I64 k = first;
+    while (k < t) {
+        I64 before = lx[0].i;
+        I64 e = next_token(src, lx, toks, k);
+        if (e != 0) {
+            set_token(toks, k, TK_ERROR, e, before, before, lx[0].line, lx[0].col);
+            return k;
+        }
+        if (toks[k].kind == TK_EOF) {
+            return k;
+        }
+        k += 1;
+    }
+    return -1;
+}

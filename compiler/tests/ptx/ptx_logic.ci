@@ -1,0 +1,19 @@
+// The logical operators in a work-item body (box 11 unit 4; compiler/tests/ptx_suite.py): `||`
+// lowers to the logical not of its left operand, which compiler/back_ptx.ci writes as an xor
+// with 1 of a Bool held as 0 or 1, and `!` to the same node.
+
+kernel k[n](in I64[n] a, out I64[n] r) over [i: n] {
+    Bool big = a[i] > 50 || a[i] == 7;
+    if (!big) {
+        r[i] = 0 - a[i];
+    } else {
+        r[i] = a[i];
+    }
+}
+
+export I64 run() {
+    I64[3] a = [7, 8, 60];
+    I64[3] r;
+    k(a, r);
+    return r[0] + r[1] + r[2];
+}

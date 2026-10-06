@@ -1,0 +1,10 @@
+// case: diag/c3007_rounding_mode
+// clause: SPEC-01 4.5; SPEC-04 17.2 (C3007)
+// subset: cint-core-1 (built-in functions are not in cint-boot-1, SPEC-09 5.2)
+// entry: run; args: none
+// spec outcome: compile error C3007 at 9:28, `nearest` is not a rounding mode of SPEC-01 4.5
+
+export I64 run() {
+    I64 a = 7;
+    return div_round(a, 2, nearest);
+}

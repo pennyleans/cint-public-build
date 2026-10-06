@@ -1,0 +1,13 @@
+// cint-core-1: the module `parse` of SPEC-03 5.6, whose exports' type signatures are the
+// read_number and parse_u vectors of type_signatures.txt.
+error IoError { closed, full }
+error ParseError { empty, bad_digit, too_large }
+error IoOrParse = IoError | ParseError;
+
+export IoOrParse!I64 read_number(in U8[_] s) {
+    return 0;
+}
+
+export ParseError!I64 parse_u(in U8[_] s) {
+    return .empty;
+}

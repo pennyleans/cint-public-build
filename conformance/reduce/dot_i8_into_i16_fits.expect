@@ -1,0 +1,8 @@
+case reduce/dot_i8_into_i16_fits
+clause SPEC-01 IM-87 (dot of I8 elements into an I16 result: the exact total, then one range check)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 32640
+fuel-consumed 260

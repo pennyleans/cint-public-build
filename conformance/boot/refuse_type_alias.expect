@@ -1,0 +1,6 @@
+case boot/refuse_type_alias
+clause SPEC-09 BOOT-01 (type_decl), SEED-06; SPEC-04 LS-102
+source compile-error
+outcome compile-error
+diagnostic.code C9100
+diagnostic.position boot/refuse_type_alias.ci:8:1

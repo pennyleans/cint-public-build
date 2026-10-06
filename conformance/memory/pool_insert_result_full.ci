@@ -1,0 +1,19 @@
+// case: memory/pool_insert_result_full
+// clause: SPEC-03 M-19; SPEC-04 LS-130, LS-145; decision 2026-10-05, BX12-04; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (pool, handles, struct elements, error unions, `catch`)
+// entry: run; args: none
+// spec outcome: value I64 46 (40 from the `catch` block plus the mass 6 of the first body; `insert_result` returns `AllocError.full` in the state where `insert` faults); fuel 1
+
+struct Body { I64 mass; I64 vel; }
+
+Pool(Body, 1) bodies;
+
+export I64 run() {
+    Handle(Body) a = bodies.insert(Body(mass = 6, vel = 0));
+    I64 r = 0;
+    Handle(Body) b = bodies.insert_result(Body(mass = 7, vel = 0)) catch (e) {
+        r = 40;
+        return r + bodies[a].mass;
+    };
+    return 1;
+}

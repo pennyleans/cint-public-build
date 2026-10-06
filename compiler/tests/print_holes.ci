@@ -1,0 +1,47 @@
+// Holes that call functions which print, and conditionals whose operands are all literals
+// (G-C2 review COR-1, COR-5): every hole is evaluated, left to right and once, before its
+// statement is staged, and such a conditional takes the type its context settles.
+I64 seen = 0;
+
+I64 note(I64 v) {
+    "<{v}>";
+    seen = seen * 10 + v;
+    return v;
+}
+
+I64 nested(I64 v) {
+    "[{note(v)}:{note(v + 1)}]";
+    return v * 2;
+}
+
+Bool above(I64 v) {
+    "t{v} ";
+    return v > 1;
+}
+
+I8 small(I8 v) {
+    "s{v} ";
+    return v;
+}
+
+Bool flag(I64 v) {
+    return v == 1;
+}
+
+void main() {
+    "a{note(1)}b{note(2)}c\n";
+    "{note(3)=} {note(4):>4}|{note(5):<3}|{note(6):^5}| seen={seen}\n";
+    "{seen} {nested(1)} {seen} {nested(3)} {seen}\n";
+    "{above(1)} {above(2) && above(3)} {above(0) || above(5)} {above(4) == above(6)}\n";
+    Bool c = flag(1);
+    Bool d = flag(0);
+    "{(c ? note(7) : note(8))} {(d ? note(1) : note(9))}\n";
+    "{(c ? 1 : 2)} {(d ? 3 : 4)} {(c ? (d ? 5 : 6) : 7)} {(true ? 8 : 1 / 0)} {(false ? 1 / 0 : 9)}\n";
+    I8 x = 1;
+    Bool r = (c ? 1 : 2) == x;
+    Bool q = x == (d ? 1 : 2);
+    _ = c ? 1 : 2;
+    "{r} {q}\n";
+    I8 big = 100;
+    "{small(big)} then {small(big) + small(big)}\n";
+}

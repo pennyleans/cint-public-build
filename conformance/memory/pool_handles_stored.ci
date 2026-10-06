@@ -1,0 +1,22 @@
+// case: memory/pool_handles_stored
+// clause: SPEC-03 M-12, M-22; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (pool, handles, struct elements, struct fields of handle type)
+// entry: run; args: none
+// spec outcome: value I64 83 (the heavier mass 8, then the mass 3 through the copied handle); fuel 2 (entry, call to `heavier`)
+
+struct Body { I64 mass; I64 vel; }
+
+struct Pair { Handle(Body) left; Handle(Body) right; }
+
+Pool(Body, 4) bodies;
+
+I64 heavier(in Pair p) {
+    return max(bodies[p.left].mass, bodies[p.right].mass);
+}
+
+export I64 run() {
+    Pair p = Pair(left = bodies.insert(Body(mass = 3, vel = 0)), right = bodies.insert(Body(mass = 8, vel = 0)));
+    Handle(Body) keep = p.left;
+    I64 r = heavier(p);
+    return r * 10 + bodies[keep].mass;
+}

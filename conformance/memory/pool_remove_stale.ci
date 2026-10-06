@@ -1,0 +1,17 @@
+// case: memory/pool_remove_stale
+// clause: SPEC-03 M-15, M-17; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (pool, handles, struct elements)
+// entry: run; args: none
+// spec outcome: fault E_STALE_HANDLE at 15:12 (the member name `remove`), operation pool.deref, operands U64 0, I64 1, U64 0, U32 1, U8 2 (the handle: slot, length, generation, container, kind), U64 1 (the current generation), U8 3 (generation), no exact, no limit; stack depth 0; fuel 1. `remove` checks its handle as a dereference does; `k` reuses slot 0 at generation 1
+
+struct Body { I64 mass; I64 vel; }
+
+Pool(Body, 2) bodies;
+
+export I64 run() {
+    Handle(Body) h = bodies.insert(Body(mass = 1, vel = 0));
+    bodies.remove(h);
+    Handle(Body) k = bodies.insert(Body(mass = 2, vel = 0));
+    bodies.remove(h);
+    return bodies[k].mass;
+}

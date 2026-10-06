@@ -1,0 +1,7 @@
+case arith/shift_left_operand_typing
+clause SPEC-01 3.2 (fixture 109), 4.6
+source reference
+outcome value
+stdout-bytes 0
+return I64 1099511627776
+fuel-consumed 1

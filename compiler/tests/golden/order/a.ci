@@ -1,0 +1,10 @@
+// compiler/tests/golden/order/a.ci: the root module of a two-module build compiled z.ci, then
+// a.ci, whose revision identity hashes a.ci first (SPEC-09 SIR-17, owner decision 27 item 3).
+// It imports z, so the importer sorts before the module it imports (task 2.13, part iii).
+
+import z;
+
+I64 base = 70;
+
+base = base + z.seven(1) - 8;
+"{base}\n";

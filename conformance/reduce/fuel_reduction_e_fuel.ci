@@ -1,0 +1,10 @@
+// case: reduce/fuel_reduction_e_fuel
+// clause: SPEC-01 IM-139, IM-141 (the reduction charge exceeds the allowance; no element is read)
+// subset: cint-core-1 (built-in sum)
+// entry: run; args: none; fuel 2
+// spec outcome: fault E_FUEL at 9:12 (callee `sum`), operation fuel.charge, no operands, no exact, limit I64 2; stack depth 0; fuel 1. Position: box 09 ruling R5
+
+export I64 run() {
+    I64[65] a;
+    return sum(a);
+}

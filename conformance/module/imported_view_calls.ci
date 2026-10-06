@@ -1,0 +1,19 @@
+// case: module/imported_view_calls
+// clause: SPEC-04 LS-114, LS-117, LS-119, LS-121 (views and size parameters across an import); SPEC-09 CINTC-16 (parameter rows); decision 27 item 4 (imported views)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 34 (dot of 1..4 with 1..4 is 30, plus b[0] = 1 after copy_into, plus c[2] = 3)
+
+import module.lib.vec_ops;
+
+export I64 run() {
+    I64[4] a;
+    I64[4] b;
+    I64[3] c;
+    vec_ops.fill_iota(a);
+    vec_ops.fill_iota(b);
+    vec_ops.fill_iota(c);
+    I64 d = vec_ops.mac(a, b);
+    vec_ops.copy_into(b, c);
+    return d + b[0] + c[2];
+}

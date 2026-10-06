@@ -1,0 +1,21 @@
+case kernel/heat_e9_div_zero
+clause SPEC-02 15.4 E-9 (the first interior work-item 9 divides 0 by 0)
+format 4
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 65
+fault.code E_DIV_ZERO
+fault.operation div_round.checked.i64.half_even
+fault.operand I64 0
+fault.operand I64 0
+fault.exact none
+fault.limit none
+fault.position kernel/heat_e9_div_zero.ci:19:20
+fault.revision self
+fault.source-map self
+fault.phase work-item
+fault.kernel kernel.heat_e9_div_zero.diffuse
+fault.address 0 9 23
+fault.stack-depth 1
+fault.stack kernel/heat_e9_div_zero.ci:31:5

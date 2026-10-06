@@ -1,0 +1,11 @@
+// case: arith/shr_count_above_63
+// clause: SPEC-01 4.6; plan Review Focus 3
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_SHIFT at 10:14, operation shr.checked.i64, count 100, limit 63
+
+export I64 run() {
+    I64 x = -1;
+    I64 k = 100;
+    return x >> k;
+}

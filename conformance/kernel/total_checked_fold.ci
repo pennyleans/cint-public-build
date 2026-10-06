@@ -1,0 +1,16 @@
+// case: kernel/total_checked_fold
+// clause: SPEC-02 R-1, R-6, F-6a, 8.5 (the total_checked row)
+// subset: cint-core-1 (kernel)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 8:16, phase work-item, address dispatch 0, work-item 1, step 1 (x[i] is step 0), operation fold_checked.add.i64, operands I64 1, I64 9223372036854775807, I64 1, exact 9223372036854775808, limit I64 9223372036854775807; stack depth 1, stack 14:5 (the dispatch site); fuel 4. Encoding: box 09 ruling R9
+
+kernel total_checked[n](in I64[n] x, out I64 s) over [i: n] {
+    reduce s = fold_checked(add, 0, x[i]);
+}
+
+export I64 run() {
+    I64[3] x = [9223372036854775807, 1, -1];
+    I64 s = 5;
+    total_checked(x, s);
+    return s;
+}

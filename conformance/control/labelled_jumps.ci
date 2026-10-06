@@ -1,0 +1,39 @@
+// case: control/labelled_jumps
+// clause: SPEC-04 LS-184, LS-180
+// subset: cint-core-1 (labels are not listed in SPEC-09 5.2)
+// entry: run; args: none
+// spec outcome: value I64 12305: labelled break and continue leave or resume the named loop, also from inside a switch
+
+export I64 run() {
+    I64 total = 0;
+    rows: for i in 0..5 {
+        cols: for j in 0..5 {
+            if (j > i) {
+                continue rows;
+            }
+            if (i == 4) {
+                break rows;
+            }
+            switch (j) {
+                case 2: continue cols;
+                case 3: break cols;
+                default: total += i * 10 + j;
+            }
+        }
+    }
+    I64 k = 0;
+    outer: while (k < 10) {
+        k += 1;
+        I64 m = 0;
+        while (true) {
+            m += 1;
+            if (m == 3) {
+                continue outer;
+            }
+            if (k == 5) {
+                break outer;
+            }
+        }
+    }
+    return total * 100 + k;
+}

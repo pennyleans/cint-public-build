@@ -1,0 +1,16 @@
+// case: switch/non_exhaustive_c4020
+// clause: SPEC-04 8.5
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C4020 at 9:5: the cases do not cover I64 and there is no default
+
+export I64 run() {
+    I64 x = 3;
+    switch (x) {
+        case 1:
+            return 1;
+        case 2:
+            return 2;
+    }
+    return 0;
+}

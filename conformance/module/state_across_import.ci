@@ -1,0 +1,13 @@
+// case: module/state_across_import
+// clause: SPEC-04 LS-113, LS-225, LS-227 (module-level state of an imported module)
+// subset: cint-core-1 (a module-level variable in the imported module)
+// entry: run; args: none
+// spec outcome: value I64 3: each call of tally.tick() advances the one variable of module.lib.tally
+
+import module.lib.tally;
+
+export I64 run() {
+    _ = tally.tick();
+    _ = tally.tick();
+    return tally.tick();
+}

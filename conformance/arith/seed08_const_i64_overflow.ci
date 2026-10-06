@@ -1,0 +1,10 @@
+// case: arith/seed08_const_i64_overflow
+// clause: SPEC-09 SEED-08 row 3; SPEC-01 3.2, 8.4
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C6001 E_OVERFLOW at 8:33, operation add.checked.i64, exact 9223372036854775808
+
+export I64 run() {
+    I64 c = 9223372036854775807 + 1;
+    return c;
+}

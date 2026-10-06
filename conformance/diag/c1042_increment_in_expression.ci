@@ -1,0 +1,11 @@
+// case: diag/c1042_increment_in_expression
+// clause: SPEC-04 8.1; SPEC-04 17.1, 17.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C1042 at 10:14: `i++` is a statement, not an expression (position: first character of the offending construct, SPEC-04 17.1; see ref/OPEN.md O-13)
+
+export I64 run() {
+    I64[4] a;
+    I64 i = 0;
+    return a[i++];
+}

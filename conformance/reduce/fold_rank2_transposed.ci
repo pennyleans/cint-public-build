@@ -1,0 +1,10 @@
+// case: reduce/fold_rank2_transposed
+// clause: SPEC-01 IM-75, IM-76 (Fortran element order through transpose: 100, 100, -100, -100)
+// subset: cint-core-1 (rank 2, transpose)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 9:12, operation fold_checked.add.i8, operands I64 1, I8 100, I8 100, exact 200, limit I8 127; stack depth 0; fuel 2. Box 09 rulings R4 and R5
+
+export I8 run() {
+    I8[2, 2] a = [[100, -100], [100, -100]];
+    return fold_checked(add, 0, transpose(a));
+}

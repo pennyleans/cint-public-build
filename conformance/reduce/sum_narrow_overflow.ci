@@ -1,0 +1,10 @@
+// case: reduce/sum_narrow_overflow
+// clause: SPEC-01 IM-77, IM-78, IM-81 (the IM-79 listing: E_OVERFLOW, not E_NARROW, at the final check)
+// subset: cint-core-1 (built-in sum)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 9:12 (callee `sum`), operation sum.checked.i8.i8, operand I64 3 (n), exact 381, limit I8 127; stack depth 0; fuel 2. Record: box 09 ruling R5
+
+export I8 run() {
+    I8[3] u = [127, 127, 127];
+    return sum(u);
+}

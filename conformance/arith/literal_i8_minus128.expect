@@ -1,0 +1,7 @@
+case arith/literal_i8_minus128
+clause SPEC-01 3.2 (fixture 55); SPEC-04 3.5 rule 4
+source reference
+outcome value
+stdout-bytes 0
+return I8 -128
+fuel-consumed 1

@@ -1,0 +1,8 @@
+// case: control/print_hole_fault_partial
+// clause: SPEC-04 LS-193, LS-197, LS-218; SPEC-01 IM-30, IM-106; SPEC-06 3.4a; decision 2026-10-03, slice 2 patch D-19
+// subset: cint-core-1 (script, print)
+// spec outcome: fault E_OVERFLOW at 8:11 (body 3:11), add.checked.i64; stdout is the 6 bytes `start `: the faulting hole writes nothing of its statement (LS-197)
+
+I64 big = 9223372036854775807;
+"start ";
+"sum={big + 1}\n";

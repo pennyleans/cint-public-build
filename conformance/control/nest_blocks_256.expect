@@ -1,0 +1,7 @@
+case control/nest_blocks_256
+clause SPEC-09 CINTC-02, SEED-15; SPEC-04 LS-311 (decision 2026-10-03, slice 2 patch D-5)
+source reference
+outcome value
+stdout-bytes 0
+return I64 2
+fuel-consumed 1

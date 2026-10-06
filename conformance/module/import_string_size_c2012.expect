@@ -1,0 +1,7 @@
+case module/import_string_size_c2012
+clause SPEC-09 BOOT-02, CINTC-16; SPEC-04 LS-117
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2012
+diagnostic.position module/import_string_size_c2012.ci:8:52

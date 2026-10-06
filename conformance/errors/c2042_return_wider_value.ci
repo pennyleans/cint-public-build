@@ -1,0 +1,14 @@
+// case: errors/c2042_return_wider_value
+// clause: SPEC-04 LS-97, LS-314; decision 2026-10-05, BX12-28
+// subset: cint-core-1 (error sets, combined sets, error-set values)
+// entry: run; args: none
+// spec outcome: compile error C2042 at 13:12, the returned value: a value of IoOrParse is not a ParseError, even one that holds ParseError.empty (position: first character of the offending construct)
+
+error IoError { closed, full }
+error ParseError { empty, bad_digit, too_large }
+error IoOrParse = IoError | ParseError;
+
+export ParseError!I64 run() {
+    IoOrParse w = ParseError.empty;
+    return w;
+}

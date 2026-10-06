@@ -1,0 +1,6 @@
+case switch/non_exhaustive_c4020
+clause SPEC-04 8.5
+source compile-error
+outcome compile-error
+diagnostic.code C4020
+diagnostic.position switch/non_exhaustive_c4020.ci:9:5

@@ -1,0 +1,8 @@
+// case: boot/decl_extent_field_short_circuit
+// clause: SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: value
+
+struct R { I64[true ? 2 : 1 / 0] a; }
+export I64 run() { R r; r.a[1] = 7; return r.a[1]; }

@@ -1,0 +1,7 @@
+case errors/c2040_unconsumed_call
+clause SPEC-04 LS-95
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2040
+diagnostic.position errors/c2040_unconsumed_call.ci:14:13

@@ -1,0 +1,7 @@
+case module/alias_function_c3001
+clause SPEC-04 LS-228 (a module-level declaration named like an alias: C3001); SPEC-09 CINTC-16
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C3001
+diagnostic.position module/alias_function_c3001.ci:9:5

@@ -1,0 +1,281 @@
+// case: control/else_if_126
+// clause: SPEC-04 LS-168, LS-311; SPEC-09 CINTC-03
+// subset: cint-boot-1
+// entry: first, middle, last, fallback; args: none
+// spec outcome: I64 0, 126, 250, -2; fuel 2 each; 126 ordered arms
+
+I64 pick(I64 x) {
+    I64 r = -1;
+    if (x == 0) {
+        r = 0;
+    } else if (x == 1) {
+        r = 2;
+    } else if (x == 2) {
+        r = 4;
+    } else if (x == 3) {
+        r = 6;
+    } else if (x == 4) {
+        r = 8;
+    } else if (x == 5) {
+        r = 10;
+    } else if (x == 6) {
+        r = 12;
+    } else if (x == 7) {
+        r = 14;
+    } else if (x == 8) {
+        r = 16;
+    } else if (x == 9) {
+        r = 18;
+    } else if (x == 10) {
+        r = 20;
+    } else if (x == 11) {
+        r = 22;
+    } else if (x == 12) {
+        r = 24;
+    } else if (x == 13) {
+        r = 26;
+    } else if (x == 14) {
+        r = 28;
+    } else if (x == 15) {
+        r = 30;
+    } else if (x == 16) {
+        r = 32;
+    } else if (x == 17) {
+        r = 34;
+    } else if (x == 18) {
+        r = 36;
+    } else if (x == 19) {
+        r = 38;
+    } else if (x == 20) {
+        r = 40;
+    } else if (x == 21) {
+        r = 42;
+    } else if (x == 22) {
+        r = 44;
+    } else if (x == 23) {
+        r = 46;
+    } else if (x == 24) {
+        r = 48;
+    } else if (x == 25) {
+        r = 50;
+    } else if (x == 26) {
+        r = 52;
+    } else if (x == 27) {
+        r = 54;
+    } else if (x == 28) {
+        r = 56;
+    } else if (x == 29) {
+        r = 58;
+    } else if (x == 30) {
+        r = 60;
+    } else if (x == 31) {
+        r = 62;
+    } else if (x == 32) {
+        r = 64;
+    } else if (x == 33) {
+        r = 66;
+    } else if (x == 34) {
+        r = 68;
+    } else if (x == 35) {
+        r = 70;
+    } else if (x == 36) {
+        r = 72;
+    } else if (x == 37) {
+        r = 74;
+    } else if (x == 38) {
+        r = 76;
+    } else if (x == 39) {
+        r = 78;
+    } else if (x == 40) {
+        r = 80;
+    } else if (x == 41) {
+        r = 82;
+    } else if (x == 42) {
+        r = 84;
+    } else if (x == 43) {
+        r = 86;
+    } else if (x == 44) {
+        r = 88;
+    } else if (x == 45) {
+        r = 90;
+    } else if (x == 46) {
+        r = 92;
+    } else if (x == 47) {
+        r = 94;
+    } else if (x == 48) {
+        r = 96;
+    } else if (x == 49) {
+        r = 98;
+    } else if (x == 50) {
+        r = 100;
+    } else if (x == 51) {
+        r = 102;
+    } else if (x == 52) {
+        r = 104;
+    } else if (x == 53) {
+        r = 106;
+    } else if (x == 54) {
+        r = 108;
+    } else if (x == 55) {
+        r = 110;
+    } else if (x == 56) {
+        r = 112;
+    } else if (x == 57) {
+        r = 114;
+    } else if (x == 58) {
+        r = 116;
+    } else if (x == 59) {
+        r = 118;
+    } else if (x == 60) {
+        r = 120;
+    } else if (x == 61) {
+        r = 122;
+    } else if (x == 62) {
+        r = 124;
+    } else if (x == 63) {
+        r = 126;
+    } else if (x == 64) {
+        r = 128;
+    } else if (x == 65) {
+        r = 130;
+    } else if (x == 66) {
+        r = 132;
+    } else if (x == 67) {
+        r = 134;
+    } else if (x == 68) {
+        r = 136;
+    } else if (x == 69) {
+        r = 138;
+    } else if (x == 70) {
+        r = 140;
+    } else if (x == 71) {
+        r = 142;
+    } else if (x == 72) {
+        r = 144;
+    } else if (x == 73) {
+        r = 146;
+    } else if (x == 74) {
+        r = 148;
+    } else if (x == 75) {
+        r = 150;
+    } else if (x == 76) {
+        r = 152;
+    } else if (x == 77) {
+        r = 154;
+    } else if (x == 78) {
+        r = 156;
+    } else if (x == 79) {
+        r = 158;
+    } else if (x == 80) {
+        r = 160;
+    } else if (x == 81) {
+        r = 162;
+    } else if (x == 82) {
+        r = 164;
+    } else if (x == 83) {
+        r = 166;
+    } else if (x == 84) {
+        r = 168;
+    } else if (x == 85) {
+        r = 170;
+    } else if (x == 86) {
+        r = 172;
+    } else if (x == 87) {
+        r = 174;
+    } else if (x == 88) {
+        r = 176;
+    } else if (x == 89) {
+        r = 178;
+    } else if (x == 90) {
+        r = 180;
+    } else if (x == 91) {
+        r = 182;
+    } else if (x == 92) {
+        r = 184;
+    } else if (x == 93) {
+        r = 186;
+    } else if (x == 94) {
+        r = 188;
+    } else if (x == 95) {
+        r = 190;
+    } else if (x == 96) {
+        r = 192;
+    } else if (x == 97) {
+        r = 194;
+    } else if (x == 98) {
+        r = 196;
+    } else if (x == 99) {
+        r = 198;
+    } else if (x == 100) {
+        r = 200;
+    } else if (x == 101) {
+        r = 202;
+    } else if (x == 102) {
+        r = 204;
+    } else if (x == 103) {
+        r = 206;
+    } else if (x == 104) {
+        r = 208;
+    } else if (x == 105) {
+        r = 210;
+    } else if (x == 106) {
+        r = 212;
+    } else if (x == 107) {
+        r = 214;
+    } else if (x == 108) {
+        r = 216;
+    } else if (x == 109) {
+        r = 218;
+    } else if (x == 110) {
+        r = 220;
+    } else if (x == 111) {
+        r = 222;
+    } else if (x == 112) {
+        r = 224;
+    } else if (x == 113) {
+        r = 226;
+    } else if (x == 114) {
+        r = 228;
+    } else if (x == 115) {
+        r = 230;
+    } else if (x == 116) {
+        r = 232;
+    } else if (x == 117) {
+        r = 234;
+    } else if (x == 118) {
+        r = 236;
+    } else if (x == 119) {
+        r = 238;
+    } else if (x == 120) {
+        r = 240;
+    } else if (x == 121) {
+        r = 242;
+    } else if (x == 122) {
+        r = 244;
+    } else if (x == 123) {
+        r = 246;
+    } else if (x == 124) {
+        r = 248;
+    } else if (x == 125) {
+        r = 250;
+    } else {
+        r = -2;
+    }
+    return r;
+}
+
+export I64 first() {
+    return pick(0);
+}
+
+export I64 middle() {
+    return pick(63);
+}
+
+export I64 last() {
+    return pick(125);
+}
+
+export I64 fallback() {
+    return pick(126);
+}

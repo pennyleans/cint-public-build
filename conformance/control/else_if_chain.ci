@@ -1,0 +1,21 @@
+// case: control/else_if_chain
+// clause: SPEC-04 8.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 3
+
+I64 grade(I64 x) {
+    if (x < 10) {
+        return 1;
+    } else if (x < 20) {
+        return 2;
+    } else if (x < 30) {
+        return 3;
+    } else {
+        return 4;
+    }
+}
+
+export I64 run() {
+    return grade(25);
+}

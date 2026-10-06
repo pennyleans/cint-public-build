@@ -1,0 +1,7 @@
+case boot/decl_extent_field_early_call_width
+clause SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2001
+diagnostic.position boot/decl_extent_field_early_call_width.ci:7:16

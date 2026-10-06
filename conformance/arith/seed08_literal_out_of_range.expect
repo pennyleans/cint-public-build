@@ -1,0 +1,6 @@
+case arith/seed08_literal_out_of_range
+clause SPEC-09 SEED-08 row 1; SPEC-01 3.2 (fixture 96); SPEC-04 4.2 rule 1
+source compile-error
+outcome compile-error
+diagnostic.code C2003
+diagnostic.position arith/seed08_literal_out_of_range.ci:8:13

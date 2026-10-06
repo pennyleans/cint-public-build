@@ -1,0 +1,10 @@
+// case: reduce/fold_checked_i64_overflow
+// clause: SPEC-01 IM-73, IM-83; SPEC-02 8.5 (the total_checked row, sequentially; the twin of reduce/loop_fold_overflow_at_element)
+// subset: cint-core-1 (built-in fold_checked)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 9:12, operation fold_checked.add.i64, operands I64 1, I64 9223372036854775807, I64 1, exact 9223372036854775808, limit I64 9223372036854775807; stack depth 0; fuel 2. Box 09 ruling R5
+
+export I64 run() {
+    I64[3] a = [9223372036854775807, 1, -1];
+    return fold_checked(add, 0, a);
+}

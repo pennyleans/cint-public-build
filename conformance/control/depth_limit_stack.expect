@@ -1,0 +1,19 @@
+case control/depth_limit_stack
+clause SPEC-01 IM-107, IM-119, IM-139; SPEC-09 CONF-11 (format 2, rule 5); decision 2026-10-03, slice 2 patch D-10
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 4
+fault.code E_DEPTH
+fault.operation call.enter
+fault.exact none
+fault.limit I64 4
+fault.position control/depth_limit_stack.ci:20:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 3
+fault.stack control/depth_limit_stack.ci:8:12
+fault.stack control/depth_limit_stack.ci:12:12
+fault.stack control/depth_limit_stack.ci:16:12

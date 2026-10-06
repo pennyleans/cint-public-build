@@ -1,0 +1,9 @@
+case view/nested_array_field_order
+clause SPEC-04 LS-67, LS-139, LS-141; SPEC-09 BOOT-01
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 77
+fuel-consumed 4
+state.global view.nested_array_field_order seen I64 7

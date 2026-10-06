@@ -1,0 +1,7 @@
+case module/intern_wrong_kind
+clause SPEC-09 CINTC-16 Lookup; SPEC-04 LS-15, LS-227, LS-228
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C3007
+diagnostic.position module/intern_wrong_kind.ci:8:33

@@ -1,0 +1,8 @@
+case memory/frame_arena_released_at_block_exit
+clause SPEC-04 LS-110, LS-318; ref/OPEN.md REF-OQ-45
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 3
+fuel-consumed 4

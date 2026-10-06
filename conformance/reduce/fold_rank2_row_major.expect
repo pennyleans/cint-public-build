@@ -1,0 +1,8 @@
+case reduce/fold_rank2_row_major
+clause SPEC-01 IM-74, IM-75 (row-major logical order of shape [2, 2]: 100, -100, 100, -100)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I8 0
+fuel-consumed 2

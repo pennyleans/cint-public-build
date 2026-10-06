@@ -1,0 +1,22 @@
+// case: errors/c4020_switch_missing_error_value
+// clause: SPEC-04 LS-182, LS-314; decision 2026-10-05, BX12-09
+// subset: cint-core-1 (error sets, error unions, `catch`, `switch`)
+// entry: run; args: none
+// spec outcome: compile error C4020 at 15:9, the `switch` keyword: a switch over ParseError without default that does not list too_large
+
+error ParseError { empty, bad_digit, too_large }
+
+ParseError!I64 parse() {
+    return .too_large;
+}
+
+export I64 run() {
+    I64 v = parse() catch (e) {
+        switch (e) {
+            case .empty: return 1;
+            case .bad_digit: return 2;
+        }
+        return 3;
+    };
+    return v;
+}

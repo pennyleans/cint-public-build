@@ -1,0 +1,8 @@
+case errors/error_values_in_array_struct_param
+clause SPEC-04 LS-314; decision 2026-10-05, BX12-09
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 19
+fuel-consumed 7

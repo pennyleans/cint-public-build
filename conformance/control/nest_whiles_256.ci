@@ -1,0 +1,523 @@
+// case: control/nest_whiles_256
+// clause: SPEC-09 CINTC-02, SEED-15; SPEC-04 LS-311 (decision 2026-10-03, slice 2 patch D-5)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 1, fuel 257; the seed refuses the 67th loop with C9004 (SEED-15, listed in conformance/unsupported.txt)
+
+export I64 run() {
+    I64 a = 0;
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+while (a < 1) {
+a = 1;
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+    return a;
+}

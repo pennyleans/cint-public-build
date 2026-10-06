@@ -1,0 +1,35 @@
+// matmul_i8.ci: I8 activations times ternary weights, called from Python.
+// Build and call it with: python3 examples/matmul_i8.py
+// Tutorial 04 walks through the script, its copies, and its fault.
+// There is no floating point anywhere.
+
+// y = x times w: each element is the exact dot product of a row of x and a
+// column of w, formed wider than I8 and checked once as an I32 (SPEC-01
+// IM-87). The weights are -1, 0 or 1, stored as I8 elements.
+export void matmul[m, k, n](in I8[m, k] x, in I8[k, n] w, inout I32[m, n] y) {
+    for i in 0..m {
+        for j in 0..n {
+            y[i, j] = dot(I32, x[i, ..], w[.., j]);
+        }
+    }
+}
+
+// The same product kept in I8: the first element outside -128 to 127 faults
+// E_OVERFLOW, and the elements before it are already written.
+export void matmul_narrow[m, k, n](in I8[m, k] x, in I8[k, n] w, inout I8[m, n] y) {
+    for i in 0..m {
+        for j in 0..n {
+            y[i, j] = dot(I8, x[i, ..], w[.., j]);
+        }
+    }
+}
+
+// Negative elements become 0: a kernel, one work-item per element, whose
+// output is published only if every work-item succeeds (SPEC-02 P-1).
+export kernel relu[m, n](in I32[m, n] y, out I32[m, n] z) over [i: m, j: n] {
+    I32 v = y[i, j];
+    if (v < 0) {
+        v = 0;
+    }
+    z[i, j] = v;
+}

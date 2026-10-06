@@ -1,0 +1,18 @@
+case switch/full_range_single_case_fault
+clause SPEC-04 8.5 (LS-182); SPEC-01 4.1, 9.2: the scrutinee is evaluated and checked when the switch's one case covers the full range of its type
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_OVERFLOW
+fault.operation add.checked.i8
+fault.operand I8 127
+fault.operand I8 1
+fault.exact 128
+fault.limit I8 127
+fault.position switch/full_range_single_case_fault.ci:9:15
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

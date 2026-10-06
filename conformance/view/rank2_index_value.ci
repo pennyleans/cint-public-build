@@ -1,0 +1,12 @@
+// case: view/rank2_index_value
+// clause: SPEC-04 LS-62, LS-63, LS-64 (rank-2 element reads and writes)
+// subset: cint-core-1 (rank 2)
+// entry: run; args: none
+// spec outcome: value I64 75 (m[1, 2] = 7, m[0, 1] = 5); fuel 1
+
+export I64 run() {
+    I64[2, 3] m;
+    m[1, 2] = 7;
+    m[0, 1] = 5;
+    return m[1, 2] * 10 + m[0, 1];
+}

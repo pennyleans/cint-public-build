@@ -1,0 +1,9 @@
+// case: boot/decl_extent_field_modvar_width
+// clause: SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: compile-error
+
+U8 N = 2;
+struct R { I64[N] a; }
+export I64 run() { return 0; }

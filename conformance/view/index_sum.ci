@@ -1,0 +1,21 @@
+// case: view/index_sum
+// clause: SPEC-04 LS-62, LS-64, LS-67, LS-117, LS-119 (a local array read through an `in` view)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 30 (1 + 4 + 9 + 16); fuel 10: the entry, 4 fill iterations, the call, 4 iterations
+
+I64 total[n](in I64[n] xs) {
+    I64 s = 0;
+    for i in 0..n {
+        s = s + xs[i];
+    }
+    return s;
+}
+
+export I64 run() {
+    I64[4] a;
+    for i in 0..4 {
+        a[i] = (i + 1) * (i + 1);
+    }
+    return total(a);
+}

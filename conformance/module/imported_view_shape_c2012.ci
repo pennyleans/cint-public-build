@@ -1,0 +1,13 @@
+// case: module/imported_view_shape_c2012
+// clause: SPEC-04 LS-117 (two views bind one size parameter to different static extents: C2012), across an import; SPEC-09 CINTC-16
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2012 at 12:27, the second argument
+
+import module.lib.vec_ops;
+
+export I64 run() {
+    I64[4] a;
+    I64[3] b;
+    return vec_ops.mac(a, b);
+}

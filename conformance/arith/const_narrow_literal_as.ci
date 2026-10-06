@@ -1,0 +1,10 @@
+// case: arith/const_narrow_literal_as
+// clause: SPEC-04 LS-53; SPEC-01 4.6, 9.2 (E_NARROW); SPEC-09 SEED-08
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C6001 at 8:16 (the `as`): the literal 300 converted to I8 faults E_NARROW in constant evaluation; operand Z 300, exact 300, limit I8 127
+
+export I8 run() {
+    I8 x = 300 as I8;
+    return x;
+}

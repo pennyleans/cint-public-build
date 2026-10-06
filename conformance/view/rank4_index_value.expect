@@ -1,0 +1,8 @@
+case view/rank4_index_value
+clause SPEC-04 LS-62, LS-64; SPEC-02 V-2 (rank 4, the cint-core-1 maximum)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I8 -3
+fuel-consumed 1

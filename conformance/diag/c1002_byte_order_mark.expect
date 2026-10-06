@@ -1,0 +1,6 @@
+case diag/c1002_byte_order_mark
+clause SPEC-04 3.1; SPEC-04 17.1, 17.2
+source compile-error
+outcome compile-error
+diagnostic.code C1002
+diagnostic.position diag/c1002_byte_order_mark.ci:1:1

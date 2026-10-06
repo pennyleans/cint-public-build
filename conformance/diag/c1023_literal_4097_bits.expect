@@ -1,0 +1,6 @@
+case diag/c1023_literal_4097_bits
+clause SPEC-04 LS-31, LS-311; decision 2026-10-03, slice 2 patch D-17
+source compile-error
+outcome compile-error
+diagnostic.code C1023
+diagnostic.position diag/c1023_literal_4097_bits.ci:8:8

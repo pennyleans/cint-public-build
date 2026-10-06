@@ -1,0 +1,19 @@
+case view/copy_shape_dynamic_initializer
+clause SPEC-01 IM-187; SPEC-04 LS-62, LS-70, LS-278
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 2
+fault.code E_SHAPE
+fault.operation copy.shape
+fault.operand I64 0
+fault.operand I64 3
+fault.exact none
+fault.limit I64 4
+fault.position view/copy_shape_dynamic_initializer.ci:8:20
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 1
+fault.stack view/copy_shape_dynamic_initializer.ci:12:5

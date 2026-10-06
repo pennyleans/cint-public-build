@@ -1,0 +1,10 @@
+// case: reduce/sum_widened_i16
+// clause: SPEC-01 IM-77, IM-78 (the IM-79 listing: one final range check against I16)
+// subset: cint-core-1 (built-in sum)
+// entry: run; args: none
+// spec outcome: value I16 381; fuel 2
+
+export I16 run() {
+    I8[3] u = [127, 127, 127];
+    return sum(I16, u);
+}

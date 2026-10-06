@@ -1,0 +1,7 @@
+case view/inout_writes_visible
+clause SPEC-04 LS-119, LS-120 (an `inout` view writes the caller's array)
+source reference
+outcome value
+stdout-bytes 0
+return I64 321
+fuel-consumed 5

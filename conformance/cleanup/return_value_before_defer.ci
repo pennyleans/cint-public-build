@@ -1,0 +1,20 @@
+// case: cleanup/return_value_before_defer
+// clause: SPEC-04 LS-185, LS-186, LS-316; SPEC-09 CONF-11 rule 10; decision 2026-10-05, BX12-11
+// subset: cint-core-1 (`defer`, module-level variable)
+// entry: run; args: none
+// spec outcome: value I64 340, state seen I64 0: `return x` takes 340, then the deferred statements run in reverse order, `x = 0` and then `seen = x`, which reads x when it runs; fuel 2
+
+I64 seen = 7;
+
+I64 f() {
+    I64 x = 300;
+    defer seen = x;
+    defer x = 0;
+    x += 40;
+    return x;
+}
+
+export I64 run() {
+    I64 r = f();
+    return r + seen;
+}

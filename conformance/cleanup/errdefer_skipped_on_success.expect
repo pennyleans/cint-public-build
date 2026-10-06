@@ -1,0 +1,9 @@
+case cleanup/errdefer_skipped_on_success
+clause SPEC-04 LS-185, LS-189; decision 2026-10-05, BX12-08
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 7
+fuel-consumed 2
+state.global cleanup.errdefer_skipped_on_success trail I64 1

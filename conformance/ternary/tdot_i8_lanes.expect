@@ -1,0 +1,9 @@
+case ternary/tdot_i8_lanes
+clause SPEC-05 TR-DOT-1, TR-DOT-4, TR-IMP-1, TR-IMP-2, Lemma L2, 9.2 (ternary by I8 in four 16-bit SWAR lanes per U64 word, direct and offset forms, against the exact sum; the lane bounds 255, 258, 127 and 129)
+format 2
+source reference
+outcome value
+stdout-bytes 1075
+stdout-sha256 0eea7f3e173e31b52bf86f5bb7063acbebe499553cd1ea2728dbbf0dbe49ebeb
+return I64 0
+fuel-consumed 20260

@@ -1,0 +1,19 @@
+case reduce/fold_checked_i64_overflow
+clause SPEC-01 IM-73, IM-83; SPEC-02 8.5 (the total_checked row, sequentially; the twin of reduce/loop_fold_overflow_at_element)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 2
+fault.code E_OVERFLOW
+fault.operation fold_checked.add.i64
+fault.operand I64 1
+fault.operand I64 9223372036854775807
+fault.operand I64 1
+fault.exact 9223372036854775808
+fault.limit I64 9223372036854775807
+fault.position reduce/fold_checked_i64_overflow.ci:9:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

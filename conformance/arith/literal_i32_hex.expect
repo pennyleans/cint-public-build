@@ -1,0 +1,6 @@
+case arith/literal_i32_hex
+clause SPEC-01 3.1, 3.2 (fixture 56)
+source compile-error
+outcome compile-error
+diagnostic.code C2003
+diagnostic.position arith/literal_i32_hex.ci:8:13

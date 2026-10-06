@@ -1,0 +1,12 @@
+// case: module/c3030_fold_directory
+// clause: SPEC-09 CINTC-12 (the paths of one program are distinct under ASCII case folding, in every segment); SPEC-04 LS-225, LS-278
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C3030 at Module/lib/plain_math.ci:1:1, a path that folds onto module/lib/plain_math.ci in its first segment
+
+import module.lib.plain_math;
+import Module.lib.plain_math;
+
+export I64 run() {
+    return plain_math.SCALE;
+}

@@ -1,0 +1,12 @@
+// case: module/private_struct_c3008
+// clause: SPEC-04 LS-227 (only exported declarations are visible to importers), LS-313; SPEC-09 CINTC-16
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C3008 at 10:12, the private struct `Hidden` of module.lib.shapes named as a type
+
+import module.lib.shapes;
+
+export I64 run() {
+    shapes.Hidden h = shapes.Hidden(1, 2);
+    return h.a;
+}

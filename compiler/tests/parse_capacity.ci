@@ -1,0 +1,32 @@
+import limits;
+import parse;
+import scan;
+
+// Scans and parses with the physical views supplied by the host.
+export I64 run(in U8[_] src, inout scan.Token[_] toks, inout parse.Node[_] nodes,
+        inout parse.Frame[_] frames, inout limits.CompilerDiag[_] diag,
+        inout I64[_] stats, I64 module) {
+    limits.diag_clear(diag);
+    for i in 0..8 {
+        stats[i] = 0;
+    }
+    stats[0] = -2;
+    if (scan.check_text(src, diag, module) != 0) {
+        return -2;
+    }
+    I64 ntok = scan.scan(src, toks, diag, module);
+    if (ntok < 0) {
+        return -2;
+    }
+    parse.PState[1] ps;
+    I64 root = parse.parse(src, toks, ntok, nodes, frames, diag, ps, module);
+    stats[0] = root;
+    stats[1] = ps[0].nn;
+    stats[2] = ps[0].err;
+    stats[3] = ps[0].ntok;
+    stats[4] = ps[0].sp;
+    stats[5] = ps[0].max_sp;
+    stats[6] = ps[0].done;
+    stats[7] = ps[0].steps;
+    return root;
+}

@@ -1,0 +1,7 @@
+case arith/floor_remainder_runtime
+clause SPEC-01 4.4
+source reference
+outcome value
+stdout-bytes 0
+return I64 -1
+fuel-consumed 1

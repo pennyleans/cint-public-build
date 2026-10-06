@@ -1,0 +1,23 @@
+// case: memory/arena_stale_view_after_callee_reset
+// clause: SPEC-03 M-14a, M-23; SPEC-02 V-14; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arena, handles, view variable, reductions)
+// entry: run; args: none
+// spec outcome: fault E_STALE_HANDLE at 15:14 (the `[` of `v[0]`), operation handle.check, operands U64 0, I64 3, U64 0, U32 1, U8 1 (the handle: slot, length, generation, container, kind), U64 1 (the current generation), U8 3 (generation), no exact, no limit; stack depth 1; fuel 4 (entry, calls to `total_first` and `clear`, one reduction). The view `v` was derived from `scratch[h]` and reports that handle (SPEC-03 M-23); the `reset` is in a callee, so no C5011 applies
+
+Arena(I64, 64) scratch;
+
+void clear() { scratch.reset(); }
+
+I64 total_first(in Handle(I64[]) h) {
+    inout I64[] v = scratch[h];
+    I64 t = sum(v);
+    clear();
+    I64 x = v[0];
+    return t + x;
+}
+
+export I64 run() {
+    Handle(I64[]) h = scratch.alloc(3);
+    scratch[h][0] = 2;
+    return total_first(h);
+}

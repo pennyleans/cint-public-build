@@ -1,0 +1,16 @@
+// case: kernel/where_violation
+// clause: SPEC-02 K-1, K-6, F-5 check 5 (a false `where` constraint faults at entry)
+// subset: cint-core-1 (kernel)
+// entry: run; args: none
+// spec outcome: fault E_SHAPE at 14:5 (the dispatch site), phase entry, address dispatch 0, operation bind.where, operands I64 0 (the constraint index), I64 1 (n) and I64 2, no exact and no limit (OQ-203); stack depth 0; fuel 1 (no dispatch charge). Encoding: box 09 ruling R9
+
+kernel diffuse1[n](in I32[n] u, out I32[n] next) over [i: n] where n >= 2 {
+    next[i] = u[i];
+}
+
+export I32 run() {
+    I32[1] u;
+    I32[1] v;
+    diffuse1(u, v);
+    return v[0];
+}

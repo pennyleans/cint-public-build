@@ -1,0 +1,8 @@
+# Held conformance cases that cint_ref refuses and that compiler/parse.ci does not parse
+# yet, though the specification or a ruling admits their text (compiler/OPEN.md
+# CINTC-OQ-06), so the `front` suite requires the first diagnostic cintc gives now
+# instead of a tree. When the parser takes such a case, its line fails; remove the line,
+# and the case must then parse like any other case that cint_ref refuses. One line per
+# case: the path, a tab, the code, line and column. No box 09 case, no box 12 error
+# handling case and no box 12 memory lifetimes case is pending since the parser work of
+# boxes 09 and 12 (CINTC-OQ-06 items 4 to 6).

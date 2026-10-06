@@ -1,0 +1,8 @@
+case view/rank3_index_value
+clause SPEC-04 LS-62, LS-63, LS-64 (rank 3)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I32 9
+fuel-consumed 1

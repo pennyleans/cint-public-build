@@ -1,0 +1,135 @@
+// The forms and types of compiler/back_ptx.ci's native families that the kernel cases of
+// conformance/kernel/ do not reach (box 11 unit 3; compiler/tests/ptx_suite.py).
+
+// Checked and wrapping add, sub and mul at each width.
+kernel widths[n](in I8[n] a, in U8[n] b, in I16[n] c, in U16[n] d, in I32[n] e, in U32[n] f, in U64[n] g,
+        out I64[n] s, out U64[n] u) over [i: n] {
+    I8 a2 = a[i] + a[i];
+    I8 a3 = a[i] *% a[i];
+    U8 b2 = b[i] - b[i];
+    U8 b3 = b[i] +% b[i];
+    I16 c2 = c[i] * c[i];
+    U16 d2 = d[i] -% d[i];
+    I32 e2 = e[i] -% (e[i] *% e[i]);
+    U32 f2 = f[i] * f[i];
+    U64 g2 = g[i] + g[i];
+    U64 g3 = g[i] - (f[i] as U64);
+    U64 g4 = g[i] * g[i];
+    U64 g5 = g[i] *% g[i];
+    s[i] = (a2 as I64) + (a3 as I64) + (c2 as I64) + (e2 as I64);
+    u[i] = (b2 as U64) + (b3 as U64) + (d2 as U64) + (f2 as U64) + g2 + g3 + g4 + g5;
+}
+
+// as.checked between widths and signs, and from Bool.
+kernel convert[n](in I64[n] x, in U64[n] y, out I64[n] r) over [i: n] {
+    I8 p = x[i] as I8;
+    I64 q = y[i] as I64;
+    U16 t = x[i] as U16;
+    U64 v = p as U64;
+    I32 w = (y[i] as U32) as I32;
+    Bool z = x[i] > 0;
+    I64 b = z as I64;
+    r[i] = (p as I64) + q + (t as I64) + (v as I64) + (w as I64) + b;
+}
+
+// Signed and unsigned comparisons, an else branch, and a loop with continue and break.
+kernel compare[n](in U32[n] a, in I16[n] b, out I64[n] r, out I64 hits, out I64 most) over [i: n] {
+    I64 k = 0;
+    if (a[i] >= 7) {
+        k = 1;
+    } else if (b[i] <= -3) {
+        k = 2;
+    } else {
+        k = 3;
+    }
+    I64 j = 0;
+    while (true) {
+        j = j + 1;
+        if (j == 3) {
+            continue;
+        }
+        if (j >= 5) {
+            break;
+        }
+        k = k + j;
+    }
+    r[i] = k;
+    reduce hits = count(a[i] != 0);
+    reduce most = max(k);
+}
+
+// div_round in each rounding mode, signed and unsigned: mode j + 1 for column j.
+kernel rounding[n, m](in I64[n] a, in I64[n] b, in U32[n] c, in U32[n] d, out I64[n, m] r, out U32[n, m] u)
+        over [i: n, j: m] {
+    I64 x = 0;
+    U32 y = 0;
+    if (j == 0) {
+        x = div_round(a[i], b[i], floor);
+        y = div_round(c[i], d[i], floor);
+    } else if (j == 1) {
+        x = div_round(a[i], b[i], ceil);
+        y = div_round(c[i], d[i], ceil);
+    } else if (j == 2) {
+        x = div_round(a[i], b[i], trunc);
+        y = div_round(c[i], d[i], trunc);
+    } else if (j == 3) {
+        x = div_round(a[i], b[i], away);
+        y = div_round(c[i], d[i], away);
+    } else if (j == 4) {
+        x = div_round(a[i], b[i], half_even);
+        y = div_round(c[i], d[i], half_even);
+    } else if (j == 5) {
+        x = div_round(a[i], b[i], half_away);
+        y = div_round(c[i], d[i], half_away);
+    } else if (j == 6) {
+        x = div_round(a[i], b[i], half_trunc);
+        y = div_round(c[i], d[i], half_trunc);
+    } else if (j == 7) {
+        x = div_round(a[i], b[i], half_up);
+        y = div_round(c[i], d[i], half_up);
+    } else {
+        x = div_round(a[i], b[i], half_down);
+        y = div_round(c[i], d[i], half_down);
+    }
+    r[i, j] = x;
+    u[i, j] = y;
+}
+
+// div_round at 8 and 16 bits, where a signed quotient's fit test has the type's bounds.
+kernel narrow[n](in I8[n] a, in I16[n] b, in I16[n] c, out I64[n] r) over [i: n] {
+    I8 p = div_round(a[i], -2, floor);
+    I16 q = div_round(b[i], c[i], half_even);
+    r[i] = (p as I64) + (q as I64);
+}
+
+export I64 run() {
+    I8[2] a = [3, -4];
+    U8[2] b = [5, 6];
+    I16[2] c = [7, -8];
+    U16[2] d = [9, 10];
+    I32[2] e = [11, -12];
+    U32[2] f = [13, 14];
+    U64[2] g = [15, 16];
+    I64[2] s;
+    U64[2] u;
+    widths(a, b, c, d, e, f, g, s, u);
+    I64[2] x = [5, 6];
+    U64[2] y = [7, 8];
+    I64[2] r;
+    convert(x, y, r);
+    I16[2] h = [-5, 4];
+    I64[2] q;
+    I64 hits = 0;
+    I64 most = 0;
+    compare(f, h, q, hits, most);
+    I64[2] p = [-7, 7];
+    I64[2] k = [2, -2];
+    I64[2, 9] w;
+    U32[2, 9] v;
+    rounding(p, k, f, f, w, v);
+    I16[2] m = [-32768, 7];
+    I16[2] o = [3, 2];
+    I64[2] z;
+    narrow(a, m, o, z);
+    return s[1] + (u[1] as I64) + r[0] + q[1] + hits + most + w[0, 4] + (v[1, 0] as I64) + z[0] + z[1];
+}

@@ -1,0 +1,260 @@
+// case: ternary/planes_digits
+// clause: SPEC-05 TR-DIG-1, TR-T27-5, TR-PT5-1, TR-PT5-4, section 6 totality facts, 11.4 (balanced digits into bit planes and back; the PT5[27] bytes of T27 values; the legacy word relation)
+// subset: cint-core-1 (print statements)
+// entry: run; args: none
+// spec outcome: value I64 0 (every value round trips through its planes and its PT5 bytes, and the PT5 and legacy bytes are related as 11.4 states); 76 output lines
+// t27 set 1 (docs/design/notes/2026-10-05-t27-ternary-tests-scoping.md 5.2), with SPEC-05 12.2 PT5-05, PT5-06, LIT-02, CONV-02, CONV-03 and LEG-01:
+// the pack and unpack round trip of the hostile check of 2026-10-03, section 8, item 5.
+// Part 1, 64 T27 values by 27 trits in the plane layout of ternary/planes_add27 (bit L of plus[i] is set where trit i
+// of value L is +1, of minus[i] where it is -1). Values 0 to 11 are listed in run(); value L from 12 to 63 is
+// sm(5, L) % 3^27 - M, with sm(s, i) output i (from 0) of SplitMix64 seeded with s, as in ternary/planes_add27.
+// Byte j (0 to 5) of the PT5[27] form is trits 5j to 5j + 4 read as t0 + 3 t1 + 9 t2 + 27 t3 + 81 t4 in two's
+// complement (trits 27 to 29 are padding, zero); the legacy word is v + M in base 243, little-endian.
+// Part 2, the I64 boundary at 40 and 41 trits: one value per pair of U64 planes, bit i holding trit i.
+// Output: one line per value of part 1 (decimal, {v:t}, PT5 bytes, legacy bytes), the LEG-01 line, one line per
+// boundary value (decimal, the number of trits up to the highest nonzero one, {v:t}), two CONV lines, the mismatch count.
+
+const U64 GAMMA = 0x9E37_79B9_7F4A_7C15;
+const I64 M = 3_812_798_742_493;
+const I64 P27 = 7_625_597_484_987;
+
+U64 mix(U64 z0) {
+    U64 z = (z0 ^ (z0 >> 30)) *% 0xBF58_476D_1CE4_E5B9;
+    z = (z ^ (z >> 27)) *% 0x94D0_49BB_1331_11EB;
+    return z ^ (z >> 31);
+}
+
+U64 sm(U64 seed, I64 i) {
+    return mix(seed +% ((i as U64) +% 1) *% GAMMA);
+}
+
+U64 bit(I64 lane) {
+    U64 one = 1;
+    return one << lane;
+}
+
+I64 trit_of(in U64[27] p, in U64[27] n, I64 i, I64 lane) {
+    if (i >= 27) {
+        return 0;
+    }
+    return (((p[i] >> lane) & 1) as I64) - (((n[i] >> lane) & 1) as I64);
+}
+
+// Trits 0 to 26 of x into lane `lane`; returns what is left above trit 26 (0 when |x| <= M).
+I64 to_planes(inout U64[27] p, inout U64[27] n, I64 x, I64 lane) {
+    I64 v = x;
+    for i in 0..27 {
+        I64 r = v % 3;
+        if (r == 1) {
+            p[i] = p[i] | bit(lane);
+            v = v / 3;
+        } else if (r == 2) {
+            n[i] = n[i] | bit(lane);
+            v = v / 3 + 1;
+        } else {
+            v = v / 3;
+        }
+    }
+    return v;
+}
+
+I64 from_planes(in U64[27] p, in U64[27] n, I64 lane) {
+    I64 v = 0;
+    for j in 0..27 {
+        v = v * 3 + trit_of(p, n, 26 - j, lane);
+    }
+    return v;
+}
+
+// PT5 byte j of lane `lane` as a signed value in [-121, 121].
+I64 pt5_byte(in U64[27] p, in U64[27] n, I64 j, I64 lane) {
+    I64 b = 0;
+    for d in 0..5 {
+        b = b * 3 + trit_of(p, n, 5 * j + 4 - d, lane);
+    }
+    return b;
+}
+
+// Trit d (0 to 4) of a PT5 byte value b, by repeated balanced residue by 3.
+I64 byte_trit(I64 b, I64 d) {
+    I64 v = b;
+    I64 t = 0;
+    for i in 0..d + 1 {
+        I64 r = v % 3;
+        if (r == 2) {
+            t = -1;
+            v = v / 3 + 1;
+        } else {
+            t = r;
+            v = v / 3;
+        }
+    }
+    return t;
+}
+
+// Part 2: trits of an I64 into one pair of planes, bit i = trit i (41 trits suffice for I64).
+U64 plus41(I64 x) {
+    I64 v = x;
+    U64 p = 0;
+    for i in 0..41 {
+        I64 r = v % 3;
+        if (r == 1) {
+            p = p | bit(i);
+        }
+        v = r == 2 ? v / 3 + 1 : v / 3;
+    }
+    return p;
+}
+
+U64 minus41(I64 x) {
+    I64 v = x;
+    U64 n = 0;
+    for i in 0..41 {
+        I64 r = v % 3;
+        if (r == 2) {
+            n = n | bit(i);
+        }
+        v = r == 2 ? v / 3 + 1 : v / 3;
+    }
+    return n;
+}
+
+// The value of 41 planes positions, wrapping: the partial values may leave I64 (at I64.min), the final one does
+// not, so the residue modulo 2^64 is the value.
+I64 value41(U64 p, U64 n) {
+    I64 v = 0;
+    for j in 0..41 {
+        I64 i = 40 - j;
+        v = v *% 3 +% (((p >> i) & 1) as I64) -% (((n >> i) & 1) as I64);
+    }
+    return v;
+}
+
+I64 width41(U64 p, U64 n) {
+    I64 w = 0;
+    for i in 0..41 {
+        if ((((p | n) >> i) & 1) != 0) {
+            w = i + 1;
+        }
+    }
+    return w;
+}
+
+I64 boundary(I64 x) {
+    U64 p = plus41(x);
+    U64 n = minus41(x);
+    I64 back = value41(p, n);
+    "boundary {x}: {width41(p, n)} trits {x:t}\n";
+    if (back != x || (p & n) != 0) {
+        return 1;
+    }
+    return 0;
+}
+
+export I64 run() {
+    I64 bad = 0;
+    I64[64] v;
+    v[0] = 1_000_000;          // PT5-05
+    v[1] = -M;                 // PT5-06
+    v[2] = M;                  // LIT-02: 27 digits P
+    v[3] = 0;
+    v[4] = 8;                  // 0tP0N
+    v[5] = -8;
+    v[6] = 1;
+    v[7] = -1;
+    v[8] = 1_270_932_914_164;  // R(26)
+    v[9] = -1_270_932_914_164;
+    v[10] = 2_541_865_828_329; // 3^26
+    v[11] = -2_541_865_828_329;
+    for lane in 12..64 {
+        v[lane] = ((sm(5, lane) % (P27 as U64)) as I64) - M;
+    }
+
+    U64[27] p;
+    U64[27] n;
+    for i in 0..27 {
+        p[i] = 0;
+        n[i] = 0;
+    }
+    for lane in 0..64 {
+        bad += to_planes(p, n, v[lane], lane) != 0 ? 1 : 0;
+    }
+    for i in 0..27 {
+        bad += (p[i] & n[i]) != 0 ? 1 : 0;
+    }
+
+    for lane in 0..64 {
+        I64 x = v[lane];
+        bad += from_planes(p, n, lane) != x ? 1 : 0;
+        "value {x} {x:t} pt5";
+        I64 back = 0;
+        for k in 0..6 {
+            I64 j = 5 - k;
+            I64 b = pt5_byte(p, n, j, lane);
+            back = back * 243 + b;
+        }
+        U64 u = (x + M) as U64;
+        for j in 0..6 {
+            I64 b = pt5_byte(p, n, j, lane);
+            U8 core = b as% U8;
+            " {core:02x}";
+            for d in 0..5 {
+                bad += byte_trit(b, d) != trit_of(p, n, 5 * j + d, lane) ? 1 : 0;
+            }
+        }
+        " legacy";
+        for j in 0..6 {
+            I64 b = pt5_byte(p, n, j, lane);
+            I64 g = (u % 243) as I64;
+            u = u / 243;
+            U8 old = g as U8;
+            " {old:02x}";
+            bad += (j < 5 ? g - 121 : g - 4) != b ? 1 : 0;
+        }
+        "\n";
+        bad += back != x || u != 0 ? 1 : 0;
+    }
+
+    // LEG-01: the legacy word b0 69 8a 79 79 04 is the PT5[27] word 37 f0 11 00 00 00 of 1000000.
+    U8[6] legacy;
+    legacy[0] = 0xb0;
+    legacy[1] = 0x69;
+    legacy[2] = 0x8a;
+    legacy[3] = 0x79;
+    legacy[4] = 0x79;
+    legacy[5] = 0x04;
+    "legacy b0 69 8a 79 79 04 is pt5";
+    I64 w = 0;
+    for k in 0..6 {
+        I64 j = 5 - k;
+        I64 b = (legacy[j] as I64) - (j < 5 ? 121 : 4);
+        w = w * 243 + b;
+    }
+    for j in 0..6 {
+        U8 core = ((legacy[j] as I64) - (j < 5 ? 121 : 4)) as% U8;
+        " {core:02x}";
+    }
+    " value {w}\n";
+    bad += w != 1_000_000 ? 1 : 0;
+
+    bad += boundary(9_223_372_036_854_775_807);
+    bad += boundary(-9_223_372_036_854_775_807 - 1);
+    bad += boundary(6_078_832_729_528_464_400);     // R(40)
+    bad += boundary(6_078_832_729_528_464_401);     // R(40) + 1
+    bad += boundary(-6_078_832_729_528_464_400);
+    bad += boundary(-6_078_832_729_528_464_401);
+    bad += boundary(4_052_555_153_018_976_267);     // 3^39
+    bad += boundary(0);
+
+    // CONV-03: 40 trits all +1 are R(40); CONV-02: 41 trits all +1 are R(41), outside I64.
+    U64 all40 = bit(40) - 1;
+    "40 trits all +1: {value41(all40, 0)}\n";
+    U64 r41 = 0;
+    for i in 0..41 {
+        r41 = r41 * 3 + 1;
+    }
+    "41 trits all +1: {r41} as U64, above I64.max: {r41 > (9_223_372_036_854_775_807 as U64)}\n";
+    bad += value41(all40, 0) != 6_078_832_729_528_464_400 ? 1 : 0;
+    "mismatches {bad}\n";
+    return bad;
+}

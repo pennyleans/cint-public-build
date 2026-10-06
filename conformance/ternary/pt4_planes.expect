@@ -1,0 +1,9 @@
+case ternary/pt4_planes
+clause SPEC-05 TR-PT4-1 to TR-PT4-3, TR-VAL-4, 9.1 (PT4 fields of every U8 value by sign extension and by bit planes; 32 fields of a U64 word deinterleaved into two planes; PT4 to PT5 repacking)
+format 2
+source reference
+outcome value
+stdout-bytes 8540
+stdout-sha256 b60dc3ad5a67aeed14ca8f756f57a9e909d1db7596a9a74e28e3ccf88374c889
+return I64 0
+fuel-consumed 9649

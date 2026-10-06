@@ -1,0 +1,8 @@
+case memory/script_pool_module_level
+clause SPEC-03 M-20; SPEC-04 LS-219; decision 2026-10-05, BX12-24; ref/OPEN.md REF-OQ-45
+format 2
+source reference
+outcome value
+stdout-bytes 3
+stdout-sha256 084c799cd551dd1d8d5c5f9a5d593b2e931f5e36122ee5c793c1d08a19839cc0
+fuel-consumed 2

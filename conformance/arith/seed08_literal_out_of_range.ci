@@ -1,0 +1,10 @@
+// case: arith/seed08_literal_out_of_range
+// clause: SPEC-09 SEED-08 row 1; SPEC-01 3.2 (fixture 96); SPEC-04 4.2 rule 1
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2003 at 8:13: the literal 40000 does not fit I16
+
+export I16 run() {
+    I16 h = 40000 - 30000;
+    return h;
+}

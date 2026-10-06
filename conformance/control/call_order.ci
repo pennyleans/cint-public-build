@@ -1,0 +1,20 @@
+// case: control/call_order
+// clause: SPEC-01 8.1 (arguments left to right)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_SHIFT at 10:14 (g faults before the division by zero is evaluated)
+
+I64 g() {
+    I64 x = 1;
+    I64 k = 64;
+    return x << k;
+}
+
+I64 f(I64 a, I64 b) {
+    return a + b;
+}
+
+export I64 run() {
+    I64 z = 0;
+    return f(g(), 1 / z);
+}

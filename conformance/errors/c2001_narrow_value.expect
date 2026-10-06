@@ -1,0 +1,7 @@
+case errors/c2001_narrow_value
+clause SPEC-04 LS-97; decision 2026-10-05, BX12-28
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2001
+diagnostic.position errors/c2001_narrow_value.ci:13:20

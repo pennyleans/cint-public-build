@@ -1,0 +1,12 @@
+// case: view/index_left_operand_first
+// clause: SPEC-01 IM-92, IM-96, IM-186 (of two out-of-range subscripts, the left operand faults first)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 11:13 (the first `[`), operand I64 5, limit I64 4; the right subscript is never checked
+
+export I64 run() {
+    I64[4] a;
+    I64 i = 5;
+    I64 j = -1;
+    return a[i] + a[j];
+}

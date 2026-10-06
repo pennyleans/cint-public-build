@@ -1,0 +1,7 @@
+case diag/block_comment
+clause SPEC-04 LS-13, LS-14; SPEC-09 5.5 BLOCK_COMMENT
+source reference
+outcome value
+stdout-bytes 0
+return I64 2
+fuel-consumed 1

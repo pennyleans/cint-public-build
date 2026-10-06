@@ -1,0 +1,7 @@
+// Helper module of module/missing_beside_type_error_c3009 (G-C1 fixture, not a case): a
+// type error that no check reaches while an import of the program names no file.
+
+export I64 bad() {
+    Bool b = 1;
+    return 0;
+}

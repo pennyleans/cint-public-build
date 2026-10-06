@@ -1,0 +1,6 @@
+case module/qualified_local_c3001
+clause SPEC-04 LS-228 (a local may not take a visible alias); SPEC-09 CINTC-16
+source compile-error
+outcome compile-error
+diagnostic.code C3001
+diagnostic.position module/qualified_local_c3001.ci:10:9

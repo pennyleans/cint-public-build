@@ -1,0 +1,52 @@
+import zero_field_lib;
+
+export struct Middle { U8 tag; I64[0] none; U8 tail; }
+export struct Start { I64[0] none; U8 live; }
+export struct Trailing { U8 live; I64[0] none; }
+export struct Aligns { U8 a; I16[0] b; U32[0] c; I64[0] d; Bool e; }
+struct Bit { Bool active; }
+export struct SkipBool { U8 tag; Bit[0] none; U8 tail; Bool live; }
+export struct EndBool { U8 tag; Bit[0] none; }
+struct RecordZero { U8 tag; zero_field_lib.Element[0] none; U8 tail; }
+struct Nested { Trailing inner; Bool tail; }
+
+I64 hit = 0;
+I64 index() { hit += 1; return 0; }
+I64 value() { hit += 100; return 3; }
+zero_field_lib.Element element() { hit += 100; zero_field_lib.Element a; return a; }
+
+export Middle echo(Middle a) { return a; }
+export Middle cleared() { Middle a; return a; }
+export SkipBool bools(SkipBool a) { return a; }
+export EndBool last(EndBool a) { return a; }
+export zero_field_lib.Packet packet(zero_field_lib.Packet a) { return a; }
+
+export I64 copied() {
+    Middle a; a.tag = 3; a.tail = 9;
+    Middle b = a; a.tail = 1;
+    return (b.tag as I64) + (b.tail as I64);
+}
+export I64 positions() {
+    Start a; Trailing b; Aligns c;
+    a.live = 3; b.live = 7; c.e = true;
+    return (a.live as I64) + (b.live as I64) + (c.e as I64);
+}
+export I64 imported() {
+    zero_field_lib.Packet a; a.tail = 13;
+    zero_field_lib.Packet b = a; a.tail = 1;
+    return b.tail as I64;
+}
+export I64 repeated() {
+    I64 accum = 0;
+    for i in 0..3 { Middle a; accum += a.tail as I64; a.tail = 9; }
+    return accum;
+}
+export I64 nested() {
+    Nested a; a.inner.live = 17; a.tail = true;
+    Nested b = a; a.inner.live = 1;
+    return (b.inner.live as I64) + (b.tail as I64);
+}
+export I64 scalar_bounds() { Middle a; a.none[index()] = value(); return 0; }
+export I64 record_bounds() { RecordZero a; a.none[index()] = element(); return 0; }
+export I64 scalar_read(I64 i) { Middle a; return a.none[i]; }
+export I64 record_read(I64 i) { RecordZero a; return a.none[i].value; }

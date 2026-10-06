@@ -1,0 +1,24 @@
+// case: view/struct_view_inout
+// clause: SPEC-04 LS-119; SPEC-09 BOOT-01 (params: a view whose element type is a struct)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I32 12 (kind 4 of token 2, plus length 4 after two calls of +2 each, plus 4 from token 0)
+
+struct Tok {
+    I32 kind;
+    I32 length;
+}
+
+void mark[n](inout Tok[n] ts) {
+    for i in 0..n {
+        ts[i].kind = (i * 2) as I32;
+        ts[i].length += 2;
+    }
+}
+
+export I32 run() {
+    Tok[3] ts;
+    mark(ts);
+    mark(ts);
+    return ts[2].kind + ts[2].length + ts[0].length;
+}

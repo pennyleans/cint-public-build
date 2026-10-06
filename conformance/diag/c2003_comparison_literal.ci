@@ -1,0 +1,13 @@
+// case: diag/c2003_comparison_literal
+// clause: SPEC-04 4.2 rule 7; SPEC-04 17.1, 17.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2003 at 9:13: 1000 takes the type I8 of the other operand and does not fit (position: first character of the offending construct, SPEC-04 17.1; see ref/OPEN.md O-13)
+
+export I64 run() {
+    I8 x = 0;
+    if (x < 1000) {
+        return 1;
+    }
+    return 0;
+}

@@ -1,0 +1,32 @@
+import record_mid;
+import record_lib;
+import record_lib as again;
+
+struct Packet {
+    U8 marker;
+    I32 value;
+    Bool flag;
+    Bool[2] bits;
+    record_lib.Flag nested;
+}
+struct Simple { I64 value; Bool flag; }
+
+export I64 touch(inout Packet[_] a) {
+    a[0].value += 1;
+    return a[0].value as I64;
+}
+
+export Simple copied(Simple input) {
+    return Simple(input.value + 1, input.flag);
+}
+
+export Simple both(inout Simple a, Simple b, I64 divisor) {
+    a.value = 42;
+    return Simple(10 / divisor, b.flag);
+}
+
+export I64 aliases() {
+    record_lib.Flag a = record_lib.Flag(true, 3);
+    again.Flag b = again.Flag(false, 4);
+    return (a.code as I64) + (b.code as I64) + record_mid.observed();
+}

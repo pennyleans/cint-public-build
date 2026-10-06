@@ -1,0 +1,13 @@
+// The refusal of integer division in a work-item body by compiler/back_ptx.ci (box 11 unit 3;
+// compiler/tests/ptx_suite.py).
+
+kernel k[n](in I64[n] a, out I64[n] r) over [i: n] {
+    r[i] = a[i] / 2;
+}
+
+export I64 run() {
+    I64[2] a = [3, 4];
+    I64[2] r;
+    k(a, r);
+    return r[1];
+}

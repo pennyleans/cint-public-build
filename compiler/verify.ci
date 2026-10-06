@@ -1,0 +1,1109 @@
+// compiler/verify.ci: the SIR verifier (SPEC-09 SIR-10) and the flow facts the C backend
+// reads (slice 2 task 2.11).
+//
+// check_func verifies one function of lowering.ci's tables before any backend runs:
+// every temporary is defined once, in order, before its use, by a node whose region is
+// still open where it is used (so the definition dominates the use in the structured
+// control flow of SIR-05); operand types match each node's signature exactly (SIR-01:
+// there are no implicit conversions); every node that can fault has a site (SIR-04); the
+// structure nodes nest and name the structures they belong to; `break` and `continue`
+// name an open loop or switch; the arguments of a call match the callee's parameters.
+// Writes to views (SPEC-03 M-27) and kernels are not in the slice 2 surface. A failure is
+// an internal compiler error that names the node (SIR-10): verify returns the index of
+// the first node that fails, and compiler/main.ci faults with that index as the operand
+// of the record (compiler/OPEN.md CINTC-OQ-33).
+//
+// flow_func then computes, in one forward pass over the function, which nodes are
+// reachable (FL_LIVE), which labels a reachable jump targets (FL_END, FL_HEAD, FL_NEXT on
+// the structure's begin node), whether a reachable node can fault (FN_FAULT) and whether
+// control can reach the end (FN_FALLS). back_c.ci emits a node only when it is live and a
+// label only when it is used, so the C it writes has no unreachable statement, unused
+// label, or unused temporary (EMIT-26, warning-free). mark_used marks the functions an
+// entry reaches through live calls (FN_USED); the C backend emits no other function.
+// The dispatch of a live switch reaches each of its cases, and its default case or its end
+// unless an item covers the whole type (dispatch_falls): such a default case is reached only
+// by fallthrough, and has no label.
+//
+// Bound (CINTC-13): O(n) per function for n nodes, with O(depth) for the stack of open
+// structures; mark_used repeats a pass over the module's call nodes until nothing changes,
+// O(F * n) for F functions (CINTC-OQ-34).
+
+import limits;
+import lowering;
+import fold;
+import parse;
+import resolve;
+
+// The kind of node i.
+I32 kind_of(in lowering.Sir[_] sir, I64 i) {
+    return sir[i].op & lowering.OP_MASK;
+}
+
+Bool has(in lowering.Sir[_] sir, I64 i, I32 flag) {
+    return (sir[i].op & flag) != 0;
+}
+
+void set_flag(inout lowering.Sir[_] sir, I64 i, I32 flag) {
+    sir[i].op = sir[i].op | flag;
+}
+
+void clear_flag(inout lowering.Sir[_] sir, I64 i, I32 flag) {
+    sir[i].op = sir[i].op & ~flag;
+}
+
+Bool scalar(I32 ty) {
+    return lowering.is_int(ty) || ty == lowering.T_BOOL;
+}
+
+// Whether node i can fault, so must carry a site (SIR-04).
+export Bool can_fault(in lowering.Sir[_] sir, I64 i) {
+    I32 k = kind_of(sir, i);
+    switch (k) {
+        case lowering.SO_BIN: return lowering.bin_faults(sir[i].c, sir[i].f);
+        case lowering.SO_UN: return sir[i].c == lowering.U_NEG && sir[i].f == 0;
+        case lowering.SO_AS: return sir[i].c == 0 && sir[i].f != lowering.T_BOOL;
+        case lowering.SO_BUILTIN: return lowering.builtin_faults(sir, i);
+        case lowering.SO_CALL, lowering.SO_FUEL, lowering.SO_PRINT_BEGIN, lowering.SO_ICHECK, lowering.SO_SHAPE,
+                lowering.SO_ASSERT, lowering.SO_COPY_SHAPE:
+            return true;
+        case lowering.SO_VSLICE, lowering.SO_VCOPY, lowering.SO_REDUCE, lowering.SO_CALIAS, lowering.SO_VALLOC:
+            return true;
+        case lowering.SO_MEMBER, lowering.SO_MVIEW, lowering.SO_LEASE, lowering.SO_PREF:
+            return true;
+        case lowering.SO_KCALL, lowering.SO_KSHAPE, lowering.SO_KWHERE, lowering.SO_KALIAS, lowering.SO_KFUEL,
+                lowering.SO_KSTAGE, lowering.SO_KPUSH:
+            return true;
+        // fold_checked's step, the final check of sum and of min and max, an array's publication.
+        case lowering.SO_KRED: return sir[i].f == 4;
+        case lowering.SO_KEPI: return sir[i].f == 1 || sir[i].f == 6 || sir[i].f == 7;
+        case lowering.SO_KPUB: return sir[i].b >= 0;
+        default: return false;
+    }
+}
+
+// Whether node i, when live, jumps to the fault exit on failure in the C backend: a node
+// that can fault, every part of a print statement (the runtime may fail it, SPEC-04 LS-197),
+// and a charge to the frame arena that lowering.frame_proof kept, whose site follows the
+// module's (it is not in the SIR text).
+export Bool exits_on_fault(in lowering.Sir[_] sir, I64 i) {
+    I32 k = kind_of(sir, i);
+    return can_fault(sir, i) || k == lowering.SO_PRINT_BYTES || k == lowering.SO_PRINT_VALUE ||
+        k == lowering.SO_PRINT_END || (k == lowering.SO_FRAME && sir[i].f == 0 && sir[i].site > 0);
+}
+
+// Whether value v is a valid operand at node i of function fn, and its type (res[0]).
+Bool operand[nf](in lowering.Sir[_] sir, in lowering.SirFunc[nf] funcs, in lowering.SirSlot[_] slots, I64 fn,
+        I64 i, I64 v, inout I64[_] res) {
+    if (v < 0) {
+        I64 p = -v - 1;
+        if (p >= funcs[fn].nparam as I64) {
+            return false;
+        }
+        res[0] = slots[(funcs[fn].pslot0 as I64) + p].ty as I64;
+        return true;
+    }
+    if (v >= i || v < funcs[fn].first as I64 || sir[v].dst < 0) {
+        return false;
+    }
+    I64 region = sir[v].e as I64;
+    if (region >= 0 && !has(sir, region, lowering.FL_OPEN)) {
+        return false;
+    }
+    res[0] = sir[v].ty as I64;
+    return true;
+}
+
+// Whether slot k is a local array or view, or a view parameter of function fn.
+Bool element_slot(in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I64 k) {
+    if (k < 0) {
+        return false;
+    }
+    if (slots[k].kind == lowering.SK_ARRAY || slots[k].kind == lowering.SK_APLACE) {
+        return local_slot(funcs, fn, k);
+    }
+    I64 p0 = funcs[fn].pslot0 as I64;
+    if (slots[k].kind == lowering.SK_NVIEW) {
+        return local_slot(funcs, fn, k) || (k >= p0 && k < p0 + (funcs[fn].nparam as I64));
+    }
+    return slots[k].kind == lowering.SK_VIEW && k >= p0 && k < p0 + (funcs[fn].nparam as I64);
+}
+
+// Whether slot k is a local view of function fn (lowering.SK_NVIEW), of element type ty.
+Bool view_local(in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I64 k, I32 ty) {
+    return k >= 0 && slots[k].kind == lowering.SK_NVIEW && local_slot(funcs, fn, k) &&
+        lowering.array_elem(slots[k].ty) == ty;
+}
+
+// Whether slot k is an array or a view of function fn of element type ty.
+Bool elements_of(in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I64 k, I32 ty) {
+    return element_slot(funcs, slots, fn, k) && lowering.array_elem(slots[k].ty) == ty;
+}
+
+// Whether v is -1 or an I64 operand at node i.
+Bool index_or_none(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn,
+        I64 i, I64 v) {
+    I64[1] tv;
+    return v == -1 || (operand(sir, funcs, slots, fn, i, v, tv) && tv[0] == lowering.T_I64 as I64);
+}
+
+// Whether slot k is a struct variable or a struct parameter of function fn.
+Bool struct_slot(in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I64 k) {
+    if (k < 0) {
+        return false;
+    }
+    if (slots[k].kind == lowering.SK_STRUCT || slots[k].kind == lowering.SK_SPLACE) {
+        return local_slot(funcs, fn, k);
+    }
+    I64 p0 = funcs[fn].pslot0 as I64;
+    return (slots[k].kind == lowering.SK_SPARAM || slots[k].kind == lowering.SK_SREF) && k >= p0 &&
+        k < p0 + (funcs[fn].nparam as I64);
+}
+
+// Whether slot k is an arena (arena) or a pool of function fn whose element type is ty: a
+// module-level one, or one held at run time, a local or a parameter (box 12).
+Bool container_ok(in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I64 k, Bool arena, I32 ty) {
+    if (k < 0 || !lowering.is_container(slots, k) || lowering.is_arena(slots, k) != arena || slots[k].ty != ty) {
+        return false;
+    }
+    if (slots[k].kind == lowering.SK_ARENA_M || slots[k].kind == lowering.SK_POOL_M) {
+        return true;
+    }
+    I64 p0 = funcs[fn].pslot0 as I64;
+    return local_slot(funcs, fn, k) || (k >= p0 && k < p0 + (funcs[fn].nparam as I64));
+}
+
+// SO_MEMBER node i (box 12): member c of container slot a, its argument of the member's type
+// (a count, an element value or its struct slot f, a handle), a handle result for an
+// allocation or an insertion, and the SO_ETAG of a union right after it.
+Bool check_member(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I64 i) {
+    I64 a = sir[i].a as I64;
+    I64 b = sir[i].b as I64;
+    I64 mb = sir[i].c as I64;
+    I64[1] tb;
+    Bool arena = mb >= resolve.MB_ALLOC && mb <= resolve.MB_RESET;
+    if (mb < resolve.MB_ALLOC || mb > resolve.MB_REMOVE || a < 0 || !lowering.is_container(slots, a) ||
+            !container_ok(funcs, slots, fn, a, arena, slots[a].ty)) {
+        return false;
+    }
+    I32 ety = slots[a].ty;
+    Bool unioned = mb == resolve.MB_ALLOC_RESULT || mb == resolve.MB_INSERT_RESULT;
+    Bool handle = unioned || mb == resolve.MB_ALLOC || mb == resolve.MB_INSERT;
+    if ((sir[i].dst >= 0) != handle || (handle && sir[i].ty != lowering.T_HANDLE) || (!handle && sir[i].ty != lowering.T_NONE)) {
+        return false;
+    }
+    if (unioned) {
+        if (i + 1 >= funcs[fn].last as I64 || kind_of(sir, i + 1) != lowering.SO_ETAG || sir[i + 1].a as I64 != i) {
+            return false;
+        }
+    }
+    if (mb == resolve.MB_RESET) {
+        return b == -1;
+    }
+    if (mb == resolve.MB_INSERT || mb == resolve.MB_INSERT_RESULT) {
+        if (ety >= lowering.T_STRUCT) {
+            I64 vs = sir[i].f as I64;
+            return b == -1 && struct_slot(funcs, slots, fn, vs) && slots[vs].ty == ety;
+        }
+        return operand(sir, funcs, slots, fn, i, b, tb) && tb[0] == ety as I64;
+    }
+    if (!operand(sir, funcs, slots, fn, i, b, tb)) {
+        return false;
+    }
+    if (mb == resolve.MB_REMOVE) {
+        return tb[0] == lowering.T_HANDLE as I64;
+    }
+    if (mb == resolve.MB_CHILD) {
+        I64 cs = sir[i].f as I64;
+        if (!local_slot(funcs, fn, cs) || slots[cs].kind != lowering.SK_ARENA_R || slots[cs].ty != ety) {
+            return false;
+        }
+    }
+    return tb[0] == lowering.T_I64 as I64;
+}
+
+// Whether node s is an SO_SDATA node of function fn before node i.
+Bool string_node(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, I64 fn, I64 i, I64 s) {
+    return s >= funcs[fn].first as I64 && s < i && kind_of(sir, s) == lowering.SO_SDATA;
+}
+
+// Whether c is a field of the struct of slot k, of type ty.
+Bool field_ok(in lowering.SirSlot[_] slots, I64 k, I64 c, I32 ty) {
+    I64 s = (slots[k].ty - lowering.T_STRUCT) as I64;
+    return c >= 0 && c < slots[s].ty as I64 && lowering.field_type(slots, slots[k].ty, c) == ty;
+}
+
+// Whether c is a field of type ty of the struct elements of array or view slot k (task 2.14).
+Bool elem_field_ok(in lowering.SirSlot[_] slots, I64 k, I64 c, I32 ty) {
+    I32 et = lowering.array_elem(slots[k].ty);
+    if (et < lowering.T_STRUCT) {
+        return false;
+    }
+    I64 s = (et - lowering.T_STRUCT) as I64;
+    return c >= 0 && c < slots[s].ty as I64 && lowering.field_type(slots, et, c) == ty;
+}
+
+// Whether c is an array field of the struct of slot k whose element type is ty (task 2.14).
+Bool array_field_ok(in lowering.SirSlot[_] slots, I64 k, I64 c, I32 ty) {
+    I64 s = (slots[k].ty - lowering.T_STRUCT) as I64;
+    if (c < 0 || c >= slots[s].ty as I64) {
+        return false;
+    }
+    I32 ft = lowering.field_type(slots, slots[k].ty, c);
+    return lowering.field_array(ft) && lowering.array_elem(ft) == ty;
+}
+
+// Whether slot k is a local or hidden slot of function fn, or module state (SK_GLOBAL, task
+// 2.14), which every function of the module reads and writes, or an imported module's
+// variable (SK_IGLOBAL, G-C2 review COR-2).
+Bool scalar_slot(in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I64 k) {
+    if (k >= 0 && (slots[k].kind == lowering.SK_GLOBAL || slots[k].kind == lowering.SK_IGLOBAL)) {
+        return true;
+    }
+    return local_slot(funcs, fn, k);
+}
+
+// Whether slot k is a local or hidden slot of function fn.
+Bool local_slot(in lowering.SirFunc[_] funcs, I64 fn, I64 k) {
+    return k >= funcs[fn].lslot0 as I64 && k < funcs[fn].lslot_end as I64;
+}
+
+// Requires a matching earlier shape check whose structured region is still open.
+Bool copy_shape_proven(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs,
+        I64 fn, I64 i, I64 source, I64 expected_length) {
+    I64 check = sir[i].f as I64;
+    if (check < funcs[fn].first as I64 || check >= i || kind_of(sir, check) != lowering.SO_COPY_SHAPE) {
+        return false;
+    }
+    I64 region = sir[check].e as I64;
+    return sir[check].a as I64 == source && sir[check].b == 0 && sir[check].val == expected_length &&
+        (region < 0 || has(sir, region, lowering.FL_OPEN));
+}
+
+// Accepts a whole-array copy whose static extents are equal, or whose earlier
+// copy.shape check compares its source with its destination's extent.
+Bool array_copy_proven(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots,
+        I64 fn, I64 i) {
+    I64 a = sir[i].a as I64;
+    I64 b = sir[i].b as I64;
+    I64 limit = lowering.slot_extent(slots, a);
+    if (limit >= 0 && limit == lowering.slot_extent(slots, b)) {
+        return true;
+    }
+    if (limit >= 0) {
+        return copy_shape_proven(sir, funcs, fn, i, b, limit);
+    }
+    I64 check = sir[i].f as I64;
+    if (check < funcs[fn].first as I64 || check >= i || kind_of(sir, check) != lowering.SO_COPY_SHAPE) {
+        return false;
+    }
+    I64 region = sir[check].e as I64;
+    return sir[check].a as I64 == b && sir[check].b == 0 && sir[check].c as I64 == a &&
+        (region < 0 || has(sir, region, lowering.FL_OPEN));
+}
+
+// The kind of the structure node on top of the stack, or 0.
+I32 top_kind(in lowering.Sir[_] sir, in parse.Frame[_] st, I64 sp) {
+    if (sp == 0) {
+        return 0;
+    }
+    return kind_of(sir, st[sp - 1].node as I64);
+}
+
+// Verifies function fn (SIR-10). Returns -1, or the first node that fails. `st` is the
+// scratch stack of open structures, in the frame region, of which it uses at most `cap`
+// rows (lowering's limit, LState.cap).
+export I64 check_func[nf](inout lowering.Sir[_] sir, in lowering.SirFunc[nf] funcs,
+        in lowering.SirSlot[_] slots, inout parse.Frame[_] st, I64 cap, I64 fn) {
+    I64 first = funcs[fn].first as I64;
+    I64 last = funcs[fn].last as I64;
+    I64 sp = 0;
+    I64 temps = 0;
+    I64[1] ta;
+    I64[1] tb;
+    Bool kfn = (funcs[fn].flags & lowering.FN_KERNEL) != 0;
+    for i in first..last {
+        I32 k = kind_of(sir, i);
+        sir[i].op = k;
+        I32 ty = sir[i].ty;
+        I64 a = sir[i].a as I64;
+        I64 b = sir[i].b as I64;
+        if (sir[i].dst >= 0) {
+            if (sir[i].dst as I64 != temps) {
+                return i;
+            }
+            temps += 1;
+            sir[i].e = -1;
+            if (sp > 0) {
+                sir[i].e = st[sp - 1].node;
+            }
+        }
+        if (k == lowering.SO_COPY_SHAPE) {
+            sir[i].e = -1;
+            if (sp > 0) { sir[i].e = st[sp - 1].node; }
+        }
+        // A node of a kernel may fault at its dispatch site (lowering.KSITE).
+        if (can_fault(sir, i) && sir[i].site <= 0 && (sir[i].site != lowering.KSITE || !kfn)) {
+            return i;
+        }
+        Bool ok = true;
+        switch (k) {
+            case lowering.SO_CONST:
+                // The null handle (box 12) is a constant of value 0.
+                ok = (scalar(ty) || (ty == lowering.T_HANDLE && sir[i].val == 0)) && sir[i].dst >= 0;
+            case lowering.SO_LOAD:
+                ok = scalar_slot(funcs, slots, fn, a) && slots[a].ty == ty && sir[i].dst >= 0;
+            case lowering.SO_STORE:
+                ok = scalar_slot(funcs, slots, fn, a) && slots[a].ty == ty && operand(sir, funcs, slots, fn, i, b, tb) &&
+                    tb[0] == ty as I64;
+            case lowering.SO_LOCAL:
+                ok = local_slot(funcs, fn, a) && slots[a].ty == ty;
+            case lowering.SO_ICHECK:
+                if (sir[i].c > 0) {
+                    ok = struct_slot(funcs, slots, fn, a) && array_field_ok(slots, a, (sir[i].c - 1) as I64, ty) &&
+                        operand(sir, funcs, slots, fn, i, b, tb) && tb[0] == lowering.T_I64 as I64;
+                } else {
+                    ok = element_slot(funcs, slots, fn, a) &&
+                        lowering.array_elem(slots[a].ty) == ty &&
+                        operand(sir, funcs, slots, fn, i, b, tb) && tb[0] == lowering.T_I64 as I64 &&
+                        sir[i].f >= 0 && (sir[i].f as I64) < lowering.slot_rank(slots, a);
+                }
+            case lowering.SO_SHAPE:
+                ok = element_slot(funcs, slots, fn, a) && sir[i].b >= 0 && sir[i].dst < 0 &&
+                    ((sir[i].c == -1 && sir[i].val >= 0) || element_slot(funcs, slots, fn, sir[i].c as I64));
+            case lowering.SO_COPY_SHAPE:
+                ok = element_slot(funcs, slots, fn, a) && b == 0 && sir[i].dst < 0 && ty == lowering.T_NONE &&
+                    ((sir[i].c == -1 && sir[i].val >= 0) ||
+                    (element_slot(funcs, slots, fn, sir[i].c as I64) && sir[i].val == 0));
+            case lowering.SO_ACOPY:
+                ok = element_slot(funcs, slots, fn, a) && element_slot(funcs, slots, fn, b) && sir[i].dst < 0 &&
+                    lowering.array_elem(slots[a].ty) == ty && lowering.array_elem(slots[b].ty) == ty &&
+                    array_copy_proven(sir, funcs, slots, fn, i);
+            case lowering.SO_FREF:
+                ok = struct_slot(funcs, slots, fn, a) && slots[a].kind == lowering.SK_SPLACE && slots[a].ty == ty &&
+                    struct_slot(funcs, slots, fn, b) && field_ok(slots, b, sir[i].c as I64, ty) && ty >= lowering.T_STRUCT;
+            case lowering.SO_AFREF:
+                ok = element_slot(funcs, slots, fn, a) && slots[a].kind == lowering.SK_APLACE && slots[a].ty == ty &&
+                    struct_slot(funcs, slots, fn, b) && field_ok(slots, b, sir[i].c as I64, ty) &&
+                    lowering.field_array(ty);
+            case lowering.SO_EREF:
+                ok = struct_slot(funcs, slots, fn, a) && slots[a].kind == lowering.SK_SPLACE && slots[a].ty == ty &&
+                    operand(sir, funcs, slots, fn, i, sir[i].c as I64, ta) && ta[0] == lowering.T_I64 as I64;
+                if (sir[i].e > 0) {
+                    ok = ok && struct_slot(funcs, slots, fn, b) && array_field_ok(slots, b, (sir[i].e - 1) as I64, ty);
+                } else {
+                    ok = ok && element_slot(funcs, slots, fn, b) && lowering.array_elem(slots[b].ty) == ty;
+                }
+            case lowering.SO_FSCOPY:
+                ok = struct_slot(funcs, slots, fn, a) &&
+                    (slots[a].kind == lowering.SK_STRUCT || slots[a].kind == lowering.SK_SREF ||
+                    slots[a].kind == lowering.SK_SPLACE) &&
+                    field_ok(slots, a, sir[i].c as I64, ty) && ty >= lowering.T_STRUCT &&
+                    struct_slot(funcs, slots, fn, b) && slots[b].ty == ty;
+            case lowering.SO_FACOPY:
+                ok = struct_slot(funcs, slots, fn, a) && slots[a].kind == lowering.SK_STRUCT &&
+                    field_ok(slots, a, sir[i].c as I64, ty) && lowering.field_array(ty) &&
+                    element_slot(funcs, slots, fn, b) && lowering.array_elem(slots[b].ty) == lowering.array_elem(ty) &&
+                    (lowering.slot_extent(slots, b) == lowering.array_extent(ty) ||
+                    (lowering.slot_extent(slots, b) < 0 && copy_shape_proven(sir, funcs, fn, i, b, lowering.array_extent(ty))));
+            case lowering.SO_FSLOAD:
+                ok = struct_slot(funcs, slots, fn, a) && slots[a].kind == lowering.SK_STRUCT && slots[a].ty == ty &&
+                    struct_slot(funcs, slots, fn, b) && field_ok(slots, b, sir[i].c as I64, ty);
+            case lowering.SO_FELOAD:
+                ok = struct_slot(funcs, slots, fn, a) && array_field_ok(slots, a, sir[i].c as I64, ty) &&
+                    sir[i].dst >= 0 && operand(sir, funcs, slots, fn, i, b, tb) && tb[0] == lowering.T_I64 as I64;
+            case lowering.SO_FESTORE:
+                ok = struct_slot(funcs, slots, fn, a) &&
+                    (slots[a].kind == lowering.SK_STRUCT || slots[a].kind == lowering.SK_SREF ||
+                    slots[a].kind == lowering.SK_SPLACE) &&
+                    array_field_ok(slots, a, sir[i].c as I64, ty) &&
+                    operand(sir, funcs, slots, fn, i, b, tb) && tb[0] == lowering.T_I64 as I64 &&
+                    operand(sir, funcs, slots, fn, i, sir[i].f as I64, ta) && ta[0] == ty as I64;
+            case lowering.SO_ELOAD:
+                ok = element_slot(funcs, slots, fn, a) &&
+                    lowering.array_elem(slots[a].ty) == ty && sir[i].dst >= 0 &&
+                    operand(sir, funcs, slots, fn, i, b, tb) && tb[0] == lowering.T_I64 as I64;
+            case lowering.SO_ESTORE:
+                ok = element_slot(funcs, slots, fn, a) &&
+                    lowering.array_elem(slots[a].ty) == ty && operand(sir, funcs, slots, fn, i, b, tb) &&
+                    tb[0] == lowering.T_I64 as I64 && operand(sir, funcs, slots, fn, i, sir[i].c as I64, ta) &&
+                    ta[0] == ty as I64;
+            case lowering.SO_EFLOAD:
+                ok = element_slot(funcs, slots, fn, a) && elem_field_ok(slots, a, sir[i].c as I64, ty) &&
+                    sir[i].dst >= 0 && operand(sir, funcs, slots, fn, i, b, tb) && tb[0] == lowering.T_I64 as I64;
+            case lowering.SO_EFSTORE:
+                ok = element_slot(funcs, slots, fn, a) && elem_field_ok(slots, a, sir[i].c as I64, ty) &&
+                    operand(sir, funcs, slots, fn, i, b, tb) && tb[0] == lowering.T_I64 as I64 &&
+                    operand(sir, funcs, slots, fn, i, sir[i].f as I64, ta) && ta[0] == ty as I64;
+            case lowering.SO_FLOAD:
+                ok = struct_slot(funcs, slots, fn, a) && field_ok(slots, a, sir[i].c as I64, ty) && sir[i].dst >= 0;
+            case lowering.SO_FSTORE:
+                ok = struct_slot(funcs, slots, fn, a) &&
+                    (slots[a].kind == lowering.SK_STRUCT || slots[a].kind == lowering.SK_SREF || slots[a].kind == lowering.SK_SPLACE) &&
+                    field_ok(slots, a, sir[i].c as I64, ty) && operand(sir, funcs, slots, fn, i, b, tb) &&
+                    tb[0] == ty as I64;
+            case lowering.SO_SDATA:
+                ok = sir[i].dst < 0 && sir[i].f >= 1 && sir[i].c >= 0;
+            case lowering.SO_ASSERT:
+                ok = sir[i].dst < 0 && operand(sir, funcs, slots, fn, i, a, ta) && ta[0] == lowering.T_BOOL as I64 &&
+                    (b == 0 || (b == 1 && a >= 0 && kind_of(sir, a) == lowering.SO_CMP));
+            case lowering.SO_SCOPY:
+                ok = struct_slot(funcs, slots, fn, a) &&
+                    (slots[a].kind == lowering.SK_STRUCT || slots[a].kind == lowering.SK_SREF ||
+                     slots[a].kind == lowering.SK_SPLACE) &&
+                    struct_slot(funcs, slots, fn, b) && slots[a].ty == slots[b].ty;
+            case lowering.SO_BIN:
+                ok = lowering.is_int(ty) && sir[i].c >= lowering.B_ADD && sir[i].c <= lowering.B_XOR &&
+                    operand(sir, funcs, slots, fn, i, a, ta) && operand(sir, funcs, slots, fn, i, b, tb) &&
+                    ta[0] == ty as I64 && sir[i].f >= 0 && sir[i].f <= 3;
+                if (ok && (sir[i].c == lowering.B_SHL || sir[i].c == lowering.B_SHR)) {
+                    ok = lowering.is_int(tb[0] as I32);
+                } else if (ok) {
+                    ok = tb[0] == ty as I64;
+                }
+                if (ok && sir[i].f == 3) {
+                    // A result-returning form (box 12): its tag follows.
+                    ok = sir[i].c <= lowering.B_SHL && i + 1 < last && kind_of(sir, i + 1) == lowering.SO_ETAG &&
+                        sir[i + 1].a as I64 == i;
+                }
+                if (ok && sir[i].f == 1) {
+                    ok = sir[i].c == lowering.B_ADD || sir[i].c == lowering.B_SUB || sir[i].c == lowering.B_MUL ||
+                        sir[i].c == lowering.B_SHL;
+                }
+                if (ok && sir[i].f == 2) {
+                    ok = sir[i].c == lowering.B_ADD || sir[i].c == lowering.B_SUB || sir[i].c == lowering.B_MUL;
+                }
+            case lowering.SO_UN:
+                ok = operand(sir, funcs, slots, fn, i, a, ta) && ta[0] == ty as I64 && sir[i].f == 0;
+                if (ok && sir[i].c == lowering.U_LNOT) {
+                    ok = ty == lowering.T_BOOL;
+                } else if (ok) {
+                    ok = lowering.is_int(ty) && (sir[i].c == lowering.U_NEG || sir[i].c == lowering.U_NOT);
+                }
+            case lowering.SO_CMP:
+                I32 ot = sir[i].f;
+                ok = ty == lowering.T_BOOL && operand(sir, funcs, slots, fn, i, a, ta) &&
+                    operand(sir, funcs, slots, fn, i, b, tb) && ta[0] == ot as I64 && tb[0] == ot as I64 &&
+                    sir[i].c >= lowering.CMP_EQ && sir[i].c <= lowering.CMP_GE;
+                if (ok && ot == lowering.T_BOOL) {
+                    ok = sir[i].c == lowering.CMP_EQ || sir[i].c == lowering.CMP_NE;
+                } else if (ok) {
+                    ok = lowering.is_int(ot);
+                }
+            case lowering.SO_AS:
+                ok = lowering.is_int(ty) && operand(sir, funcs, slots, fn, i, a, ta) && ta[0] == sir[i].f as I64 &&
+                    scalar(sir[i].f) && sir[i].c >= 0 && sir[i].c <= 2;
+                if (ok && sir[i].c == 2) {
+                    // `as?` (box 12): its tag follows.
+                    ok = i + 1 < last && kind_of(sir, i + 1) == lowering.SO_ETAG && sir[i + 1].a as I64 == i;
+                }
+            case lowering.SO_ETAG:
+                // The tag of union node a, right before it (box 12): an `as?` or a result-
+                // returning form (ArithError, U16), or a call of an FN_ERRU function (its set's
+                // underlying type).
+                ok = sir[i].dst >= 0 && a == i - 1 && a >= first;
+                if (ok && kind_of(sir, a) == lowering.SO_AS) {
+                    ok = sir[a].c == 2 && ty == lowering.T_U16;
+                } else if (ok && kind_of(sir, a) == lowering.SO_BIN) {
+                    ok = sir[a].f == 3 && ty == lowering.T_U16;
+                } else if (ok && kind_of(sir, a) == lowering.SO_MEMBER) {
+                    // `alloc_result` or `insert_result` (box 12): AllocError, U16.
+                    ok = (sir[a].c as I64 == resolve.MB_ALLOC_RESULT || sir[a].c as I64 == resolve.MB_INSERT_RESULT) &&
+                        ty == lowering.T_U16;
+                } else if (ok) {
+                    I64 callee = sir[a].a as I64;
+                    ok = kind_of(sir, a) == lowering.SO_CALL && (funcs[callee].flags & lowering.FN_ERRU) != 0 &&
+                        ty == lowering.func_etag(funcs, callee);
+                }
+            case lowering.SO_ERROR:
+                // An error leaving a test block (box 12, LS-315): its tag, of the set slot c
+                // describes, then the test's return, or the exit code of an exit past
+                // deferred statements.
+                I64 es = sir[i].c as I64;
+                ok = (funcs[fn].flags & lowering.FN_TEST) != 0 && sir[i].dst < 0 && es >= 0 &&
+                    slots[es].kind == lowering.SK_ESET && operand(sir, funcs, slots, fn, i, a, ta) &&
+                    ta[0] == slots[es].ty as I64 && i + 1 < last &&
+                    (kind_of(sir, i + 1) == lowering.SO_RETURN || kind_of(sir, i + 1) == lowering.SO_CONST);
+            case lowering.SO_WIDEN:
+                // A conversion between two error sets (box 12): tag a of type f, by the runs
+                // of SK_WIDEN slot b.
+                I64 ws = b;
+                ok = sir[i].dst >= 0 && ws >= 0 && slots[ws].kind == lowering.SK_WIDEN &&
+                    lowering.is_int(ty) && operand(sir, funcs, slots, fn, i, a, ta) && ta[0] == sir[i].f as I64;
+            case lowering.SO_BUILTIN:
+                // An integer built-in (box 07): its values of the operand type, a rotation's
+                // count of any integer type.
+                I64 bo = lowering.builtin_opty(sir, i) as I64;
+                I64 nv = lowering.builtin_arity(sir, i);
+                ok = sir[i].f >= 1 && sir[i].f <= 16 && lowering.is_int(ty) && lowering.is_int(bo as I32) &&
+                    operand(sir, funcs, slots, fn, i, a, ta) && ta[0] == bo;
+                if (ok && nv > 1) {
+                    ok = operand(sir, funcs, slots, fn, i, b, tb) &&
+                        (tb[0] == bo || (lowering.builtin_rotates(sir, i) && lowering.is_int(tb[0] as I32)));
+                }
+                if (ok && nv > 2) {
+                    ok = operand(sir, funcs, slots, fn, i, sir[i].c as I64, ta) && ta[0] == bo;
+                }
+            case lowering.SO_VBEGIN, lowering.SO_VTRANS, lowering.SO_VREV, lowering.SO_VEND:
+                ok = view_local(funcs, slots, fn, a, ty) && elements_of(funcs, slots, fn, b, ty) && sir[i].dst < 0 &&
+                    sir[i].f >= 0 && sir[i].f < 5;
+            case lowering.SO_VPICK:
+                ok = view_local(funcs, slots, fn, a, ty) && operand(sir, funcs, slots, fn, i, b, tb) &&
+                    tb[0] == lowering.T_I64 as I64 && elements_of(funcs, slots, fn, sir[i].c as I64, ty) &&
+                    sir[i].f >= 0 && sir[i].f < 4;
+            case lowering.SO_VSLICE:
+                ok = view_local(funcs, slots, fn, a, ty) && index_or_none(sir, funcs, slots, fn, i, b) &&
+                    index_or_none(sir, funcs, slots, fn, i, sir[i].c as I64) && sir[i].val != 0 &&
+                    elements_of(funcs, slots, fn, sir[i].e as I64, ty) && sir[i].f % 8 < 4;
+            case lowering.SO_EOFF:
+                ok = sir[i].dst >= 0 && ty == lowering.T_I64 && element_slot(funcs, slots, fn, a) &&
+                    slots[a].kind == lowering.SK_NVIEW && operand(sir, funcs, slots, fn, i, b, tb) &&
+                    tb[0] == lowering.T_I64 as I64 && sir[i].f >= 0 && (sir[i].f as I64) < lowering.slot_rank(slots, a) &&
+                    (sir[i].c == -1 || (sir[i].c >= 0 && (sir[i].c as I64) < i && kind_of(sir, sir[i].c as I64) == lowering.SO_EOFF));
+            case lowering.SO_VCOPY:
+                ok = elements_of(funcs, slots, fn, a, ty) && elements_of(funcs, slots, fn, b, ty) && sir[i].dst < 0;
+            case lowering.SO_REDUCE:
+                ok = sir[i].dst >= 0 && scalar(ty) && elements_of(funcs, slots, fn, a, sir[i].val as I32) &&
+                    (b == -1 || elements_of(funcs, slots, fn, b, sir[i].val as I32)) && sir[i].f >= 1 && sir[i].f <= 9 &&
+                    (sir[i].c == -1 || (operand(sir, funcs, slots, fn, i, sir[i].c as I64, ta) && ta[0] == sir[i].val));
+            case lowering.SO_VEXT:
+                ok = sir[i].dst >= 0 && ty == lowering.T_I64 && element_slot(funcs, slots, fn, a) && sir[i].f >= -1 &&
+                    (sir[i].f as I64) < lowering.slot_rank(slots, a);
+            case lowering.SO_CALIAS:
+                ok = element_slot(funcs, slots, fn, a) && element_slot(funcs, slots, fn, b) && sir[i].dst < 0;
+            case lowering.SO_VDIM:
+                ok = view_local(funcs, slots, fn, a, ty) && operand(sir, funcs, slots, fn, i, b, tb) &&
+                    tb[0] == lowering.T_I64 as I64 && sir[i].f >= 0 && (sir[i].f as I64) < lowering.slot_rank(slots, a);
+            case lowering.SO_VALLOC:
+                ok = view_local(funcs, slots, fn, a, ty) && (sir[i].f as I64) == lowering.slot_rank(slots, a);
+            case lowering.SO_AINIT:
+                ok = elements_of(funcs, slots, fn, a, ty) && slots[a].kind == lowering.SK_ARRAY &&
+                    operand(sir, funcs, slots, fn, i, b, tb) && tb[0] == ty as I64 && sir[i].val >= 0;
+            case lowering.SO_MEMBER:
+                ok = check_member(sir, funcs, slots, fn, i);
+            case lowering.SO_MVIEW:
+                // The rank-1 view a of an allocation of arena b, its lease in slot a + 1.
+                ok = view_local(funcs, slots, fn, a, ty) && lowering.slot_rank(slots, a) == 1 &&
+                    local_slot(funcs, fn, a + 1) && slots[a + 1].kind == lowering.SK_LEASE &&
+                    container_ok(funcs, slots, fn, b, true, ty) && sir[i].dst < 0 &&
+                    operand(sir, funcs, slots, fn, i, sir[i].c as I64, tb) && tb[0] == lowering.T_HANDLE as I64;
+            case lowering.SO_LEASE:
+                ok = local_slot(funcs, fn, a) && slots[a].kind == lowering.SK_LEASE && sir[i].dst < 0;
+            case lowering.SO_PREF:
+                // The place a of an element of pool b.
+                ok = local_slot(funcs, fn, a) && slots[a].kind == lowering.SK_SPLACE && slots[a].ty == ty &&
+                    container_ok(funcs, slots, fn, b, false, ty) && sir[i].dst < 0 &&
+                    operand(sir, funcs, slots, fn, i, sir[i].c as I64, tb) && tb[0] == lowering.T_HANDLE as I64;
+            case lowering.SO_ARG:
+                if (sir[i].e == 9) {
+                    // An arena or a pool passed to a parameter of its kind (box 12).
+                    ok = a >= 0 && lowering.is_container(slots, a) &&
+                        container_ok(funcs, slots, fn, a, lowering.is_arena(slots, a), slots[a].ty);
+                } else if (sir[i].e == 0) {
+                    ok = operand(sir, funcs, slots, fn, i, a, ta);
+                } else if (sir[i].e == 8) {
+                    // The place of a dispatch's scalar `out` argument.
+                    ok = scalar_slot(funcs, slots, fn, a) &&
+                        (slots[a].kind == lowering.SK_LOCAL || slots[a].kind == lowering.SK_GLOBAL);
+                } else {
+                    ok = ((sir[i].e == 1 || sir[i].e == 2 || sir[i].e == 7) && element_slot(funcs, slots, fn, a)) ||
+                        ((sir[i].e == 3 || sir[i].e == 6) && struct_slot(funcs, slots, fn, a)) ||
+                        ((sir[i].e == 4 || sir[i].e == 5) && string_node(sir, funcs, fn, i, a));
+                }
+            case lowering.SO_CALL:
+                ok = check_call(sir, funcs, slots, fn, i);
+            case lowering.SO_KCALL:
+                ok = check_kcall(sir, funcs, slots, fn, i);
+            case lowering.SO_KENTRY, lowering.SO_KPUSH, lowering.SO_KPOP, lowering.SO_KSTEP:
+                ok = kfn && sir[i].dst < 0;
+            case lowering.SO_KPHASE:
+                ok = kfn && sir[i].f == 2;
+            case lowering.SO_KSHAPE:
+                ok = kparam(funcs, slots, fn, a, lowering.SK_NVIEW) && operand(sir, funcs, slots, fn, i, b, tb) &&
+                    tb[0] == lowering.T_I64 as I64 && sir[i].f >= 0 && (sir[i].f as I64) < lowering.slot_rank(slots, a);
+            case lowering.SO_KWHERE:
+                ok = kfn && operand(sir, funcs, slots, fn, i, a, ta) && ta[0] == lowering.T_I64 as I64 &&
+                    operand(sir, funcs, slots, fn, i, b, tb) && tb[0] == lowering.T_I64 as I64 &&
+                    sir[i].f >= lowering.CMP_EQ && sir[i].f <= lowering.CMP_GE && sir[i].c >= 0;
+            case lowering.SO_KALIAS:
+                ok = kparam(funcs, slots, fn, a, lowering.SK_NVIEW) && kparam(funcs, slots, fn, b, lowering.SK_NVIEW) &&
+                    a != b && lowering.array_elem(slots[a].ty) == ty;
+            case lowering.SO_KFUEL, lowering.SO_KITEM:
+                // N into slot a, from the f extents in the slots from b (SO_KFUEL); work-item a,
+                // the f `over` variables from slot b, the extents from slot c (SO_KITEM).
+                I64 ext = b;
+                I64 vars = -1;
+                if (k == lowering.SO_KITEM) {
+                    ext = sir[i].c as I64;
+                    vars = b;
+                    ok = operand(sir, funcs, slots, fn, i, a, ta) && ta[0] == lowering.T_I64 as I64;
+                } else {
+                    ok = i64_slots(funcs, slots, fn, a, 1);
+                }
+                ok = ok && kfn && sir[i].f >= 0 && i64_slots(funcs, slots, fn, ext, sir[i].f as I64) &&
+                    (vars < 0 || i64_slots(funcs, slots, fn, vars, sir[i].f as I64));
+            case lowering.SO_KSTAGE:
+                ok = view_local(funcs, slots, fn, a, ty) && kparam(funcs, slots, fn, b, lowering.SK_NVIEW) &&
+                    slots[b].ty == slots[a].ty && (sir[i].f == 1 || sir[i].f == 2);
+            case lowering.SO_KACC:
+                ok = kparam(funcs, slots, fn, a, lowering.SK_KOUT) && slots[a].ty == ty &&
+                    operand(sir, funcs, slots, fn, i, b, tb) && tb[0] == ty as I64;
+            case lowering.SO_KRED:
+                ok = kparam(funcs, slots, fn, b, lowering.SK_KOUT) && slots[b].ty == ty && sir[i].f >= 1 &&
+                    sir[i].f <= 8 && sir[i].f != 5 && operand(sir, funcs, slots, fn, i, a, ta) && ta[0] == sir[i].val;
+            case lowering.SO_KEPI:
+                ok = kparam(funcs, slots, fn, a, lowering.SK_KOUT) && slots[a].ty == ty && sir[i].f >= 1 &&
+                    sir[i].f <= 8 && sir[i].f != 5;
+            case lowering.SO_KPUB:
+                if (b >= 0) {
+                    ok = kparam(funcs, slots, fn, a, lowering.SK_NVIEW) && view_local(funcs, slots, fn, b, ty) &&
+                        slots[a].ty == slots[b].ty;
+                } else {
+                    ok = kparam(funcs, slots, fn, a, lowering.SK_KOUT) && slots[a].ty == ty;
+                }
+            case lowering.SO_FUEL:
+                ok = sir[i].val == 1;
+            case lowering.SO_FRAME:
+                // The frame arena (lowering.SO_FRAME): a charge, a list's mark, or a give-back to
+                // an earlier mark of the function, of parts it took.
+                ok = sir[i].dst < 0 && ty == lowering.T_NONE && !kfn;
+                if (sir[i].f == 0 || sir[i].f == 3) {
+                    ok = ok && sir[i].val >= 0;
+                } else if (sir[i].f == 1) {
+                    ok = ok && b >= 1 && b <= 3;
+                } else {
+                    ok = ok && sir[i].f == 2 && a >= first && a < i && kind_of(sir, a) == lowering.SO_FRAME &&
+                        sir[a].f == 1 && b >= 1 && b <= 3 && (sir[a].b & sir[i].b) == sir[i].b;
+                }
+            case lowering.SO_RETURN:
+                if (b == 3) {
+                    // An error return (box 12): a tag of the function's set.
+                    ok = (funcs[fn].flags & lowering.FN_ERRU) != 0 && operand(sir, funcs, slots, fn, i, a, ta) &&
+                        ta[0] == lowering.func_etag(funcs, fn) as I64;
+                } else if (b == 2) {
+                    ok = funcs[fn].result >= lowering.T_STRUCT && struct_slot(funcs, slots, fn, a) &&
+                        slots[a].ty == funcs[fn].result;
+                } else if (b == 1) {
+                    ok = funcs[fn].result != lowering.T_NONE && operand(sir, funcs, slots, fn, i, a, ta) &&
+                        ta[0] == funcs[fn].result as I64;
+                } else {
+                    ok = funcs[fn].result == lowering.T_NONE;
+                }
+            case lowering.SO_DISCARD:
+                ok = operand(sir, funcs, slots, fn, i, a, ta);
+            case lowering.SO_PRINT_BEGIN, lowering.SO_PRINT_END:
+                ok = true;
+            case lowering.SO_PRINT_BYTES:
+                ok = sir[i].c > 0 && sir[i].val >= 0;
+            case lowering.SO_PRINT_VALUE:
+                // A format specification (lowering.format_form): a kind from 1 to 6, a fill
+                // that is a scalar value, and a width and a scale that are not negative.
+                ok = scalar(ty) && operand(sir, funcs, slots, fn, i, a, ta) && ta[0] == ty as I64 &&
+                    (sir[i].e == 0 || (sir[i].e % 16 >= 1 && sir[i].e % 16 <= 6 && sir[i].e < 4096 &&
+                    sir[i].f >= 0 && sir[i].f <= 0x10FFFF && (sir[i].f < 0xD800 || sir[i].f > 0xDFFF) &&
+                    sir[i].val >= 0 && sir[i].c >= 0));
+            case lowering.SO_IF, lowering.SO_LOOP, lowering.SO_BLOCK:
+                if (sp == cap) {
+                    return i;
+                }
+                st[sp].node = i as I32;
+                sp += 1;
+                set_flag(sir, i, lowering.FL_OPEN);
+            case lowering.SO_ARM:
+                ok = top_kind(sir, st, sp) == lowering.SO_IF && sp < cap;
+                if (ok) {
+                    st[sp].node = i as I32;
+                    sp += 1;
+                    set_flag(sir, i, lowering.FL_OPEN);
+                }
+            case lowering.SO_THEN:
+                ok = top_kind(sir, st, sp) == lowering.SO_ARM && operand(sir, funcs, slots, fn, i, a, ta) &&
+                    ta[0] == lowering.T_BOOL as I64;
+            case lowering.SO_ARM_END:
+                ok = top_kind(sir, st, sp) == lowering.SO_ARM && a >= first && a < i && kind_of(sir, a) == lowering.SO_THEN &&
+                    sp >= 2 && st[sp - 2].node as I64 == b;
+                if (ok) {
+                    sp -= 1;
+                    clear_flag(sir, st[sp].node as I64, lowering.FL_OPEN);
+                }
+            case lowering.SO_ELSE:
+                ok = top_kind(sir, st, sp) == lowering.SO_IF && sp < cap;
+                if (ok) {
+                    st[sp].node = i as I32;
+                    sp += 1;
+                    set_flag(sir, i, lowering.FL_OPEN);
+                }
+            case lowering.SO_TEST:
+                ok = top_kind(sir, st, sp) == lowering.SO_LOOP && st[sp - 1].node as I64 == b &&
+                    operand(sir, funcs, slots, fn, i, a, ta) && ta[0] == lowering.T_BOOL as I64;
+            case lowering.SO_NEXT:
+                ok = top_kind(sir, st, sp) == lowering.SO_LOOP && st[sp - 1].node as I64 == a;
+            case lowering.SO_SWITCH:
+                ok = scalar(ty) && operand(sir, funcs, slots, fn, i, a, ta) && ta[0] == ty as I64 && sp < cap;
+                if (ok) {
+                    st[sp].node = i as I32;
+                    sp += 1;
+                    set_flag(sir, i, lowering.FL_OPEN);
+                }
+            case lowering.SO_CASE, lowering.SO_DEFAULT:
+                ok = top_kind(sir, st, sp) == lowering.SO_SWITCH && st[sp - 1].node as I64 == a && sp < cap;
+                if (ok) {
+                    st[sp].node = i as I32;
+                    sp += 1;
+                    set_flag(sir, i, lowering.FL_OPEN);
+                }
+            case lowering.SO_ITEM, lowering.SO_HI:
+                ok = top_kind(sir, st, sp) == lowering.SO_CASE && sp >= 2 && ty == sir[st[sp - 2].node as I64].ty;
+                if (ok && k == lowering.SO_HI) {
+                    ok = kind_of(sir, i - 1) == lowering.SO_ITEM;
+                    if (ok && lowering.is_signed(ty)) {
+                        ok = sir[i - 1].val <= sir[i].val;
+                    } else if (ok) {
+                        ok = (sir[i - 1].val as% U64) <= (sir[i].val as% U64);
+                    }
+                }
+            case lowering.SO_BODY:
+                I32 tk = top_kind(sir, st, sp);
+                ok = tk == lowering.SO_CASE || tk == lowering.SO_DEFAULT;
+            case lowering.SO_CASE_END:
+                I32 tk = top_kind(sir, st, sp);
+                ok = (tk == lowering.SO_CASE || tk == lowering.SO_DEFAULT) && st[sp - 1].node as I64 == a &&
+                    sp >= 2 && st[sp - 2].node as I64 == b;
+                if (ok) {
+                    sp -= 1;
+                    clear_flag(sir, st[sp].node as I64, lowering.FL_OPEN);
+                }
+            case lowering.SO_BREAK:
+                ok = a >= first && a < i && has(sir, a, lowering.FL_OPEN) &&
+                    (kind_of(sir, a) == lowering.SO_LOOP || kind_of(sir, a) == lowering.SO_SWITCH ||
+                    kind_of(sir, a) == lowering.SO_BLOCK);
+            case lowering.SO_CONTINUE:
+                ok = a >= first && a < i && has(sir, a, lowering.FL_OPEN) && kind_of(sir, a) == lowering.SO_LOOP;
+            case lowering.SO_END:
+                if (top_kind(sir, st, sp) == lowering.SO_ELSE) {
+                    sp -= 1;
+                    clear_flag(sir, st[sp].node as I64, lowering.FL_OPEN);
+                }
+                I32 tk = top_kind(sir, st, sp);
+                ok = (tk == lowering.SO_IF || tk == lowering.SO_LOOP || tk == lowering.SO_SWITCH ||
+                    tk == lowering.SO_BLOCK) && st[sp - 1].node as I64 == a;
+                if (ok) {
+                    sp -= 1;
+                    clear_flag(sir, a, lowering.FL_OPEN);
+                }
+            default:
+                ok = false;
+        }
+        if (!ok) {
+            return i;
+        }
+    }
+    if (sp != 0 || temps != funcs[fn].ntemp as I64) {
+        return last;
+    }
+    return -1;
+}
+
+// Whether slot k is a parameter of kernel fn of slot kind kind.
+Bool kparam(in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I64 k, I32 kind) {
+    I64 p0 = funcs[fn].pslot0 as I64;
+    return (funcs[fn].flags & lowering.FN_KERNEL) != 0 && k >= p0 && k < p0 + (funcs[fn].nparam as I64) &&
+        slots[k].kind == kind;
+}
+
+// Whether the n slots from k are I64 locals of function fn.
+Bool i64_slots(in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I64 k, I64 n) {
+    for j in k..k + n {
+        if (!local_slot(funcs, fn, j) || slots[j].kind != lowering.SK_LOCAL || slots[j].ty != lowering.T_I64) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// A dispatch at node i (lowering.SO_KCALL): a kernel of the module, and as many SO_ARG nodes
+// right before it as it has parameters: a view of the caller with the parameter's element
+// type and rank (e 7), a value of the parameter's type, or the place of a local or module
+// scalar of the parameter's type (e 8).
+Bool check_kcall(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I64 i) {
+    I64 callee = sir[i].a as I64;
+    I64 n = sir[i].c as I64;
+    I64[1] ta;
+    if (callee < 0 || (funcs[callee].flags & lowering.FN_KERNEL) == 0 || n != funcs[callee].nparam as I64 ||
+            i - n < funcs[fn].first as I64 || sir[i].dst >= 0 || sir[i].ty != lowering.T_NONE) {
+        return false;
+    }
+    for j in 0..n {
+        I64 g = i - n + j;
+        I64 q = (funcs[callee].pslot0 as I64) + j;
+        I64 s = sir[g].a as I64;
+        if (kind_of(sir, g) != lowering.SO_ARG) {
+            return false;
+        }
+        if (slots[q].kind == lowering.SK_NVIEW) {
+            if (sir[g].e != 7 || !element_slot(funcs, slots, fn, s) ||
+                    lowering.array_elem(slots[s].ty) != lowering.array_elem(slots[q].ty) ||
+                    lowering.slot_rank(slots, s) != lowering.slot_rank(slots, q)) {
+                return false;
+            }
+        } else if (slots[q].kind == lowering.SK_KOUT) {
+            if (sir[g].e != 8 || slots[s].ty != slots[q].ty) {
+                return false;
+            }
+        } else if (sir[g].e != 0 || !operand(sir, funcs, slots, fn, g, s, ta) || ta[0] != slots[q].ty as I64) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// A call at node i: a function of the module, as many SO_ARG nodes right before it as the
+// callee has parameters, each of its parameter's type, and a result as the callee's.
+Bool check_call(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I64 i) {
+    I64 callee = sir[i].a as I64;
+    I64 n = sir[i].c as I64;
+    I64[1] ta;
+    if (callee < 0 || (funcs[callee].flags & (lowering.FN_SCRIPT | lowering.FN_KERNEL)) != 0 ||
+            n != funcs[callee].nparam as I64 ||
+            i - n < funcs[fn].first as I64 || sir[i].ty != funcs[callee].result) {
+        return false;
+    }
+    if (funcs[callee].result >= lowering.T_STRUCT) {
+        // A struct result: no temporary; f is its struct slot + 1 (task 2.14).
+        I64 rs = (sir[i].f - 1) as I64;
+        if (sir[i].dst >= 0 || !local_slot(funcs, fn, rs) || slots[rs].kind != lowering.SK_STRUCT ||
+                slots[rs].ty != funcs[callee].result) {
+            return false;
+        }
+    } else if ((sir[i].dst >= 0) != (funcs[callee].result != lowering.T_NONE)) {
+        return false;
+    }
+    if ((funcs[callee].flags & lowering.FN_ERRU) != 0 && (i + 1 >= funcs[fn].last as I64 ||
+            kind_of(sir, i + 1) != lowering.SO_ETAG || sir[i + 1].a as I64 != i)) {
+        // An error union result (box 12): its tag follows.
+        return false;
+    }
+    for j in 0..n {
+        I64 g = i - n + j;
+        I64 q = (funcs[callee].pslot0 as I64) + j;
+        if (kind_of(sir, g) != lowering.SO_ARG) {
+            return false;
+        }
+        I64 e = sir[g].e as I64;
+        I64 s = sir[g].a as I64;
+        if (e == 1) {
+            // A view argument: an array or view slot of the caller with the element type.
+            if (slots[q].kind != lowering.SK_VIEW || !element_slot(funcs, slots, fn, s) ||
+                    lowering.array_elem(slots[s].ty) != lowering.array_elem(slots[q].ty) ||
+                    lowering.slot_rank(slots, s) != 1) {
+                return false;
+            }
+        } else if (e == 7) {
+            // A view of rank 2 to 4: a view of the caller of the same element type and rank.
+            if (slots[q].kind != lowering.SK_NVIEW || !element_slot(funcs, slots, fn, s) ||
+                    slots[s].kind != lowering.SK_NVIEW || slots[s].ty != slots[q].ty) {
+                return false;
+            }
+        } else if (e == 3) {
+            if (slots[q].kind != lowering.SK_SPARAM || !struct_slot(funcs, slots, fn, s) ||
+                    slots[s].ty != slots[q].ty) {
+                return false;
+            }
+        } else if (e == 6) {
+            if (slots[q].kind != lowering.SK_SREF || !struct_slot(funcs, slots, fn, s) ||
+                    slots[s].kind == lowering.SK_SPARAM || slots[s].ty != slots[q].ty) {
+                return false;
+            }
+        } else if (e == 4) {
+            if (slots[q].kind != lowering.SK_VIEW || lowering.array_elem(slots[q].ty) != lowering.T_U8 ||
+                    !string_node(sir, funcs, fn, g, s)) {
+                return false;
+            }
+        } else if (e == 5) {
+            if (slots[q].kind != lowering.SK_PARAM || slots[q].ty != lowering.T_I64 ||
+                    !string_node(sir, funcs, fn, g, s)) {
+                return false;
+            }
+        } else if (e == 2) {
+            if (slots[q].kind != lowering.SK_PARAM || slots[q].ty != lowering.T_I64 ||
+                    !element_slot(funcs, slots, fn, s)) {
+                return false;
+            }
+        } else if (e == 9) {
+            // An arena or a pool (box 12): of the parameter's kind and element type.
+            if ((slots[q].kind != lowering.SK_ARENA_R && slots[q].kind != lowering.SK_POOL_R) ||
+                    !container_ok(funcs, slots, fn, s, slots[q].kind == lowering.SK_ARENA_R, slots[q].ty)) {
+                return false;
+            }
+        } else if (slots[q].kind == lowering.SK_ARENA_R || slots[q].kind == lowering.SK_POOL_R ||
+                slots[q].kind == lowering.SK_VIEW || slots[q].kind == lowering.SK_SPARAM ||
+                slots[q].kind == lowering.SK_SREF || slots[q].kind == lowering.SK_NVIEW ||
+                !operand(sir, funcs, slots, fn, g, s, ta) ||
+                ta[0] != slots[q].ty as I64) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Whether switch node sw has a default case.
+Bool has_default(in lowering.Sir[_] sir, I64 sw) {
+    I64 c = sir[sw].b as I64;
+    while (c >= 0) {
+        if (kind_of(sir, c) == lowering.SO_DEFAULT) {
+            return true;
+        }
+        c = sir[c].b as I64;
+    }
+    return false;
+}
+
+// Whether item node j of switch node sw covers the whole integer type of the scrutinee
+// (SPEC-04 LS-182). By C4021 such an item is the only item of its switch: the C dispatch
+// jumps to its case without a test, and never past it (back_c.c_dispatch).
+export Bool whole_item(in lowering.Sir[_] sir, I64 sw, I64 j) {
+    I64 ty = sir[sw].ty as I64;
+    return lowering.is_int(sir[sw].ty) && (sir[j].val as% U64) == fold.ty_min(ty) &&
+        (sir[j + 1].val as% U64) == fold.ty_max(ty);
+}
+
+// Whether the C dispatch of switch node sw can pass all its items, to the default case or,
+// without one, to the end of the switch: no item covers the whole type.
+export Bool dispatch_falls(in lowering.Sir[_] sir, I64 sw) {
+    I64 c = sir[sw].b as I64;
+    while (c >= 0) {
+        I64 j = c + 1;
+        while (kind_of(sir, j) == lowering.SO_ITEM) {
+            if (whole_item(sir, sw, j)) {
+                return false;
+            }
+            j += 2;
+        }
+        c = sir[c].b as I64;
+    }
+    return true;
+}
+
+// The flow facts of function fn (above); check_func has passed.
+export void flow_func(inout lowering.Sir[_] sir, inout lowering.SirFunc[_] funcs, I64 fn) {
+    I64 first = funcs[fn].first as I64;
+    I64 last = funcs[fn].last as I64;
+    Bool reach = true;
+    funcs[fn].flags = funcs[fn].flags & ~(lowering.FN_FAULT | lowering.FN_FALLS);
+    for i in first..last {
+        I32 k = kind_of(sir, i);
+        I64 a = sir[i].a as I64;
+        I64 b = sir[i].b as I64;
+        if (reach) {
+            set_flag(sir, i, lowering.FL_LIVE);
+            if (exits_on_fault(sir, i) && !(i == first && k == lowering.SO_FUEL && funcs[fn].entry > 0)) {
+                funcs[fn].flags = funcs[fn].flags | lowering.FN_FAULT;
+            }
+        }
+        switch (k) {
+            case lowering.SO_THEN:
+                if (reach) {
+                    set_flag(sir, i, lowering.FL_FALSE);
+                }
+            case lowering.SO_ARM_END:
+                if (reach) {
+                    set_flag(sir, b, lowering.FL_END);
+                }
+                reach = has(sir, a, lowering.FL_FALSE);
+            case lowering.SO_TEST:
+                if (reach) {
+                    set_flag(sir, b, lowering.FL_END);
+                }
+            case lowering.SO_NEXT:
+                reach = reach || has(sir, a, lowering.FL_NEXT);
+            case lowering.SO_BREAK:
+                if (reach) {
+                    set_flag(sir, a, lowering.FL_END);
+                }
+                reach = false;
+            case lowering.SO_CONTINUE:
+                if (reach) {
+                    set_flag(sir, a, lowering.FL_NEXT);
+                }
+                reach = false;
+            case lowering.SO_RETURN:
+                reach = false;
+            case lowering.SO_SWITCH:
+                if (reach && !has_default(sir, i) && dispatch_falls(sir, i)) {
+                    set_flag(sir, i, lowering.FL_END);
+                }
+                reach = false;
+            case lowering.SO_CASE, lowering.SO_DEFAULT:
+                reach = reach || (has(sir, a, lowering.FL_LIVE) &&
+                    (k == lowering.SO_CASE || dispatch_falls(sir, a)));
+            case lowering.SO_CASE_END:
+                if (sir[i].c == 0) {
+                    if (reach) {
+                        set_flag(sir, b, lowering.FL_END);
+                    }
+                    reach = false;
+                }
+            case lowering.SO_END:
+                I32 ka = kind_of(sir, a);
+                if (ka == lowering.SO_LOOP) {
+                    if (reach) {
+                        set_flag(sir, a, lowering.FL_HEAD);
+                    }
+                    reach = has(sir, a, lowering.FL_END);
+                } else {
+                    reach = reach || has(sir, a, lowering.FL_END);
+                }
+            default:
+                reach = reach;
+        }
+    }
+    if (reach) {
+        funcs[fn].flags = funcs[fn].flags | lowering.FN_FALLS;
+    }
+}
+
+// Marks the functions that an entry reaches through live calls (FN_USED): the exports,
+// `main`, and the script, then every callee of a used function, until nothing changes.
+export void mark_used(in lowering.Sir[_] sir, inout lowering.SirFunc[_] funcs, I64 nfunc) {
+    for k in 0..nfunc {
+        funcs[k].flags = funcs[k].flags & ~lowering.FN_USED;
+        if ((funcs[k].flags & (lowering.FN_EXPORT | lowering.FN_MAIN | lowering.FN_SCRIPT | lowering.FN_TEST)) != 0) {
+            funcs[k].flags = funcs[k].flags | lowering.FN_USED;
+        }
+    }
+    Bool changed = true;
+    while (changed) {
+        changed = false;
+        for k in 0..nfunc {
+            if ((funcs[k].flags & lowering.FN_USED) != 0) {
+                for i in funcs[k].first as I64..funcs[k].last as I64 {
+                    if ((kind_of(sir, i) == lowering.SO_CALL || kind_of(sir, i) == lowering.SO_KCALL) &&
+                            has(sir, i, lowering.FL_LIVE)) {
+                        I64 c = sir[i].a as I64;
+                        if ((funcs[c].flags & lowering.FN_USED) == 0) {
+                            funcs[c].flags = funcs[c].flags | lowering.FN_USED;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Verifies every function of the module and computes the flow facts. Returns -1, or the
+// first node that fails.
+export I64 verify(inout lowering.Sir[_] sir, inout lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots,
+        inout parse.Frame[_] st, in lowering.LState[_] ls) {
+    for fn in 0..ls[0].nfunc {
+        if ((funcs[fn].flags & lowering.FN_IMPORT) == 0) {
+            // An import row has no SIR (lowering.FN_IMPORT).
+            I64 bad = check_func(sir, funcs, slots, st, ls[0].cap, fn);
+            if (bad >= 0) {
+                return bad;
+            }
+            flow_func(sir, funcs, fn);
+        }
+    }
+    mark_used(sir, funcs, ls[0].nfunc);
+    return -1;
+}

@@ -1,0 +1,8 @@
+// Helper module of module/import_cycle_c3003 (G-C1 fixture, not a case): it imports
+// module.lib.cycle_b, which imports this module.
+
+import module.lib.cycle_b;
+
+export I64 ping(I64 x) {
+    return x + 1;
+}

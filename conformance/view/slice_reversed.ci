@@ -1,0 +1,14 @@
+// case: view/slice_reversed
+// clause: SPEC-04 LS-161 (a[.. by -1] is the whole array reversed)
+// subset: cint-core-1 (array slices, by, an array literal)
+// entry: run; args: none
+// spec outcome: value I64 90 (first element a[9] = 9, last a[0] = 0); fuel 2
+
+I64 first_last[n](in I64[n] xs) {
+    return xs[0] * 10 + xs[n - 1];
+}
+
+export I64 run() {
+    I64[10] a = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    return first_last(a[.. by -1]);
+}

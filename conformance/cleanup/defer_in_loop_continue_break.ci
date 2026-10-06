@@ -1,0 +1,18 @@
+// case: cleanup/defer_in_loop_continue_break
+// clause: SPEC-04 LS-185, LS-318; decision 2026-10-05, BX12-11
+// subset: cint-core-1 (`defer`, print)
+// entry: run; args: none
+// spec outcome: value with no return line: stdout is the 12 bytes `a\n0\n1\na\n2\n3\n`: the print deferred in each iteration runs when that iteration's block exits, at its end, by `continue` and by `break`; fuel 5 (the entry and four iterations)
+
+export void run() {
+    for i in 0..5 {
+        defer { "{i}\n"; }
+        if (i == 1) {
+            continue;
+        }
+        if (i == 3) {
+            break;
+        }
+        "a\n";
+    }
+}

@@ -1,0 +1,16 @@
+// case: kernel/alias_gcd_accepted
+// clause: SPEC-02 A-5 T2, 5.5, 15.4 E-7 (even and odd columns of one buffer are accepted)
+// subset: cint-core-1 (kernel, array slices)
+// entry: run; args: none
+// spec outcome: value I32 42 (m[0, 1] = m[0, 0] + 1); fuel 5 (entry, N = 4). Box 09 ruling R7
+
+kernel copy2[h, w](in I32[h, w] u, out I32[h, w] v) over [y: h, x: w] {
+    v[y, x] = u[y, x] + 1;
+}
+
+export I32 run() {
+    I32[2, 4] m;
+    m[0, 0] = 41;
+    copy2(m[.., 0..4 by 2], m[.., 1..4 by 2]);
+    return m[0, 1];
+}

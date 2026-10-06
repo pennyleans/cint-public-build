@@ -1,0 +1,6 @@
+case boot/refuse_byte_string
+clause SPEC-09 BOOT-01 (BYTES), SEED-06; SPEC-04 LS-41
+source compile-error
+outcome compile-error
+diagnostic.code C9100
+diagnostic.position boot/refuse_byte_string.ci:13:18

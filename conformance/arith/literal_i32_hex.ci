@@ -1,0 +1,10 @@
+// case: arith/literal_i32_hex
+// clause: SPEC-01 3.1, 3.2 (fixture 56)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2003 at 8:13: the literal is 4294967295, which does not fit I32
+
+export I32 run() {
+    I32 e = 0xFFFFFFFF;
+    return e;
+}

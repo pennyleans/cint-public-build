@@ -1,0 +1,8 @@
+case errors/catch_bind_switch_exhaustive
+clause SPEC-04 LS-95, LS-131, LS-182, LS-314; decision 2026-10-05, BX12-09
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 688
+fuel-consumed 9

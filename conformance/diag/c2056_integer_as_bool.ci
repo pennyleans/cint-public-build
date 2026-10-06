@@ -1,0 +1,11 @@
+// case: diag/c2056_integer_as_bool
+// clause: SPEC-01 2.3; SPEC-04 6.6; SPEC-04 17.1, 17.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2056 at 9:14: there is no conversion from integers to Bool (position: SPEC-04 LS-313, decision 2026-10-03, slice 2 patch D-11)
+
+export I64 run() {
+    I64 n = 1;
+    Bool b = n as Bool;
+    return 0;
+}

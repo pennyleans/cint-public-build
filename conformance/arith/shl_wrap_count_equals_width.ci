@@ -1,0 +1,11 @@
+// case: arith/shl_wrap_count_equals_width
+// clause: SPEC-01 4.6 (counts are never reduced modulo w); plan Review Focus 3
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_SHIFT at 10:14, operation shl.wrap.i64, count 64, limit 63
+
+export I64 run() {
+    I64 x = 1;
+    I64 k = 64;
+    return x <<% k;
+}

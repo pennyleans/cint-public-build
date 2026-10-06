@@ -1,0 +1,15 @@
+case view/index_negative
+clause SPEC-04 LS-64; SPEC-01 IM-186 (a negative index has the same record as one at or above the extent)
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_BOUNDS
+fault.operation index.checked.i32
+fault.operand I64 -1
+fault.exact none
+fault.limit I64 3
+fault.position view/index_negative.ci:10:13
+fault.revision self
+fault.address none
+fault.stack-depth 0

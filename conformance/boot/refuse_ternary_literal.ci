@@ -1,0 +1,11 @@
+// case: boot/refuse_ternary_literal
+// clause: SPEC-09 BOOT-01 (TERN_INT), SEED-06; SPEC-04 LS-24, LS-30
+// subset: cint-core-1
+// entry: run; args: none
+// seed outcome: C9100 at 9:13
+// spec outcome: value I64 8 under cint-core-1 (0tP0N is 9 - 1); the seed refuses the balanced-ternary literal
+
+export I64 run() {
+    I64 x = 0tP0N;
+    return x;
+}

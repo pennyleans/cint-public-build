@@ -1,0 +1,15 @@
+// case: kernel/alias_uncertain_columns
+// clause: SPEC-02 A-5, A-6, 5.5, 15.4 E-6 (adjacent column blocks: bounding intervals intersect, gcd 1, uncertain)
+// subset: cint-core-1 (kernel, array slices)
+// entry: run; args: none
+// spec outcome: fault E_ALIAS at 13:5 (the dispatch site), phase entry, address dispatch 0, operation bind.alias, operands I64 1 (v) and I64 0 (u) with reason uncertain and both descriptors (no form yet); stack depth 0; fuel 1. Encoding: box 09 ruling R9
+
+kernel copy2[h, w](in I32[h, w] u, out I32[h, w] v) over [y: h, x: w] {
+    v[y, x] = u[y, x] + 1;
+}
+
+export I32 run() {
+    I32[8, 16] m;
+    copy2(m[.., 0..8], m[.., 8..16]);
+    return m[0, 8];
+}

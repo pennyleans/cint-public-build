@@ -1,0 +1,14 @@
+// case: module/two_aliases_one_struct
+// clause: SPEC-04 LS-225, LS-228 (two aliases of one module are two names of it; an `as` alias is outside cint-boot-1, SPEC-09 BOOT-01 import_decl); SPEC-09 CINTC-16; decision 27 item 4 (imported structs)
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: value I64 10 (sum_pair of each Pair, one built through each alias)
+
+import module.lib.plain_math;
+import module.lib.plain_math as pm;
+
+export I64 run() {
+    plain_math.Pair p = plain_math.Pair(1, 2);
+    pm.Pair q = pm.Pair(3, 4);
+    return plain_math.sum_pair(q) + pm.sum_pair(p);
+}

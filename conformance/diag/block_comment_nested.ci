@@ -1,0 +1,11 @@
+// case: diag/block_comment_nested
+// clause: SPEC-04 LS-14 (Proposed: block comments nest); SPEC-09 5.5 BLOCK_COMMENT; ref/OPEN.md REF-OQ-26
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: value I64 1 under LS-14 (the comment ends at the second `*/`, so `+ 1` is inside it); the seed refuses the inner `/*` with C9100 at 8:18
+
+export I64 run() {
+    I64 a = 1 /* /* */ + 1 // */
+    ;
+    return a;
+}

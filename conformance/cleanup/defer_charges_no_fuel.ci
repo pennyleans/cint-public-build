@@ -1,0 +1,21 @@
+// case: cleanup/defer_charges_no_fuel
+// clause: SPEC-04 LS-316, LS-317; SPEC-01 IM-139; decision 2026-10-05, BX12-11
+// subset: cint-core-1 (`defer`, module-level variable)
+// entry: run; args: none
+// spec outcome: value I64 0, state calls I64 3: `return calls` takes 0 before the deferred statements run; running them charges nothing, and their two loop iterations and three calls of tick charge 5; fuel 6
+
+I64 calls = 0;
+
+void tick() {
+    calls += 1;
+}
+
+export I64 run() {
+    defer tick();
+    defer {
+        for _ in 0..2 {
+            tick();
+        }
+    }
+    return calls;
+}

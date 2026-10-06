@@ -1,0 +1,25 @@
+// case: view/constant_extent_parameter
+// clause: SPEC-04 LS-62, LS-119 (a view parameter with a constant extent)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 40 (8 + 16 + 8 + 8 after the doubling of [4, 8, 4, 4])
+
+void double_all(inout I64[4] q) {
+    for i in 0..4 {
+        q[i] = q[i] * 2;
+    }
+}
+
+I64 sum4(in I64[4] q) {
+    return q[0] + q[1] + q[2] + q[3];
+}
+
+export I64 run() {
+    I64[4] q;
+    for i in 0..4 {
+        q[i] = 4;
+    }
+    q[1] = 8;
+    double_all(q);
+    return sum4(q);
+}

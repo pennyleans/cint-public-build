@@ -1,0 +1,118 @@
+// compiler/tests/front_check.ci: the test entry of compiler/resolve.ci and compiler/check.ci
+// (slice 2 task 2.10c), called by compiler/tests/check_host.c through its cint-abi-1
+// wrapper, because the tables are views (the harness passes scalars only).
+//
+// front_check scans, parses and checks one module and writes its first diagnostic as the
+// `.expect` lines `cint_ref run` writes for a compile error (SPEC-09 CONF-11):
+// `diagnostic.code`, `diagnostic.position <path>:<line>:<column>`, and for C6001 the
+// `diagnostic.fault.*` lines (fold.render_fault), each ending in LF, with a measure pass
+// and an emit pass (CINTC-04). compiler/tests/check_suite.py compares them with `cint_ref`
+// byte for byte, and the record in `faults` with `cint_ref`'s canonical record.
+//
+// stats: [0] the phase that stopped: 1 the source text, 2 the scanner, 3 the parser, 5 the
+// subset gate (C9102), 6 the checker, 7 none (the module checks); [1] tokens; [2] nodes;
+// [3] symbols; [4] names; [5] most work frames at once; [6] bytes of the literal table;
+// [7] bytes of the text.
+
+import check;
+import emit;
+import fold;
+import limits;
+import parse;
+import resolve;
+import scan;
+
+// The `.expect` lines of the diagnostic in row 1 of diag, for module path `path`.
+void lines[o, p](inout emit.Writer[_] w, inout U8[o] dst, in U8[p] path, in limits.CompilerDiag[_] diag,
+        in fold.Folded[_] fres, in U8[_] lits, inout fold.Work[_] z) {
+    emit.w_text(w, dst, "diagnostic.code C");
+    emit.w_i64(w, dst, diag[1].code);
+    emit.w_nl(w, dst);
+    emit.w_text(w, dst, "diagnostic.position ");
+    emit.w_text(w, dst, path);
+    emit.w_byte(w, dst, ':');
+    emit.w_i64(w, dst, diag[1].line);
+    emit.w_byte(w, dst, ':');
+    emit.w_i64(w, dst, diag[1].column);
+    emit.w_nl(w, dst);
+    if (diag[1].code == limits.C_CONST_FAULT) {
+        fold.render_fault(w, dst, fres, lits, z, "diagnostic.fault.");
+    }
+}
+
+// Scans, parses and checks module 0 (src, at module path `path`) into the tables, and
+// writes its first diagnostic's lines into dst. Returns 0 when the module checks, 1 when
+// there is a diagnostic, 2 when the lines do not fit dst (stats[7] is then the bytes needed).
+export I64 front_check[o, p](in U8[_] src, in U8[p] path, inout scan.Token[_] toks, inout parse.Node[_] nodes,
+        inout parse.Frame[_] st, inout limits.CompilerDiag[_] diag, inout resolve.Sem[_] sem,
+        inout resolve.Sym[_] syms, inout resolve.Name[_] names, inout parse.Frame[_] wk, inout U8[_] lits,
+        inout U8[_] faults, inout U8[o] dst, inout I64[_] stats) {
+    limits.diag_clear(diag);
+    for k in 0..8 {
+        stats[k] = 0;
+    }
+    fold.Folded[1] fres;
+    fold.Work[1] z;
+    stats[0] = 1;
+    if (scan.check_text(src, diag, 0) == 0) {
+        stats[0] = 2;
+        I64 ntok = scan.scan(src, toks, diag, 0);
+        if (ntok >= 0) {
+            stats[0] = 3;
+            stats[1] = ntok;
+            parse.PState[1] ps;
+            I64 root = parse.parse(src, toks, ntok, nodes, st, diag, ps, 0);
+            stats[2] = ps[0].nn;
+            if (root >= 0) {
+                resolve.RState[1] rs;
+                check.CState[1] cs;
+                // No declaration table: an import names no block, and the checker refuses it.
+                limits.Decl[1] decls;
+                decls[0].kind = 0;
+                I64 err = check.check_module(src, toks, nodes, ps[0].nn, root, sem, syms, names, wk, lits, diag,
+                    faults, fres, z, path, rs, cs, 0, decls);
+                stats[3] = rs[0].nsym;
+                stats[4] = rs[0].nname;
+                stats[5] = cs[0].max_sp;
+                stats[6] = cs[0].lit_used;
+                stats[0] = 6;
+                if (err == resolve.C_UNSUPPORTED) {
+                    stats[0] = 5;
+                } else if (err == 0) {
+                    stats[0] = 7;
+                    return 0;
+                }
+            }
+        }
+    }
+    if (diag[0].detail[0] == 0) {
+        return 0;
+    }
+    emit.Writer[1] w;
+    emit.w_measure(w);
+    lines(w, dst, path, diag, fres, lits, z);
+    stats[7] = w[0].pos;
+    if (w[0].pos > o) {
+        return 2;
+    }
+    emit.w_emit(w, w[0].pos);
+    lines(w, dst, path, diag, fres, lits, z);
+    return 1;
+}
+
+// Field f of manifest row `row` after check.plan_check(rows, 0, n, 7, 8, 9, 10, 0) on a
+// TablePlan[5]: f 0 to 5 are table to reserved, 6 the type code, 7 the record id.
+export I64 check_plan_test(I64 n, I64 row, I64 f, I64 declarations) {
+    limits.TablePlan[5] rows;
+    check.plan_check(rows, 0, n, 7, 8, 9, 10, declarations);
+    switch (f) {
+        case 0: return rows[row].table;
+        case 1: return rows[row].elem_bytes;
+        case 2: return rows[row].elem_align;
+        case 3: return rows[row].capacity;
+        case 4: return rows[row].scope;
+        case 5: return rows[row].reserved;
+        case 6: return rows[row].elem_type.code as I64;
+        default: return rows[row].elem_type.record_id as I64;
+    }
+}

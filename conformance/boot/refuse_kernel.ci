@@ -1,0 +1,18 @@
+// case: boot/refuse_kernel
+// clause: SPEC-09 BOOT-01 (kernel_decl, kparam, over_clause), SEED-06; SPEC-04 LS-243, LS-244
+// subset: cint-core-1
+// entry: run; args: none
+// seed outcome: C9100 at 8:1
+// spec outcome: value I64 6 under cint-core-1; the seed refuses the kernel declaration
+
+kernel twice[n](in I64[n] u, out I64[n] v) over [i: n] {
+    v[i] = u[i] * 2;
+}
+
+export I64 run() {
+    I64[4] a;
+    I64[4] b;
+    a[3] = 3;
+    twice(a, b);
+    return b[3];
+}

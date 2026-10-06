@@ -1,0 +1,10 @@
+// case: diag/neg_literal_space
+// clause: SPEC-01 IM-25, IM-26; SPEC-04 LS-28, LS-151 (decision 2026-10-03, slice 2 patch D-21 option 1)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 -128: `- 128` is one negative literal
+
+export I64 run() {
+    I8 b = - 128;
+    return b as I64;
+}

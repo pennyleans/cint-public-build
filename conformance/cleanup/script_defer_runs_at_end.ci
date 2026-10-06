@@ -1,0 +1,8 @@
+// case: cleanup/script_defer_runs_at_end
+// clause: SPEC-04 LS-185, LS-321; decision 2026-10-05, BX12-11
+// subset: cint-core-1 (`defer`, print)
+// spec outcome: value with no return line: stdout is the 6 bytes `a\nb\nc\n`: the top-level defer runs when the script's implicit entry ends; fuel 1
+
+"a\n";
+defer { "c\n"; }
+"b\n";

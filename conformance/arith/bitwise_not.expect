@@ -1,0 +1,7 @@
+case arith/bitwise_not
+clause SPEC-01 4.7
+source reference
+outcome value
+stdout-bytes 0
+return I64 -6
+fuel-consumed 1

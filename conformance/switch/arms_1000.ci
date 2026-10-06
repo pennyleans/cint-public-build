@@ -1,0 +1,2018 @@
+// case: switch/arms_1000
+// clause: SPEC-04 LS-177, LS-311; SPEC-09 CINTC-02, CINTC-03 (decision 2026-10-03, slice 2 patch D-5)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 2997: the last of 1,000 arms; `switch` arms do not nest
+
+I64 pick(I64 x) {
+    I64 r = -1;
+    switch (x) {
+        case 0:
+            r = 0;
+        case 1:
+            r = 3;
+        case 2:
+            r = 6;
+        case 3:
+            r = 9;
+        case 4:
+            r = 12;
+        case 5:
+            r = 15;
+        case 6:
+            r = 18;
+        case 7:
+            r = 21;
+        case 8:
+            r = 24;
+        case 9:
+            r = 27;
+        case 10:
+            r = 30;
+        case 11:
+            r = 33;
+        case 12:
+            r = 36;
+        case 13:
+            r = 39;
+        case 14:
+            r = 42;
+        case 15:
+            r = 45;
+        case 16:
+            r = 48;
+        case 17:
+            r = 51;
+        case 18:
+            r = 54;
+        case 19:
+            r = 57;
+        case 20:
+            r = 60;
+        case 21:
+            r = 63;
+        case 22:
+            r = 66;
+        case 23:
+            r = 69;
+        case 24:
+            r = 72;
+        case 25:
+            r = 75;
+        case 26:
+            r = 78;
+        case 27:
+            r = 81;
+        case 28:
+            r = 84;
+        case 29:
+            r = 87;
+        case 30:
+            r = 90;
+        case 31:
+            r = 93;
+        case 32:
+            r = 96;
+        case 33:
+            r = 99;
+        case 34:
+            r = 102;
+        case 35:
+            r = 105;
+        case 36:
+            r = 108;
+        case 37:
+            r = 111;
+        case 38:
+            r = 114;
+        case 39:
+            r = 117;
+        case 40:
+            r = 120;
+        case 41:
+            r = 123;
+        case 42:
+            r = 126;
+        case 43:
+            r = 129;
+        case 44:
+            r = 132;
+        case 45:
+            r = 135;
+        case 46:
+            r = 138;
+        case 47:
+            r = 141;
+        case 48:
+            r = 144;
+        case 49:
+            r = 147;
+        case 50:
+            r = 150;
+        case 51:
+            r = 153;
+        case 52:
+            r = 156;
+        case 53:
+            r = 159;
+        case 54:
+            r = 162;
+        case 55:
+            r = 165;
+        case 56:
+            r = 168;
+        case 57:
+            r = 171;
+        case 58:
+            r = 174;
+        case 59:
+            r = 177;
+        case 60:
+            r = 180;
+        case 61:
+            r = 183;
+        case 62:
+            r = 186;
+        case 63:
+            r = 189;
+        case 64:
+            r = 192;
+        case 65:
+            r = 195;
+        case 66:
+            r = 198;
+        case 67:
+            r = 201;
+        case 68:
+            r = 204;
+        case 69:
+            r = 207;
+        case 70:
+            r = 210;
+        case 71:
+            r = 213;
+        case 72:
+            r = 216;
+        case 73:
+            r = 219;
+        case 74:
+            r = 222;
+        case 75:
+            r = 225;
+        case 76:
+            r = 228;
+        case 77:
+            r = 231;
+        case 78:
+            r = 234;
+        case 79:
+            r = 237;
+        case 80:
+            r = 240;
+        case 81:
+            r = 243;
+        case 82:
+            r = 246;
+        case 83:
+            r = 249;
+        case 84:
+            r = 252;
+        case 85:
+            r = 255;
+        case 86:
+            r = 258;
+        case 87:
+            r = 261;
+        case 88:
+            r = 264;
+        case 89:
+            r = 267;
+        case 90:
+            r = 270;
+        case 91:
+            r = 273;
+        case 92:
+            r = 276;
+        case 93:
+            r = 279;
+        case 94:
+            r = 282;
+        case 95:
+            r = 285;
+        case 96:
+            r = 288;
+        case 97:
+            r = 291;
+        case 98:
+            r = 294;
+        case 99:
+            r = 297;
+        case 100:
+            r = 300;
+        case 101:
+            r = 303;
+        case 102:
+            r = 306;
+        case 103:
+            r = 309;
+        case 104:
+            r = 312;
+        case 105:
+            r = 315;
+        case 106:
+            r = 318;
+        case 107:
+            r = 321;
+        case 108:
+            r = 324;
+        case 109:
+            r = 327;
+        case 110:
+            r = 330;
+        case 111:
+            r = 333;
+        case 112:
+            r = 336;
+        case 113:
+            r = 339;
+        case 114:
+            r = 342;
+        case 115:
+            r = 345;
+        case 116:
+            r = 348;
+        case 117:
+            r = 351;
+        case 118:
+            r = 354;
+        case 119:
+            r = 357;
+        case 120:
+            r = 360;
+        case 121:
+            r = 363;
+        case 122:
+            r = 366;
+        case 123:
+            r = 369;
+        case 124:
+            r = 372;
+        case 125:
+            r = 375;
+        case 126:
+            r = 378;
+        case 127:
+            r = 381;
+        case 128:
+            r = 384;
+        case 129:
+            r = 387;
+        case 130:
+            r = 390;
+        case 131:
+            r = 393;
+        case 132:
+            r = 396;
+        case 133:
+            r = 399;
+        case 134:
+            r = 402;
+        case 135:
+            r = 405;
+        case 136:
+            r = 408;
+        case 137:
+            r = 411;
+        case 138:
+            r = 414;
+        case 139:
+            r = 417;
+        case 140:
+            r = 420;
+        case 141:
+            r = 423;
+        case 142:
+            r = 426;
+        case 143:
+            r = 429;
+        case 144:
+            r = 432;
+        case 145:
+            r = 435;
+        case 146:
+            r = 438;
+        case 147:
+            r = 441;
+        case 148:
+            r = 444;
+        case 149:
+            r = 447;
+        case 150:
+            r = 450;
+        case 151:
+            r = 453;
+        case 152:
+            r = 456;
+        case 153:
+            r = 459;
+        case 154:
+            r = 462;
+        case 155:
+            r = 465;
+        case 156:
+            r = 468;
+        case 157:
+            r = 471;
+        case 158:
+            r = 474;
+        case 159:
+            r = 477;
+        case 160:
+            r = 480;
+        case 161:
+            r = 483;
+        case 162:
+            r = 486;
+        case 163:
+            r = 489;
+        case 164:
+            r = 492;
+        case 165:
+            r = 495;
+        case 166:
+            r = 498;
+        case 167:
+            r = 501;
+        case 168:
+            r = 504;
+        case 169:
+            r = 507;
+        case 170:
+            r = 510;
+        case 171:
+            r = 513;
+        case 172:
+            r = 516;
+        case 173:
+            r = 519;
+        case 174:
+            r = 522;
+        case 175:
+            r = 525;
+        case 176:
+            r = 528;
+        case 177:
+            r = 531;
+        case 178:
+            r = 534;
+        case 179:
+            r = 537;
+        case 180:
+            r = 540;
+        case 181:
+            r = 543;
+        case 182:
+            r = 546;
+        case 183:
+            r = 549;
+        case 184:
+            r = 552;
+        case 185:
+            r = 555;
+        case 186:
+            r = 558;
+        case 187:
+            r = 561;
+        case 188:
+            r = 564;
+        case 189:
+            r = 567;
+        case 190:
+            r = 570;
+        case 191:
+            r = 573;
+        case 192:
+            r = 576;
+        case 193:
+            r = 579;
+        case 194:
+            r = 582;
+        case 195:
+            r = 585;
+        case 196:
+            r = 588;
+        case 197:
+            r = 591;
+        case 198:
+            r = 594;
+        case 199:
+            r = 597;
+        case 200:
+            r = 600;
+        case 201:
+            r = 603;
+        case 202:
+            r = 606;
+        case 203:
+            r = 609;
+        case 204:
+            r = 612;
+        case 205:
+            r = 615;
+        case 206:
+            r = 618;
+        case 207:
+            r = 621;
+        case 208:
+            r = 624;
+        case 209:
+            r = 627;
+        case 210:
+            r = 630;
+        case 211:
+            r = 633;
+        case 212:
+            r = 636;
+        case 213:
+            r = 639;
+        case 214:
+            r = 642;
+        case 215:
+            r = 645;
+        case 216:
+            r = 648;
+        case 217:
+            r = 651;
+        case 218:
+            r = 654;
+        case 219:
+            r = 657;
+        case 220:
+            r = 660;
+        case 221:
+            r = 663;
+        case 222:
+            r = 666;
+        case 223:
+            r = 669;
+        case 224:
+            r = 672;
+        case 225:
+            r = 675;
+        case 226:
+            r = 678;
+        case 227:
+            r = 681;
+        case 228:
+            r = 684;
+        case 229:
+            r = 687;
+        case 230:
+            r = 690;
+        case 231:
+            r = 693;
+        case 232:
+            r = 696;
+        case 233:
+            r = 699;
+        case 234:
+            r = 702;
+        case 235:
+            r = 705;
+        case 236:
+            r = 708;
+        case 237:
+            r = 711;
+        case 238:
+            r = 714;
+        case 239:
+            r = 717;
+        case 240:
+            r = 720;
+        case 241:
+            r = 723;
+        case 242:
+            r = 726;
+        case 243:
+            r = 729;
+        case 244:
+            r = 732;
+        case 245:
+            r = 735;
+        case 246:
+            r = 738;
+        case 247:
+            r = 741;
+        case 248:
+            r = 744;
+        case 249:
+            r = 747;
+        case 250:
+            r = 750;
+        case 251:
+            r = 753;
+        case 252:
+            r = 756;
+        case 253:
+            r = 759;
+        case 254:
+            r = 762;
+        case 255:
+            r = 765;
+        case 256:
+            r = 768;
+        case 257:
+            r = 771;
+        case 258:
+            r = 774;
+        case 259:
+            r = 777;
+        case 260:
+            r = 780;
+        case 261:
+            r = 783;
+        case 262:
+            r = 786;
+        case 263:
+            r = 789;
+        case 264:
+            r = 792;
+        case 265:
+            r = 795;
+        case 266:
+            r = 798;
+        case 267:
+            r = 801;
+        case 268:
+            r = 804;
+        case 269:
+            r = 807;
+        case 270:
+            r = 810;
+        case 271:
+            r = 813;
+        case 272:
+            r = 816;
+        case 273:
+            r = 819;
+        case 274:
+            r = 822;
+        case 275:
+            r = 825;
+        case 276:
+            r = 828;
+        case 277:
+            r = 831;
+        case 278:
+            r = 834;
+        case 279:
+            r = 837;
+        case 280:
+            r = 840;
+        case 281:
+            r = 843;
+        case 282:
+            r = 846;
+        case 283:
+            r = 849;
+        case 284:
+            r = 852;
+        case 285:
+            r = 855;
+        case 286:
+            r = 858;
+        case 287:
+            r = 861;
+        case 288:
+            r = 864;
+        case 289:
+            r = 867;
+        case 290:
+            r = 870;
+        case 291:
+            r = 873;
+        case 292:
+            r = 876;
+        case 293:
+            r = 879;
+        case 294:
+            r = 882;
+        case 295:
+            r = 885;
+        case 296:
+            r = 888;
+        case 297:
+            r = 891;
+        case 298:
+            r = 894;
+        case 299:
+            r = 897;
+        case 300:
+            r = 900;
+        case 301:
+            r = 903;
+        case 302:
+            r = 906;
+        case 303:
+            r = 909;
+        case 304:
+            r = 912;
+        case 305:
+            r = 915;
+        case 306:
+            r = 918;
+        case 307:
+            r = 921;
+        case 308:
+            r = 924;
+        case 309:
+            r = 927;
+        case 310:
+            r = 930;
+        case 311:
+            r = 933;
+        case 312:
+            r = 936;
+        case 313:
+            r = 939;
+        case 314:
+            r = 942;
+        case 315:
+            r = 945;
+        case 316:
+            r = 948;
+        case 317:
+            r = 951;
+        case 318:
+            r = 954;
+        case 319:
+            r = 957;
+        case 320:
+            r = 960;
+        case 321:
+            r = 963;
+        case 322:
+            r = 966;
+        case 323:
+            r = 969;
+        case 324:
+            r = 972;
+        case 325:
+            r = 975;
+        case 326:
+            r = 978;
+        case 327:
+            r = 981;
+        case 328:
+            r = 984;
+        case 329:
+            r = 987;
+        case 330:
+            r = 990;
+        case 331:
+            r = 993;
+        case 332:
+            r = 996;
+        case 333:
+            r = 999;
+        case 334:
+            r = 1002;
+        case 335:
+            r = 1005;
+        case 336:
+            r = 1008;
+        case 337:
+            r = 1011;
+        case 338:
+            r = 1014;
+        case 339:
+            r = 1017;
+        case 340:
+            r = 1020;
+        case 341:
+            r = 1023;
+        case 342:
+            r = 1026;
+        case 343:
+            r = 1029;
+        case 344:
+            r = 1032;
+        case 345:
+            r = 1035;
+        case 346:
+            r = 1038;
+        case 347:
+            r = 1041;
+        case 348:
+            r = 1044;
+        case 349:
+            r = 1047;
+        case 350:
+            r = 1050;
+        case 351:
+            r = 1053;
+        case 352:
+            r = 1056;
+        case 353:
+            r = 1059;
+        case 354:
+            r = 1062;
+        case 355:
+            r = 1065;
+        case 356:
+            r = 1068;
+        case 357:
+            r = 1071;
+        case 358:
+            r = 1074;
+        case 359:
+            r = 1077;
+        case 360:
+            r = 1080;
+        case 361:
+            r = 1083;
+        case 362:
+            r = 1086;
+        case 363:
+            r = 1089;
+        case 364:
+            r = 1092;
+        case 365:
+            r = 1095;
+        case 366:
+            r = 1098;
+        case 367:
+            r = 1101;
+        case 368:
+            r = 1104;
+        case 369:
+            r = 1107;
+        case 370:
+            r = 1110;
+        case 371:
+            r = 1113;
+        case 372:
+            r = 1116;
+        case 373:
+            r = 1119;
+        case 374:
+            r = 1122;
+        case 375:
+            r = 1125;
+        case 376:
+            r = 1128;
+        case 377:
+            r = 1131;
+        case 378:
+            r = 1134;
+        case 379:
+            r = 1137;
+        case 380:
+            r = 1140;
+        case 381:
+            r = 1143;
+        case 382:
+            r = 1146;
+        case 383:
+            r = 1149;
+        case 384:
+            r = 1152;
+        case 385:
+            r = 1155;
+        case 386:
+            r = 1158;
+        case 387:
+            r = 1161;
+        case 388:
+            r = 1164;
+        case 389:
+            r = 1167;
+        case 390:
+            r = 1170;
+        case 391:
+            r = 1173;
+        case 392:
+            r = 1176;
+        case 393:
+            r = 1179;
+        case 394:
+            r = 1182;
+        case 395:
+            r = 1185;
+        case 396:
+            r = 1188;
+        case 397:
+            r = 1191;
+        case 398:
+            r = 1194;
+        case 399:
+            r = 1197;
+        case 400:
+            r = 1200;
+        case 401:
+            r = 1203;
+        case 402:
+            r = 1206;
+        case 403:
+            r = 1209;
+        case 404:
+            r = 1212;
+        case 405:
+            r = 1215;
+        case 406:
+            r = 1218;
+        case 407:
+            r = 1221;
+        case 408:
+            r = 1224;
+        case 409:
+            r = 1227;
+        case 410:
+            r = 1230;
+        case 411:
+            r = 1233;
+        case 412:
+            r = 1236;
+        case 413:
+            r = 1239;
+        case 414:
+            r = 1242;
+        case 415:
+            r = 1245;
+        case 416:
+            r = 1248;
+        case 417:
+            r = 1251;
+        case 418:
+            r = 1254;
+        case 419:
+            r = 1257;
+        case 420:
+            r = 1260;
+        case 421:
+            r = 1263;
+        case 422:
+            r = 1266;
+        case 423:
+            r = 1269;
+        case 424:
+            r = 1272;
+        case 425:
+            r = 1275;
+        case 426:
+            r = 1278;
+        case 427:
+            r = 1281;
+        case 428:
+            r = 1284;
+        case 429:
+            r = 1287;
+        case 430:
+            r = 1290;
+        case 431:
+            r = 1293;
+        case 432:
+            r = 1296;
+        case 433:
+            r = 1299;
+        case 434:
+            r = 1302;
+        case 435:
+            r = 1305;
+        case 436:
+            r = 1308;
+        case 437:
+            r = 1311;
+        case 438:
+            r = 1314;
+        case 439:
+            r = 1317;
+        case 440:
+            r = 1320;
+        case 441:
+            r = 1323;
+        case 442:
+            r = 1326;
+        case 443:
+            r = 1329;
+        case 444:
+            r = 1332;
+        case 445:
+            r = 1335;
+        case 446:
+            r = 1338;
+        case 447:
+            r = 1341;
+        case 448:
+            r = 1344;
+        case 449:
+            r = 1347;
+        case 450:
+            r = 1350;
+        case 451:
+            r = 1353;
+        case 452:
+            r = 1356;
+        case 453:
+            r = 1359;
+        case 454:
+            r = 1362;
+        case 455:
+            r = 1365;
+        case 456:
+            r = 1368;
+        case 457:
+            r = 1371;
+        case 458:
+            r = 1374;
+        case 459:
+            r = 1377;
+        case 460:
+            r = 1380;
+        case 461:
+            r = 1383;
+        case 462:
+            r = 1386;
+        case 463:
+            r = 1389;
+        case 464:
+            r = 1392;
+        case 465:
+            r = 1395;
+        case 466:
+            r = 1398;
+        case 467:
+            r = 1401;
+        case 468:
+            r = 1404;
+        case 469:
+            r = 1407;
+        case 470:
+            r = 1410;
+        case 471:
+            r = 1413;
+        case 472:
+            r = 1416;
+        case 473:
+            r = 1419;
+        case 474:
+            r = 1422;
+        case 475:
+            r = 1425;
+        case 476:
+            r = 1428;
+        case 477:
+            r = 1431;
+        case 478:
+            r = 1434;
+        case 479:
+            r = 1437;
+        case 480:
+            r = 1440;
+        case 481:
+            r = 1443;
+        case 482:
+            r = 1446;
+        case 483:
+            r = 1449;
+        case 484:
+            r = 1452;
+        case 485:
+            r = 1455;
+        case 486:
+            r = 1458;
+        case 487:
+            r = 1461;
+        case 488:
+            r = 1464;
+        case 489:
+            r = 1467;
+        case 490:
+            r = 1470;
+        case 491:
+            r = 1473;
+        case 492:
+            r = 1476;
+        case 493:
+            r = 1479;
+        case 494:
+            r = 1482;
+        case 495:
+            r = 1485;
+        case 496:
+            r = 1488;
+        case 497:
+            r = 1491;
+        case 498:
+            r = 1494;
+        case 499:
+            r = 1497;
+        case 500:
+            r = 1500;
+        case 501:
+            r = 1503;
+        case 502:
+            r = 1506;
+        case 503:
+            r = 1509;
+        case 504:
+            r = 1512;
+        case 505:
+            r = 1515;
+        case 506:
+            r = 1518;
+        case 507:
+            r = 1521;
+        case 508:
+            r = 1524;
+        case 509:
+            r = 1527;
+        case 510:
+            r = 1530;
+        case 511:
+            r = 1533;
+        case 512:
+            r = 1536;
+        case 513:
+            r = 1539;
+        case 514:
+            r = 1542;
+        case 515:
+            r = 1545;
+        case 516:
+            r = 1548;
+        case 517:
+            r = 1551;
+        case 518:
+            r = 1554;
+        case 519:
+            r = 1557;
+        case 520:
+            r = 1560;
+        case 521:
+            r = 1563;
+        case 522:
+            r = 1566;
+        case 523:
+            r = 1569;
+        case 524:
+            r = 1572;
+        case 525:
+            r = 1575;
+        case 526:
+            r = 1578;
+        case 527:
+            r = 1581;
+        case 528:
+            r = 1584;
+        case 529:
+            r = 1587;
+        case 530:
+            r = 1590;
+        case 531:
+            r = 1593;
+        case 532:
+            r = 1596;
+        case 533:
+            r = 1599;
+        case 534:
+            r = 1602;
+        case 535:
+            r = 1605;
+        case 536:
+            r = 1608;
+        case 537:
+            r = 1611;
+        case 538:
+            r = 1614;
+        case 539:
+            r = 1617;
+        case 540:
+            r = 1620;
+        case 541:
+            r = 1623;
+        case 542:
+            r = 1626;
+        case 543:
+            r = 1629;
+        case 544:
+            r = 1632;
+        case 545:
+            r = 1635;
+        case 546:
+            r = 1638;
+        case 547:
+            r = 1641;
+        case 548:
+            r = 1644;
+        case 549:
+            r = 1647;
+        case 550:
+            r = 1650;
+        case 551:
+            r = 1653;
+        case 552:
+            r = 1656;
+        case 553:
+            r = 1659;
+        case 554:
+            r = 1662;
+        case 555:
+            r = 1665;
+        case 556:
+            r = 1668;
+        case 557:
+            r = 1671;
+        case 558:
+            r = 1674;
+        case 559:
+            r = 1677;
+        case 560:
+            r = 1680;
+        case 561:
+            r = 1683;
+        case 562:
+            r = 1686;
+        case 563:
+            r = 1689;
+        case 564:
+            r = 1692;
+        case 565:
+            r = 1695;
+        case 566:
+            r = 1698;
+        case 567:
+            r = 1701;
+        case 568:
+            r = 1704;
+        case 569:
+            r = 1707;
+        case 570:
+            r = 1710;
+        case 571:
+            r = 1713;
+        case 572:
+            r = 1716;
+        case 573:
+            r = 1719;
+        case 574:
+            r = 1722;
+        case 575:
+            r = 1725;
+        case 576:
+            r = 1728;
+        case 577:
+            r = 1731;
+        case 578:
+            r = 1734;
+        case 579:
+            r = 1737;
+        case 580:
+            r = 1740;
+        case 581:
+            r = 1743;
+        case 582:
+            r = 1746;
+        case 583:
+            r = 1749;
+        case 584:
+            r = 1752;
+        case 585:
+            r = 1755;
+        case 586:
+            r = 1758;
+        case 587:
+            r = 1761;
+        case 588:
+            r = 1764;
+        case 589:
+            r = 1767;
+        case 590:
+            r = 1770;
+        case 591:
+            r = 1773;
+        case 592:
+            r = 1776;
+        case 593:
+            r = 1779;
+        case 594:
+            r = 1782;
+        case 595:
+            r = 1785;
+        case 596:
+            r = 1788;
+        case 597:
+            r = 1791;
+        case 598:
+            r = 1794;
+        case 599:
+            r = 1797;
+        case 600:
+            r = 1800;
+        case 601:
+            r = 1803;
+        case 602:
+            r = 1806;
+        case 603:
+            r = 1809;
+        case 604:
+            r = 1812;
+        case 605:
+            r = 1815;
+        case 606:
+            r = 1818;
+        case 607:
+            r = 1821;
+        case 608:
+            r = 1824;
+        case 609:
+            r = 1827;
+        case 610:
+            r = 1830;
+        case 611:
+            r = 1833;
+        case 612:
+            r = 1836;
+        case 613:
+            r = 1839;
+        case 614:
+            r = 1842;
+        case 615:
+            r = 1845;
+        case 616:
+            r = 1848;
+        case 617:
+            r = 1851;
+        case 618:
+            r = 1854;
+        case 619:
+            r = 1857;
+        case 620:
+            r = 1860;
+        case 621:
+            r = 1863;
+        case 622:
+            r = 1866;
+        case 623:
+            r = 1869;
+        case 624:
+            r = 1872;
+        case 625:
+            r = 1875;
+        case 626:
+            r = 1878;
+        case 627:
+            r = 1881;
+        case 628:
+            r = 1884;
+        case 629:
+            r = 1887;
+        case 630:
+            r = 1890;
+        case 631:
+            r = 1893;
+        case 632:
+            r = 1896;
+        case 633:
+            r = 1899;
+        case 634:
+            r = 1902;
+        case 635:
+            r = 1905;
+        case 636:
+            r = 1908;
+        case 637:
+            r = 1911;
+        case 638:
+            r = 1914;
+        case 639:
+            r = 1917;
+        case 640:
+            r = 1920;
+        case 641:
+            r = 1923;
+        case 642:
+            r = 1926;
+        case 643:
+            r = 1929;
+        case 644:
+            r = 1932;
+        case 645:
+            r = 1935;
+        case 646:
+            r = 1938;
+        case 647:
+            r = 1941;
+        case 648:
+            r = 1944;
+        case 649:
+            r = 1947;
+        case 650:
+            r = 1950;
+        case 651:
+            r = 1953;
+        case 652:
+            r = 1956;
+        case 653:
+            r = 1959;
+        case 654:
+            r = 1962;
+        case 655:
+            r = 1965;
+        case 656:
+            r = 1968;
+        case 657:
+            r = 1971;
+        case 658:
+            r = 1974;
+        case 659:
+            r = 1977;
+        case 660:
+            r = 1980;
+        case 661:
+            r = 1983;
+        case 662:
+            r = 1986;
+        case 663:
+            r = 1989;
+        case 664:
+            r = 1992;
+        case 665:
+            r = 1995;
+        case 666:
+            r = 1998;
+        case 667:
+            r = 2001;
+        case 668:
+            r = 2004;
+        case 669:
+            r = 2007;
+        case 670:
+            r = 2010;
+        case 671:
+            r = 2013;
+        case 672:
+            r = 2016;
+        case 673:
+            r = 2019;
+        case 674:
+            r = 2022;
+        case 675:
+            r = 2025;
+        case 676:
+            r = 2028;
+        case 677:
+            r = 2031;
+        case 678:
+            r = 2034;
+        case 679:
+            r = 2037;
+        case 680:
+            r = 2040;
+        case 681:
+            r = 2043;
+        case 682:
+            r = 2046;
+        case 683:
+            r = 2049;
+        case 684:
+            r = 2052;
+        case 685:
+            r = 2055;
+        case 686:
+            r = 2058;
+        case 687:
+            r = 2061;
+        case 688:
+            r = 2064;
+        case 689:
+            r = 2067;
+        case 690:
+            r = 2070;
+        case 691:
+            r = 2073;
+        case 692:
+            r = 2076;
+        case 693:
+            r = 2079;
+        case 694:
+            r = 2082;
+        case 695:
+            r = 2085;
+        case 696:
+            r = 2088;
+        case 697:
+            r = 2091;
+        case 698:
+            r = 2094;
+        case 699:
+            r = 2097;
+        case 700:
+            r = 2100;
+        case 701:
+            r = 2103;
+        case 702:
+            r = 2106;
+        case 703:
+            r = 2109;
+        case 704:
+            r = 2112;
+        case 705:
+            r = 2115;
+        case 706:
+            r = 2118;
+        case 707:
+            r = 2121;
+        case 708:
+            r = 2124;
+        case 709:
+            r = 2127;
+        case 710:
+            r = 2130;
+        case 711:
+            r = 2133;
+        case 712:
+            r = 2136;
+        case 713:
+            r = 2139;
+        case 714:
+            r = 2142;
+        case 715:
+            r = 2145;
+        case 716:
+            r = 2148;
+        case 717:
+            r = 2151;
+        case 718:
+            r = 2154;
+        case 719:
+            r = 2157;
+        case 720:
+            r = 2160;
+        case 721:
+            r = 2163;
+        case 722:
+            r = 2166;
+        case 723:
+            r = 2169;
+        case 724:
+            r = 2172;
+        case 725:
+            r = 2175;
+        case 726:
+            r = 2178;
+        case 727:
+            r = 2181;
+        case 728:
+            r = 2184;
+        case 729:
+            r = 2187;
+        case 730:
+            r = 2190;
+        case 731:
+            r = 2193;
+        case 732:
+            r = 2196;
+        case 733:
+            r = 2199;
+        case 734:
+            r = 2202;
+        case 735:
+            r = 2205;
+        case 736:
+            r = 2208;
+        case 737:
+            r = 2211;
+        case 738:
+            r = 2214;
+        case 739:
+            r = 2217;
+        case 740:
+            r = 2220;
+        case 741:
+            r = 2223;
+        case 742:
+            r = 2226;
+        case 743:
+            r = 2229;
+        case 744:
+            r = 2232;
+        case 745:
+            r = 2235;
+        case 746:
+            r = 2238;
+        case 747:
+            r = 2241;
+        case 748:
+            r = 2244;
+        case 749:
+            r = 2247;
+        case 750:
+            r = 2250;
+        case 751:
+            r = 2253;
+        case 752:
+            r = 2256;
+        case 753:
+            r = 2259;
+        case 754:
+            r = 2262;
+        case 755:
+            r = 2265;
+        case 756:
+            r = 2268;
+        case 757:
+            r = 2271;
+        case 758:
+            r = 2274;
+        case 759:
+            r = 2277;
+        case 760:
+            r = 2280;
+        case 761:
+            r = 2283;
+        case 762:
+            r = 2286;
+        case 763:
+            r = 2289;
+        case 764:
+            r = 2292;
+        case 765:
+            r = 2295;
+        case 766:
+            r = 2298;
+        case 767:
+            r = 2301;
+        case 768:
+            r = 2304;
+        case 769:
+            r = 2307;
+        case 770:
+            r = 2310;
+        case 771:
+            r = 2313;
+        case 772:
+            r = 2316;
+        case 773:
+            r = 2319;
+        case 774:
+            r = 2322;
+        case 775:
+            r = 2325;
+        case 776:
+            r = 2328;
+        case 777:
+            r = 2331;
+        case 778:
+            r = 2334;
+        case 779:
+            r = 2337;
+        case 780:
+            r = 2340;
+        case 781:
+            r = 2343;
+        case 782:
+            r = 2346;
+        case 783:
+            r = 2349;
+        case 784:
+            r = 2352;
+        case 785:
+            r = 2355;
+        case 786:
+            r = 2358;
+        case 787:
+            r = 2361;
+        case 788:
+            r = 2364;
+        case 789:
+            r = 2367;
+        case 790:
+            r = 2370;
+        case 791:
+            r = 2373;
+        case 792:
+            r = 2376;
+        case 793:
+            r = 2379;
+        case 794:
+            r = 2382;
+        case 795:
+            r = 2385;
+        case 796:
+            r = 2388;
+        case 797:
+            r = 2391;
+        case 798:
+            r = 2394;
+        case 799:
+            r = 2397;
+        case 800:
+            r = 2400;
+        case 801:
+            r = 2403;
+        case 802:
+            r = 2406;
+        case 803:
+            r = 2409;
+        case 804:
+            r = 2412;
+        case 805:
+            r = 2415;
+        case 806:
+            r = 2418;
+        case 807:
+            r = 2421;
+        case 808:
+            r = 2424;
+        case 809:
+            r = 2427;
+        case 810:
+            r = 2430;
+        case 811:
+            r = 2433;
+        case 812:
+            r = 2436;
+        case 813:
+            r = 2439;
+        case 814:
+            r = 2442;
+        case 815:
+            r = 2445;
+        case 816:
+            r = 2448;
+        case 817:
+            r = 2451;
+        case 818:
+            r = 2454;
+        case 819:
+            r = 2457;
+        case 820:
+            r = 2460;
+        case 821:
+            r = 2463;
+        case 822:
+            r = 2466;
+        case 823:
+            r = 2469;
+        case 824:
+            r = 2472;
+        case 825:
+            r = 2475;
+        case 826:
+            r = 2478;
+        case 827:
+            r = 2481;
+        case 828:
+            r = 2484;
+        case 829:
+            r = 2487;
+        case 830:
+            r = 2490;
+        case 831:
+            r = 2493;
+        case 832:
+            r = 2496;
+        case 833:
+            r = 2499;
+        case 834:
+            r = 2502;
+        case 835:
+            r = 2505;
+        case 836:
+            r = 2508;
+        case 837:
+            r = 2511;
+        case 838:
+            r = 2514;
+        case 839:
+            r = 2517;
+        case 840:
+            r = 2520;
+        case 841:
+            r = 2523;
+        case 842:
+            r = 2526;
+        case 843:
+            r = 2529;
+        case 844:
+            r = 2532;
+        case 845:
+            r = 2535;
+        case 846:
+            r = 2538;
+        case 847:
+            r = 2541;
+        case 848:
+            r = 2544;
+        case 849:
+            r = 2547;
+        case 850:
+            r = 2550;
+        case 851:
+            r = 2553;
+        case 852:
+            r = 2556;
+        case 853:
+            r = 2559;
+        case 854:
+            r = 2562;
+        case 855:
+            r = 2565;
+        case 856:
+            r = 2568;
+        case 857:
+            r = 2571;
+        case 858:
+            r = 2574;
+        case 859:
+            r = 2577;
+        case 860:
+            r = 2580;
+        case 861:
+            r = 2583;
+        case 862:
+            r = 2586;
+        case 863:
+            r = 2589;
+        case 864:
+            r = 2592;
+        case 865:
+            r = 2595;
+        case 866:
+            r = 2598;
+        case 867:
+            r = 2601;
+        case 868:
+            r = 2604;
+        case 869:
+            r = 2607;
+        case 870:
+            r = 2610;
+        case 871:
+            r = 2613;
+        case 872:
+            r = 2616;
+        case 873:
+            r = 2619;
+        case 874:
+            r = 2622;
+        case 875:
+            r = 2625;
+        case 876:
+            r = 2628;
+        case 877:
+            r = 2631;
+        case 878:
+            r = 2634;
+        case 879:
+            r = 2637;
+        case 880:
+            r = 2640;
+        case 881:
+            r = 2643;
+        case 882:
+            r = 2646;
+        case 883:
+            r = 2649;
+        case 884:
+            r = 2652;
+        case 885:
+            r = 2655;
+        case 886:
+            r = 2658;
+        case 887:
+            r = 2661;
+        case 888:
+            r = 2664;
+        case 889:
+            r = 2667;
+        case 890:
+            r = 2670;
+        case 891:
+            r = 2673;
+        case 892:
+            r = 2676;
+        case 893:
+            r = 2679;
+        case 894:
+            r = 2682;
+        case 895:
+            r = 2685;
+        case 896:
+            r = 2688;
+        case 897:
+            r = 2691;
+        case 898:
+            r = 2694;
+        case 899:
+            r = 2697;
+        case 900:
+            r = 2700;
+        case 901:
+            r = 2703;
+        case 902:
+            r = 2706;
+        case 903:
+            r = 2709;
+        case 904:
+            r = 2712;
+        case 905:
+            r = 2715;
+        case 906:
+            r = 2718;
+        case 907:
+            r = 2721;
+        case 908:
+            r = 2724;
+        case 909:
+            r = 2727;
+        case 910:
+            r = 2730;
+        case 911:
+            r = 2733;
+        case 912:
+            r = 2736;
+        case 913:
+            r = 2739;
+        case 914:
+            r = 2742;
+        case 915:
+            r = 2745;
+        case 916:
+            r = 2748;
+        case 917:
+            r = 2751;
+        case 918:
+            r = 2754;
+        case 919:
+            r = 2757;
+        case 920:
+            r = 2760;
+        case 921:
+            r = 2763;
+        case 922:
+            r = 2766;
+        case 923:
+            r = 2769;
+        case 924:
+            r = 2772;
+        case 925:
+            r = 2775;
+        case 926:
+            r = 2778;
+        case 927:
+            r = 2781;
+        case 928:
+            r = 2784;
+        case 929:
+            r = 2787;
+        case 930:
+            r = 2790;
+        case 931:
+            r = 2793;
+        case 932:
+            r = 2796;
+        case 933:
+            r = 2799;
+        case 934:
+            r = 2802;
+        case 935:
+            r = 2805;
+        case 936:
+            r = 2808;
+        case 937:
+            r = 2811;
+        case 938:
+            r = 2814;
+        case 939:
+            r = 2817;
+        case 940:
+            r = 2820;
+        case 941:
+            r = 2823;
+        case 942:
+            r = 2826;
+        case 943:
+            r = 2829;
+        case 944:
+            r = 2832;
+        case 945:
+            r = 2835;
+        case 946:
+            r = 2838;
+        case 947:
+            r = 2841;
+        case 948:
+            r = 2844;
+        case 949:
+            r = 2847;
+        case 950:
+            r = 2850;
+        case 951:
+            r = 2853;
+        case 952:
+            r = 2856;
+        case 953:
+            r = 2859;
+        case 954:
+            r = 2862;
+        case 955:
+            r = 2865;
+        case 956:
+            r = 2868;
+        case 957:
+            r = 2871;
+        case 958:
+            r = 2874;
+        case 959:
+            r = 2877;
+        case 960:
+            r = 2880;
+        case 961:
+            r = 2883;
+        case 962:
+            r = 2886;
+        case 963:
+            r = 2889;
+        case 964:
+            r = 2892;
+        case 965:
+            r = 2895;
+        case 966:
+            r = 2898;
+        case 967:
+            r = 2901;
+        case 968:
+            r = 2904;
+        case 969:
+            r = 2907;
+        case 970:
+            r = 2910;
+        case 971:
+            r = 2913;
+        case 972:
+            r = 2916;
+        case 973:
+            r = 2919;
+        case 974:
+            r = 2922;
+        case 975:
+            r = 2925;
+        case 976:
+            r = 2928;
+        case 977:
+            r = 2931;
+        case 978:
+            r = 2934;
+        case 979:
+            r = 2937;
+        case 980:
+            r = 2940;
+        case 981:
+            r = 2943;
+        case 982:
+            r = 2946;
+        case 983:
+            r = 2949;
+        case 984:
+            r = 2952;
+        case 985:
+            r = 2955;
+        case 986:
+            r = 2958;
+        case 987:
+            r = 2961;
+        case 988:
+            r = 2964;
+        case 989:
+            r = 2967;
+        case 990:
+            r = 2970;
+        case 991:
+            r = 2973;
+        case 992:
+            r = 2976;
+        case 993:
+            r = 2979;
+        case 994:
+            r = 2982;
+        case 995:
+            r = 2985;
+        case 996:
+            r = 2988;
+        case 997:
+            r = 2991;
+        case 998:
+            r = 2994;
+        case 999:
+            r = 2997;
+        default:
+            r = -2;
+    }
+    return r;
+}
+
+export I64 run() {
+    return pick(999);
+}

@@ -1,0 +1,7 @@
+// conformance/arith/add_i64_overflow.ci (SPEC-09 9.2 CONF-01 example; clause SPEC-01 IM-30, IM-32, IM-106, IM-107; subset cint-core-1, test block and print; spec outcome: fault E_OVERFLOW add.checked.i64 at 5:15, see the CONF-01 .expect text)
+test "add overflow at I64 max" {
+    I64 a = 9223372036854775807;
+    I64 b = 1;
+    I64 c = a + b;
+    "c={c}\n";
+}

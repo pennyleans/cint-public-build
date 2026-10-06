@@ -1,0 +1,8 @@
+case cleanup/script_defer_runs_at_end
+clause SPEC-04 LS-185, LS-321; decision 2026-10-05, BX12-11
+format 2
+source reference
+outcome value
+stdout-bytes 6
+stdout-sha256 880553fca8fcea94e325ee2cfb48e5a985cc797f39a14cc6d3cedecfeb2ae4d2
+fuel-consumed 1

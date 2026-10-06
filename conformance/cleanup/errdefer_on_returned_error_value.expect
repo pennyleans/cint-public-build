@@ -1,0 +1,9 @@
+case cleanup/errdefer_on_returned_error_value
+clause SPEC-04 LS-130, LS-189; decision 2026-10-05, BX12-08
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 19
+fuel-consumed 3
+state.global cleanup.errdefer_on_returned_error_value trail I64 5

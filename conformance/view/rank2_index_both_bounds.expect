@@ -1,0 +1,18 @@
+case view/rank2_index_both_bounds
+clause SPEC-04 LS-64; SPEC-01 IM-186 (both indices out of range: the lowest dimension is reported)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_BOUNDS
+fault.operation index.checked.i64
+fault.operand I64 0
+fault.operand I64 2
+fault.exact none
+fault.limit I64 2
+fault.position view/rank2_index_both_bounds.ci:11:13
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

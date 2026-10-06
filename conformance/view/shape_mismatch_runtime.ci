@@ -1,0 +1,19 @@
+// case: view/shape_mismatch_runtime
+// clause: SPEC-04 LS-117, LS-123, LS-141 (shape agreement is an entry check: E_SHAPE before the call is entered)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_SHAPE at 12:12 (the callee name), operation bind.shape, operands I64 1 (parameter b), I64 0 (dimension), I64 3 (actual extent), limit I64 4 (the extent n was bound to); stack depth 1
+
+I64 first_sum[n](in I64[n] a, in I64[n] b) {
+    return a[0] + b[0];
+}
+
+I64 pass_on[n, m](in I64[n] a, in I64[m] b) {
+    return first_sum(a, b);
+}
+
+export I64 run() {
+    I64[4] a;
+    I64[3] b;
+    return pass_on(a, b);
+}

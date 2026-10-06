@@ -1,0 +1,8 @@
+case kernel/zero_work_items
+clause SPEC-02 K-8, 15.7 Z-1 (an extent of 0: no work-items, empty output published, total 0)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 0
+fuel-consumed 1

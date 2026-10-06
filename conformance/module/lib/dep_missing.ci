@@ -1,0 +1,8 @@
+// Helper module of module/missing_import_order_c3009 (G-C1 fixture, not a case): its own
+// import names no file.
+
+import module.lib.absent_one;
+
+export I64 one() {
+    return 1;
+}

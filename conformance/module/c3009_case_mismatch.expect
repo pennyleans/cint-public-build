@@ -1,0 +1,6 @@
+case module/c3009_case_mismatch
+clause SPEC-09 CINTC-12, CINTC-15 (a name is resolved byte for byte against the directory entry); SPEC-04 LS-225
+source compile-error
+outcome compile-error
+diagnostic.code C3009
+diagnostic.position module/c3009_case_mismatch.ci:7:8

@@ -1,0 +1,15 @@
+// case: module/state_two_modules
+// clause: SPEC-09 CONF-11 rule 10 (state.global lines in module order: the root module first); SPEC-04 LS-113, LS-225
+// subset: cint-core-1 (module-level variables in two modules)
+// entry: run; args: none
+// spec outcome: value I64 7, then state.global module.state_two_modules seen I64 7 and module.lib.tally calls I64 1, the root module first
+
+import module.lib.tally;
+
+I64 seen = 5;
+
+export I64 run() {
+    seen += 2;
+    _ = tally.tick();
+    return seen;
+}

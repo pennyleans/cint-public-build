@@ -1,0 +1,8 @@
+// case: boot/const_extent_record
+// clause: SPEC-04 LS-62, LS-311; SPEC-09 BOOT-01, EMIT-30
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 7
+
+struct R { I64 v; }
+export I64 run() { const I64 N = 2; R[N] a; a[1].v = 7; return a[1].v; }

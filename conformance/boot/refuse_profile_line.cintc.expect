@@ -1,0 +1,7 @@
+case boot/refuse_profile_line
+clause SPEC-09 BOOT-01 (profile_decl), SEED-06; SPEC-04 LS-299
+source reference
+outcome value
+stdout-bytes 0
+return I64 1
+fuel-consumed 1

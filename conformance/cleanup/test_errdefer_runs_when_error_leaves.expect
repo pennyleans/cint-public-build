@@ -1,0 +1,11 @@
+case cleanup/test_errdefer_runs_when_error_leaves
+clause SPEC-04 LS-189, LS-315, LS-322; SPEC-09 CONF-11 rule 12; decision 2026-10-05, BX12-13, BX12-21, BX12-25, BX12-30
+format 3
+source reference
+outcome error
+stdout-bytes 0
+fuel-consumed 2
+error.set cleanup.test_errdefer_runs_when_error_leaves.ParseError
+error.value bad_digit
+error.tag U16 2
+state.global cleanup.test_errdefer_runs_when_error_leaves trail I64 21

@@ -1,0 +1,24 @@
+case memory/arena_stale_view_after_callee_reset
+clause SPEC-03 M-14a, M-23; SPEC-02 V-14; ref/OPEN.md REF-OQ-45
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 4
+fault.code E_STALE_HANDLE
+fault.operation handle.check
+fault.operand U64 0
+fault.operand I64 3
+fault.operand U64 0
+fault.operand U32 1
+fault.operand U8 1
+fault.operand U64 1
+fault.operand U8 3
+fault.exact none
+fault.limit none
+fault.position memory/arena_stale_view_after_callee_reset.ci:15:14
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 1
+fault.stack memory/arena_stale_view_after_callee_reset.ci:22:12

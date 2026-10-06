@@ -1,0 +1,10 @@
+// case: arith/floor_division_literals
+// clause: SPEC-01 4.4; SPEC-04 4.2 (negative literal), 7.5
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 -4 (the negative literal -7, floor division)
+
+export I64 run() {
+    I64 neg = -7 / 2;
+    return neg;
+}

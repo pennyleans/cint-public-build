@@ -1,0 +1,4058 @@
+// compiler/parse.ci: tokens to a syntax tree, with an explicit stack (SPEC-04 18.3 to 18.6;
+// SPEC-09 CINTC-01 to CINTC-03, CINTC-13, DIAG-01; slice 2 task 2.10a).
+//
+// The parser is a loop over a stack of frames, never a recursive call (SPEC-09 5.3: no
+// recursion in `cint-boot-1`), so its C stack depth is constant whatever the input. Each
+// frame is a construct being parsed and the point at which it resumes; a frame that needs
+// a sub-construct pushes the frame that parses it, and that frame returns its node in
+// PState.res when it pops. An expression is parsed by precedence climbing over the levels
+// of SPEC-04 18.6: a level holds a frame only while it waits for a right operand, so a
+// parenthesis costs one frame, an operator waiting for its right operand one more, and a
+// block one (the statement that owns a block does not wait for it); so at most two frames
+// per level of nesting. The frames live in the frame region (Frame, below) and are bounded
+// by the parser's own limit there (limits.ci LIM_STACK, 512 + tokens / 32: twice the
+// CINTC-02 row, compiler/OPEN.md CINTC-OQ-05); a construct that would need more is C9004
+// at its token (SPEC-04 LS-311), and a block at depth 257 is C9004 at its `{` (CINTC-02,
+// decision patch D-5).
+//
+// The tree. Every construct is one Node, children are node indices (-1 for none), and a
+// list is a chain through Node.next. An `else if` chain is one N_IF node with an ordered
+// list of N_ARM nodes, and a `switch` is one N_SWITCH node with a list of N_CASE nodes
+// (CINTC-03), so later passes walk both iteratively. Node.tok is the token of the
+// construct's position and Node.start its first token: the `pos` and `start` of the
+// reference tree (ref/cint_ref/tree.py); F_PAREN marks a parenthesized expression, whose
+// start is its `(`. The field use of each kind is listed at its constant below.
+//
+// Diagnostics. The parser stops at its first error, as `cint_ref` does, with the code and
+// position `cint_ref` gives (SPEC-04 17.2; decision patch D-4, D-11): it follows the same
+// productions in the same order with the same lookahead. Where `cint_ref` refuses a
+// construct outside its surface, this parser accepts the production of SPEC-04 18 instead;
+// compiler/OPEN.md CINTC-OQ-06 lists the few places where `cint_ref` reports an error for
+// text that SPEC-04 18 admits, and what this parser does there.
+//
+// A negative literal (D-21 option 1, SPEC-04 LS-28): a prefix `-` followed by an integer,
+// character, or fraction literal token is one N_NEGLIT node, whatever whitespace or
+// comments separate them; `-(128)` is N_UNARY over a parenthesized N_LIT, so a range error
+// is reported at the `128` (C2003, by check.ci).
+//
+// Holes (SPEC-04 9.2). The text of a print statement or assert message is checked first
+// (escapes, braces), then each hole is lexed by scan.scan_hole into tokens appended after
+// the module's tokens and parsed as an `or_expr`, as `cint_ref` parses it.
+//
+// Bound (CINTC-13): O(n) for n tokens. Each token is consumed once; the lookahead of
+// SPEC-04 LS-303 is O(1) through the bracket matches computed once per token stream, except
+// that a statement or item that begins with `(` is scanned once for a comma at its top
+// level (a tuple type), which adds O(n) per level of `catch` blocks nested in such
+// parentheses; the `&&` and `||` chain check walks each chain once.
+
+import limits;
+import scan;
+
+export struct Node {
+    I32 kind;
+    I32 op;
+    I32 tok;
+    I32 start;
+    I32 a;
+    I32 b;
+    I32 c;
+    I32 d;
+    I32 e;
+    I32 f;
+    I32 next;
+    I32 flags;
+}
+
+// One row of the frame region, manifest row 14 (SPEC-09 CINTC-14; KR-03 of the K
+// reduction note, decision 2026-10-05 on OQ-204): the explicit stacks of this parser, of
+// check.ci, and of lowering.ci and verify.ci share one table, because within one compile
+// call they are live in different passes, one after another, and no pass reads another's
+// frames. Twelve I32 fields hold any of the three frames. This parser uses state (the
+// S_* state), node, a to d, want (the level an expression returns at, or the phase noted
+// at a state) and e (a token); check.ci uses kind (its task), node, state (the step at
+// which the task resumes), a to d, and e (with a, a payload that does not fit I32;
+// check.keep_payload); lowering.ci uses all twelve. Each pass sets the fields it reads,
+// and each keeps its own limit inside the region (CINTC-16 row 14): the parser that of
+// LIM_STACK, below.
+export struct Frame {
+    I32 kind;
+    I32 node;
+    I32 state;
+    I32 want;
+    I32 a;
+    I32 b;
+    I32 c;
+    I32 d;
+    I32 e;
+    I32 f;
+    I32 g;
+    I32 h;
+}
+
+export struct PState {
+    I64 pos;
+    I64 last;
+    I64 ntok;
+    I64 nn;
+    I64 sp;
+    I64 max_sp;
+    I64 res;
+    I64 err;
+    I64 blocks;
+    I64 module;
+    I64 root;
+    I64 phase;
+    I64 tail;
+    I64 done;
+    I64 steps;
+    I64 cap;
+}
+
+// Bytes of one Node and one Frame: the element sizes of the node table and the frame region.
+export const I64 NODE_BYTES = 48;
+export const I64 FRAME_BYTES = 48;
+
+// The manifest rows (CINTC-14) of the per-module tables of the scanner and parser for a
+// module of n source bytes: rows k and k + 1 are the token table and the node table, sized
+// by limits.capacity, with the record ids the caller's program gives Token and Node. Row
+// k + 2, which held the parse stack, keeps the caller's capacity 0: the parser's frames
+// are in the frame region (KR-03).
+export void plan_front[t](inout limits.TablePlan[t] rows, I64 k, I64 n, U32 token_record, U32 node_record) {
+    limits.plan_row(rows, k, scan.TOKEN_BYTES, limits.TAG_RECORD, token_record, limits.capacity(limits.LIM_TOKENS, n),
+        limits.SCOPE_MODULE);
+    limits.plan_row(rows, k + 1, NODE_BYTES, limits.TAG_RECORD, node_record, limits.capacity(limits.LIM_NODES, n),
+        limits.SCOPE_MODULE);
+}
+
+// ---------------------------------------------------------------- node kinds
+
+// Module level. N_MODULE: a items. N_PROFILE: tok `profile`, a N_STRING. N_IMPORT: tok
+// `import`, start and c the first path name, d the last, b the alias token (the last path
+// name when there is no `as`; -1 with F_SELECTED), a the selected N_NAME list.
+export const I32 N_MODULE = 1;
+export const I32 N_PROFILE = 2;
+export const I32 N_IMPORT = 3;
+// N_FUNC: tok name, a result type (-1 for void; N_ERRUNION), op KW_IN or KW_INOUT for a view
+// result, b N_PARAM list, c body, d N_SIZE list, e `where` expression, f attributes.
+export const I32 N_FUNC = 4;
+// N_PARAM: tok name, start first token, op mode (0, KW_IN, KW_INOUT, KW_OUT), a type, b default.
+export const I32 N_PARAM = 5;
+export const I32 N_SIZE = 6;
+// N_STRUCT: tok name, a N_FIELD_DECL list, f attributes. N_FIELD_DECL: tok name, a type,
+// b bit width, c default, f attributes.
+export const I32 N_STRUCT = 7;
+export const I32 N_FIELD_DECL = 8;
+// N_ENUM: tok name, c the INT_TYPE token, a N_ENUMERATOR list (tok name, a value).
+export const I32 N_ENUM = 9;
+export const I32 N_ENUMERATOR = 10;
+// N_ERROR_DECL: tok name, c the INT_TYPE token or -1, a N_NAME list; for a combined set
+// (`= A | B ;`, SPEC-04 LS-97), op 1 and a the N_TYPE list of its operands.
+export const I32 N_ERROR_DECL = 11;
+// N_TYPE_DECL: tok name, a type, F_DISTINCT.
+export const I32 N_TYPE_DECL = 12;
+// N_KERNEL: tok name, d N_SIZE list, b N_PARAM list, a N_OVER list (tok name, a extent),
+// e `where` expression list, c body, f attributes.
+export const I32 N_KERNEL = 13;
+export const I32 N_OVER = 14;
+// N_SCHEDULE: tok name, c the `for` name token or -1, a N_DIRECTIVE list (tok name, b args).
+export const I32 N_SCHEDULE = 15;
+export const I32 N_DIRECTIVE = 16;
+// N_TEST: tok `test`, a N_STRING, b body, c fault name token or -1, d `at` line token or -1.
+export const I32 N_TEST = 17;
+// N_STATIC_ASSERT: tok keyword, a condition, b N_STRING or -1.
+export const I32 N_STATIC_ASSERT = 18;
+// N_ATTR: tok name, start `@`, b argument list, F_PARENS when written with parentheses.
+export const I32 N_ATTR = 19;
+
+// Statements. N_VAR: tok name, start first token, a type (-1 for `var`), b initializer,
+// op KW_IN, KW_INOUT or KW_VAR, F_CONST, F_EXPORT. N_DESTRUCT: tok `(` or `var`, a N_BIND
+// list (tok name or `_`, a type or -1), b value.
+export const I32 N_VAR = 20;
+export const I32 N_DESTRUCT = 21;
+export const I32 N_BIND = 22;
+// N_BLOCK: tok `{`, a statements. N_ASSIGN: tok operator, op, a target, b value.
+// N_INCDEC: tok operator, op, a target. N_EXPR_STMT: tok expression start, a expression.
+// N_DISCARD: tok `_`, a expression.
+export const I32 N_BLOCK = 23;
+export const I32 N_ASSIGN = 24;
+export const I32 N_INCDEC = 25;
+export const I32 N_EXPR_STMT = 26;
+export const I32 N_DISCARD = 27;
+// N_IF: tok the first `if`, a N_ARM list (tok `if`, a condition, b block), b else block, c last arm.
+export const I32 N_IF = 28;
+export const I32 N_ARM = 29;
+// Loops: start is the label when there is one. N_WHILE: a condition, b body.
+// N_DO: b body, a condition. N_FOR: a init, b condition, c update, d body.
+// N_FOR_RANGE: a N_BIND, b second N_BIND or -1, c low (or the iterated expression),
+// d high, e step, f body, op OP_RANGE or OP_RANGE_INCL (0 for iteration).
+export const I32 N_WHILE = 30;
+export const I32 N_DO = 31;
+export const I32 N_FOR = 32;
+export const I32 N_FOR_RANGE = 33;
+// N_SWITCH: a scrutinee, b N_CASE list. N_CASE: tok `case` or `default`, a items
+// (expressions or N_RANGE), b statements, c last item, F_DEFAULT.
+export const I32 N_SWITCH = 34;
+export const I32 N_CASE = 35;
+// Jumps: N_BREAK and N_CONTINUE c label token or -1; N_RETURN a value.
+export const I32 N_BREAK = 36;
+export const I32 N_CONTINUE = 37;
+export const I32 N_RETURN = 38;
+export const I32 N_FALLTHROUGH = 39;
+// N_DEFER: a block or simple statement, op 1 for `errdefer`. N_ASSERT: a condition,
+// b N_MESSAGE (a parts).
+// N_REDUCE: c target name token, a expression (the call of its operation, SPEC-02 8.2).
+// N_IN_PLACE: a expression. N_PRINT: tok first string token, a parts.
+export const I32 N_DEFER = 40;
+export const I32 N_ASSERT = 41;
+export const I32 N_MESSAGE = 42;
+export const I32 N_REDUCE = 43;
+export const I32 N_IN_PLACE = 44;
+export const I32 N_PRINT = 45;
+// N_TEXT: tok string token, c and d the byte range of raw text (escapes and doubled braces
+// undecoded). N_HOLE: e line and f column of the hole, a expression, b N_TEXT of the name
+// text of `{expr=}` or -1, op conversion (HOLE_*) + 256 * lanes type class, c and d the byte
+// range of the format specification, or -1.
+export const I32 N_TEXT = 46;
+export const I32 N_HOLE = 47;
+
+// Expressions. N_LIT: tok literal, op its token kind. N_NEGLIT: tok and start `-`, c the
+// literal token. N_BOOL: op 1 for true. N_STRING: tok first string token, op token ntoken.
+// N_BYTES: tok. N_NAME: tok. N_TYPENAME: tok (a scalar or fixed-point type name used as an
+// expression). N_TYPEPROP: tok type token, c property token. N_DOTNAME: tok name, start `.`.
+export const I32 N_LIT = 50;
+export const I32 N_NEGLIT = 51;
+export const I32 N_BOOL = 52;
+export const I32 N_STRING = 53;
+export const I32 N_BYTES = 54;
+export const I32 N_NAME = 55;
+export const I32 N_TYPENAME = 56;
+export const I32 N_TYPEPROP = 57;
+export const I32 N_DOTNAME = 58;
+// N_UNARY: tok operator, op (OP_* or UNARY_TRY), a operand. N_BINARY (arithmetic, shift,
+// bitwise), N_COMPARE, N_LOGICAL: tok operator, op, a left, b right. N_COND: tok `?`,
+// a condition, b then, c else. N_CONVERT: tok `as`, op CONV_AS or OP_AS_*, a operand,
+// b type, c rounding mode token or -1.
+export const I32 N_UNARY = 60;
+export const I32 N_BINARY = 61;
+export const I32 N_COMPARE = 62;
+export const I32 N_LOGICAL = 63;
+export const I32 N_COND = 64;
+export const I32 N_CONVERT = 65;
+// N_CALL: tok the callee's token, a callee expression, b arguments (expressions or
+// N_NAMEDARG: tok name, a value). N_INDEX: tok `[`, a base, b indexes (expressions or
+// N_SLICE: tok operator, op, a low, b high, c step). N_FIELD: tok field name, a base.
+// N_TUPLE and N_ARRAY: a elements. N_CATCH: tok `catch`, a expression, b handler,
+// c the handler's name token or -1.
+export const I32 N_CALL = 66;
+export const I32 N_NAMEDARG = 67;
+export const I32 N_INDEX = 68;
+export const I32 N_SLICE = 69;
+export const I32 N_FIELD = 70;
+export const I32 N_TUPLE = 71;
+export const I32 N_ARRAY = 72;
+export const I32 N_CATCH = 73;
+// Types. N_TYPE: tok the last name, start the first, op the number of names, a N_SHAPE
+// (tok `[`, a extents: expressions, N_WILD, or N_RANGE: tok operator, op, a low, b high),
+// b the inner type of Arena(T), Pool(T) or Handle(T), c the capacity of `Arena(T, capacity)`
+// or `Pool(T, capacity)` (box 12). N_TUPLE_TYPE: a types. N_ERRUNION: tok `!`, a error set
+// type, b value type or -1 for void.
+export const I32 N_TYPE = 80;
+export const I32 N_SHAPE = 81;
+export const I32 N_WILD = 82;
+export const I32 N_RANGE = 83;
+export const I32 N_TUPLE_TYPE = 84;
+export const I32 N_ERRUNION = 85;
+
+export const I32 F_PAREN = 1;
+export const I32 F_EXPORT = 2;
+export const I32 F_CONST = 4;
+export const I32 F_DEFAULT = 8;
+export const I32 F_SELECTED = 16;
+export const I32 F_DISTINCT = 32;
+export const I32 F_PARENS = 64;
+
+export const I32 UNARY_TRY = 100;
+export const I32 CONV_AS = 101;
+export const I32 HOLE_BITS = 1;
+export const I32 HOLE_RAW = 2;
+export const I32 HOLE_RATIO = 3;
+export const I32 HOLE_LANES = 4;
+
+// Diagnostic codes of SPEC-04 17.2 that the parser reports, besides scan.C_*.
+export const I64 C_RESERVED_NAME = 1010;
+export const I64 C_FAULT_NAME = 1011;
+export const I64 C_EMPTY_STATEMENT = 1040;
+export const I64 C_ASSIGN_IN_CONDITION = 1041;
+export const I64 C_INCREMENT_EXPR = 1042;
+export const I64 C_BRACES = 1043;
+export const I64 C_NOT_PLACE = 2058;
+export const I64 C_PARENS_REQUIRED = 2101;
+export const I64 C_CHAINED = 2102;
+export const I64 C_IMPORT_LATE = 3012;
+export const I64 C_EXPECT_FAULT_PLACE = 3021;
+export const I64 C_STATEMENT_FORM = 4012;
+export const I64 C_HALF_OPEN_CASE = 4022;
+export const I64 C_EMPTY_CASE = 4023;
+export const I64 C_DEFAULT_PLACE = 4025;
+export const I64 C_OUT_PARAM = 5001;
+
+// ---------------------------------------------------------------- frames
+
+// Expression levels of SPEC-04 18.6, lowest first. A frame for a sub-expression carries
+// the level it returns at (target). L_POSTFIX parses a postfix expression only, with `++`
+// and `--` allowed after it (an assignment target).
+const I32 L_POSTFIX = -1;
+const I32 L_UNARY = 0;
+const I32 L_CONV = 1;
+const I32 L_MUL = 2;
+const I32 L_ADD = 3;
+const I32 L_SHIFT = 4;
+const I32 L_BAND = 5;
+const I32 L_BXOR = 6;
+const I32 L_BOR = 7;
+const I32 L_CMP = 8;
+const I32 L_AND = 9;
+const I32 L_OR = 10;
+const I32 L_COND = 11;
+const I32 L_EXPR = 12;
+
+const I32 S_OPERAND = 1;
+const I32 S_UNARY = 2;
+const I32 S_POSTFIX = 3;
+const I32 S_ARGS = 4;
+const I32 S_INDEX = 5;
+const I32 S_PAREN = 6;
+const I32 S_ASCEND = 7;
+const I32 S_CONVERT = 8;
+const I32 S_BINARY = 9;
+const I32 S_COMPARE = 10;
+const I32 S_LOGICAL = 11;
+const I32 S_COND = 12;
+const I32 S_CATCH = 13;
+const I32 S_ARRAY = 14;
+const I32 S_TYPE = 15;
+const I32 S_TYPE_INNER = 16;
+const I32 S_TUPLE_TYPE = 17;
+const I32 S_SHAPE = 18;
+const I32 S_BLOCK = 19;
+const I32 S_SIMPLE = 20;
+const I32 S_SEMI = 21;
+const I32 S_VAR = 22;
+const I32 S_IF = 23;
+const I32 S_WHILE = 24;
+const I32 S_DO = 25;
+const I32 S_FOR = 26;
+const I32 S_FOR_RANGE = 27;
+const I32 S_SWITCH = 28;
+const I32 S_TAIL = 29;
+const I32 S_ASSERT = 30;
+const I32 S_STATIC_ASSERT = 31;
+const I32 S_STRINGS = 32;
+const I32 S_DEFER = 33;
+const I32 S_REDUCE = 34;
+const I32 S_DESTRUCT = 35;
+const I32 S_FUNC = 36;
+const I32 S_STRUCT = 37;
+const I32 S_ATTRS = 38;
+const I32 S_ENUM = 39;
+const I32 S_KERNEL = 40;
+const I32 S_SCHEDULE = 41;
+const I32 S_TYPE_DECL = 42;
+const I32 S_TEST = 43;
+const I32 S_ERRUNION = 44;
+
+// What a block does when its `}` is reached.
+const I32 K_PLAIN = 0;
+const I32 K_VALUE = 1;
+const I32 K_IF = 2;
+const I32 K_DO = 3;
+
+// ---------------------------------------------------------------- tokens
+
+// The index of the token k after the cursor; the last token of the stream (TK_EOF or
+// TK_ERROR) repeats, as `cint_ref`'s peek does.
+I64 tok_at(in PState[_] ps, I64 k) {
+    I64 j = ps[0].pos + k;
+    if (j > ps[0].last) {
+        return ps[0].last;
+    }
+    return j;
+}
+
+I64 cur(in PState[_] ps) {
+    return ps[0].pos;
+}
+
+Bool is_op[t](in scan.Token[t] toks, in PState[_] ps, I64 k, I32 op) {
+    I64 j = tok_at(ps, k);
+    return toks[j].kind == scan.TK_OP && toks[j].sub == op;
+}
+
+Bool is_kw[t](in scan.Token[t] toks, in PState[_] ps, I64 k, I32 kw) {
+    I64 j = tok_at(ps, k);
+    return toks[j].kind == scan.TK_KEYWORD && toks[j].sub == kw;
+}
+
+I32 kind_at[t](in scan.Token[t] toks, in PState[_] ps, I64 k) {
+    return toks[tok_at(ps, k)].kind;
+}
+
+I32 op_at[t](in scan.Token[t] toks, in PState[_] ps, I64 k) {
+    I64 j = tok_at(ps, k);
+    if (toks[j].kind != scan.TK_OP) {
+        return 0;
+    }
+    return toks[j].sub;
+}
+
+I32 class_at[t](in scan.Token[t] toks, in PState[_] ps, I64 k) {
+    I64 j = tok_at(ps, k);
+    if (toks[j].kind != scan.TK_IDENT) {
+        return -1;
+    }
+    return toks[j].aux & 255;
+}
+
+// Consumes the current token and returns its index; the last token is never consumed.
+I64 advance[t](in scan.Token[t] toks, inout PState[_] ps) {
+    I64 j = ps[0].pos;
+    if (toks[j].kind != scan.TK_EOF && toks[j].kind != scan.TK_ERROR) {
+        ps[0].pos = j + 1;
+    }
+    return j;
+}
+
+// An identifier class that names a scalar type (I8 to I1024, U8 to U64, Bool).
+Bool scalar_class(I32 cls) {
+    return cls >= scan.IDC_I8 && cls <= scan.IDC_BOOL;
+}
+
+// The type names of SPEC-04 18.4 that are not scalar: Str, T1, T27, PT5, PT4, Arena, Pool, Handle.
+Bool builtin_type_class(I32 cls) {
+    return cls >= scan.IDC_STR && cls <= scan.IDC_HANDLE;
+}
+
+Bool is_assign_op(I32 op) {
+    return op == scan.OP_ASSIGN || (op >= scan.OP_ADD_ASSIGN && op <= scan.OP_BXOR_ASSIGN) ||
+        (op >= scan.OP_SHL_ASSIGN && op <= scan.OP_MUL_SAT_ASSIGN) || op == scan.OP_SHL_WRAP_ASSIGN;
+}
+
+Bool is_cmp_op(I32 op) {
+    return op == scan.OP_EQ || op == scan.OP_NE || op == scan.OP_LT || op == scan.OP_LE || op == scan.OP_GT ||
+        op == scan.OP_GE;
+}
+
+Bool is_arith_op(I32 op) {
+    return op == scan.OP_MUL || op == scan.OP_DIV || op == scan.OP_REM || op == scan.OP_MUL_WRAP ||
+        op == scan.OP_MUL_SAT || op == scan.OP_ADD || op == scan.OP_SUB || op == scan.OP_ADD_WRAP ||
+        op == scan.OP_SUB_WRAP || op == scan.OP_ADD_SAT || op == scan.OP_SUB_SAT;
+}
+
+Bool is_bitwise_op(I32 op) {
+    return op == scan.OP_BAND || op == scan.OP_BOR || op == scan.OP_BXOR;
+}
+
+// Whether `op` is a binary operator of level `level` (L_MUL to L_BOR).
+Bool level_op(I32 level, I32 op) {
+    switch (level) {
+        case L_MUL:
+            return op == scan.OP_MUL || op == scan.OP_DIV || op == scan.OP_REM || op == scan.OP_MUL_WRAP ||
+                op == scan.OP_MUL_SAT;
+        case L_ADD:
+            return op == scan.OP_ADD || op == scan.OP_SUB || op == scan.OP_ADD_WRAP || op == scan.OP_SUB_WRAP ||
+                op == scan.OP_ADD_SAT || op == scan.OP_SUB_SAT;
+        case L_SHIFT:
+            return op == scan.OP_SHL || op == scan.OP_SHR || op == scan.OP_SHL_WRAP;
+        case L_BAND:
+            return op == scan.OP_BAND;
+        case L_BXOR:
+            return op == scan.OP_BXOR;
+        case L_BOR:
+            return op == scan.OP_BOR;
+        default:
+            return false;
+    }
+}
+
+// Matches every `[` with its `]` and every `(` with its `)` among toks[from..to]: Token.match
+// is the index after the closer, or 0 when the bracket does not close (`cint_ref`'s
+// _bracket_end counts `[` and `]` only, and so does this). The open brackets form a chain
+// through Token.match while they are open.
+export void match_brackets[t](inout scan.Token[t] toks, I64 from, I64 to) {
+    I64 square = -1;
+    I64 round = -1;
+    for k in from..=to {
+        toks[k].match = 0;
+        if (toks[k].kind == scan.TK_OP) {
+            I32 op = toks[k].sub;
+            if (op == scan.OP_LBRACKET) {
+                toks[k].match = square as I32;
+                square = k;
+            } else if (op == scan.OP_LPAREN) {
+                toks[k].match = round as I32;
+                round = k;
+            } else if (op == scan.OP_RBRACKET && square >= 0) {
+                I64 open = square;
+                square = toks[open].match as I64;
+                toks[open].match = (k + 1) as I32;
+            } else if (op == scan.OP_RPAREN && round >= 0) {
+                I64 open = round;
+                round = toks[open].match as I64;
+                toks[open].match = (k + 1) as I32;
+            }
+        }
+    }
+    while (square >= 0) {
+        I64 open = square;
+        square = toks[open].match as I64;
+        toks[open].match = 0;
+    }
+    while (round >= 0) {
+        I64 open = round;
+        round = toks[open].match as I64;
+        toks[open].match = 0;
+    }
+}
+
+// The offset after the bracket that closes the `[` or `(` k tokens ahead, relative to the
+// cursor, or 0 when it does not close.
+I64 bracket_end[t](in scan.Token[t] toks, in PState[_] ps, I64 k) {
+    I64 j = tok_at(ps, k);
+    I64 m = toks[j].match as I64;
+    if (m == 0) {
+        return 0;
+    }
+    return m - ps[0].pos;
+}
+
+// Whether a type may start k tokens ahead (`cint_ref`'s is_type_start).
+Bool is_type_start[t](in scan.Token[t] toks, in PState[_] ps, I64 k) {
+    I32 kind = kind_at(toks, ps, k);
+    if (kind == scan.TK_FIXED) {
+        return true;
+    }
+    if (kind != scan.TK_IDENT) {
+        return false;
+    }
+    I32 cls = class_at(toks, ps, k);
+    if (scalar_class(cls) || builtin_type_class(cls)) {
+        return true;
+    }
+    return kind_at(toks, ps, k + 1) == scan.TK_IDENT;
+}
+
+// Whether the parenthesized tokens at k hold a comma outside any nested bracket.
+Bool top_comma[t](in scan.Token[t] toks, in PState[_] ps, I64 k, I64 end) {
+    I64 j = k + 1;
+    while (j < end - 1) {
+        I64 x = tok_at(ps, j);
+        if (toks[x].kind == scan.TK_OP && (toks[x].sub == scan.OP_LPAREN || toks[x].sub == scan.OP_LBRACKET)) {
+            I64 m = bracket_end(toks, ps, j);
+            if (m == 0) {
+                return false;
+            }
+            j = m;
+        } else if (toks[x].kind == scan.TK_OP && toks[x].sub == scan.OP_COMMA) {
+            return true;
+        } else {
+            j += 1;
+        }
+    }
+    return false;
+}
+
+// The number of tokens of a type k tokens ahead, or 0 (`cint_ref`'s type_len: `I64`,
+// `vec.V3`, `Tok[8]`, `U8[_]`), and box 12's `Arena(T)`, `Pool(T)` and `Handle(T)` with
+// what their parentheses hold. Beyond it, for a type `cint_ref` refuses: a tuple type
+// `(A, B)` whose parentheses hold a comma.
+I64 type_len[t](in scan.Token[t] toks, in PState[_] ps, I64 k) {
+    I32 kind = kind_at(toks, ps, k);
+    I64 n = 1;
+    if (kind == scan.TK_OP && op_at(toks, ps, k) == scan.OP_LPAREN) {
+        I64 end = bracket_end(toks, ps, k);
+        if (end == 0 || !top_comma(toks, ps, k, end)) {
+            return 0;
+        }
+        n = end - k;
+    } else if (kind == scan.TK_FIXED) {
+        n = 1;
+    } else if (kind != scan.TK_IDENT || class_at(toks, ps, k) == scan.IDC_UNDERSCORE) {
+        return 0;
+    } else {
+        I32 cls = class_at(toks, ps, k);
+        if (cls >= scan.IDC_ARENA && cls <= scan.IDC_HANDLE && is_op(toks, ps, k + 1, scan.OP_LPAREN)) {
+            I64 end = bracket_end(toks, ps, k + 1);
+            if (end == 0) {
+                return 0;
+            }
+            n = end - k;
+        } else if (!scalar_class(cls) && is_op(toks, ps, k + 1, scan.OP_DOT) &&
+                kind_at(toks, ps, k + 2) == scan.TK_IDENT) {
+            n = 3;
+        }
+    }
+    if (is_op(toks, ps, k + n, scan.OP_LBRACKET)) {
+        I64 end = bracket_end(toks, ps, k + n);
+        if (end == 0) {
+            return 0;
+        }
+        n = end - k;
+    }
+    return n;
+}
+
+// A type followed by a name k tokens ahead: a declaration (`cint_ref`'s is_decl_ahead).
+Bool is_decl_ahead[t](in scan.Token[t] toks, in PState[_] ps, I64 k) {
+    I64 n = type_len(toks, ps, k);
+    return n > 0 && kind_at(toks, ps, k + n) == scan.TK_IDENT;
+}
+
+// The length of a place `IDENT { . IDENT | [ index ] }` at the cursor, or 0.
+I64 place_ahead[t](in scan.Token[t] toks, in PState[_] ps) {
+    if (kind_at(toks, ps, 0) != scan.TK_IDENT) {
+        return 0;
+    }
+    I64 k = 1;
+    while (true) {
+        if (is_op(toks, ps, k, scan.OP_DOT) && kind_at(toks, ps, k + 1) == scan.TK_IDENT) {
+            k += 2;
+        } else if (is_op(toks, ps, k, scan.OP_LBRACKET)) {
+            I64 end = bracket_end(toks, ps, k);
+            if (end == 0) {
+                return k;
+            }
+            k = end;
+        } else {
+            return k;
+        }
+    }
+    return k;
+}
+
+// ---------------------------------------------------------------- nodes, frames, errors
+
+// The parse's first error: a diagnostic at line:col, and the parse stops.
+void fail_at[r](inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 code, I64 line, I64 col) {
+    if (ps[0].err == 0) {
+        ps[0].err = code;
+        _ = limits.diag_add(diag, code, ps[0].module, line, col, 0, 0);
+    }
+}
+
+void fail[t, r](in scan.Token[t] toks, inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 code, I64 tok) {
+    fail_at(diag, ps, code, toks[tok].line as I64, toks[tok].col as I64);
+}
+
+// A new node of `kind` at token `tok`, all children -1; -1 with C9001 when the table is full.
+I64 new_node[t, m, r](in scan.Token[t] toks, inout Node[m] nodes, inout limits.CompilerDiag[r] diag,
+        inout PState[_] ps, I32 kind, I64 tok, I64 start) {
+    I64 x = ps[0].nn;
+    if (x == m) {
+        if (ps[0].err == 0) {
+            ps[0].err = limits.C_LIMIT;
+            _ = limits.limit_diag(diag, ps[0].module, toks[tok].line as I64, toks[tok].col as I64,
+                limits.LIM_NODES, m);
+        }
+        return -1;
+    }
+    ps[0].nn = x + 1;
+    nodes[x].kind = kind;
+    nodes[x].op = 0;
+    nodes[x].tok = tok as I32;
+    nodes[x].start = start as I32;
+    nodes[x].a = -1;
+    nodes[x].b = -1;
+    nodes[x].c = -1;
+    nodes[x].d = -1;
+    nodes[x].e = -1;
+    nodes[x].f = -1;
+    nodes[x].next = -1;
+    nodes[x].flags = 0;
+    return x;
+}
+
+// Pushes a frame; false with C9004 at the current token when the parser's frames are all
+// in use (PState.cap: LIM_STACK for the token table's extent, so for the largest module
+// of the build as the parse stack's own table was, or the region's extent when that is
+// smaller).
+Bool push[t, s, r](in scan.Token[t] toks, inout Frame[s] st, inout limits.CompilerDiag[r] diag,
+        inout PState[_] ps, I32 state, I64 node, I32 target) {
+    I64 sp = ps[0].sp;
+    if (sp == ps[0].cap) {
+        if (ps[0].err == 0) {
+            ps[0].err = limits.C_NESTING;
+            I64 j = ps[0].pos;
+            _ = limits.diag_add(diag, limits.C_NESTING, ps[0].module, toks[j].line as I64, toks[j].col as I64,
+                limits.LIM_STACK, ps[0].cap);
+        }
+        return false;
+    }
+    st[sp].state = state;
+    st[sp].node = node as I32;
+    st[sp].a = -1;
+    st[sp].b = -1;
+    st[sp].c = -1;
+    st[sp].d = -1;
+    st[sp].want = target;
+    st[sp].e = -1;
+    ps[0].sp = sp + 1;
+    if (sp + 1 > ps[0].max_sp) {
+        ps[0].max_sp = sp + 1;
+    }
+    return true;
+}
+
+// Pops the top frame, returning `node` to the frame below.
+void ret(inout PState[_] ps, I64 node) {
+    ps[0].sp -= 1;
+    ps[0].res = node;
+}
+
+// Starts the parse of an expression that returns at `level`.
+Bool expr[t, s, r](in scan.Token[t] toks, inout Frame[s] st, inout limits.CompilerDiag[r] diag,
+        inout PState[_] ps, I32 level) {
+    return push(toks, st, diag, ps, S_OPERAND, -1, level);
+}
+
+// Appends x to the list whose head is field `a` of `owner` (when `head` is true; else
+// field b) and whose last element is `tail`; returns x, the new tail.
+I64 append[m](inout Node[m] nodes, I64 owner, Bool head_a, I64 tail, I64 x) {
+    if (tail >= 0) {
+        nodes[tail].next = x as I32;
+    } else if (head_a) {
+        nodes[owner].a = x as I32;
+    } else {
+        nodes[owner].b = x as I32;
+    }
+    return x;
+}
+
+// Expects operator `op`; consumes it, or fails with `code` at the current token.
+Bool expect_op[t, r](in scan.Token[t] toks, inout limits.CompilerDiag[r] diag, inout PState[_] ps, I32 op,
+        I64 code) {
+    if (!is_op(toks, ps, 0, op)) {
+        fail(toks, diag, ps, code, cur(ps));
+        return false;
+    }
+    _ = advance(toks, ps);
+    return true;
+}
+
+Bool expect_kw[t, r](in scan.Token[t] toks, inout limits.CompilerDiag[r] diag, inout PState[_] ps, I32 kw) {
+    if (!is_kw(toks, ps, 0, kw)) {
+        fail(toks, diag, ps, scan.C_SYNTAX, cur(ps));
+        return false;
+    }
+    _ = advance(toks, ps);
+    return true;
+}
+
+// An identifier token (C1050 when the current token is not one), or -1.
+I64 expect_ident[t, r](in scan.Token[t] toks, inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    if (kind_at(toks, ps, 0) != scan.TK_IDENT) {
+        fail(toks, diag, ps, scan.C_SYNTAX, cur(ps));
+        return -1;
+    }
+    return advance(toks, ps);
+}
+
+// A declared name: an identifier not of the form [IUQT][0-9]+ (C1010, SPEC-04 LS-17), or -1.
+I64 decl_name[t, r](in scan.Token[t] toks, inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 x = expect_ident(toks, diag, ps);
+    if (x >= 0 && (toks[x].aux & scan.IDC_RESERVED_BIT) != 0) {
+        fail(toks, diag, ps, C_RESERVED_NAME, x);
+        return -1;
+    }
+    return x;
+}
+
+// Links a new statement into the list of the construct that holds statements: the module,
+// a block, or the current case of a switch.
+void link_stmt[m, s](inout Node[m] nodes, inout Frame[s] st, inout PState[_] ps, I64 x) {
+    if (ps[0].sp == 0) {
+        ps[0].tail = append(nodes, ps[0].root, true, ps[0].tail, x);
+        return;
+    }
+    I64 f = ps[0].sp - 1;
+    if (st[f].state == S_BLOCK) {
+        st[f].a = append(nodes, st[f].node as I64, true, st[f].a as I64, x) as I32;
+    } else {
+        st[f].c = append(nodes, st[f].a as I64, false, st[f].c as I64, x) as I32;
+    }
+}
+
+// ---------------------------------------------------------------- strings
+
+// The scalar values in src[a..b), all of whose bytes are valid UTF-8.
+I64 scalars_in[n](in U8[n] src, I64 a, I64 b) {
+    I64 k = 0;
+    for j in a..b {
+        I64 c = src[j] as I64;
+        if (c < 0x80 || c >= 0xC0) {
+            k += 1;
+        }
+    }
+    return k;
+}
+
+// Checks the text of string token `tk` (SPEC-04 3.8, as `cint_ref`'s string_parts): escapes
+// (C1031, C1032), `{{` and `}}`, a lone `}` (C1039), and holes: C1033 when `holes` is false,
+// C1035 for a hole without `}`. With `owner` >= 0 it appends N_TEXT and N_HOLE nodes to
+// owner's list `a` after `tail` and returns the new tail; else it returns tail.
+I64 string_pass[n, t, m, r](in U8[n] src, in scan.Token[t] toks, inout Node[m] nodes,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 tk, Bool holes, I64 owner, I64 tail) {
+    I64 line = toks[tk].line as I64;
+    I64 col = toks[tk].col as I64;
+    I64 begin = (toks[tk].start as I64) + 1;
+    if (toks[tk].kind == scan.TK_BYTES) {
+        begin += 1;
+        col += 1;
+    }
+    I64 end = (toks[tk].start as I64) + (toks[tk].len as I64) - 1;
+    I64 k = begin;
+    I64 ks = 0;
+    I64 text = -1;
+    I64 last = tail;
+    I64[2] esc;
+    while (k < end) {
+        I64 c = src[k] as I64;
+        I64 width = 1;
+        I64 span = 1;
+        if (c == 92) {
+            I64 v = scan.escape_at(src, k, end, toks[tk].kind == scan.TK_BYTES, esc);
+            if (v < 0) {
+                fail_at(diag, ps, -v, line, col + 1 + ks);
+                return last;
+            }
+            width = esc[0] - k;
+            span = esc[1];
+        } else if ((c == '{' || c == '}') && k + 1 < end && (src[k + 1] as I64) == c) {
+            width = 2;
+            span = 2;
+        } else if (c == '{') {
+            if (!holes) {
+                fail_at(diag, ps, scan.C_HOLE_PLACE, line, col + 1 + ks);
+                return last;
+            }
+            I64 close = k + 1;
+            while (close < end && src[close] != '}') {
+                close += 1;
+            }
+            if (close >= end) {
+                fail_at(diag, ps, scan.C_HOLE, line, col + 1 + ks);
+                return last;
+            }
+            if (owner >= 0) {
+                I64 h = new_node(toks, nodes, diag, ps, N_HOLE, tk, tk);
+                if (h < 0) {
+                    return last;
+                }
+                nodes[h].c = (k + 1) as I32;
+                nodes[h].d = close as I32;
+                nodes[h].e = line as I32;
+                nodes[h].f = (col + 2 + ks) as I32;
+                last = append(nodes, owner, true, last, h);
+                text = -1;
+            }
+            ks += scalars_in(src, k, close + 1);
+            k = close + 1;
+            continue;
+        } else if (c == '}') {
+            fail_at(diag, ps, scan.C_LONE_BRACE, line, col + 1 + ks);
+            return last;
+        } else {
+            width = scan.scalar_len(c);
+        }
+        if (owner >= 0) {
+            if (text < 0) {
+                text = new_node(toks, nodes, diag, ps, N_TEXT, tk, tk);
+                if (text < 0) {
+                    return last;
+                }
+                nodes[text].c = k as I32;
+                last = append(nodes, owner, true, last, text);
+            }
+            nodes[text].d = (k + width) as I32;
+        }
+        k += width;
+        ks += span;
+    }
+    return last;
+}
+
+// Adjacent string literals as one N_STRING node (SPEC-04 LS-44, LS-45), checked without holes.
+I64 string_node[n, t, m, r](in U8[n] src, inout scan.Token[t] toks, inout Node[m] nodes,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 first = cur(ps);
+    I64 x = new_node(toks, nodes, diag, ps, N_STRING, first, first);
+    if (x < 0) {
+        return -1;
+    }
+    I32 ntoken = 0;
+    while (kind_at(toks, ps, 0) == scan.TK_STRING) {
+        _ = string_pass(src, toks, nodes, diag, ps, cur(ps), false, -1, -1);
+        if (ps[0].err != 0) {
+            return -1;
+        }
+        _ = advance(toks, ps);
+        ntoken += 1;
+    }
+    nodes[x].op = ntoken;
+    return x;
+}
+
+// One string literal token, checked without holes, as an N_STRING node.
+I64 single_string[n, t, m, r](in U8[n] src, inout scan.Token[t] toks, inout Node[m] nodes,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 tk = cur(ps);
+    _ = string_pass(src, toks, nodes, diag, ps, tk, false, -1, -1);
+    if (ps[0].err != 0) {
+        return -1;
+    }
+    I64 x = new_node(toks, nodes, diag, ps, N_STRING, tk, tk);
+    if (x >= 0) {
+        nodes[x].op = 1;
+        _ = advance(toks, ps);
+    }
+    return x;
+}
+
+// Whether src[k..end) starts with `word`.
+Bool starts[n, w](in U8[n] src, I64 k, I64 end, in U8[w] word) {
+    if (k + w > end) {
+        return false;
+    }
+    for j in 0..w {
+        if (src[k + j] != word[j]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// The hole conversion `!...` at src[k..end) (`cint_ref`: bits, raw, ratio, or lanes(T) with
+// T an integer type of at most 64 bits), as the conversion + 256 * lanes class + 65536 *
+// its length, or 0 when none matches.
+I64 hole_conversion[n](in U8[n] src, I64 k, I64 end) {
+    if (starts(src, k, end, "!bits")) {
+        return (HOLE_BITS as I64) + 65536 * 5;
+    }
+    if (starts(src, k, end, "!raw")) {
+        return (HOLE_RAW as I64) + 65536 * 4;
+    }
+    if (starts(src, k, end, "!ratio")) {
+        return (HOLE_RATIO as I64) + 65536 * 6;
+    }
+    if (!starts(src, k, end, "!lanes(")) {
+        return 0;
+    }
+    I64 j = k + 7;
+    I64 close = j;
+    while (close < end && src[close] != ')') {
+        close += 1;
+    }
+    if (close >= end) {
+        return 0;
+    }
+    I32 cls = scan.ident_class(src, j, close - j) & 255;
+    if (close == j || cls < scan.IDC_I8 || (cls > scan.IDC_I64 && cls < scan.IDC_U8) || cls > scan.IDC_U64) {
+        return 0;
+    }
+    return (HOLE_LANES as I64) + 256 * (cls as I64) + 65536 * (close + 1 - k);
+}
+
+// A hole's format specification (SPEC-04 LS-202) as `cint_ref`'s fmt.parse_spec reads it,
+// in an I64[11] at these indices. The fill is the fill's scalar value or -1; the alignment,
+// the sign, the group and the kind are the byte written or 0; FS_ALT and FS_ZERO are 1 when
+// written; the width is its value or -1, and FS_WIDE is 1 when it does not fit I64; the
+// precision is 1 when written or -1 (no type B1 prints takes one); the scale is the number
+// of zeros after its `1`, or -1. An array, not a struct: main.ci numbers the records of the
+// compiler's record table (R_SIR and the rest), and a new struct here would move them.
+export const I64 FS_FILL = 0;
+export const I64 FS_ALIGN = 1;
+export const I64 FS_SIGN = 2;
+export const I64 FS_ALT = 3;
+export const I64 FS_ZERO = 4;
+export const I64 FS_WIDTH = 5;
+export const I64 FS_WIDE = 6;
+export const I64 FS_GROUP = 7;
+export const I64 FS_PRECISION = 8;
+export const I64 FS_KIND = 9;
+export const I64 FS_SCALE = 10;
+
+Bool ascii_digit(I64 c) {
+    return c >= '0' && c <= '9';
+}
+
+// Reads the specification src[k..end) into sp. False when it is malformed (C1037): a `.`
+// without digits, a scale that is not a power of ten 10 or greater, or text left over.
+// Width, precision and scale digits are ASCII.
+export Bool format_spec[n](in U8[n] src, I64 k, I64 end, inout I64[_] sp) {
+    sp[FS_FILL] = -1;
+    sp[FS_ALIGN] = 0;
+    sp[FS_SIGN] = 0;
+    sp[FS_ALT] = 0;
+    sp[FS_ZERO] = 0;
+    sp[FS_WIDTH] = -1;
+    sp[FS_WIDE] = 0;
+    sp[FS_GROUP] = 0;
+    sp[FS_PRECISION] = -1;
+    sp[FS_KIND] = 0;
+    sp[FS_SCALE] = -1;
+    I64 i = k;
+    if (i < end) {
+        I64 fl = scan.scalar_len(src[i] as I64);
+        if (i + fl < end && (src[i + fl] == '<' || src[i + fl] == '>' || src[i + fl] == '^')) {
+            sp[FS_FILL] = scan.scalar_at(src, i);
+            sp[FS_ALIGN] = src[i + fl] as I64;
+            i += fl + 1;
+        } else if (src[i] == '<' || src[i] == '>' || src[i] == '^') {
+            sp[FS_ALIGN] = src[i] as I64;
+            i += 1;
+        }
+    }
+    if (i < end && (src[i] == '+' || src[i] == '-' || src[i] == ' ')) {
+        sp[FS_SIGN] = src[i] as I64;
+        i += 1;
+    }
+    if (i < end && src[i] == '#') {
+        sp[FS_ALT] = 1;
+        i += 1;
+    }
+    if (i < end && src[i] == '0') {
+        sp[FS_ZERO] = 1;
+        i += 1;
+    }
+    I64 j = i;
+    I64 w = 0;
+    while (i < end && ascii_digit(src[i] as I64)) {
+        I64 dv = (src[i] as I64) - '0';
+        if (sp[FS_WIDE] == 0 && w <= (9223372036854775807 - dv) / 10) {
+            w = w * 10 + dv;
+        } else {
+            sp[FS_WIDE] = 1;
+        }
+        i += 1;
+    }
+    if (i > j) {
+        sp[FS_WIDTH] = w;
+    }
+    if (i < end && (src[i] == '_' || src[i] == ',')) {
+        sp[FS_GROUP] = src[i] as I64;
+        i += 1;
+    }
+    if (i < end && src[i] == '.') {
+        i += 1;
+        j = i;
+        while (i < end && ascii_digit(src[i] as I64)) {
+            i += 1;
+        }
+        if (i == j) {
+            return false;
+        }
+        sp[FS_PRECISION] = 1;
+    }
+    if (i < end && (src[i] == 'd' || src[i] == 'x' || src[i] == 'X' || src[i] == 'o' || src[i] == 'b' ||
+            src[i] == 't' || src[i] == 'c' || src[i] == 's')) {
+        sp[FS_KIND] = src[i] as I64;
+        i += 1;
+    }
+    if (i < end && src[i] == '/') {
+        i += 1;
+        j = i;
+        while (i < end && ascii_digit(src[i] as I64)) {
+            i += 1;
+        }
+        if (i - j < 2 || src[j] != '1') {
+            return false;
+        }
+        for q in j + 1..i {
+            if (src[q] != '0') {
+                return false;
+            }
+        }
+        sp[FS_SCALE] = i - j - 1;
+    }
+    return i == end;
+}
+
+// ---------------------------------------------------------------- expressions
+
+// Continues with the postfix operators of node x, in frame f.
+void to_postfix[s](inout Frame[s] st, I64 f, I64 x) {
+    st[f].state = S_POSTFIX;
+    st[f].node = x as I32;
+}
+
+// S_OPERAND: a unary expression (SPEC-04 18.6 unary_expr; with target L_POSTFIX a postfix
+// expression), then its operators up to the frame's level.
+void h_operand[n, t, m, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node[m] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 tk = cur(ps);
+    I32 kind = toks[tk].kind;
+    I32 op = op_at(toks, ps, 0);
+    if (st[f].want != L_POSTFIX && (op == scan.OP_SUB || op == scan.OP_SUB_WRAP || op == scan.OP_TILDE ||
+            op == scan.OP_BANG || is_kw(toks, ps, 0, scan.KW_TRY))) {
+        _ = advance(toks, ps);
+        I64 nt = cur(ps);
+        I32 nk = toks[nt].kind;
+        if (op == scan.OP_SUB && (nk == scan.TK_INT || nk == scan.TK_CHAR || nk == scan.TK_FRAC)) {
+            _ = advance(toks, ps);
+            I64 lit = new_node(toks, nodes, diag, ps, N_NEGLIT, tk, tk);
+            if (lit >= 0) {
+                nodes[lit].c = nt as I32;
+                to_postfix(st, f, lit);
+            }
+            return;
+        }
+        I64 u = new_node(toks, nodes, diag, ps, N_UNARY, tk, tk);
+        if (u < 0) {
+            return;
+        }
+        if (kind == scan.TK_KEYWORD) {
+            nodes[u].op = UNARY_TRY;
+        } else {
+            nodes[u].op = op;
+        }
+        st[f].state = S_UNARY;
+        st[f].node = u as I32;
+        _ = expr(toks, st, diag, ps, L_UNARY);
+        return;
+    }
+    if (op == scan.OP_INC || op == scan.OP_DEC) {
+        fail(toks, diag, ps, C_INCREMENT_EXPR, tk);
+        return;
+    }
+    I64 x = -1;
+    if (kind == scan.TK_INT || kind == scan.TK_CHAR || kind == scan.TK_FRAC) {
+        _ = advance(toks, ps);
+        x = new_node(toks, nodes, diag, ps, N_LIT, tk, tk);
+        if (x >= 0) {
+            nodes[x].op = kind;
+            if (kind == scan.TK_FRAC && class_at(toks, ps, 0) == scan.IDC_ROUND &&
+                    kind_at(toks, ps, 1) == scan.TK_IDENT) {
+                _ = advance(toks, ps);
+                nodes[x].c = advance(toks, ps) as I32;
+            }
+        }
+    } else if (kind == scan.TK_STRING) {
+        x = string_node(src, toks, nodes, diag, ps);
+    } else if (kind == scan.TK_BYTES) {
+        _ = string_pass(src, toks, nodes, diag, ps, tk, false, -1, -1);
+        if (ps[0].err != 0) {
+            return;
+        }
+        _ = advance(toks, ps);
+        x = new_node(toks, nodes, diag, ps, N_BYTES, tk, tk);
+    } else if (is_kw(toks, ps, 0, scan.KW_TRUE) || is_kw(toks, ps, 0, scan.KW_FALSE)) {
+        _ = advance(toks, ps);
+        x = new_node(toks, nodes, diag, ps, N_BOOL, tk, tk);
+        if (x >= 0 && toks[tk].sub == scan.KW_TRUE) {
+            nodes[x].op = 1;
+        }
+    } else if (kind == scan.TK_IDENT || kind == scan.TK_FIXED) {
+        _ = advance(toks, ps);
+        if (kind == scan.TK_FIXED || scalar_class(toks[tk].aux & 255)) {
+            if (is_op(toks, ps, 0, scan.OP_DOT) && kind_at(toks, ps, 1) == scan.TK_IDENT) {
+                _ = advance(toks, ps);
+                x = new_node(toks, nodes, diag, ps, N_TYPEPROP, tk, tk);
+                if (x >= 0) {
+                    nodes[x].c = advance(toks, ps) as I32;
+                }
+            } else {
+                x = new_node(toks, nodes, diag, ps, N_TYPENAME, tk, tk);
+            }
+        } else {
+            x = new_node(toks, nodes, diag, ps, N_NAME, tk, tk);
+        }
+    } else if (op == scan.OP_LPAREN) {
+        _ = advance(toks, ps);
+        st[f].state = S_PAREN;
+        st[f].e = tk as I32;
+        st[f].node = -1;
+        _ = expr(toks, st, diag, ps, L_EXPR);
+        return;
+    } else if (op == scan.OP_LBRACKET) {
+        _ = advance(toks, ps);
+        x = new_node(toks, nodes, diag, ps, N_ARRAY, tk, tk);
+        if (x < 0) {
+            return;
+        }
+        if (is_op(toks, ps, 0, scan.OP_RBRACKET)) {
+            _ = advance(toks, ps);
+        } else {
+            st[f].state = S_ARRAY;
+            st[f].node = x as I32;
+            _ = expr(toks, st, diag, ps, L_EXPR);
+            return;
+        }
+    } else if (op == scan.OP_DOT) {
+        // `.name` (SPEC-04 LS-60); a `.` with no name after it is C1050 at the token after
+        // it, where `cint_ref`'s parse_primary reports it.
+        if (kind_at(toks, ps, 1) != scan.TK_IDENT) {
+            fail(toks, diag, ps, scan.C_SYNTAX, tok_at(ps, 1));
+            return;
+        }
+        _ = advance(toks, ps);
+        x = new_node(toks, nodes, diag, ps, N_DOTNAME, advance(toks, ps), tk);
+    } else {
+        fail(toks, diag, ps, scan.C_SYNTAX, tk);
+        return;
+    }
+    if (x >= 0 && ps[0].err == 0) {
+        to_postfix(st, f, x);
+    }
+}
+
+// Continues frame f with the operators of x from level `level` up to the frame's target.
+void to_ascend[s](inout Frame[s] st, I64 f, I64 x, I32 level) {
+    st[f].state = S_ASCEND;
+    st[f].node = x as I32;
+    st[f].a = level;
+}
+
+// S_UNARY: the operand of a prefix operator has been parsed.
+void h_unary[s](inout Node[_] nodes, inout Frame[s] st, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 u = st[f].node as I64;
+    nodes[u].a = ps[0].res as I32;
+    to_ascend(st, f, u, L_CONV);
+}
+
+// Starts the next argument of the list of frame f (S_ARGS): `name = value` or a value.
+void start_arg[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 f) {
+    st[f].c = -1;
+    if (kind_at(toks, ps, 0) == scan.TK_IDENT && is_op(toks, ps, 1, scan.OP_ASSIGN)) {
+        I64 tk = advance(toks, ps);
+        _ = advance(toks, ps);
+        I64 named = new_node(toks, nodes, diag, ps, N_NAMEDARG, tk, tk);
+        if (named < 0) {
+            return;
+        }
+        st[f].c = named as I32;
+    }
+    st[f].want = 1;
+    _ = expr(toks, st, diag, ps, L_EXPR);
+}
+
+// S_ARGS: an argument list after its `(`, appended to list b of the frame's node; at the
+// `)` the frame returns the node.
+void h_args[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 owner = st[f].node as I64;
+    if (st[f].want == 1) {
+        I64 v = ps[0].res;
+        if (st[f].c >= 0) {
+            nodes[st[f].c as I64].a = v as I32;
+            v = st[f].c as I64;
+        }
+        st[f].a = append(nodes, owner, false, st[f].a as I64, v) as I32;
+        if (!is_op(toks, ps, 0, scan.OP_RPAREN) && !expect_op(toks, diag, ps, scan.OP_COMMA, scan.C_SYNTAX)) {
+            return;
+        }
+    }
+    if (is_op(toks, ps, 0, scan.OP_RPAREN)) {
+        _ = advance(toks, ps);
+        ret(ps, owner);
+        return;
+    }
+    start_arg(toks, nodes, st, diag, ps, f);
+}
+
+// Starts index (or slice) k of the index node of frame f (S_INDEX). An index that starts
+// with `..` or `..=` is a slice with no low bound (SPEC-04 18.6 `index`, LS-161; box 09).
+void start_index[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 f) {
+    I32 op = op_at(toks, ps, 0);
+    if (op == scan.OP_RANGE || op == scan.OP_RANGE_INCL) {
+        open_slice(toks, nodes, st, diag, ps, f, -1);
+        return;
+    }
+    st[f].c = 1;
+    _ = expr(toks, st, diag, ps, L_EXPR);
+}
+
+// Opens the slice of index frame f at its `..` or `..=`, after its low bound lo (-1 when
+// there is none): the slice's start is its low bound's, else the operator. A `..` before
+// `]`, `,` or `by` has no high bound, and frame f resumes in phase 3 with no sub-expression
+// pending; `..=` always takes a high bound, as `cint_ref` parses it (ref/cint_ref/parser.py
+// parse_index_item).
+void open_slice[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 f, I64 lo) {
+    I32 op = op_at(toks, ps, 0);
+    I64 tk = advance(toks, ps);
+    I64 start = tk;
+    if (lo >= 0) {
+        start = nodes[lo].start as I64;
+    }
+    I64 sl = new_node(toks, nodes, diag, ps, N_SLICE, tk, start);
+    if (sl < 0) {
+        return;
+    }
+    nodes[sl].op = op;
+    nodes[sl].a = lo as I32;
+    st[f].d = sl as I32;
+    I32 next_op = op_at(toks, ps, 0);
+    if (op == scan.OP_RANGE &&
+            (next_op == scan.OP_RBRACKET || next_op == scan.OP_COMMA || is_kw(toks, ps, 0, scan.KW_BY))) {
+        st[f].c = 3;
+        return;
+    }
+    st[f].c = 2;
+    _ = expr(toks, st, diag, ps, L_EXPR);
+}
+
+// S_INDEX: `[` index { , index } `]` with slices (SPEC-04 18.6 index_list). Phases (Frame.c):
+// 1 after a low bound or index, 2 after a high bound, 3 after the range without a high
+// bound, 4 after a step.
+void h_index[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 ix = st[f].node as I64;
+    I64 item = -1;
+    I32 phase = st[f].c;
+    if (phase == 1) {
+        I64 lo = ps[0].res;
+        I32 op = op_at(toks, ps, 0);
+        if (op == scan.OP_RANGE || op == scan.OP_RANGE_INCL) {
+            open_slice(toks, nodes, st, diag, ps, f, lo);
+            return;
+        }
+        item = lo;
+    }
+    if (phase == 2) {
+        nodes[st[f].d as I64].b = ps[0].res as I32;
+        phase = 3;
+    }
+    if (phase == 3) {
+        if (is_kw(toks, ps, 0, scan.KW_BY)) {
+            _ = advance(toks, ps);
+            st[f].c = 4;
+            _ = expr(toks, st, diag, ps, L_EXPR);
+            return;
+        }
+        item = st[f].d as I64;
+    }
+    if (phase == 4) {
+        nodes[st[f].d as I64].c = ps[0].res as I32;
+        item = st[f].d as I64;
+    }
+    st[f].a = append(nodes, ix, false, st[f].a as I64, item) as I32;
+    if (is_op(toks, ps, 0, scan.OP_COMMA)) {
+        _ = advance(toks, ps);
+        start_index(toks, nodes, st, diag, ps, f);
+        return;
+    }
+    if (!expect_op(toks, diag, ps, scan.OP_RBRACKET, scan.C_SYNTAX)) {
+        return;
+    }
+    ret(ps, ix);
+}
+
+// S_POSTFIX: calls, indexing, and member access after node x (SPEC-04 18.6 postfix_expr).
+void h_postfix[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 x = st[f].node as I64;
+    while (true) {
+        I64 tk = cur(ps);
+        I32 op = op_at(toks, ps, 0);
+        if (op == scan.OP_LPAREN) {
+            I64 call = new_node(toks, nodes, diag, ps, N_CALL, nodes[x].tok as I64, nodes[x].start as I64);
+            if (call < 0) {
+                return;
+            }
+            nodes[call].a = x as I32;
+            _ = advance(toks, ps);
+            st[f].node = call as I32;
+            _ = push(toks, st, diag, ps, S_ARGS, call, 0);
+            return;
+        }
+        if (op == scan.OP_LBRACKET) {
+            _ = advance(toks, ps);
+            I64 ix = new_node(toks, nodes, diag, ps, N_INDEX, tk, nodes[x].start as I64);
+            if (ix < 0) {
+                return;
+            }
+            nodes[ix].a = x as I32;
+            st[f].node = ix as I32;
+            if (!push(toks, st, diag, ps, S_INDEX, ix, 0)) {
+                return;
+            }
+            start_index(toks, nodes, st, diag, ps, ps[0].sp - 1);
+            return;
+        }
+        if (op == scan.OP_DOT && kind_at(toks, ps, 1) == scan.TK_IDENT) {
+            _ = advance(toks, ps);
+            I64 name = advance(toks, ps);
+            I64 fld = new_node(toks, nodes, diag, ps, N_FIELD, name, nodes[x].start as I64);
+            if (fld < 0) {
+                return;
+            }
+            nodes[fld].a = x as I32;
+            x = fld;
+            st[f].node = x as I32;
+            continue;
+        }
+        break;
+    }
+    I32 op = op_at(toks, ps, 0);
+    if ((op == scan.OP_INC || op == scan.OP_DEC) && st[f].want != L_POSTFIX) {
+        fail(toks, diag, ps, C_INCREMENT_EXPR, cur(ps));
+        return;
+    }
+    if (st[f].want == L_POSTFIX) {
+        ret(ps, x);
+        return;
+    }
+    to_ascend(st, f, x, L_CONV);
+}
+
+// S_PAREN: `(` expr `)`, or a tuple `(` expr , expr { , expr } `)`.
+void h_paren[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 open = st[f].e as I64;
+    I64 e = ps[0].res;
+    I64 tuple = st[f].node as I64;
+    if (tuple < 0 && is_op(toks, ps, 0, scan.OP_COMMA)) {
+        tuple = new_node(toks, nodes, diag, ps, N_TUPLE, open, open);
+        if (tuple < 0) {
+            return;
+        }
+        st[f].node = tuple as I32;
+    }
+    if (tuple >= 0) {
+        st[f].a = append(nodes, tuple, true, st[f].a as I64, e) as I32;
+        if (is_op(toks, ps, 0, scan.OP_COMMA)) {
+            _ = advance(toks, ps);
+            _ = expr(toks, st, diag, ps, L_EXPR);
+            return;
+        }
+        e = tuple;
+    }
+    if (!expect_op(toks, diag, ps, scan.OP_RPAREN, scan.C_SYNTAX)) {
+        return;
+    }
+    nodes[e].flags = nodes[e].flags | F_PAREN;
+    nodes[e].start = open as I32;
+    st[f].e = -1;
+    to_postfix(st, f, e);
+}
+
+// S_ARRAY: an array literal `[ [expr {, expr} [,]] ]`.
+void h_array[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 x = st[f].node as I64;
+    st[f].a = append(nodes, x, true, st[f].a as I64, ps[0].res) as I32;
+    if (is_op(toks, ps, 0, scan.OP_COMMA)) {
+        _ = advance(toks, ps);
+        if (!is_op(toks, ps, 0, scan.OP_RBRACKET)) {
+            _ = expr(toks, st, diag, ps, L_EXPR);
+            return;
+        }
+    }
+    if (!expect_op(toks, diag, ps, scan.OP_RBRACKET, scan.C_SYNTAX)) {
+        return;
+    }
+    to_postfix(st, f, x);
+}
+
+// Whether x, an operand of a shift or bitwise operator `op` at level `level`, needs
+// parentheses (SPEC-04 7.2, C2101, as `cint_ref` decides it).
+Bool needs_parens(in Node[_] nodes, I64 x, I32 level, I32 op) {
+    if (nodes[x].kind != N_BINARY || (nodes[x].flags & F_PAREN) != 0) {
+        return false;
+    }
+    if (is_arith_op(nodes[x].op)) {
+        return true;
+    }
+    return level != L_SHIFT && is_bitwise_op(nodes[x].op) && nodes[x].op != op;
+}
+
+// S_ASCEND: node x has been parsed at level Frame.a; looks for an operator of each level
+// from there up to the frame's target, and returns x when there is none.
+void h_ascend[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 x = st[f].node as I64;
+    I32 level = st[f].a;
+    I32 target = st[f].want;
+    while (level <= target) {
+        I64 tk = cur(ps);
+        I32 op = op_at(toks, ps, 0);
+        if (level == L_CONV) {
+            if (is_kw(toks, ps, 0, scan.KW_AS) || op == scan.OP_AS_WRAP || op == scan.OP_AS_SAT ||
+                    op == scan.OP_AS_TRY) {
+                _ = advance(toks, ps);
+                // `try e as T` converts the `try` (cint_ref's Try is not a unary operator).
+                if (nodes[x].kind == N_UNARY && nodes[x].op != UNARY_TRY && (nodes[x].flags & F_PAREN) == 0) {
+                    fail(toks, diag, ps, C_PARENS_REQUIRED, nodes[x].start as I64);
+                    return;
+                }
+                I64 cv = new_node(toks, nodes, diag, ps, N_CONVERT, tk, nodes[x].start as I64);
+                if (cv < 0) {
+                    return;
+                }
+                if (op == 0) {
+                    nodes[cv].op = CONV_AS;
+                } else {
+                    nodes[cv].op = op;
+                }
+                nodes[cv].a = x as I32;
+                st[f].state = S_CONVERT;
+                st[f].node = cv as I32;
+                _ = push(toks, st, diag, ps, S_TYPE, -1, 0);
+                return;
+            }
+        } else if (level >= L_MUL && level <= L_BOR) {
+            if (level_op(level, op)) {
+                _ = advance(toks, ps);
+                st[f].state = S_BINARY;
+                st[f].a = level;
+                st[f].b = x as I32;
+                st[f].c = 1;
+                st[f].e = tk as I32;
+                _ = expr(toks, st, diag, ps, level - 1);
+                return;
+            }
+        } else if (level == L_CMP) {
+            if (is_cmp_op(op)) {
+                _ = advance(toks, ps);
+                st[f].state = S_COMPARE;
+                st[f].e = tk as I32;
+                _ = expr(toks, st, diag, ps, L_BOR);
+                return;
+            }
+        } else if (level == L_AND || level == L_OR) {
+            if ((level == L_AND && op == scan.OP_AND) || (level == L_OR && op == scan.OP_OR)) {
+                _ = advance(toks, ps);
+                st[f].state = S_LOGICAL;
+                st[f].a = level;
+                st[f].b = x as I32;
+                st[f].e = tk as I32;
+                _ = expr(toks, st, diag, ps, level - 1);
+                return;
+            }
+        } else if (level == L_COND) {
+            if (op == scan.OP_QUESTION) {
+                _ = advance(toks, ps);
+                st[f].state = S_COND;
+                st[f].c = 0;
+                st[f].e = tk as I32;
+                _ = expr(toks, st, diag, ps, L_EXPR);
+                return;
+            }
+        } else if (level == L_EXPR) {
+            if (is_kw(toks, ps, 0, scan.KW_CATCH)) {
+                _ = advance(toks, ps);
+                I64 ct = new_node(toks, nodes, diag, ps, N_CATCH, tk, nodes[x].start as I64);
+                if (ct < 0) {
+                    return;
+                }
+                nodes[ct].a = x as I32;
+                st[f].state = S_CATCH;
+                st[f].node = ct as I32;
+                if (is_op(toks, ps, 0, scan.OP_LPAREN) && kind_at(toks, ps, 1) == scan.TK_IDENT &&
+                        is_op(toks, ps, 2, scan.OP_RPAREN) && is_op(toks, ps, 3, scan.OP_LBRACE)) {
+                    _ = advance(toks, ps);
+                    nodes[ct].c = advance(toks, ps) as I32;
+                    _ = advance(toks, ps);
+                    st[f].c = 1;
+                    _ = open_block(toks, nodes, st, diag, ps, K_VALUE, -1, true, false);
+                    return;
+                }
+                st[f].c = 0;
+                _ = expr(toks, st, diag, ps, L_COND);
+                return;
+            }
+        }
+        level += 1;
+    }
+    ret(ps, x);
+}
+
+// S_CONVERT: the target type of a conversion has been parsed; an optional `round MODE`.
+void h_convert[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 cv = st[f].node as I64;
+    nodes[cv].b = ps[0].res as I32;
+    if (class_at(toks, ps, 0) == scan.IDC_ROUND) {
+        _ = advance(toks, ps);
+        I64 mode = expect_ident(toks, diag, ps);
+        if (mode < 0) {
+            return;
+        }
+        nodes[cv].c = mode as I32;
+    }
+    to_ascend(st, f, cv, L_CONV);
+}
+
+// S_BINARY: the right operand of the operator at Frame.e, left Frame.node, first operand
+// of the chain Frame.b; Frame.c is 1 while the left operand is the first.
+void h_binary[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I32 level = st[f].a;
+    I64 left = st[f].node as I64;
+    I64 first = st[f].b as I64;
+    I64 right = ps[0].res;
+    I64 tk = st[f].e as I64;
+    I32 op = toks[tk].sub;
+    if (level >= L_SHIFT) {
+        if ((st[f].c == 1 && needs_parens(nodes, left, level, op)) || needs_parens(nodes, right, level, op)) {
+            fail(toks, diag, ps, C_PARENS_REQUIRED, nodes[first].start as I64);
+            return;
+        }
+    }
+    I64 bin = new_node(toks, nodes, diag, ps, N_BINARY, tk, nodes[first].start as I64);
+    if (bin < 0) {
+        return;
+    }
+    nodes[bin].op = op;
+    nodes[bin].a = left as I32;
+    nodes[bin].b = right as I32;
+    if (level_op(level, op_at(toks, ps, 0))) {
+        st[f].e = advance(toks, ps) as I32;
+        st[f].node = bin as I32;
+        st[f].c = 0;
+        _ = expr(toks, st, diag, ps, level - 1);
+        return;
+    }
+    to_ascend(st, f, bin, level + 1);
+}
+
+// S_COMPARE: the right operand of a comparison; a second comparison is C2102.
+void h_compare[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 left = st[f].node as I64;
+    I64 tk = st[f].e as I64;
+    I64 cmp = new_node(toks, nodes, diag, ps, N_COMPARE, tk, nodes[left].start as I64);
+    if (cmp < 0) {
+        return;
+    }
+    nodes[cmp].op = toks[tk].sub;
+    nodes[cmp].a = left as I32;
+    nodes[cmp].b = ps[0].res as I32;
+    if (is_cmp_op(op_at(toks, ps, 0))) {
+        fail(toks, diag, ps, C_CHAINED, nodes[left].start as I64);
+        return;
+    }
+    to_ascend(st, f, cmp, L_AND);
+}
+
+// Whether x is an unparenthesized `&&` or `||` chain of operator `other`.
+Bool other_logical(in Node[_] nodes, I64 x, I32 other) {
+    return nodes[x].kind == N_LOGICAL && nodes[x].op == other && (nodes[x].flags & F_PAREN) == 0;
+}
+
+// S_LOGICAL: the right operand of `&&` or `||`; at the end of the chain an operand that is
+// the other operator unparenthesized is C2101 at the chain's start.
+void h_logical[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I32 level = st[f].a;
+    I64 left = st[f].node as I64;
+    I64 first = st[f].b as I64;
+    I64 tk = st[f].e as I64;
+    I32 op = toks[tk].sub;
+    I64 lg = new_node(toks, nodes, diag, ps, N_LOGICAL, tk, nodes[first].start as I64);
+    if (lg < 0) {
+        return;
+    }
+    nodes[lg].op = op;
+    nodes[lg].a = left as I32;
+    nodes[lg].b = ps[0].res as I32;
+    if (op_at(toks, ps, 0) == op) {
+        st[f].e = advance(toks, ps) as I32;
+        st[f].node = lg as I32;
+        _ = expr(toks, st, diag, ps, level - 1);
+        return;
+    }
+    I32 other = scan.OP_AND;
+    if (op == scan.OP_AND) {
+        other = scan.OP_OR;
+    }
+    I64 e = lg;
+    while (nodes[e].kind == N_LOGICAL && nodes[e].op == op && (nodes[e].flags & F_PAREN) == 0) {
+        if (other_logical(nodes, nodes[e].b as I64, other)) {
+            fail(toks, diag, ps, C_PARENS_REQUIRED, nodes[first].start as I64);
+            return;
+        }
+        e = nodes[e].a as I64;
+    }
+    if (other_logical(nodes, e, other)) {
+        fail(toks, diag, ps, C_PARENS_REQUIRED, nodes[first].start as I64);
+        return;
+    }
+    to_ascend(st, f, lg, level + 1);
+}
+
+// S_COND: `c ? a : b`; Frame.c is 0 after `a` and 1 after `b`; the condition is Frame.node.
+void h_cond[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    if (st[f].c == 0) {
+        st[f].b = ps[0].res as I32;
+        if (!expect_op(toks, diag, ps, scan.OP_COLON, scan.C_SYNTAX)) {
+            return;
+        }
+        st[f].c = 1;
+        _ = expr(toks, st, diag, ps, L_COND);
+        return;
+    }
+    I64 c = st[f].node as I64;
+    I64 q = new_node(toks, nodes, diag, ps, N_COND, st[f].e as I64, nodes[c].start as I64);
+    if (q < 0) {
+        return;
+    }
+    nodes[q].a = c as I32;
+    nodes[q].b = st[f].b;
+    nodes[q].c = ps[0].res as I32;
+    to_ascend(st, f, q, L_EXPR);
+}
+
+// S_CATCH: the handler of `catch` has been parsed.
+void h_catch(inout Node[_] nodes, inout Frame[_] st, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 ct = st[f].node as I64;
+    nodes[ct].b = ps[0].res as I32;
+    to_ascend(st, f, ct, L_EXPR + 1);
+}
+
+// ---------------------------------------------------------------- types
+
+// Returns type node ty from frame f, after its shape if one follows (SPEC-04 18.4).
+void shape_or_done[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 f, I64 ty) {
+    if (!is_op(toks, ps, 0, scan.OP_LBRACKET)) {
+        ret(ps, ty);
+        return;
+    }
+    I64 tk = advance(toks, ps);
+    I64 shape = new_node(toks, nodes, diag, ps, N_SHAPE, tk, tk);
+    if (shape < 0) {
+        return;
+    }
+    nodes[ty].a = shape as I32;
+    if (is_op(toks, ps, 0, scan.OP_RBRACKET)) {
+        // `T[]` is `T[_]` (`cint_ref` parse_shape): one N_WILD extent, at the `]`.
+        I64 rb = advance(toks, ps);
+        I64 wild = new_node(toks, nodes, diag, ps, N_WILD, rb, rb);
+        if (wild < 0) {
+            return;
+        }
+        nodes[shape].a = wild as I32;
+        ret(ps, ty);
+        return;
+    }
+    st[f].state = S_SHAPE;
+    st[f].node = ty as I32;
+    st[f].b = shape as I32;
+    extents(toks, nodes, st, diag, ps, f, -1);
+}
+
+// Extents of the shape of frame f (`_`, or an expression with an optional range): appends
+// x when it is >= 0, then starts the next extent after a `,` (an expression leaves the
+// frame waiting with Frame.c 1), or ends the shape at `]` and returns the type.
+void extents[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 f, I64 x) {
+    I64 item = x;
+    while (true) {
+        if (item >= 0) {
+            st[f].a = append(nodes, st[f].b as I64, true, st[f].a as I64, item) as I32;
+            if (!is_op(toks, ps, 0, scan.OP_COMMA)) {
+                break;
+            }
+            _ = advance(toks, ps);
+        }
+        if (class_at(toks, ps, 0) == scan.IDC_UNDERSCORE &&
+                (is_op(toks, ps, 1, scan.OP_RBRACKET) || is_op(toks, ps, 1, scan.OP_COMMA))) {
+            I64 tk = advance(toks, ps);
+            item = new_node(toks, nodes, diag, ps, N_WILD, tk, tk);
+            if (item < 0) {
+                return;
+            }
+            continue;
+        }
+        st[f].c = 1;
+        _ = expr(toks, st, diag, ps, L_EXPR);
+        return;
+    }
+    if (!expect_op(toks, diag, ps, scan.OP_RBRACKET, scan.C_SYNTAX)) {
+        return;
+    }
+    ret(ps, st[f].node as I64);
+}
+
+// S_SHAPE: Frame.node the type, Frame.b the shape, Frame.a the last extent; Frame.c is 1
+// after an extent's expression and 2 after a range's high bound (Frame.d the range).
+void h_shape[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 e = ps[0].res;
+    if (st[f].c == 1) {
+        I32 op = op_at(toks, ps, 0);
+        if (op == scan.OP_RANGE || op == scan.OP_RANGE_INCL) {
+            I64 tk = advance(toks, ps);
+            I64 rg = new_node(toks, nodes, diag, ps, N_RANGE, tk, nodes[e].start as I64);
+            if (rg < 0) {
+                return;
+            }
+            nodes[rg].op = op;
+            nodes[rg].a = e as I32;
+            st[f].d = rg as I32;
+            st[f].c = 2;
+            _ = expr(toks, st, diag, ps, L_EXPR);
+            return;
+        }
+        extents(toks, nodes, st, diag, ps, f, e);
+        return;
+    }
+    I64 rg = st[f].d as I64;
+    nodes[rg].b = e as I32;
+    extents(toks, nodes, st, diag, ps, f, rg);
+}
+
+// S_TYPE: a type (SPEC-04 18.4; `cint_ref`'s parse_type, with the forms it refuses).
+void h_type[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 tk = cur(ps);
+    I32 kind = toks[tk].kind;
+    if (kind == scan.TK_OP && toks[tk].sub == scan.OP_LPAREN) {
+        _ = advance(toks, ps);
+        I64 tt = new_node(toks, nodes, diag, ps, N_TUPLE_TYPE, tk, tk);
+        if (tt < 0) {
+            return;
+        }
+        st[f].state = S_TUPLE_TYPE;
+        st[f].node = tt as I32;
+        _ = push(toks, st, diag, ps, S_TYPE, -1, 0);
+        return;
+    }
+    if (kind != scan.TK_IDENT && kind != scan.TK_FIXED) {
+        fail(toks, diag, ps, scan.C_SYNTAX, tk);
+        return;
+    }
+    _ = advance(toks, ps);
+    I64 ty = new_node(toks, nodes, diag, ps, N_TYPE, tk, tk);
+    if (ty < 0) {
+        return;
+    }
+    nodes[ty].op = 1;
+    I32 cls = toks[tk].aux & 255;
+    if (kind == scan.TK_IDENT && cls >= scan.IDC_ARENA && cls <= scan.IDC_HANDLE &&
+            is_op(toks, ps, 0, scan.OP_LPAREN)) {
+        _ = advance(toks, ps);
+        st[f].state = S_TYPE_INNER;
+        st[f].node = ty as I32;
+        _ = push(toks, st, diag, ps, S_TYPE, -1, 0);
+        return;
+    }
+    if (kind == scan.TK_IDENT && !scalar_class(cls)) {
+        while (is_op(toks, ps, 0, scan.OP_DOT)) {
+            _ = advance(toks, ps);
+            I64 name = expect_ident(toks, diag, ps);
+            if (name < 0) {
+                return;
+            }
+            nodes[ty].tok = name as I32;
+            nodes[ty].op += 1;
+        }
+    }
+    shape_or_done(toks, nodes, st, diag, ps, f, ty);
+}
+
+// S_TYPE_INNER: the T of Arena(T), Pool(T) or Handle(T), then (Frame.a 1) the capacity of
+// `Arena(T, capacity)` or `Pool(T, capacity)`, an expression (`cint_ref`'s
+// parse_memory_type, box 12).
+void h_type_inner[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 ty = st[f].node as I64;
+    if (st[f].a == 1) {
+        nodes[ty].c = ps[0].res as I32;
+    } else {
+        nodes[ty].b = ps[0].res as I32;
+        I32 cls = toks[nodes[ty].tok as I64].aux & 255;
+        if (cls != scan.IDC_HANDLE && is_op(toks, ps, 0, scan.OP_COMMA)) {
+            _ = advance(toks, ps);
+            st[f].a = 1;
+            _ = expr(toks, st, diag, ps, L_EXPR);
+            return;
+        }
+    }
+    if (!expect_op(toks, diag, ps, scan.OP_RPAREN, scan.C_SYNTAX)) {
+        return;
+    }
+    st[f].a = -1;
+    shape_or_done(toks, nodes, st, diag, ps, f, ty);
+}
+
+// S_TUPLE_TYPE: `(` type `,` type { `,` type } `)`.
+void h_tuple_type[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 tt = st[f].node as I64;
+    st[f].a = append(nodes, tt, true, st[f].a as I64, ps[0].res) as I32;
+    if (is_op(toks, ps, 0, scan.OP_COMMA)) {
+        _ = advance(toks, ps);
+        _ = push(toks, st, diag, ps, S_TYPE, -1, 0);
+        return;
+    }
+    if (!expect_op(toks, diag, ps, scan.OP_RPAREN, scan.C_SYNTAX)) {
+        return;
+    }
+    ret(ps, tt);
+}
+
+// ---------------------------------------------------------------- blocks and statements
+
+// Opens the block at the current `{` (the caller has checked it): C9004 beyond NESTING_MAX
+// counted blocks (function and test bodies are not counted). Returns the N_BLOCK node; at
+// its `}` the frame continues as `cont` says.
+I64 open_block[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I32 cont, I64 owner, Bool counted, Bool link) {
+    I64 tk = cur(ps);
+    I64 depth = ps[0].blocks;
+    if (counted) {
+        depth += 1;
+    }
+    if (depth > limits.NESTING_MAX) {
+        fail(toks, diag, ps, limits.C_NESTING, tk);
+        return -1;
+    }
+    I64 blk = new_node(toks, nodes, diag, ps, N_BLOCK, tk, tk);
+    if (blk < 0) {
+        return -1;
+    }
+    _ = advance(toks, ps);
+    if (link) {
+        link_stmt(nodes, st, ps, blk);
+    }
+    if (!push(toks, st, diag, ps, S_BLOCK, blk, 0)) {
+        return -1;
+    }
+    I64 f = ps[0].sp - 1;
+    st[f].b = cont;
+    st[f].c = owner as I32;
+    st[f].d = ps[0].blocks as I32;
+    ps[0].blocks = depth;
+    return blk;
+}
+
+// A body that must be a block (SPEC-04 8.2 to 8.4): `;` is C1040, anything else but `{` is
+// `code` (C1043). Returns the block, or -1.
+I64 body[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 code, I32 cont, I64 owner) {
+    if (is_op(toks, ps, 0, scan.OP_SEMI)) {
+        fail(toks, diag, ps, C_EMPTY_STATEMENT, cur(ps));
+        return -1;
+    }
+    if (!is_op(toks, ps, 0, scan.OP_LBRACE)) {
+        fail(toks, diag, ps, code, cur(ps));
+        return -1;
+    }
+    return open_block(toks, nodes, st, diag, ps, cont, owner, true, false);
+}
+
+// The `(` of a condition; then the condition is parsed by a frame above the caller's.
+Bool condition[t, s, r](inout scan.Token[t] toks, inout Frame[s] st, inout limits.CompilerDiag[r] diag,
+        inout PState[_] ps) {
+    if (!is_op(toks, ps, 0, scan.OP_LPAREN)) {
+        fail(toks, diag, ps, C_BRACES, cur(ps));
+        return false;
+    }
+    _ = advance(toks, ps);
+    return expr(toks, st, diag, ps, L_EXPR);
+}
+
+// After a condition: `=` is C1041 at the condition's start; then `)` (C1043).
+Bool condition_end[t, r](inout scan.Token[t] toks, inout Node[_] nodes, inout limits.CompilerDiag[r] diag,
+        inout PState[_] ps, I64 cond) {
+    if (is_op(toks, ps, 0, scan.OP_ASSIGN)) {
+        fail(toks, diag, ps, C_ASSIGN_IN_CONDITION, nodes[cond].start as I64);
+        return false;
+    }
+    return expect_op(toks, diag, ps, scan.OP_RPAREN, C_BRACES);
+}
+
+// A simple statement (SPEC-04 18.5 simple_stmt, `cint_ref`'s parse_simple) into node x,
+// created by the caller; the S_SIMPLE frame returns it.
+void simple[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 x) {
+    I64 k = place_ahead(toks, ps);
+    I32 after = 0;
+    if (k > 0) {
+        after = op_at(toks, ps, k);
+    }
+    if (!push(toks, st, diag, ps, S_SIMPLE, x, 0)) {
+        return;
+    }
+    if (k > 0 && (is_assign_op(after) || after == scan.OP_INC || after == scan.OP_DEC)) {
+        st[ps[0].sp - 1].c = 0;
+        _ = push(toks, st, diag, ps, S_OPERAND, -1, L_POSTFIX);
+        return;
+    }
+    st[ps[0].sp - 1].c = 2;
+    _ = expr(toks, st, diag, ps, L_EXPR);
+}
+
+// A new node for a simple statement at the current token.
+I64 simple_node[t, r](in scan.Token[t] toks, inout Node[_] nodes, inout limits.CompilerDiag[r] diag,
+        inout PState[_] ps) {
+    return new_node(toks, nodes, diag, ps, N_EXPR_STMT, cur(ps), cur(ps));
+}
+
+// S_SIMPLE: Frame.c 0 after an assignment target, 1 after the value, 2 after an expression.
+void h_simple[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 x = st[f].node as I64;
+    I64 v = ps[0].res;
+    if (st[f].c == 0) {
+        nodes[x].a = v as I32;
+        I64 tk = advance(toks, ps);
+        nodes[x].tok = tk as I32;
+        nodes[x].op = toks[tk].sub;
+        if (toks[tk].sub == scan.OP_INC || toks[tk].sub == scan.OP_DEC) {
+            nodes[x].kind = N_INCDEC;
+            ret(ps, x);
+            return;
+        }
+        nodes[x].kind = N_ASSIGN;
+        st[f].c = 1;
+        _ = expr(toks, st, diag, ps, L_EXPR);
+        return;
+    }
+    if (st[f].c == 1) {
+        nodes[x].b = v as I32;
+        ret(ps, x);
+        return;
+    }
+    I32 op = op_at(toks, ps, 0);
+    if (is_assign_op(op)) {
+        if (nodes[v].kind == N_TUPLE && op == scan.OP_ASSIGN) {
+            nodes[x].kind = N_ASSIGN;
+            nodes[x].a = v as I32;
+            nodes[x].op = op;
+            nodes[x].tok = advance(toks, ps) as I32;
+            st[f].c = 1;
+            _ = expr(toks, st, diag, ps, L_EXPR);
+            return;
+        }
+        fail(toks, diag, ps, C_NOT_PLACE, nodes[v].start as I64);
+        return;
+    }
+    Bool call = nodes[v].kind == N_CALL;
+    if (nodes[v].kind == N_UNARY && nodes[v].op == UNARY_TRY && nodes[nodes[v].a as I64].kind == N_CALL) {
+        call = true;
+    }
+    if (!call) {
+        fail(toks, diag, ps, C_STATEMENT_FORM, nodes[v].start as I64);
+        return;
+    }
+    nodes[x].a = v as I32;
+    nodes[x].tok = nodes[v].start;
+    nodes[x].start = nodes[v].start;
+    ret(ps, x);
+}
+
+// S_SEMI: the `;` after a simple statement or a print statement.
+void h_semi[t, r](inout scan.Token[t] toks, inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    if (expect_op(toks, diag, ps, scan.OP_SEMI, scan.C_SYNTAX)) {
+        ps[0].sp -= 1;
+    }
+}
+
+// S_TAIL: field a of Frame.node (field b when Frame.c is 1) gets the expression just
+// parsed, then `;`.
+void h_tail[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    if (st[f].c == 1) {
+        nodes[st[f].node as I64].b = ps[0].res as I32;
+    } else {
+        nodes[st[f].node as I64].a = ps[0].res as I32;
+    }
+    if (expect_op(toks, diag, ps, scan.OP_SEMI, scan.C_SYNTAX)) {
+        ret(ps, st[f].node as I64);
+    }
+}
+
+// A declaration `type IDENT [= expr] ;` (mode 0), `const type IDENT = expr ;` (mode 1), the
+// `type IDENT = expr` of a C-form `for` (mode 2), or `(in|inout) type IDENT = expr ;`
+// (mode 3); the caller has consumed `const`, `in` or `inout`. The S_VAR frame returns it.
+I64 var_decl[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 start, I32 mode, Bool link) {
+    I64 vd = new_node(toks, nodes, diag, ps, N_VAR, start, start);
+    if (vd < 0) {
+        return -1;
+    }
+    if (link) {
+        link_stmt(nodes, st, ps, vd);
+    }
+    if (push(toks, st, diag, ps, S_VAR, vd, mode)) {
+        st[ps[0].sp - 1].c = 0;
+        _ = push(toks, st, diag, ps, S_TYPE, -1, 0);
+    }
+    return vd;
+}
+
+// S_VAR: Frame.c 0 after the type, 1 after the initializer.
+void h_var[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 vd = st[f].node as I64;
+    I32 mode = st[f].want;
+    if (st[f].c == 0) {
+        nodes[vd].a = ps[0].res as I32;
+        I64 name = decl_name(toks, diag, ps);
+        if (name < 0) {
+            return;
+        }
+        nodes[vd].tok = name as I32;
+        if (mode != 0 && !is_op(toks, ps, 0, scan.OP_ASSIGN)) {
+            fail(toks, diag, ps, scan.C_SYNTAX, cur(ps));
+            return;
+        }
+        if (is_op(toks, ps, 0, scan.OP_ASSIGN)) {
+            _ = advance(toks, ps);
+            st[f].c = 1;
+            _ = expr(toks, st, diag, ps, L_EXPR);
+            return;
+        }
+    } else {
+        nodes[vd].b = ps[0].res as I32;
+    }
+    if (mode == 2 || expect_op(toks, diag, ps, scan.OP_SEMI, scan.C_SYNTAX)) {
+        ret(ps, vd);
+    }
+}
+
+// The statements that begin with a keyword `if`, `while`, `do`, or `for`, after an
+// optional label at token `label` (-1 for none).
+void loop_or_if[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 label) {
+    I64 kw = advance(toks, ps);
+    I64 start = kw;
+    if (label >= 0) {
+        start = label;
+    }
+    I32 which = toks[kw].sub;
+    if (which == scan.KW_IF) {
+        I64 ifn = new_node(toks, nodes, diag, ps, N_IF, kw, kw);
+        I64 arm = new_node(toks, nodes, diag, ps, N_ARM, kw, kw);
+        if (arm < 0) {
+            return;
+        }
+        nodes[ifn].a = arm as I32;
+        nodes[ifn].c = arm as I32;
+        link_stmt(nodes, st, ps, ifn);
+        if (push(toks, st, diag, ps, S_IF, ifn, 0)) {
+            st[ps[0].sp - 1].a = arm as I32;
+            _ = condition(toks, st, diag, ps);
+        }
+        return;
+    }
+    if (which == scan.KW_WHILE) {
+        I64 w = new_node(toks, nodes, diag, ps, N_WHILE, kw, start);
+        if (w < 0) {
+            return;
+        }
+        link_stmt(nodes, st, ps, w);
+        if (push(toks, st, diag, ps, S_WHILE, w, 0)) {
+            _ = condition(toks, st, diag, ps);
+        }
+        return;
+    }
+    if (which == scan.KW_DO) {
+        I64 d = new_node(toks, nodes, diag, ps, N_DO, kw, start);
+        if (d < 0) {
+            return;
+        }
+        link_stmt(nodes, st, ps, d);
+        nodes[d].b = body(toks, nodes, st, diag, ps, C_BRACES, K_DO, d) as I32;
+        return;
+    }
+    if (is_op(toks, ps, 0, scan.OP_LPAREN)) {
+        _ = advance(toks, ps);
+        I64 fr = new_node(toks, nodes, diag, ps, N_FOR, kw, start);
+        if (fr < 0) {
+            return;
+        }
+        link_stmt(nodes, st, ps, fr);
+        if (!push(toks, st, diag, ps, S_FOR, fr, 0)) {
+            return;
+        }
+        st[ps[0].sp - 1].c = 0;
+        if (is_decl_ahead(toks, ps, 0)) {
+            _ = var_decl(toks, nodes, st, diag, ps, cur(ps), 2, false);
+        } else {
+            I64 x = simple_node(toks, nodes, diag, ps);
+            if (x >= 0) {
+                simple(toks, nodes, st, diag, ps, x);
+            }
+        }
+        return;
+    }
+    I64 v = decl_name(toks, diag, ps);
+    if (v < 0) {
+        return;
+    }
+    I64 fr = new_node(toks, nodes, diag, ps, N_FOR_RANGE, kw, start);
+    I64 b1 = new_node(toks, nodes, diag, ps, N_BIND, v, v);
+    if (b1 < 0) {
+        return;
+    }
+    nodes[fr].a = b1 as I32;
+    link_stmt(nodes, st, ps, fr);
+    if (is_op(toks, ps, 0, scan.OP_COMMA)) {
+        _ = advance(toks, ps);
+        I64 v2 = decl_name(toks, diag, ps);
+        if (v2 < 0) {
+            return;
+        }
+        nodes[fr].b = new_node(toks, nodes, diag, ps, N_BIND, v2, v2) as I32;
+    }
+    if (!is_kw(toks, ps, 0, scan.KW_IN)) {
+        fail(toks, diag, ps, scan.C_SYNTAX, cur(ps));
+        return;
+    }
+    _ = advance(toks, ps);
+    if (push(toks, st, diag, ps, S_FOR_RANGE, fr, 0)) {
+        st[ps[0].sp - 1].c = 0;
+        _ = expr(toks, st, diag, ps, L_EXPR);
+    }
+}
+
+// S_IF: the condition of arm Frame.a; then its body, which continues the chain (K_IF).
+void h_if[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 ifn = st[f].node as I64;
+    I64 arm = st[f].a as I64;
+    I64 cond = ps[0].res;
+    nodes[arm].a = cond as I32;
+    if (!condition_end(toks, nodes, diag, ps, cond)) {
+        return;
+    }
+    ps[0].sp -= 1;
+    nodes[arm].b = body(toks, nodes, st, diag, ps, C_BRACES, K_IF, ifn) as I32;
+}
+
+// After the block of an arm of N_IF `ifn`: `else if` adds an arm, `else` the else block.
+void after_arm[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 ifn) {
+    if (!is_kw(toks, ps, 0, scan.KW_ELSE)) {
+        return;
+    }
+    _ = advance(toks, ps);
+    if (is_kw(toks, ps, 0, scan.KW_IF)) {
+        I64 kw = advance(toks, ps);
+        I64 arm = new_node(toks, nodes, diag, ps, N_ARM, kw, kw);
+        if (arm < 0) {
+            return;
+        }
+        nodes[nodes[ifn].c as I64].next = arm as I32;
+        nodes[ifn].c = arm as I32;
+        if (push(toks, st, diag, ps, S_IF, ifn, 0)) {
+            st[ps[0].sp - 1].a = arm as I32;
+            _ = condition(toks, st, diag, ps);
+        }
+        return;
+    }
+    nodes[ifn].b = body(toks, nodes, st, diag, ps, C_BRACES, K_PLAIN, -1) as I32;
+}
+
+// After the block of `do`: `while ( expr ) ;`.
+void after_do[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 d) {
+    if (!expect_kw(toks, diag, ps, scan.KW_WHILE)) {
+        return;
+    }
+    if (push(toks, st, diag, ps, S_DO, d, 0)) {
+        _ = condition(toks, st, diag, ps);
+    }
+}
+
+// S_DO: the condition of `do ... while`.
+void h_do[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 cond = ps[0].res;
+    nodes[st[f].node as I64].a = cond as I32;
+    if (condition_end(toks, nodes, diag, ps, cond) && expect_op(toks, diag, ps, scan.OP_SEMI, scan.C_SYNTAX)) {
+        ps[0].sp -= 1;
+    }
+}
+
+// S_WHILE: the condition; then the body.
+void h_while[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 w = st[f].node as I64;
+    I64 cond = ps[0].res;
+    nodes[w].a = cond as I32;
+    if (!condition_end(toks, nodes, diag, ps, cond)) {
+        return;
+    }
+    ps[0].sp -= 1;
+    nodes[w].b = body(toks, nodes, st, diag, ps, C_BRACES, K_PLAIN, -1) as I32;
+}
+
+// S_FOR: the C form; Frame.c 0 after the initializer, 1 after the condition, 2 after the update.
+void h_for[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 fr = st[f].node as I64;
+    I64 v = ps[0].res;
+    if (st[f].c == 0) {
+        nodes[fr].a = v as I32;
+        if (!expect_op(toks, diag, ps, scan.OP_SEMI, scan.C_SYNTAX)) {
+            return;
+        }
+        st[f].c = 1;
+        _ = expr(toks, st, diag, ps, L_EXPR);
+        return;
+    }
+    if (st[f].c == 1) {
+        nodes[fr].b = v as I32;
+        if (is_op(toks, ps, 0, scan.OP_ASSIGN)) {
+            fail(toks, diag, ps, C_ASSIGN_IN_CONDITION, nodes[v].start as I64);
+            return;
+        }
+        if (!expect_op(toks, diag, ps, scan.OP_SEMI, scan.C_SYNTAX)) {
+            return;
+        }
+        st[f].c = 2;
+        I64 x = simple_node(toks, nodes, diag, ps);
+        if (x >= 0) {
+            simple(toks, nodes, st, diag, ps, x);
+        }
+        return;
+    }
+    nodes[fr].c = v as I32;
+    if (!expect_op(toks, diag, ps, scan.OP_RPAREN, scan.C_SYNTAX)) {
+        return;
+    }
+    ps[0].sp -= 1;
+    nodes[fr].d = body(toks, nodes, st, diag, ps, C_BRACES, K_PLAIN, -1) as I32;
+}
+
+// S_FOR_RANGE: Frame.c 0 after the low bound (or iterated expression), 1 after the high
+// bound, 2 after the step.
+void h_for_range[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 fr = st[f].node as I64;
+    I64 v = ps[0].res;
+    I32 phase = st[f].c;
+    if (phase == 0) {
+        nodes[fr].c = v as I32;
+        I32 op = op_at(toks, ps, 0);
+        if (op == scan.OP_RANGE || op == scan.OP_RANGE_INCL) {
+            _ = advance(toks, ps);
+            nodes[fr].op = op;
+            st[f].c = 1;
+            _ = expr(toks, st, diag, ps, L_EXPR);
+            return;
+        }
+    } else if (phase == 1) {
+        nodes[fr].d = v as I32;
+        if (is_kw(toks, ps, 0, scan.KW_BY)) {
+            _ = advance(toks, ps);
+            st[f].c = 2;
+            _ = expr(toks, st, diag, ps, L_EXPR);
+            return;
+        }
+    } else {
+        nodes[fr].e = v as I32;
+    }
+    ps[0].sp -= 1;
+    nodes[fr].f = body(toks, nodes, st, diag, ps, C_BRACES, K_PLAIN, -1) as I32;
+}
+
+// S_SWITCH (SPEC-04 8.5, `cint_ref`'s parse_switch). Frame.want is the phase: 0 after
+// the scrutinee, 1 between clauses or in a case body (Frame.a the current case or -1,
+// Frame.c its last statement), 2 after a case item, 3 after the high bound of a case range
+// (Frame.d the range). Frame.b is the last case and Frame.e 1 once `default` is seen.
+void h_switch[n, t, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 sw = st[f].node as I64;
+    I32 phase = st[f].want;
+    if (phase == 0) {
+        nodes[sw].a = ps[0].res as I32;
+        if (!expect_op(toks, diag, ps, scan.OP_RPAREN, scan.C_SYNTAX) ||
+                !expect_op(toks, diag, ps, scan.OP_LBRACE, scan.C_SYNTAX)) {
+            return;
+        }
+        st[f].want = 1;
+        st[f].e = 0;
+        return;
+    }
+    if (phase == 2 || phase == 3) {
+        I64 cs = st[f].a as I64;
+        I64 item = ps[0].res;
+        if (phase == 2) {
+            I32 op = op_at(toks, ps, 0);
+            if (op == scan.OP_RANGE) {
+                fail(toks, diag, ps, C_HALF_OPEN_CASE, nodes[item].start as I64);
+                return;
+            }
+            if (op == scan.OP_RANGE_INCL) {
+                I64 tk = advance(toks, ps);
+                I64 rg = new_node(toks, nodes, diag, ps, N_RANGE, tk, nodes[item].start as I64);
+                if (rg < 0) {
+                    return;
+                }
+                nodes[rg].op = op;
+                nodes[rg].a = item as I32;
+                st[f].d = rg as I32;
+                st[f].want = 3;
+                _ = expr(toks, st, diag, ps, L_OR);
+                return;
+            }
+        } else {
+            item = st[f].d as I64;
+            nodes[item].b = ps[0].res as I32;
+        }
+        nodes[cs].c = append(nodes, cs, true, nodes[cs].c as I64, item) as I32;
+        if (is_op(toks, ps, 0, scan.OP_COMMA)) {
+            _ = advance(toks, ps);
+            st[f].want = 2;
+            _ = expr(toks, st, diag, ps, L_OR);
+            return;
+        }
+        if (!expect_op(toks, diag, ps, scan.OP_COLON, scan.C_SYNTAX)) {
+            return;
+        }
+        st[f].want = 1;
+        st[f].c = -1;
+        return;
+    }
+    Bool clause_end = is_kw(toks, ps, 0, scan.KW_CASE) || is_kw(toks, ps, 0, scan.KW_DEFAULT) ||
+        is_op(toks, ps, 0, scan.OP_RBRACE);
+    if (st[f].a >= 0) {
+        if (!clause_end) {
+            if (kind_at(toks, ps, 0) == scan.TK_EOF) {
+                fail(toks, diag, ps, scan.C_SYNTAX, cur(ps));
+                return;
+            }
+            statement(src, toks, nodes, st, diag, ps);
+            return;
+        }
+        if (st[f].c < 0) {
+            fail(toks, diag, ps, C_EMPTY_CASE, nodes[st[f].a as I64].tok as I64);
+            return;
+        }
+        st[f].a = -1;
+    }
+    I64 tk = cur(ps);
+    if (is_op(toks, ps, 0, scan.OP_RBRACE)) {
+        _ = advance(toks, ps);
+        ps[0].sp -= 1;
+        return;
+    }
+    Bool is_case = is_kw(toks, ps, 0, scan.KW_CASE);
+    if (!is_case && !is_kw(toks, ps, 0, scan.KW_DEFAULT)) {
+        fail(toks, diag, ps, scan.C_SYNTAX, tk);
+        return;
+    }
+    if (st[f].e == 1) {
+        fail(toks, diag, ps, C_DEFAULT_PLACE, tk);
+        return;
+    }
+    _ = advance(toks, ps);
+    I64 cs = new_node(toks, nodes, diag, ps, N_CASE, tk, tk);
+    if (cs < 0) {
+        return;
+    }
+    st[f].b = append(nodes, sw, false, st[f].b as I64, cs) as I32;
+    st[f].a = cs as I32;
+    st[f].c = -1;
+    if (is_case) {
+        st[f].want = 2;
+        _ = expr(toks, st, diag, ps, L_OR);
+        return;
+    }
+    nodes[cs].flags = F_DEFAULT;
+    st[f].e = 1;
+    _ = expect_op(toks, diag, ps, scan.OP_COLON, scan.C_SYNTAX);
+}
+
+// S_ASSERT: `assert ( expr [, STRING {STRING}] ) ;`; Frame.c 0 after the condition, 1 after
+// the message.
+void h_assert[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 x = st[f].node as I64;
+    if (st[f].c == 0) {
+        nodes[x].a = ps[0].res as I32;
+        if (is_op(toks, ps, 0, scan.OP_COMMA)) {
+            _ = advance(toks, ps);
+            if (kind_at(toks, ps, 0) != scan.TK_STRING) {
+                fail(toks, diag, ps, scan.C_SYNTAX, cur(ps));
+                return;
+            }
+            I64 msg = new_node(toks, nodes, diag, ps, N_MESSAGE, cur(ps), cur(ps));
+            if (msg < 0) {
+                return;
+            }
+            nodes[x].b = msg as I32;
+            st[f].c = 1;
+            _ = push(toks, st, diag, ps, S_STRINGS, msg, 0);
+            return;
+        }
+    }
+    if (expect_op(toks, diag, ps, scan.OP_RPAREN, scan.C_SYNTAX) &&
+            expect_op(toks, diag, ps, scan.OP_SEMI, scan.C_SYNTAX)) {
+        ret(ps, x);
+    }
+}
+
+// S_STATIC_ASSERT: `static_assert ( expr [, STRING] ) ;` after the condition.
+void h_static_assert[n, t, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node[_] nodes,
+        inout Frame[s] st, inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 x = st[f].node as I64;
+    nodes[x].a = ps[0].res as I32;
+    if (is_op(toks, ps, 0, scan.OP_COMMA)) {
+        _ = advance(toks, ps);
+        if (kind_at(toks, ps, 0) != scan.TK_STRING) {
+            fail(toks, diag, ps, scan.C_SYNTAX, cur(ps));
+            return;
+        }
+        I64 msg = single_string(src, toks, nodes, diag, ps);
+        if (msg < 0) {
+            return;
+        }
+        nodes[x].b = msg as I32;
+    }
+    if (expect_op(toks, diag, ps, scan.OP_RPAREN, scan.C_SYNTAX) &&
+            expect_op(toks, diag, ps, scan.OP_SEMI, scan.C_SYNTAX)) {
+        ret(ps, x);
+    }
+}
+
+// S_STRINGS: adjacent string literals with holes, as the parts (list a) of Frame.node
+// (N_PRINT or N_MESSAGE). Frame.want 0: before the next string token; 1: walking the
+// parts of the current token from Frame.c; 2: after a hole's expression (Frame.b the hole,
+// Frame.d and Frame.e the saved cursor and stream end). Frame.a is the last part.
+void h_strings[n, t, m, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node[m] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 owner = st[f].node as I64;
+    if (st[f].want == 2) {
+        if (!hole_done(src, toks, nodes, st, diag, ps, f)) {
+            return;
+        }
+        st[f].want = 1;
+    }
+    if (st[f].want == 0) {
+        if (kind_at(toks, ps, 0) != scan.TK_STRING) {
+            ret(ps, owner);
+            return;
+        }
+        I64 tk = cur(ps);
+        I64 before = st[f].a as I64;
+        I64 last = string_pass(src, toks, nodes, diag, ps, tk, true, owner, before);
+        if (ps[0].err != 0) {
+            return;
+        }
+        _ = advance(toks, ps);
+        st[f].a = last as I32;
+        if (before < 0) {
+            st[f].c = nodes[owner].a;
+        } else {
+            st[f].c = nodes[before].next;
+        }
+        st[f].want = 1;
+    }
+    while (st[f].c >= 0) {
+        I64 h = st[f].c as I64;
+        st[f].c = nodes[h].next;
+        if (nodes[h].kind == N_HOLE) {
+            hole_begin(src, toks, nodes, st, diag, ps, f, h);
+            return;
+        }
+    }
+    st[f].want = 0;
+}
+
+// Lexes and starts the expression of hole h (`cint_ref`'s parse_hole).
+void hole_begin[n, t, m, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node[m] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 f, I64 h) {
+    I64 first = ps[0].ntok;
+    I64 line = nodes[h].e as I64;
+    I64 col = nodes[h].f as I64;
+    I64 last = -1;
+    if (first < t) {
+        last = scan.scan_hole(src, nodes[h].c as I64, nodes[h].d as I64, line, col, toks, first);
+    }
+    if (last < 0) {
+        if (ps[0].err == 0) {
+            ps[0].err = limits.C_LIMIT;
+            _ = limits.limit_diag(diag, ps[0].module, line, col, limits.LIM_TOKENS, t);
+        }
+        return;
+    }
+    if (toks[first].kind == scan.TK_EOF || toks[first].kind == scan.TK_ERROR) {
+        fail_at(diag, ps, scan.C_HOLE, line, col);
+        return;
+    }
+    match_brackets(toks, first, last);
+    ps[0].ntok = last + 1;
+    st[f].b = h as I32;
+    st[f].d = ps[0].pos as I32;
+    st[f].e = ps[0].last as I32;
+    st[f].want = 2;
+    ps[0].pos = first;
+    ps[0].last = last;
+    _ = expr(toks, st, diag, ps, L_OR);
+}
+
+// The end of hole Frame.b: string literals in the expression, `=`, `!conversion` and
+// `:spec` (C1035 for anything else). Restores the stream. True when the hole is good.
+Bool hole_done[n, t, m, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node[m] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 f) {
+    I64 h = st[f].b as I64;
+    I64 line = nodes[h].e as I64;
+    I64 col = nodes[h].f as I64;
+    I64 end = nodes[h].d as I64;
+    nodes[h].a = ps[0].res as I32;
+    I64 nxt = ps[0].pos;
+    I64 rest = end;
+    if (toks[nxt].kind != scan.TK_EOF) {
+        rest = toks[nxt].start as I64;
+    }
+    for j in hole_first(toks, ps)..nxt {
+        if (toks[j].kind == scan.TK_STRING || toks[j].kind == scan.TK_BYTES) {
+            fail_at(diag, ps, scan.C_HOLE, line, col);
+            return false;
+        }
+    }
+    I64 text = nodes[h].c as I64;
+    if (rest < end && src[rest] == '=') {
+        I64 name = new_node(toks, nodes, diag, ps, N_TEXT, nodes[h].tok as I64, nodes[h].tok as I64);
+        if (name < 0) {
+            return false;
+        }
+        nodes[name].c = text as I32;
+        nodes[name].d = rest as I32;
+        nodes[h].b = name as I32;
+        rest += 1;
+    }
+    if (rest < end && src[rest] == '!') {
+        I64 conv = hole_conversion(src, rest, end);
+        if (conv == 0) {
+            fail_at(diag, ps, scan.C_HOLE, line, col);
+            return false;
+        }
+        nodes[h].op = (conv % 65536) as I32;
+        rest += conv / 65536;
+    }
+    nodes[h].c = -1;
+    nodes[h].d = -1;
+    if (rest < end && src[rest] == ':') {
+        nodes[h].c = (rest + 1) as I32;
+        nodes[h].d = end as I32;
+        rest = end;
+    }
+    if (rest < end) {
+        fail_at(diag, ps, scan.C_HOLE, line, col);
+        return false;
+    }
+    ps[0].pos = st[f].d as I64;
+    ps[0].last = st[f].e as I64;
+    return true;
+}
+
+// The first token of the current hole's stream: the stream is the last one appended.
+I64 hole_first[t](in scan.Token[t] toks, in PState[_] ps) {
+    I64 j = ps[0].last;
+    while (j > 0 && toks[j - 1].kind != scan.TK_EOF && toks[j - 1].kind != scan.TK_ERROR) {
+        j -= 1;
+    }
+    return j;
+}
+
+// S_DEFER: `defer simple_stmt ;` after the statement, or `defer _ = expr ;` after the
+// expression (the frame's node is then the N_DISCARD).
+void h_defer[t, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[_] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    nodes[st[f].node as I64].a = ps[0].res as I32;
+    if (expect_op(toks, diag, ps, scan.OP_SEMI, scan.C_SYNTAX)) {
+        ps[0].sp -= 1;
+    }
+}
+
+// S_REDUCE: `reduce IDENT = expr ;` after the expression. SPEC-04 18.5 writes the operation
+// as IDENT "(" args ")", the forms of SPEC-02 8.2 (OQ-196); `cint_ref` parses any expression
+// there and its checker refuses one that is not such a call (ref/cint_ref/parser.py
+// parse_reduce, check.py _stmt_Reduce), and so does this parser, so that both give one
+// outcome for every text.
+void h_reduce[t, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[_] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    nodes[st[f].node as I64].a = ps[0].res as I32;
+    if (expect_op(toks, diag, ps, scan.OP_SEMI, scan.C_SYNTAX)) {
+        ps[0].sp -= 1;
+    }
+}
+
+// The bindings of `( typed_bind , typed_bind { , typed_bind } ) = expr ;` in frame f:
+// appends b when it is >= 0, then the next binding after a `,` (`_`, or a type, with
+// Frame.c 1 after it, and a name), or `) =` and the value (Frame.c 2 after it).
+void binds[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 f, I64 b) {
+    I64 item = b;
+    while (true) {
+        if (item >= 0) {
+            st[f].a = append(nodes, st[f].node as I64, true, st[f].a as I64, item) as I32;
+            if (!is_op(toks, ps, 0, scan.OP_COMMA)) {
+                break;
+            }
+            _ = advance(toks, ps);
+        }
+        if (class_at(toks, ps, 0) == scan.IDC_UNDERSCORE &&
+                (is_op(toks, ps, 1, scan.OP_COMMA) || is_op(toks, ps, 1, scan.OP_RPAREN))) {
+            I64 tk = advance(toks, ps);
+            item = new_node(toks, nodes, diag, ps, N_BIND, tk, tk);
+            if (item < 0) {
+                return;
+            }
+            continue;
+        }
+        st[f].c = 1;
+        _ = push(toks, st, diag, ps, S_TYPE, -1, 0);
+        return;
+    }
+    if (!expect_op(toks, diag, ps, scan.OP_RPAREN, scan.C_SYNTAX) ||
+            !expect_op(toks, diag, ps, scan.OP_ASSIGN, scan.C_SYNTAX)) {
+        return;
+    }
+    st[f].c = 2;
+    _ = expr(toks, st, diag, ps, L_EXPR);
+}
+
+// S_DESTRUCT: Frame.c 1 after a binding's type, 2 after the value.
+void h_destruct[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 d = st[f].node as I64;
+    if (st[f].c == 1) {
+        I64 ty = ps[0].res;
+        I64 name = decl_name(toks, diag, ps);
+        if (name < 0) {
+            return;
+        }
+        I64 b = new_node(toks, nodes, diag, ps, N_BIND, name, nodes[ty].start as I64);
+        if (b < 0) {
+            return;
+        }
+        nodes[b].a = ty as I32;
+        binds(toks, nodes, st, diag, ps, f, b);
+        return;
+    }
+    nodes[d].b = ps[0].res as I32;
+    if (expect_op(toks, diag, ps, scan.OP_SEMI, scan.C_SYNTAX)) {
+        ps[0].sp -= 1;
+    }
+}
+
+// `var IDENT = expr ;` or `var ( bind { , bind } ) = expr ;` after `var` (token kw).
+void var_statement[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 kw) {
+    if (!is_op(toks, ps, 0, scan.OP_LPAREN)) {
+        I64 name = decl_name(toks, diag, ps);
+        if (name < 0) {
+            return;
+        }
+        I64 vd = new_node(toks, nodes, diag, ps, N_VAR, name, kw);
+        if (vd < 0 || !expect_op(toks, diag, ps, scan.OP_ASSIGN, scan.C_SYNTAX)) {
+            return;
+        }
+        nodes[vd].op = scan.KW_VAR;
+        link_stmt(nodes, st, ps, vd);
+        if (push(toks, st, diag, ps, S_TAIL, vd, 0)) {
+            st[ps[0].sp - 1].c = 1;
+            _ = expr(toks, st, diag, ps, L_EXPR);
+        }
+        return;
+    }
+    _ = advance(toks, ps);
+    I64 d = new_node(toks, nodes, diag, ps, N_DESTRUCT, kw, kw);
+    if (d < 0) {
+        return;
+    }
+    nodes[d].op = scan.KW_VAR;
+    I64 tail = -1;
+    while (true) {
+        I64 name = expect_ident(toks, diag, ps);
+        if (name < 0) {
+            return;
+        }
+        I64 b = new_node(toks, nodes, diag, ps, N_BIND, name, name);
+        if (b < 0) {
+            return;
+        }
+        tail = append(nodes, d, true, tail, b);
+        if (!is_op(toks, ps, 0, scan.OP_COMMA)) {
+            break;
+        }
+        _ = advance(toks, ps);
+    }
+    if (!expect_op(toks, diag, ps, scan.OP_RPAREN, scan.C_SYNTAX) ||
+            !expect_op(toks, diag, ps, scan.OP_ASSIGN, scan.C_SYNTAX)) {
+        return;
+    }
+    link_stmt(nodes, st, ps, d);
+    if (push(toks, st, diag, ps, S_DESTRUCT, d, 0)) {
+        st[ps[0].sp - 1].c = 2;
+        _ = expr(toks, st, diag, ps, L_EXPR);
+    }
+}
+
+// The statements that begin with one of the keywords const, in, inout, var, break,
+// continue, return, fallthrough, reduce, in_place, assert, static_assert, switch, defer,
+// errdefer. False when the current keyword is none of these.
+Bool keyword_statement[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 tk = cur(ps);
+    I32 kw = toks[tk].sub;
+    if (kw == scan.KW_CONST) {
+        _ = advance(toks, ps);
+        I64 vd = var_decl(toks, nodes, st, diag, ps, tk, 1, true);
+        if (vd >= 0) {
+            nodes[vd].flags = F_CONST;
+        }
+        return true;
+    }
+    if (kw == scan.KW_IN || kw == scan.KW_INOUT) {
+        _ = advance(toks, ps);
+        I64 vd = var_decl(toks, nodes, st, diag, ps, tk, 3, true);
+        if (vd >= 0) {
+            nodes[vd].op = kw;
+        }
+        return true;
+    }
+    if (kw == scan.KW_VAR) {
+        _ = advance(toks, ps);
+        var_statement(toks, nodes, st, diag, ps, tk);
+        return true;
+    }
+    I32 kind = 0;
+    switch (kw) {
+        case scan.KW_BREAK: kind = N_BREAK;
+        case scan.KW_CONTINUE: kind = N_CONTINUE;
+        case scan.KW_RETURN: kind = N_RETURN;
+        case scan.KW_FALLTHROUGH: kind = N_FALLTHROUGH;
+        case scan.KW_REDUCE: kind = N_REDUCE;
+        case scan.KW_IN_PLACE: kind = N_IN_PLACE;
+        case scan.KW_ASSERT: kind = N_ASSERT;
+        case scan.KW_STATIC_ASSERT: kind = N_STATIC_ASSERT;
+        case scan.KW_SWITCH: kind = N_SWITCH;
+        case scan.KW_DEFER, scan.KW_ERRDEFER: kind = N_DEFER;
+        default: return false;
+    }
+    _ = advance(toks, ps);
+    I64 x = new_node(toks, nodes, diag, ps, kind, tk, tk);
+    if (x < 0) {
+        return true;
+    }
+    if (kw == scan.KW_ERRDEFER) {
+        nodes[x].op = 1;
+    }
+    link_stmt(nodes, st, ps, x);
+    if (kind == N_BREAK || kind == N_CONTINUE) {
+        if (kind_at(toks, ps, 0) == scan.TK_IDENT) {
+            nodes[x].c = advance(toks, ps) as I32;
+        }
+        _ = expect_op(toks, diag, ps, scan.OP_SEMI, scan.C_SYNTAX);
+    } else if (kind == N_FALLTHROUGH) {
+        _ = expect_op(toks, diag, ps, scan.OP_SEMI, scan.C_SYNTAX);
+    } else if (kind == N_RETURN) {
+        if (is_op(toks, ps, 0, scan.OP_SEMI)) {
+            _ = advance(toks, ps);
+        } else if (push(toks, st, diag, ps, S_TAIL, x, 0)) {
+            st[ps[0].sp - 1].c = 0;
+            _ = expr(toks, st, diag, ps, L_EXPR);
+        }
+    } else if (kind == N_IN_PLACE) {
+        if (push(toks, st, diag, ps, S_TAIL, x, 0)) {
+            st[ps[0].sp - 1].c = 0;
+            _ = push(toks, st, diag, ps, S_OPERAND, -1, L_POSTFIX);
+        }
+    } else if (kind == N_REDUCE) {
+        nodes[x].c = expect_ident(toks, diag, ps) as I32;
+        if (ps[0].err == 0 && expect_op(toks, diag, ps, scan.OP_ASSIGN, scan.C_SYNTAX) &&
+                push(toks, st, diag, ps, S_REDUCE, x, 0)) {
+            _ = expr(toks, st, diag, ps, L_EXPR);
+        }
+    } else if (kind == N_DEFER) {
+        if (is_op(toks, ps, 0, scan.OP_LBRACE)) {
+            nodes[x].a = open_block(toks, nodes, st, diag, ps, K_PLAIN, -1, true, false) as I32;
+        } else if (class_at(toks, ps, 0) == scan.IDC_UNDERSCORE && is_op(toks, ps, 1, scan.OP_ASSIGN)) {
+            // `defer _ = expr;` defers a discard, as `cint_ref`'s parse_defer reads it; S_DEFER
+            // gives the expression to the N_DISCARD node.
+            I64 d = new_node(toks, nodes, diag, ps, N_DISCARD, cur(ps), cur(ps));
+            _ = advance(toks, ps);
+            _ = advance(toks, ps);
+            if (d >= 0 && push(toks, st, diag, ps, S_DEFER, d, 0)) {
+                nodes[x].a = d as I32;
+                _ = expr(toks, st, diag, ps, L_EXPR);
+            }
+        } else {
+            I64 y = simple_node(toks, nodes, diag, ps);
+            if (y >= 0 && push(toks, st, diag, ps, S_DEFER, x, 0)) {
+                simple(toks, nodes, st, diag, ps, y);
+            }
+        }
+    } else if (expect_op(toks, diag, ps, scan.OP_LPAREN, scan.C_SYNTAX)) {
+        I32 state = S_ASSERT;
+        if (kind == N_STATIC_ASSERT) {
+            state = S_STATIC_ASSERT;
+        } else if (kind == N_SWITCH) {
+            state = S_SWITCH;
+        }
+        if (push(toks, st, diag, ps, state, x, 0)) {
+            st[ps[0].sp - 1].c = 0;
+            _ = expr(toks, st, diag, ps, L_EXPR);
+        }
+    }
+    return true;
+}
+
+// A statement (SPEC-04 18.5; `cint_ref`'s parse_statement, in its order), linked into the
+// list of the construct on top of the stack.
+void statement[n, t, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 tk = cur(ps);
+    I32 kind = toks[tk].kind;
+    I32 op = op_at(toks, ps, 0);
+    if (op == scan.OP_LBRACE) {
+        _ = open_block(toks, nodes, st, diag, ps, K_PLAIN, -1, true, true);
+        return;
+    }
+    if (op == scan.OP_SEMI) {
+        fail(toks, diag, ps, C_EMPTY_STATEMENT, tk);
+        return;
+    }
+    if (op == scan.OP_LPAREN && is_type_start(toks, ps, 1) && kind_at(toks, ps, 2) == scan.TK_IDENT) {
+        _ = advance(toks, ps);
+        I64 d = new_node(toks, nodes, diag, ps, N_DESTRUCT, tk, tk);
+        if (d < 0) {
+            return;
+        }
+        link_stmt(nodes, st, ps, d);
+        if (push(toks, st, diag, ps, S_DESTRUCT, d, 0)) {
+            binds(toks, nodes, st, diag, ps, ps[0].sp - 1, -1);
+        }
+        return;
+    }
+    if (kind == scan.TK_KEYWORD) {
+        I32 kw = toks[tk].sub;
+        if (kw == scan.KW_EXPECT_FAULT) {
+            fail(toks, diag, ps, C_EXPECT_FAULT_PLACE, tk);
+            return;
+        }
+        if (kw == scan.KW_IF || kw == scan.KW_WHILE || kw == scan.KW_FOR || kw == scan.KW_DO) {
+            loop_or_if(toks, nodes, st, diag, ps, -1);
+            return;
+        }
+        if (keyword_statement(toks, nodes, st, diag, ps)) {
+            return;
+        }
+    }
+    if (kind == scan.TK_STRING) {
+        I64 pr = new_node(toks, nodes, diag, ps, N_PRINT, tk, tk);
+        if (pr < 0) {
+            return;
+        }
+        link_stmt(nodes, st, ps, pr);
+        if (push(toks, st, diag, ps, S_SEMI, pr, 0)) {
+            _ = push(toks, st, diag, ps, S_STRINGS, pr, 0);
+        }
+        return;
+    }
+    if (kind == scan.TK_IDENT && is_op(toks, ps, 1, scan.OP_COLON) && (is_kw(toks, ps, 2, scan.KW_FOR) ||
+            is_kw(toks, ps, 2, scan.KW_WHILE) || is_kw(toks, ps, 2, scan.KW_DO))) {
+        _ = advance(toks, ps);
+        _ = advance(toks, ps);
+        loop_or_if(toks, nodes, st, diag, ps, tk);
+        return;
+    }
+    if (class_at(toks, ps, 0) == scan.IDC_UNDERSCORE && is_op(toks, ps, 1, scan.OP_ASSIGN)) {
+        _ = advance(toks, ps);
+        _ = advance(toks, ps);
+        I64 x = new_node(toks, nodes, diag, ps, N_DISCARD, tk, tk);
+        if (x < 0) {
+            return;
+        }
+        link_stmt(nodes, st, ps, x);
+        if (push(toks, st, diag, ps, S_TAIL, x, 0)) {
+            st[ps[0].sp - 1].c = 0;
+            _ = expr(toks, st, diag, ps, L_EXPR);
+        }
+        return;
+    }
+    if (kind == scan.TK_FIXED || is_decl_ahead(toks, ps, 0) ||
+            (scalar_class(class_at(toks, ps, 0)) && is_op(toks, ps, 1, scan.OP_LBRACKET))) {
+        _ = var_decl(toks, nodes, st, diag, ps, tk, 0, true);
+        return;
+    }
+    I64 x = simple_node(toks, nodes, diag, ps);
+    if (x < 0) {
+        return;
+    }
+    link_stmt(nodes, st, ps, x);
+    if (push(toks, st, diag, ps, S_SEMI, x, 0)) {
+        simple(toks, nodes, st, diag, ps, x);
+    }
+}
+
+// S_BLOCK: the statements of a block, until its `}` (Frame.a the last statement, Frame.b
+// what follows the block, Frame.c its owner, Frame.d the enclosing block depth).
+void h_block[n, t, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    if (is_op(toks, ps, 0, scan.OP_RBRACE)) {
+        _ = advance(toks, ps);
+        I64 blk = st[f].node as I64;
+        I32 cont = st[f].b;
+        I64 owner = st[f].c as I64;
+        ps[0].blocks = st[f].d as I64;
+        ret(ps, blk);
+        if (cont == K_IF) {
+            after_arm(toks, nodes, st, diag, ps, owner);
+        } else if (cont == K_DO) {
+            after_do(toks, nodes, st, diag, ps, owner);
+        }
+        return;
+    }
+    if (kind_at(toks, ps, 0) == scan.TK_EOF) {
+        fail(toks, diag, ps, scan.C_SYNTAX, cur(ps));
+        return;
+    }
+    statement(src, toks, nodes, st, diag, ps);
+}
+
+// ---------------------------------------------------------------- declarations
+
+// The size parameters `[ IDENT { , IDENT } ]` of function or kernel x (list d).
+Bool size_params[t, r](inout scan.Token[t] toks, inout Node[_] nodes, inout limits.CompilerDiag[r] diag,
+        inout PState[_] ps, I64 x) {
+    if (!is_op(toks, ps, 0, scan.OP_LBRACKET)) {
+        return true;
+    }
+    _ = advance(toks, ps);
+    I64 tail = -1;
+    while (true) {
+        I64 name = decl_name(toks, diag, ps);
+        if (name < 0) {
+            return false;
+        }
+        I64 sz = new_node(toks, nodes, diag, ps, N_SIZE, name, name);
+        if (sz < 0) {
+            return false;
+        }
+        if (tail < 0) {
+            nodes[x].d = sz as I32;
+        } else {
+            nodes[tail].next = sz as I32;
+        }
+        tail = sz;
+        if (!is_op(toks, ps, 0, scan.OP_COMMA)) {
+            break;
+        }
+        _ = advance(toks, ps);
+    }
+    return expect_op(toks, diag, ps, scan.OP_RBRACKET, scan.C_SYNTAX);
+}
+
+// The parameters of S_FUNC frame f from the current token: each `[mode] type IDENT [= expr]`
+// (Frame.c 3 after the type), then `)`, `over`, `where`, and the body.
+void params_loop[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 f) {
+    I64 fn = st[f].node as I64;
+    Bool is_kernel = st[f].b == 1;
+    if (!is_op(toks, ps, 0, scan.OP_RPAREN)) {
+        I64 first = cur(ps);
+        I32 mode = 0;
+        if (is_kw(toks, ps, 0, scan.KW_OUT) && !is_kernel) {
+            fail(toks, diag, ps, C_OUT_PARAM, first);
+            return;
+        }
+        if (is_kw(toks, ps, 0, scan.KW_IN) || is_kw(toks, ps, 0, scan.KW_INOUT) || is_kw(toks, ps, 0, scan.KW_OUT)) {
+            mode = toks[advance(toks, ps)].sub;
+        } else if (is_kernel) {
+            fail(toks, diag, ps, scan.C_SYNTAX, first);
+            return;
+        }
+        I64 p = new_node(toks, nodes, diag, ps, N_PARAM, first, first);
+        if (p < 0) {
+            return;
+        }
+        nodes[p].op = mode;
+        st[f].a = append(nodes, fn, false, st[f].a as I64, p) as I32;
+        st[f].d = p as I32;
+        st[f].c = 3;
+        _ = push(toks, st, diag, ps, S_TYPE, -1, 0);
+        return;
+    }
+    _ = advance(toks, ps);
+    if (is_kernel && is_kw(toks, ps, 0, scan.KW_OVER)) {
+        _ = advance(toks, ps);
+        if (!expect_op(toks, diag, ps, scan.OP_LBRACKET, scan.C_SYNTAX)) {
+            return;
+        }
+        st[f].a = -1;
+        over_items(toks, nodes, st, diag, ps, f, false);
+        return;
+    }
+    where_or_body(toks, nodes, st, diag, ps, f);
+}
+
+// The items `IDENT : extent` of an `over` clause in frame f: after an item whose extent is
+// complete (`more` true), `,` starts the next and `]` ends the clause; an extent that is
+// an expression leaves the frame waiting (Frame.c 6 after it, 7 after a range's high
+// bound; Frame.d the item, Frame.a the last item). The name is a declared name (C1010),
+// as `cint_ref` reads it (ref/cint_ref/parser.py parse_kernel).
+void over_items[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 f, Bool more) {
+    Bool after = more;
+    while (true) {
+        if (after) {
+            if (!is_op(toks, ps, 0, scan.OP_COMMA)) {
+                break;
+            }
+            _ = advance(toks, ps);
+        }
+        I64 name = decl_name(toks, diag, ps);
+        if (name < 0 || !expect_op(toks, diag, ps, scan.OP_COLON, scan.C_SYNTAX)) {
+            return;
+        }
+        I64 item = new_node(toks, nodes, diag, ps, N_OVER, name, name);
+        if (item < 0) {
+            return;
+        }
+        st[f].a = append(nodes, st[f].node as I64, true, st[f].a as I64, item) as I32;
+        st[f].d = item as I32;
+        if (class_at(toks, ps, 0) == scan.IDC_UNDERSCORE &&
+                (is_op(toks, ps, 1, scan.OP_RBRACKET) || is_op(toks, ps, 1, scan.OP_COMMA))) {
+            I64 tk = advance(toks, ps);
+            nodes[item].a = new_node(toks, nodes, diag, ps, N_WILD, tk, tk) as I32;
+            after = true;
+            continue;
+        }
+        st[f].c = 6;
+        _ = expr(toks, st, diag, ps, L_EXPR);
+        return;
+    }
+    if (expect_op(toks, diag, ps, scan.OP_RBRACKET, scan.C_SYNTAX)) {
+        where_or_body(toks, nodes, st, diag, ps, f);
+    }
+}
+
+// `where expr` (a kernel: `where expr { , expr }`; Frame.c 5 after one), then the body.
+void where_or_body[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 f) {
+    if (is_kw(toks, ps, 0, scan.KW_WHERE)) {
+        _ = advance(toks, ps);
+        st[f].d = -1;
+        st[f].c = 5;
+        _ = expr(toks, st, diag, ps, L_EXPR);
+        return;
+    }
+    func_body(toks, nodes, st, diag, ps, f);
+}
+
+void func_body[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 f) {
+    I64 fn = st[f].node as I64;
+    if (!is_op(toks, ps, 0, scan.OP_LBRACE)) {
+        fail(toks, diag, ps, scan.C_SYNTAX, cur(ps));
+        return;
+    }
+    ps[0].sp -= 1;
+    nodes[fn].c = open_block(toks, nodes, st, diag, ps, K_PLAIN, -1, false, false) as I32;
+}
+
+// The name, size parameters and `(` of function or kernel frame f; then its parameters.
+void func_header[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 f) {
+    I64 fn = st[f].node as I64;
+    I64 name = decl_name(toks, diag, ps);
+    if (name < 0) {
+        return;
+    }
+    nodes[fn].tok = name as I32;
+    if (st[f].b == 1 && !is_op(toks, ps, 0, scan.OP_LBRACKET)) {
+        fail(toks, diag, ps, scan.C_SYNTAX, cur(ps));
+        return;
+    }
+    if (!size_params(toks, nodes, diag, ps, fn) || !expect_op(toks, diag, ps, scan.OP_LPAREN, scan.C_SYNTAX)) {
+        return;
+    }
+    st[f].a = -1;
+    params_loop(toks, nodes, st, diag, ps, f);
+}
+
+// S_FUNC: a function (Frame.b 0) or kernel (1). Frame.c: 0 after the result type, 1 after
+// the value type of an error union, 3 after a parameter's type, 4 after its default, 5
+// after a `where` expression, 6 and 7 in an `over` clause.
+void h_func[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 fn = st[f].node as I64;
+    I64 v = ps[0].res;
+    I32 phase = st[f].c;
+    if (phase == 0) {
+        if (is_op(toks, ps, 0, scan.OP_BANG)) {
+            I64 tk = advance(toks, ps);
+            I64 eu = new_node(toks, nodes, diag, ps, N_ERRUNION, tk, nodes[v].start as I64);
+            if (eu < 0) {
+                return;
+            }
+            nodes[eu].a = v as I32;
+            nodes[fn].a = eu as I32;
+            if (!is_kw(toks, ps, 0, scan.KW_VOID)) {
+                st[f].c = 1;
+                _ = push(toks, st, diag, ps, S_TYPE, -1, 0);
+                return;
+            }
+            _ = advance(toks, ps);
+        } else {
+            nodes[fn].a = v as I32;
+        }
+        func_header(toks, nodes, st, diag, ps, f);
+        return;
+    }
+    if (phase == 1) {
+        nodes[nodes[fn].a as I64].b = v as I32;
+        func_header(toks, nodes, st, diag, ps, f);
+        return;
+    }
+    if (phase == 3 || phase == 4) {
+        I64 p = st[f].d as I64;
+        if (phase == 3) {
+            nodes[p].a = v as I32;
+            I64 name = decl_name(toks, diag, ps);
+            if (name < 0) {
+                return;
+            }
+            nodes[p].tok = name as I32;
+            if (is_op(toks, ps, 0, scan.OP_ASSIGN) && st[f].b == 0) {
+                _ = advance(toks, ps);
+                st[f].c = 4;
+                _ = expr(toks, st, diag, ps, L_EXPR);
+                return;
+            }
+        } else {
+            nodes[p].b = v as I32;
+        }
+        if (!is_op(toks, ps, 0, scan.OP_RPAREN) && !expect_op(toks, diag, ps, scan.OP_COMMA, scan.C_SYNTAX)) {
+            return;
+        }
+        params_loop(toks, nodes, st, diag, ps, f);
+        return;
+    }
+    if (phase == 5) {
+        if (st[f].d < 0) {
+            nodes[fn].e = v as I32;
+        } else {
+            nodes[st[f].d as I64].next = v as I32;
+        }
+        st[f].d = v as I32;
+        if (st[f].b == 1 && is_op(toks, ps, 0, scan.OP_COMMA)) {
+            _ = advance(toks, ps);
+            _ = expr(toks, st, diag, ps, L_EXPR);
+            return;
+        }
+        func_body(toks, nodes, st, diag, ps, f);
+        return;
+    }
+    I64 item = st[f].d as I64;
+    if (phase == 6) {
+        // An extent with a declared lower bound (SPEC-04 18.4 `extent`, LS-72, Proposed):
+        // `cint_ref` refuses `lo ..= hi`, but reads `lo .. hi` as the extent `lo` and reports
+        // C1050 at the `..`, where it expects `,` or `]`. So only `..=` opens a range here,
+        // and over_items reports a `..` as `cint_ref` does (compiler/OPEN.md CINTC-OQ-06).
+        if (is_op(toks, ps, 0, scan.OP_RANGE_INCL)) {
+            I64 tk = advance(toks, ps);
+            I64 rg = new_node(toks, nodes, diag, ps, N_RANGE, tk, nodes[v].start as I64);
+            if (rg < 0) {
+                return;
+            }
+            nodes[rg].op = scan.OP_RANGE_INCL;
+            nodes[rg].a = v as I32;
+            nodes[item].a = rg as I32;
+            st[f].c = 7;
+            _ = expr(toks, st, diag, ps, L_EXPR);
+            return;
+        }
+        nodes[item].a = v as I32;
+    } else {
+        nodes[nodes[item].a as I64].b = v as I32;
+    }
+    over_items(toks, nodes, st, diag, ps, f, true);
+}
+
+// A function declaration (SPEC-04 18.3 func_decl) at the current token, with attributes.
+void func_decl[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, Bool exported, I64 attrs) {
+    I64 tk = cur(ps);
+    I64 fn = new_node(toks, nodes, diag, ps, N_FUNC, tk, tk);
+    if (fn < 0) {
+        return;
+    }
+    if (exported) {
+        nodes[fn].flags = F_EXPORT;
+    }
+    nodes[fn].f = attrs as I32;
+    link_stmt(nodes, st, ps, fn);
+    if (!push(toks, st, diag, ps, S_FUNC, fn, 0)) {
+        return;
+    }
+    I64 f = ps[0].sp - 1;
+    st[f].b = 0;
+    if (is_kw(toks, ps, 0, scan.KW_VOID)) {
+        _ = advance(toks, ps);
+        func_header(toks, nodes, st, diag, ps, f);
+        return;
+    }
+    if (is_kw(toks, ps, 0, scan.KW_IN) || is_kw(toks, ps, 0, scan.KW_INOUT)) {
+        nodes[fn].op = toks[advance(toks, ps)].sub;
+    }
+    st[f].c = 0;
+    _ = push(toks, st, diag, ps, S_TYPE, -1, 0);
+}
+
+// `kernel IDENT size_params ( kparam { , kparam } [,] ) [over ...] [where ...] block`.
+void kernel_decl[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, Bool exported, I64 attrs) {
+    I64 tk = advance(toks, ps);
+    I64 kn = new_node(toks, nodes, diag, ps, N_KERNEL, tk, tk);
+    if (kn < 0) {
+        return;
+    }
+    if (exported) {
+        nodes[kn].flags = F_EXPORT;
+    }
+    nodes[kn].f = attrs as I32;
+    link_stmt(nodes, st, ps, kn);
+    if (push(toks, st, diag, ps, S_FUNC, kn, 0)) {
+        st[ps[0].sp - 1].b = 1;
+        func_header(toks, nodes, st, diag, ps, ps[0].sp - 1);
+    }
+}
+
+// S_STRUCT: the fields of a struct, each `{ attribute } type IDENT [: expr] [= expr] ;`.
+// Frame.c: 0 at a field, 1 after its type, 2 after its bit width, 3 after its default;
+// Frame.a the last field, Frame.d the attributes of the next field.
+void h_struct[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 sd = st[f].node as I64;
+    I32 phase = st[f].c;
+    I64 fd = st[f].a as I64;
+    if (phase == 0) {
+        if (is_op(toks, ps, 0, scan.OP_RBRACE)) {
+            _ = advance(toks, ps);
+            ps[0].sp -= 1;
+            return;
+        }
+        if (is_op(toks, ps, 0, scan.OP_AT) && st[f].d < 0) {
+            _ = push(toks, st, diag, ps, S_ATTRS, -1, 1);
+            return;
+        }
+        I64 tk = cur(ps);
+        fd = new_node(toks, nodes, diag, ps, N_FIELD_DECL, tk, tk);
+        if (fd < 0) {
+            return;
+        }
+        nodes[fd].f = st[f].d;
+        st[f].d = -1;
+        st[f].a = append(nodes, sd, true, st[f].a as I64, fd) as I32;
+        st[f].c = 1;
+        _ = push(toks, st, diag, ps, S_TYPE, -1, 0);
+        return;
+    }
+    if (phase == 1) {
+        nodes[fd].a = ps[0].res as I32;
+        I64 name = decl_name(toks, diag, ps);
+        if (name < 0) {
+            return;
+        }
+        nodes[fd].tok = name as I32;
+        if (is_op(toks, ps, 0, scan.OP_COLON)) {
+            _ = advance(toks, ps);
+            st[f].c = 2;
+            _ = expr(toks, st, diag, ps, L_EXPR);
+            return;
+        }
+    } else if (phase == 2) {
+        nodes[fd].b = ps[0].res as I32;
+    } else {
+        nodes[fd].c = ps[0].res as I32;
+    }
+    if (phase != 3 && is_op(toks, ps, 0, scan.OP_ASSIGN)) {
+        _ = advance(toks, ps);
+        st[f].c = 3;
+        _ = expr(toks, st, diag, ps, L_EXPR);
+        return;
+    }
+    if (expect_op(toks, diag, ps, scan.OP_SEMI, scan.C_SYNTAX)) {
+        st[f].c = 0;
+    }
+}
+
+// S_ATTRS: `@ IDENT [ ( [attr_arg { , attr_arg }] ) ]` repeated (SPEC-04 13.1); Frame.d the
+// list, Frame.a its last. Then, for target 0, the module item they belong to; for target
+// 1, the next field of the struct below.
+void h_attrs[n, t, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    while (is_op(toks, ps, 0, scan.OP_AT)) {
+        I64 at = advance(toks, ps);
+        I64 name = expect_ident(toks, diag, ps);
+        if (name < 0) {
+            return;
+        }
+        I64 x = new_node(toks, nodes, diag, ps, N_ATTR, name, at);
+        if (x < 0) {
+            return;
+        }
+        if (st[f].a < 0) {
+            st[f].d = x as I32;
+        } else {
+            nodes[st[f].a as I64].next = x as I32;
+        }
+        st[f].a = x as I32;
+        if (is_op(toks, ps, 0, scan.OP_LPAREN)) {
+            _ = advance(toks, ps);
+            nodes[x].flags = F_PARENS;
+            _ = push(toks, st, diag, ps, S_ARGS, x, 0);
+            return;
+        }
+    }
+    I64 head = st[f].d as I64;
+    ps[0].sp -= 1;
+    if (st[f].want == 1) {
+        st[f - 1].d = head as I32;
+        return;
+    }
+    top_item(src, toks, nodes, st, diag, ps, head);
+}
+
+// S_ENUM: the enumerators `IDENT [= expr]` of an enum, separated by `,`, with an optional
+// trailing `,`; Frame.c 1 after a value; Frame.a the last enumerator.
+void h_enum[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    I64 en = st[f].node as I64;
+    if (st[f].c == 1) {
+        nodes[st[f].a as I64].a = ps[0].res as I32;
+        st[f].c = 0;
+    } else {
+        I64 name = decl_name(toks, diag, ps);
+        if (name < 0) {
+            return;
+        }
+        I64 x = new_node(toks, nodes, diag, ps, N_ENUMERATOR, name, name);
+        if (x < 0) {
+            return;
+        }
+        st[f].a = append(nodes, en, true, st[f].a as I64, x) as I32;
+        if (is_op(toks, ps, 0, scan.OP_ASSIGN)) {
+            _ = advance(toks, ps);
+            st[f].c = 1;
+            _ = expr(toks, st, diag, ps, L_EXPR);
+            return;
+        }
+    }
+    if (is_op(toks, ps, 0, scan.OP_COMMA)) {
+        _ = advance(toks, ps);
+        if (!is_op(toks, ps, 0, scan.OP_RBRACE)) {
+            return;
+        }
+    }
+    if (expect_op(toks, diag, ps, scan.OP_RBRACE, scan.C_SYNTAX)) {
+        ps[0].sp -= 1;
+    }
+}
+
+// An INT_TYPE token (SPEC-04 18.1), or -1 with C1050.
+I64 int_type_name[t, r](inout scan.Token[t] toks, inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I32 cls = class_at(toks, ps, 0);
+    if (cls < scan.IDC_I8 || cls > scan.IDC_U64) {
+        fail(toks, diag, ps, scan.C_SYNTAX, cur(ps));
+        return -1;
+    }
+    return advance(toks, ps);
+}
+
+// S_SCHEDULE: `schedule IDENT [for IDENT] { { IDENT ( [attr_arg { , attr_arg }] ) ; } }`;
+// Frame.c 1 after a directive's arguments; Frame.a the last directive.
+void h_schedule[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    if (st[f].c == 1) {
+        st[f].c = 0;
+        if (!expect_op(toks, diag, ps, scan.OP_SEMI, scan.C_SYNTAX)) {
+            return;
+        }
+    }
+    if (is_op(toks, ps, 0, scan.OP_RBRACE)) {
+        _ = advance(toks, ps);
+        ps[0].sp -= 1;
+        return;
+    }
+    I64 name = expect_ident(toks, diag, ps);
+    if (name < 0) {
+        return;
+    }
+    I64 x = new_node(toks, nodes, diag, ps, N_DIRECTIVE, name, name);
+    if (x < 0 || !expect_op(toks, diag, ps, scan.OP_LPAREN, scan.C_SYNTAX)) {
+        return;
+    }
+    st[f].a = append(nodes, st[f].node as I64, true, st[f].a as I64, x) as I32;
+    st[f].c = 1;
+    _ = push(toks, st, diag, ps, S_ARGS, x, 0);
+}
+
+// S_TYPE_DECL: `type IDENT = [distinct] type ;` after the type.
+void h_type_decl[t, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[_] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 f = ps[0].sp - 1;
+    nodes[st[f].node as I64].a = ps[0].res as I32;
+    if (expect_op(toks, diag, ps, scan.OP_SEMI, scan.C_SYNTAX)) {
+        ps[0].sp -= 1;
+    }
+}
+
+Bool spell[n, w](in U8[n] src, I64 s, I64 b, in U8[w] word) {
+    return b == w && starts(src, s, s + b, word);
+}
+
+// Whether token tk spells one of the fault names of SPEC-01 9.1 (C1011 otherwise).
+Bool fault_name[n, t](in U8[n] src, in scan.Token[t] toks, I64 tk) {
+    I64 s = toks[tk].start as I64;
+    I64 b = toks[tk].len as I64;
+    return spell(src, s, b, "E_OVERFLOW") || spell(src, s, b, "E_DIV_ZERO") || spell(src, s, b, "E_BOUNDS") ||
+        spell(src, s, b, "E_SHAPE") || spell(src, s, b, "E_SHIFT") || spell(src, s, b, "E_NARROW") ||
+        spell(src, s, b, "E_ALIAS") || spell(src, s, b, "E_STALE_HANDLE") || spell(src, s, b, "E_FUEL") ||
+        spell(src, s, b, "E_UNSUPPORTED") || spell(src, s, b, "E_DOMAIN") || spell(src, s, b, "E_DEPTH") ||
+        spell(src, s, b, "E_ASSERT");
+}
+
+// `test STRING [expect_fault IDENT [at DEC_INT]] block` after `test` (token tk).
+void test_decl[n, t, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 tk) {
+    I64 x = new_node(toks, nodes, diag, ps, N_TEST, tk, tk);
+    if (x < 0) {
+        return;
+    }
+    link_stmt(nodes, st, ps, x);
+    if (kind_at(toks, ps, 0) != scan.TK_STRING) {
+        fail(toks, diag, ps, scan.C_SYNTAX, cur(ps));
+        return;
+    }
+    nodes[x].a = single_string(src, toks, nodes, diag, ps) as I32;
+    if (ps[0].err != 0) {
+        return;
+    }
+    if (is_kw(toks, ps, 0, scan.KW_EXPECT_FAULT)) {
+        _ = advance(toks, ps);
+        I64 name = expect_ident(toks, diag, ps);
+        if (name < 0) {
+            return;
+        }
+        if (!fault_name(src, toks, name)) {
+            fail(toks, diag, ps, C_FAULT_NAME, name);
+            return;
+        }
+        nodes[x].c = name as I32;
+        if (class_at(toks, ps, 0) == scan.IDC_AT) {
+            _ = advance(toks, ps);
+            I64 line = cur(ps);
+            if (toks[line].kind != scan.TK_INT || toks[line].sub != 10) {
+                fail(toks, diag, ps, scan.C_SYNTAX, line);
+                return;
+            }
+            nodes[x].d = advance(toks, ps) as I32;
+        }
+    }
+    if (!is_op(toks, ps, 0, scan.OP_LBRACE)) {
+        fail(toks, diag, ps, scan.C_SYNTAX, cur(ps));
+        return;
+    }
+    nodes[x].b = open_block(toks, nodes, st, diag, ps, K_PLAIN, -1, false, false) as I32;
+}
+
+// The declarations that begin with struct, enum, error, type, schedule, kernel, or test
+// (not exported). False when the current token starts none of them.
+Bool declaration[n, t, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, Bool exported, I64 attrs) {
+    if (kind_at(toks, ps, 0) != scan.TK_KEYWORD) {
+        return false;
+    }
+    I64 tk = cur(ps);
+    I32 kw = toks[tk].sub;
+    if (kw == scan.KW_KERNEL) {
+        kernel_decl(toks, nodes, st, diag, ps, exported, attrs);
+        return true;
+    }
+    if (kw == scan.KW_TEST && !exported && attrs < 0) {
+        _ = advance(toks, ps);
+        test_decl(src, toks, nodes, st, diag, ps, tk);
+        return true;
+    }
+    I32 kind = 0;
+    switch (kw) {
+        case scan.KW_STRUCT: kind = N_STRUCT;
+        case scan.KW_ENUM: kind = N_ENUM;
+        case scan.KW_ERROR: kind = N_ERROR_DECL;
+        case scan.KW_TYPE: kind = N_TYPE_DECL;
+        case scan.KW_SCHEDULE: kind = N_SCHEDULE;
+        default: return false;
+    }
+    _ = advance(toks, ps);
+    I64 name = decl_name(toks, diag, ps);
+    if (name < 0) {
+        return true;
+    }
+    I64 x = new_node(toks, nodes, diag, ps, kind, name, tk);
+    if (x < 0) {
+        return true;
+    }
+    if (exported) {
+        nodes[x].flags = F_EXPORT;
+    }
+    nodes[x].f = attrs as I32;
+    link_stmt(nodes, st, ps, x);
+    if (kind == N_STRUCT) {
+        if (expect_op(toks, diag, ps, scan.OP_LBRACE, scan.C_SYNTAX) && push(toks, st, diag, ps, S_STRUCT, x, 0)) {
+            st[ps[0].sp - 1].c = 0;
+        }
+        return true;
+    }
+    if (kind == N_ENUM) {
+        if (!expect_op(toks, diag, ps, scan.OP_COLON, scan.C_SYNTAX)) {
+            return true;
+        }
+        nodes[x].c = int_type_name(toks, diag, ps) as I32;
+        if (ps[0].err == 0 && expect_op(toks, diag, ps, scan.OP_LBRACE, scan.C_SYNTAX) &&
+                push(toks, st, diag, ps, S_ENUM, x, 0)) {
+            st[ps[0].sp - 1].c = 0;
+        }
+        return true;
+    }
+    if (kind == N_ERROR_DECL) {
+        if (is_op(toks, ps, 0, scan.OP_COLON)) {
+            _ = advance(toks, ps);
+            nodes[x].c = int_type_name(toks, diag, ps) as I32;
+            if (ps[0].err != 0) {
+                return true;
+            }
+        }
+        I64 tail = -1;
+        if (is_op(toks, ps, 0, scan.OP_ASSIGN)) {
+            _ = advance(toks, ps);
+            nodes[x].op = 1;
+            while (true) {
+                I64 first = expect_ident(toks, diag, ps);
+                if (first < 0) {
+                    return true;
+                }
+                I64 y = new_node(toks, nodes, diag, ps, N_TYPE, first, first);
+                if (y < 0) {
+                    return true;
+                }
+                nodes[y].op = 1;
+                while (is_op(toks, ps, 0, scan.OP_DOT)) {
+                    _ = advance(toks, ps);
+                    I64 seg = expect_ident(toks, diag, ps);
+                    if (seg < 0) {
+                        return true;
+                    }
+                    nodes[y].tok = seg as I32;
+                    nodes[y].op += 1;
+                }
+                tail = append(nodes, x, true, tail, y);
+                if (!is_op(toks, ps, 0, scan.OP_BOR)) {
+                    break;
+                }
+                _ = advance(toks, ps);
+            }
+            _ = expect_op(toks, diag, ps, scan.OP_SEMI, scan.C_SYNTAX);
+            return true;
+        }
+        if (!expect_op(toks, diag, ps, scan.OP_LBRACE, scan.C_SYNTAX)) {
+            return true;
+        }
+        while (true) {
+            I64 member = decl_name(toks, diag, ps);
+            if (member < 0) {
+                return true;
+            }
+            I64 y = new_node(toks, nodes, diag, ps, N_NAME, member, member);
+            if (y < 0) {
+                return true;
+            }
+            tail = append(nodes, x, true, tail, y);
+            if (!is_op(toks, ps, 0, scan.OP_COMMA)) {
+                break;
+            }
+            _ = advance(toks, ps);
+            if (is_op(toks, ps, 0, scan.OP_RBRACE)) {
+                break;
+            }
+        }
+        _ = expect_op(toks, diag, ps, scan.OP_RBRACE, scan.C_SYNTAX);
+        return true;
+    }
+    if (kind == N_TYPE_DECL) {
+        if (!expect_op(toks, diag, ps, scan.OP_ASSIGN, scan.C_SYNTAX)) {
+            return true;
+        }
+        if (is_kw(toks, ps, 0, scan.KW_DISTINCT)) {
+            _ = advance(toks, ps);
+            nodes[x].flags = nodes[x].flags | F_DISTINCT;
+        }
+        if (push(toks, st, diag, ps, S_TYPE_DECL, x, 0)) {
+            _ = push(toks, st, diag, ps, S_TYPE, -1, 0);
+        }
+        return true;
+    }
+    if (is_kw(toks, ps, 0, scan.KW_FOR)) {
+        _ = advance(toks, ps);
+        nodes[x].c = expect_ident(toks, diag, ps) as I32;
+        if (ps[0].err != 0) {
+            return true;
+        }
+    }
+    if (expect_op(toks, diag, ps, scan.OP_LBRACE, scan.C_SYNTAX) && push(toks, st, diag, ps, S_SCHEDULE, x, 0)) {
+        st[ps[0].sp - 1].c = 0;
+    }
+    return true;
+}
+
+// Whether a function declaration starts k tokens ahead: `void`, or a type, a name and `(`
+// or `[` (`cint_ref`'s test), or an error-union result `qualified ! (void | type)`.
+Bool func_ahead[t](in scan.Token[t] toks, in PState[_] ps, I64 k) {
+    if (is_kw(toks, ps, k, scan.KW_VOID)) {
+        return true;
+    }
+    I64 n = type_len(toks, ps, k);
+    if (n > 0 && kind_at(toks, ps, k + n) == scan.TK_IDENT &&
+            (is_op(toks, ps, k + n + 1, scan.OP_LPAREN) || is_op(toks, ps, k + n + 1, scan.OP_LBRACKET))) {
+        return true;
+    }
+    if (kind_at(toks, ps, k) != scan.TK_IDENT || scalar_class(class_at(toks, ps, k))) {
+        return false;
+    }
+    n = 1;
+    if (is_op(toks, ps, k + 1, scan.OP_DOT) && kind_at(toks, ps, k + 2) == scan.TK_IDENT) {
+        n = 3;
+    }
+    if (!is_op(toks, ps, k + n, scan.OP_BANG)) {
+        return false;
+    }
+    I64 m = k + n + 1;
+    if (is_kw(toks, ps, m, scan.KW_VOID)) {
+        m += 1;
+    } else {
+        I64 tl = type_len(toks, ps, m);
+        if (tl == 0) {
+            return false;
+        }
+        m += tl;
+    }
+    return kind_at(toks, ps, m) == scan.TK_IDENT &&
+        (is_op(toks, ps, m + 1, scan.OP_LPAREN) || is_op(toks, ps, m + 1, scan.OP_LBRACKET));
+}
+
+// A module item (SPEC-04 18.3 top_item; `cint_ref`'s parse_module loop) after its
+// attributes `attrs` (-1 for none).
+void top_item[n, t, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 attrs) {
+    I64 tk = cur(ps);
+    if (is_kw(toks, ps, 0, scan.KW_IMPORT)) {
+        fail(toks, diag, ps, C_IMPORT_LATE, tk);
+        return;
+    }
+    if (is_kw(toks, ps, 0, scan.KW_PROFILE)) {
+        fail(toks, diag, ps, scan.C_SYNTAX, tk);
+        return;
+    }
+    if (attrs < 0 && is_op(toks, ps, 0, scan.OP_AT)) {
+        _ = push(toks, st, diag, ps, S_ATTRS, -1, 0);
+        return;
+    }
+    Bool exported = false;
+    if (is_kw(toks, ps, 0, scan.KW_EXPORT)) {
+        _ = advance(toks, ps);
+        exported = true;
+        tk = cur(ps);
+    }
+    if (declaration(src, toks, nodes, st, diag, ps, exported, attrs) || ps[0].err != 0) {
+        return;
+    }
+    if (is_kw(toks, ps, 0, scan.KW_STATIC_ASSERT) && !exported && attrs < 0) {
+        _ = keyword_statement(toks, nodes, st, diag, ps);
+        return;
+    }
+    if (is_kw(toks, ps, 0, scan.KW_CONST)) {
+        _ = advance(toks, ps);
+        I64 vd = var_decl(toks, nodes, st, diag, ps, tk, 1, true);
+        if (vd >= 0) {
+            nodes[vd].flags = F_CONST;
+            if (exported) {
+                nodes[vd].flags = F_CONST | F_EXPORT;
+            }
+            nodes[vd].f = attrs as I32;
+        }
+        return;
+    }
+    Bool view = is_kw(toks, ps, 0, scan.KW_IN) || is_kw(toks, ps, 0, scan.KW_INOUT);
+    if (func_ahead(toks, ps, 0) || (view && func_ahead(toks, ps, 1))) {
+        func_decl(toks, nodes, st, diag, ps, exported, attrs);
+        return;
+    }
+    if (view || (exported && is_decl_ahead(toks, ps, 0)) || attrs >= 0) {
+        I32 mode = 0;
+        if (view) {
+            _ = advance(toks, ps);
+            mode = 3;
+        } else if (!is_decl_ahead(toks, ps, 0)) {
+            fail(toks, diag, ps, scan.C_SYNTAX, tk);
+            return;
+        }
+        I64 vd = var_decl(toks, nodes, st, diag, ps, tk, mode, true);
+        if (vd >= 0) {
+            if (view) {
+                nodes[vd].op = toks[tk].sub;
+            }
+            if (exported) {
+                nodes[vd].flags = F_EXPORT;
+            }
+            nodes[vd].f = attrs as I32;
+        }
+        return;
+    }
+    if (exported) {
+        fail(toks, diag, ps, scan.C_SYNTAX, tk);
+        return;
+    }
+    statement(src, toks, nodes, st, diag, ps);
+}
+
+// `import module_path [ as IDENT | . { IDENT { , IDENT } [,] } ] ;` (SPEC-04 18.3).
+void import_decl[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 kw = advance(toks, ps);
+    I64 first = expect_ident(toks, diag, ps);
+    if (first < 0) {
+        return;
+    }
+    I64 x = new_node(toks, nodes, diag, ps, N_IMPORT, kw, first);
+    if (x < 0) {
+        return;
+    }
+    link_stmt(nodes, st, ps, x);
+    nodes[x].c = first as I32;
+    nodes[x].d = first as I32;
+    Bool selected = false;
+    while (is_op(toks, ps, 0, scan.OP_DOT)) {
+        _ = advance(toks, ps);
+        if (is_op(toks, ps, 0, scan.OP_LBRACE)) {
+            _ = advance(toks, ps);
+            selected = true;
+            nodes[x].flags = F_SELECTED;
+            I64 tail = -1;
+            while (true) {
+                I64 name = expect_ident(toks, diag, ps);
+                if (name < 0) {
+                    return;
+                }
+                I64 y = new_node(toks, nodes, diag, ps, N_NAME, name, name);
+                if (y < 0) {
+                    return;
+                }
+                tail = append(nodes, x, true, tail, y);
+                if (!is_op(toks, ps, 0, scan.OP_COMMA)) {
+                    break;
+                }
+                _ = advance(toks, ps);
+                if (is_op(toks, ps, 0, scan.OP_RBRACE)) {
+                    break;
+                }
+            }
+            if (!expect_op(toks, diag, ps, scan.OP_RBRACE, scan.C_SYNTAX)) {
+                return;
+            }
+            break;
+        }
+        I64 seg = expect_ident(toks, diag, ps);
+        if (seg < 0) {
+            return;
+        }
+        nodes[x].d = seg as I32;
+    }
+    if (!selected) {
+        nodes[x].b = nodes[x].d;
+        if (is_kw(toks, ps, 0, scan.KW_AS)) {
+            _ = advance(toks, ps);
+            I64 alias = decl_name(toks, diag, ps);
+            if (alias < 0) {
+                return;
+            }
+            nodes[x].b = alias as I32;
+        }
+    }
+    _ = expect_op(toks, diag, ps, scan.OP_SEMI, scan.C_SYNTAX);
+}
+
+// One step of the module level, with no frame on the stack: the profile line, the
+// imports, then each item (SPEC-04 18.3 module).
+void module_step[n, t, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    if (ps[0].phase == 0) {
+        ps[0].phase = 1;
+        if (is_kw(toks, ps, 0, scan.KW_PROFILE)) {
+            I64 kw = advance(toks, ps);
+            I64 x = new_node(toks, nodes, diag, ps, N_PROFILE, kw, kw);
+            if (x < 0) {
+                return;
+            }
+            link_stmt(nodes, st, ps, x);
+            if (kind_at(toks, ps, 0) != scan.TK_STRING) {
+                fail(toks, diag, ps, scan.C_SYNTAX, cur(ps));
+                return;
+            }
+            nodes[x].a = single_string(src, toks, nodes, diag, ps) as I32;
+            if (ps[0].err == 0) {
+                _ = expect_op(toks, diag, ps, scan.OP_SEMI, scan.C_SYNTAX);
+            }
+        }
+        return;
+    }
+    if (ps[0].phase == 1) {
+        if (is_kw(toks, ps, 0, scan.KW_IMPORT)) {
+            import_decl(toks, nodes, st, diag, ps);
+            return;
+        }
+        ps[0].phase = 2;
+    }
+    if (kind_at(toks, ps, 0) == scan.TK_EOF) {
+        ps[0].done = 1;
+        return;
+    }
+    top_item(src, toks, nodes, st, diag, ps, -1);
+}
+
+// Runs the handler of the frame on top of the stack.
+void dispatch[n, t, m, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node[m] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    switch (st[ps[0].sp - 1].state) {
+        case S_OPERAND: h_operand(src, toks, nodes, st, diag, ps);
+        case S_UNARY: h_unary(nodes, st, ps);
+        case S_POSTFIX: h_postfix(toks, nodes, st, diag, ps);
+        case S_ARGS: h_args(toks, nodes, st, diag, ps);
+        case S_INDEX: h_index(toks, nodes, st, diag, ps);
+        case S_PAREN: h_paren(toks, nodes, st, diag, ps);
+        case S_ASCEND: h_ascend(toks, nodes, st, diag, ps);
+        case S_CONVERT: h_convert(toks, nodes, st, diag, ps);
+        case S_BINARY: h_binary(toks, nodes, st, diag, ps);
+        case S_COMPARE: h_compare(toks, nodes, st, diag, ps);
+        case S_LOGICAL: h_logical(toks, nodes, st, diag, ps);
+        case S_COND: h_cond(toks, nodes, st, diag, ps);
+        case S_CATCH: h_catch(nodes, st, ps);
+        case S_ARRAY: h_array(toks, nodes, st, diag, ps);
+        case S_TYPE: h_type(toks, nodes, st, diag, ps);
+        case S_TYPE_INNER: h_type_inner(toks, nodes, st, diag, ps);
+        case S_TUPLE_TYPE: h_tuple_type(toks, nodes, st, diag, ps);
+        case S_SHAPE: h_shape(toks, nodes, st, diag, ps);
+        case S_BLOCK: h_block(src, toks, nodes, st, diag, ps);
+        case S_SIMPLE: h_simple(toks, nodes, st, diag, ps);
+        case S_SEMI: h_semi(toks, diag, ps);
+        case S_VAR: h_var(toks, nodes, st, diag, ps);
+        case S_IF: h_if(toks, nodes, st, diag, ps);
+        case S_WHILE: h_while(toks, nodes, st, diag, ps);
+        case S_DO: h_do(toks, nodes, st, diag, ps);
+        case S_FOR: h_for(toks, nodes, st, diag, ps);
+        case S_FOR_RANGE: h_for_range(toks, nodes, st, diag, ps);
+        case S_SWITCH: h_switch(src, toks, nodes, st, diag, ps);
+        case S_TAIL: h_tail(toks, nodes, st, diag, ps);
+        case S_ASSERT: h_assert(toks, nodes, st, diag, ps);
+        case S_STATIC_ASSERT: h_static_assert(src, toks, nodes, st, diag, ps);
+        case S_STRINGS: h_strings(src, toks, nodes, st, diag, ps);
+        case S_DEFER: h_defer(toks, nodes, st, diag, ps);
+        case S_REDUCE: h_reduce(toks, nodes, st, diag, ps);
+        case S_DESTRUCT: h_destruct(toks, nodes, st, diag, ps);
+        case S_FUNC: h_func(toks, nodes, st, diag, ps);
+        case S_STRUCT: h_struct(toks, nodes, st, diag, ps);
+        case S_ATTRS: h_attrs(src, toks, nodes, st, diag, ps);
+        case S_ENUM: h_enum(toks, nodes, st, diag, ps);
+        case S_SCHEDULE: h_schedule(toks, nodes, st, diag, ps);
+        case S_TYPE_DECL: h_type_decl(toks, nodes, st, diag, ps);
+        default:
+            // Unreachable: every state is handled above. The checked index one past the stack
+            // faults E_BOUNDS, an internal compiler error (SPEC-09 CINTC-10).
+            st[s].state = 0;
+    }
+}
+
+// Parses module `module` from its tokens toks[0..ntok) (scan.scan's result; hole tokens
+// are appended after them). Returns the N_MODULE node, or -1 when a diagnostic was added.
+// Afterwards ps[0].max_sp is the most frames used at once, ps[0].nn the nodes, and
+// ps[0].ntok the tokens, holes included.
+export I64 parse[n, t, m, s, r](in U8[n] src, inout scan.Token[t] toks, I64 ntok, inout Node[m] nodes,
+        inout Frame[s] st, inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 module) {
+    ps[0].pos = 0;
+    ps[0].last = ntok - 1;
+    ps[0].ntok = ntok;
+    ps[0].nn = 0;
+    ps[0].sp = 0;
+    ps[0].max_sp = 0;
+    ps[0].res = -1;
+    ps[0].err = 0;
+    ps[0].blocks = 0;
+    ps[0].module = module;
+    ps[0].phase = 0;
+    ps[0].tail = -1;
+    ps[0].done = 0;
+    ps[0].steps = 0;
+    ps[0].cap = limits.capacity(limits.LIM_STACK, t - 1);
+    if (s < ps[0].cap) {
+        ps[0].cap = s;
+    }
+    match_brackets(toks, 0, ntok - 1);
+    ps[0].root = new_node(toks, nodes, diag, ps, N_MODULE, 0, 0);
+    if (ps[0].root < 0) {
+        return -1;
+    }
+    while (ps[0].err == 0 && ps[0].done == 0) {
+        ps[0].steps += 1;
+        if (ps[0].sp == 0) {
+            module_step(src, toks, nodes, st, diag, ps);
+        } else {
+            dispatch(src, toks, nodes, st, diag, ps);
+        }
+    }
+    if (ps[0].err != 0) {
+        return -1;
+    }
+    return ps[0].root;
+}

@@ -1,0 +1,11 @@
+// case: control/assert_passes_returns
+// clause: SPEC-04 LS-191; SPEC-01 IM-134
+// subset: cint-core-1 (assert)
+// entry: run; args: I64 41
+// spec outcome: value I64 42: both asserts hold, so the function returns
+
+export I64 run(I64 x) {
+    assert(x > 0);
+    assert(x != 0, "x={x}");
+    return x + 1;
+}

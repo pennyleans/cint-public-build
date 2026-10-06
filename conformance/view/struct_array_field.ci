@@ -1,0 +1,19 @@
+// case: view/struct_array_field
+// clause: SPEC-04 LS-67, LS-77; SPEC-09 BOOT-01 (struct_decl: a field of a fixed-length array)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 905 (the copy keeps the 9 and the 5; the later write to the copy does not reach the original)
+
+struct Ring {
+    I64 head;
+    I64[4] slots;
+}
+
+export I64 run() {
+    Ring r;
+    r.slots[2] = 9;
+    r.head = 5;
+    Ring c = r;
+    c.slots[2] = 1;
+    return r.slots[2] * 100 + c.slots[0] + r.head;
+}

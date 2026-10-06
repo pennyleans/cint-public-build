@@ -1,0 +1,13 @@
+// case: errors/shared_name_written_with_set
+// clause: SPEC-04 LS-97; SPEC-09 CONF-11 rule 12; decision 2026-10-05, BX12-21, BX12-27
+// subset: cint-core-1 (error sets, combined sets)
+// entry: run; args: none
+// spec outcome: error (format 3): error.set errors.shared_name_written_with_set.IoOrQueue, error.value QueueError.full, qualified because IoError also declares full, error.tag U16 3; stdout 0 bytes; fuel 1
+
+error IoError { closed, full }
+error QueueError { full, stalled }
+error IoOrQueue = IoError | QueueError;
+
+export IoOrQueue!I64 run() {
+    return QueueError.full;
+}

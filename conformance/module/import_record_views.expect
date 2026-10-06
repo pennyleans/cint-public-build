@@ -1,0 +1,8 @@
+case module/import_record_views
+clause SPEC-04 LS-73, LS-117, LS-119, LS-120, LS-226; SPEC-09 BOOT-01, CINTC-16
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 41
+fuel-consumed 10

@@ -1,0 +1,18 @@
+// case: memory/pool_insert_deref_remove
+// clause: SPEC-03 M-12, M-15, M-18, M-20; SPEC-04 LS-145; decision 2026-10-05, BX12-05; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (pool, handles, struct elements)
+// entry: run; args: none
+// spec outcome: value I64 735 (mass 7, vel 1 + 2 = 3, the second body's mass 5); fuel 1
+
+struct Body { I64 mass; I64 vel; }
+
+Pool(Body, 4) bodies;
+
+export I64 run() {
+    Handle(Body) a = bodies.insert(Body(mass = 7, vel = 1));
+    Handle(Body) b = bodies.insert(Body(mass = 5, vel = 2));
+    bodies[a].vel = bodies[a].vel + bodies[b].vel;
+    I64 r = bodies[a].mass * 100 + bodies[a].vel * 10 + bodies[b].mass;
+    bodies.remove(a);
+    return r;
+}

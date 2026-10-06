@@ -1,0 +1,10 @@
+// case: diag/c2003_unsigned_minus_space
+// clause: SPEC-01 IM-25, IM-26; SPEC-04 LS-28, LS-151 (decision 2026-10-03, slice 2 patch D-21 option 1)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2003 at 8:12 (the `-` of the negative literal -1, which does not fit U8)
+
+export I64 run() {
+    U8 c = - 1;
+    return c as I64;
+}

@@ -1,0 +1,14 @@
+// case: module/import_plain
+// clause: SPEC-09 BOOT-01 (import_decl, module_path, qualified); SPEC-04 LS-225, LS-226, LS-227, LS-229
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 72 (add3 gives 6, times SCALE 10, plus 3 + 4, plus cells[3] = 5)
+
+import module.lib.plain_math;
+
+export I64 run() {
+    plain_math.Pair p = plain_math.Pair(3, 4);
+    I64[4] cells;
+    plain_math.set_all(cells, 5);
+    return plain_math.add3(1, 2, 3) * plain_math.SCALE + plain_math.sum_pair(p) + cells[3];
+}

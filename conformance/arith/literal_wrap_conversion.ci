@@ -1,0 +1,10 @@
+// case: arith/literal_wrap_conversion
+// clause: SPEC-01 3.2 (conversion sources)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value U64 18446744073709551615 (the literal -1 is converted from its value in Z)
+
+export U64 run() {
+    U64 d = -1 as% U64;
+    return d;
+}

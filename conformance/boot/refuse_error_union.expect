@@ -1,0 +1,6 @@
+case boot/refuse_error_union
+clause SPEC-09 BOOT-01 (error_decl), SEED-06; SPEC-04 LS-92, LS-94, LS-130
+source compile-error
+outcome compile-error
+diagnostic.code C9100
+diagnostic.position boot/refuse_error_union.ci:8:1

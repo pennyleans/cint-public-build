@@ -1,0 +1,7 @@
+case diag/c2055_zero_array_indirect
+clause SPEC-04 LS-68, LS-73
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2055
+diagnostic.position diag/c2055_zero_array_indirect.ci:8:17

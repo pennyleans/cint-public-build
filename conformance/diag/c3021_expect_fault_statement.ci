@@ -1,0 +1,10 @@
+// case: diag/c3021_expect_fault_statement
+// clause: SPEC-04 LS-237, 17.2 (C3021)
+// subset: cint-core-1 (expect_fault)
+// entry: run; args: none
+// spec outcome: compile error C3021 at 8:5: `expect_fault` is permitted only in a test header
+
+export I64 run() {
+    expect_fault E_OVERFLOW;
+    return 1;
+}

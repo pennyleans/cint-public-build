@@ -1,0 +1,12 @@
+case arith/const_mul_overflow
+clause SPEC-01 3.2 (fixture 97), 8.3, 8.4
+source compile-error
+outcome compile-error
+diagnostic.code C6001
+diagnostic.position arith/const_mul_overflow.ci:8:27
+diagnostic.fault.code E_OVERFLOW
+diagnostic.fault.operation mul.checked.i32
+diagnostic.fault.operand I32 2000000000
+diagnostic.fault.operand I32 2
+diagnostic.fault.exact 4000000000
+diagnostic.fault.limit I32 2147483647

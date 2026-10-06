@@ -1,0 +1,6 @@
+case diag/c2050_uninitialized_scalar
+clause SPEC-04 5.1; SPEC-04 17.1, 17.2
+source compile-error
+outcome compile-error
+diagnostic.code C2050
+diagnostic.position diag/c2050_uninitialized_scalar.ci:8:9

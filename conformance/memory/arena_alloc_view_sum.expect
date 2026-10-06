@@ -1,0 +1,8 @@
+case memory/arena_alloc_view_sum
+clause SPEC-03 M-14, M-14a, M-19; SPEC-04 LS-145; decision 2026-10-05, BX12-06; ref/OPEN.md REF-OQ-45
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 110
+fuel-consumed 7

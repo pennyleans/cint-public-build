@@ -1,0 +1,12 @@
+case arith/const_shift_count
+clause SPEC-01 3.2 (fixture 98), 4.6, 8.4
+source compile-error
+outcome compile-error
+diagnostic.code C6001
+diagnostic.position arith/const_shift_count.ci:8:15
+diagnostic.fault.code E_SHIFT
+diagnostic.fault.operation shl.checked.i64
+diagnostic.fault.operand I64 1
+diagnostic.fault.operand I64 100
+diagnostic.fault.exact none
+diagnostic.fault.limit I64 63

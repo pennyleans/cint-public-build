@@ -1,0 +1,32 @@
+// case: errors/error_values_in_array_struct_param
+// clause: SPEC-04 LS-314; decision 2026-10-05, BX12-09
+// subset: cint-core-1 (error sets, error-set values, arrays, structs)
+// entry: run; args: none
+// spec outcome: value I64 19: error-set values in an array, a struct field and a parameter; weight gives 1, 1 and 10, and the field equals seen[1], which adds 7; fuel 7 (the entry, three iterations, three calls)
+
+error ParseError { empty, bad_digit, too_large }
+
+struct Failure {
+    I64 line;
+    ParseError why;
+}
+
+I64 weight(ParseError e) {
+    if (e == ParseError.too_large) {
+        return 10;
+    }
+    return 1;
+}
+
+export I64 run() {
+    ParseError[3] seen = [.empty, .bad_digit, .too_large];
+    Failure f = Failure(7, .bad_digit);
+    I64 total = 0;
+    for i in 0..3 {
+        total += weight(seen[i]);
+    }
+    if (f.why == seen[1]) {
+        total += f.line;
+    }
+    return total;
+}

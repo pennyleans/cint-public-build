@@ -1,0 +1,16 @@
+// case: memory/script_pool_module_level
+// clause: SPEC-03 M-20; SPEC-04 LS-219; decision 2026-10-05, BX12-24; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (pool, handles, script, print)
+// spec outcome: value: stdout 3 bytes (`42` and a line feed); the pool declared at the end of the script is created with the context and visible throughout the module; fuel 2 (the implicit entry, call to `bump`)
+
+I64 r = 0;
+Handle(I64) h = counts.insert(41);
+r = bump(h);
+"{r}\n";
+
+I64 bump(in Handle(I64) k) {
+    counts[k] += 1;
+    return counts[k];
+}
+
+Pool(I64, 2) counts;

@@ -1,0 +1,80 @@
+import limits;
+import resolve;
+import scan;
+
+Bool same_name(resolve.Name a, resolve.Name b) {
+    return a.tok == b.tok && a.bind == b.bind && a.cls == b.cls && a.loops == b.loops && a.hash == b.hash;
+}
+
+// Retains a full table's first row and first diagnostic across further writes.
+export I64 run(I64 mode, I64 calls, I64 field) {
+    U8[3] text;
+    scan.Token[3] toks;
+    resolve.Sym[1] syms;
+    resolve.Name[2] names;
+    resolve.Name[2] before;
+    resolve.RState[1] rs;
+    limits.CompilerDiag[3] diag;
+    I64[25] result;
+    rs[0].module = 7;
+    rs[0].name_cap = 2;
+    limits.diag_clear(diag);
+    resolve.names_clear(names, 2);
+    for i in 0..3 {
+        text[i] = (97 + i) as U8;
+        toks[i].start = i as I32;
+        toks[i].len = 1;
+        toks[i].line = (7 + i) as I32;
+        toks[i].col = (11 + 2 * i) as I32;
+    }
+    I64 first = -1;
+    I64 r = -1;
+    for i in 0..calls {
+        if (mode == 0) {
+            r = resolve.new_sym(toks, syms, diag, rs, resolve.SK_CONST, 20, 11 + i, i, 17 + i);
+        } else {
+            r = resolve.intern(text, toks, names, diag, rs, i);
+        }
+        if (i == 0) {
+            first = r;
+            before[0] = names[0];
+            before[1] = names[1];
+        }
+    }
+    result[0] = r - first;
+    if (r < 0) { result[0] = -1; }
+    result[1] = rs[0].nsym;
+    result[2] = rs[0].nname;
+    result[3] = rs[0].err;
+    result[4] = diag[0].detail[0];
+    result[5] = diag[0].detail[1];
+    result[6] = diag[1].code;
+    result[7] = diag[1].module;
+    result[8] = diag[1].line;
+    result[9] = diag[1].column;
+    for j in 0..4 { result[10 + j] = diag[1].detail[j]; }
+    if (mode == 0) {
+        result[14] = syms[0].kind;
+        result[15] = syms[0].ty;
+        result[16] = syms[0].node;
+        result[17] = syms[0].tok;
+        result[18] = syms[0].name;
+        result[19] = syms[0].prev;
+        result[20] = syms[0].link;
+        result[21] = syms[0].state;
+        result[22] = syms[0].flags;
+        result[23] = syms[0].value as I64;
+    } else {
+        if (same_name(names[0], before[0]) && same_name(names[1], before[1])) { result[14] = 1; }
+        if (resolve.intern(text, toks, names, diag, rs, 0) == first) { result[15] = 1; }
+        result[16] = rs[0].nname;
+        result[17] = diag[0].detail[0];
+        result[18] = diag[0].detail[1];
+    }
+    if (mode == 0) {
+        if (first == 0) { result[24] = 1; }
+    } else if (first >= 0 && first < 2 && names[first].tok == 0) {
+        result[24] = 1;
+    }
+    return result[field];
+}

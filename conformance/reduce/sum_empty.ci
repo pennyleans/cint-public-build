@@ -1,0 +1,10 @@
+// case: reduce/sum_empty
+// clause: SPEC-01 IM-79, IM-139 (an empty sum is 0 and charges nothing)
+// subset: cint-core-1 (built-in sum)
+// entry: run; args: none
+// spec outcome: value I64 0; fuel 1
+
+export I64 run() {
+    I64[0] none;
+    return sum(none);
+}

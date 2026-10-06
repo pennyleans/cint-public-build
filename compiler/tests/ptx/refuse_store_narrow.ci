@@ -1,0 +1,13 @@
+// The refusal of a store into an 8-bit output view in a work-item body by
+// compiler/back_ptx.ci (CR-11; box 11 unit 3; compiler/tests/ptx_suite.py).
+
+kernel k[n](in I64[n] a, out U8[n] r) over [i: n] {
+    r[i] = a[i] as U8;
+}
+
+export I64 run() {
+    I64[2] a = [3, 4];
+    U8[2] r;
+    k(a, r);
+    return r[1] as I64;
+}

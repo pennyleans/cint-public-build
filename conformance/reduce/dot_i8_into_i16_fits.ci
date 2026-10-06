@@ -1,0 +1,16 @@
+// case: reduce/dot_i8_into_i16_fits
+// clause: SPEC-01 IM-87 (dot of I8 elements into an I16 result: the exact total, then one range check)
+// subset: cint-core-1 (built-in dot)
+// entry: run; args: none
+// spec outcome: value I64 32640 (255 products of 128); fuel 260 (entry, 255 iterations, 4 for the 255 elements). Box 09 ruling R6; t27 scoping note P-1 (the I16 counterpart of TDOT-07)
+
+export I64 run() {
+    I8[2] v = [-1, -128];
+    I8[255] w;
+    I8[255] x;
+    for i in 0..255 {
+        w[i] = v[0];
+        x[i] = v[1];
+    }
+    return dot(I16, w, x) as I64;
+}

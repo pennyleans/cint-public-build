@@ -1,0 +1,7 @@
+case control/for_range_to_i64_max
+clause SPEC-04 8.4 (for i in 0..=I64.max runs without overflow)
+source reference
+outcome value
+stdout-bytes 0
+return I64 3
+fuel-consumed 4

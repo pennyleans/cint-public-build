@@ -1,0 +1,7 @@
+case boot/compound_assignment
+clause SPEC-09 BOOT-01 (assign_op); SPEC-04 LS-165, LS-166
+source reference
+outcome value
+stdout-bytes 0
+return I64 339641
+fuel-consumed 1

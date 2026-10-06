@@ -1,0 +1,16 @@
+// case: reduce/dot_i8_into_i16_overflow
+// clause: SPEC-01 IM-87 (dot of I8 elements into an I16 result: one final range check of the exact total)
+// subset: cint-core-1 (built-in dot)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 15:12 (callee `dot`), operation dot.checked.i8.i16, operand I64 256 (n), exact 32768, limit I16 32767; stack depth 0; fuel 261 (entry, 256 iterations, 4 for the 256 elements). Box 09 ruling R6; t27 scoping note P-1 (the I16 counterpart of TDOT-08)
+
+export I64 run() {
+    I8[2] v = [-1, -128];
+    I8[256] w;
+    I8[256] x;
+    for i in 0..256 {
+        w[i] = v[0];
+        x[i] = v[1];
+    }
+    return dot(I16, w, x) as I64;
+}

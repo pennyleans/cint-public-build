@@ -1,0 +1,11 @@
+// case: arith/seed08_const_overflow
+// clause: SPEC-09 SEED-08 row 2; SPEC-01 3.2, 8.4
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C6001 E_OVERFLOW at 7:18 (the first +), operation add.checked.i8, operands I8 100 and I8 100, exact 200
+
+const I8 X = 100 + 100 - 150;
+
+export I8 run() {
+    return X;
+}

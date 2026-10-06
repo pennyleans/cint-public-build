@@ -1,0 +1,12 @@
+// case: module/missing_import_order_c3009
+// clause: SPEC-04 LS-225, LS-282; SPEC-09 CINTC-05; compiler/OPEN.md CINTC-OQ-50 (cint_ref loads breadth first from the root)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C3009 at 8:8, the root's own missing import, found before module.lib.dep_missing's imports are read
+
+import module.lib.dep_missing;
+import module.lib.absent_two;
+
+export I64 run() {
+    return dep_missing.one();
+}

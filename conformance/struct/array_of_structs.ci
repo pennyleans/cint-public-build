@@ -1,0 +1,29 @@
+// case: struct/array_of_structs
+// clause: SPEC-04 4.3, 4.4; SPEC-09 5.2 (arrays and views of structs)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I32 10 (lengths 1 + 2 + 3 + 4)
+
+export struct Token {
+    I32 kind;
+    I32 start;
+    I32 length;
+    I32 line;
+    I32 column;
+}
+
+I32 total_length[n](in Token[n] ts) {
+    I32 s = 0;
+    for i in 0..n {
+        s = s + ts[i].length;
+    }
+    return s;
+}
+
+export I32 run() {
+    Token[4] ts;
+    for i in 0..4 {
+        ts[i].length = (i + 1) as I32;
+    }
+    return total_length(ts);
+}

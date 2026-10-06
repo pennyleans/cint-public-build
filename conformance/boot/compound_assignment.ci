@@ -1,0 +1,29 @@
+// case: boot/compound_assignment
+// clause: SPEC-09 BOOT-01 (assign_op); SPEC-04 LS-165, LS-166
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 339641 (x = 339, w = 64, k = 1 after every admitted compound form)
+
+export I64 run() {
+    I64 x = 100;
+    x += 7;
+    x -= 3;
+    x *= 5;
+    x /= 3;
+    x %= 50;
+    x <<= 3;
+    x >>= 1;
+    x &= 0xFF;
+    x |= 0x100;
+    x ^= 0x0F;
+    U8 w = 250;
+    w +%= 10;
+    w -%= 20;
+    w *%= 3;
+    w <<%= 2;
+    I64 k = 2;
+    k--;
+    k++;
+    k--;
+    return x * 1000 + (w as I64) * 10 + k;
+}

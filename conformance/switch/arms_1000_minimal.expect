@@ -1,0 +1,7 @@
+case switch/arms_1000_minimal
+clause SPEC-04 LS-177, LS-311; SPEC-09 CINTC-02, CINTC-03 (decision 2026-10-03, slice 2 patch D-5)
+source reference
+outcome value
+stdout-bytes 0
+return I64 5
+fuel-consumed 1

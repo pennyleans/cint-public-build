@@ -1,0 +1,10 @@
+// case: reduce/min_empty_e_shape
+// clause: SPEC-01 IM-77 (min of an empty array faults E_SHAPE)
+// subset: cint-core-1 (built-in min)
+// entry: run; args: none
+// spec outcome: fault E_SHAPE at 9:12 (callee `min`), operation reduce_min.checked.i64, operand I64 0 (n), no exact, no limit; stack depth 0; fuel 1. Record: box 09 ruling R5
+
+export I64 run() {
+    I64[0] none;
+    return min(none);
+}

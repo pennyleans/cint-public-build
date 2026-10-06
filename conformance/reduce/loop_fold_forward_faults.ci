@@ -1,0 +1,21 @@
+// case: reduce/loop_fold_forward_faults
+// clause: SPEC-01 IM-73, IM-74, IM-83 (a checked left fold depends on order: forward over 2000000000, 2000000000, -2000000000 faults at index 1)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 10:19 in `fold_forward` (the `+`), operation add.checked.i32, operands I32 2000000000 and I32 2000000000, exact 4000000000; stack depth 1; fuel 4
+
+I32 fold_forward[n](in I32[n] xs) {
+    I32 acc = 0;
+    for i in 0..n {
+        acc = acc + xs[i];
+    }
+    return acc;
+}
+
+export I32 run() {
+    I32[3] a;
+    a[0] = 2000000000;
+    a[1] = 2000000000;
+    a[2] = -2000000000;
+    return fold_forward(a);
+}

@@ -1,0 +1,7 @@
+case arith/runtime_and_constant_operand.skipped
+clause SPEC-01 IM-23; SPEC-04 LS-264 (decision 2026-10-03, slice 2 patch D-9)
+source reference
+outcome value
+stdout-bytes 0
+return I64 0
+fuel-consumed 1

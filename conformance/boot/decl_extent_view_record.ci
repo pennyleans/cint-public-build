@@ -1,0 +1,10 @@
+// case: boot/decl_extent_view_record
+// clause: SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value
+
+struct R { I64 v; }
+const I64 N = 2;
+I64 take(in R[N] a) { return a[1].v; }
+export I64 run() { R[2] a; a[1].v = 9; return take(a); }

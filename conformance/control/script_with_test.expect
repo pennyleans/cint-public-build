@@ -1,0 +1,7 @@
+case control/script_with_test
+clause SPEC-04 LS-218, LS-232, LS-239; SPEC-06 3.4a
+source reference
+outcome value
+stdout-bytes 7
+stdout-sha256 5708c28ed70f5aeb31081a46b1ff4b62f772a424563ab73c1132ca08a38ca4e7
+fuel-consumed 1

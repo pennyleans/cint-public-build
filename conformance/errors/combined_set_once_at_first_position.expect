@@ -1,0 +1,10 @@
+case errors/combined_set_once_at_first_position
+clause SPEC-04 LS-97, LS-129; SPEC-09 CONF-11 rule 12; decision 2026-10-05, BX12-03, BX12-21
+format 3
+source reference
+outcome error
+stdout-bytes 0
+fuel-consumed 2
+error.set errors.combined_set_once_at_first_position.Front
+error.value bad_byte
+error.tag U16 4

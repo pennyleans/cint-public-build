@@ -1,0 +1,10 @@
+// case: diag/c2003_paren_literal
+// clause: SPEC-04 LS-53, LS-278; ref/OPEN.md REF-OQ-25
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2003 at 8:16: the literal 128 does not fit I8; the position is the literal, not an enclosing parenthesis (REF-OQ-25)
+
+export I8 run() {
+    I8 m = -(-(128));
+    return m;
+}

@@ -1,0 +1,7 @@
+case errors/c4020_switch_missing_error_value
+clause SPEC-04 LS-182, LS-314; decision 2026-10-05, BX12-09
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C4020
+diagnostic.position errors/c4020_switch_missing_error_value.ci:15:9

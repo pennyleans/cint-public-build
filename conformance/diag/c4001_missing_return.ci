@@ -1,0 +1,12 @@
+// case: diag/c4001_missing_return
+// clause: SPEC-04 6.1; SPEC-04 17.1, 17.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C4001 at 7:12 (the function's name): the function can reach its closing brace (position: SPEC-04 LS-313, decision 2026-10-03, slice 2 patch D-11)
+
+export I64 run() {
+    I64 x = 1;
+    if (x == 1) {
+        return 1;
+    }
+}

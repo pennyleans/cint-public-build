@@ -1,0 +1,10 @@
+// case: view/slice_open_ends
+// clause: SPEC-04 LS-161; LS-145 `len`; ref/OPEN.md REF-OQ-37 (omitted bounds)
+// subset: cint-core-1 (array slices, built-in len)
+// entry: run; args: none
+// spec outcome: value I64 450 (len(a[..4]) = 4, len(a[6..]) = 4, len(a[..]) = 10); fuel 1
+
+export I64 run() {
+    I64[10] a;
+    return len(a[..4]) * 100 + len(a[6..]) * 10 + len(a[..]);
+}

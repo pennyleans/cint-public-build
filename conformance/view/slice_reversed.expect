@@ -1,0 +1,8 @@
+case view/slice_reversed
+clause SPEC-04 LS-161 (a[.. by -1] is the whole array reversed)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 90
+fuel-consumed 2

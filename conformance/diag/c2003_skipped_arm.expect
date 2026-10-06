@@ -1,0 +1,6 @@
+case diag/c2003_skipped_arm
+clause SPEC-01 3.2; SPEC-04 4.2 rules 1 and 4; SPEC-04 17.1, 17.2
+source compile-error
+outcome compile-error
+diagnostic.code C2003
+diagnostic.position diag/c2003_skipped_arm.ci:10:24

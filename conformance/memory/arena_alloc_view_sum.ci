@@ -1,0 +1,15 @@
+// case: memory/arena_alloc_view_sum
+// clause: SPEC-03 M-14, M-14a, M-19; SPEC-04 LS-145; decision 2026-10-05, BX12-06; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arena, handles, reductions)
+// entry: run; args: none
+// spec outcome: value I64 110 (1 + 2 + 3 + 4, then 0 + 0 + 100); fuel 7 (entry, 4 iterations, 2 reductions of at most 64 elements)
+
+Arena(I64, 16) scratch;
+
+export I64 run() {
+    Handle(I64[]) a = scratch.alloc(4);
+    Handle(I64[]) b = scratch.alloc(3);
+    for i in 0..4 { scratch[a][i] = i + 1; }
+    scratch[b][2] = 100;
+    return sum(scratch[a]) + sum(scratch[b]);
+}

@@ -1,0 +1,10 @@
+// case: diag/c2103_rotl_signed
+// clause: SPEC-01 2.4, 4.6; SPEC-04 17.2 (C2103)
+// subset: cint-core-1 (built-in functions are not in cint-boot-1, SPEC-09 5.2)
+// entry: run; args: none
+// spec outcome: compile error C2103 at 9:12, rotations are defined on unsigned types only
+
+export I32 run() {
+    I32 x = 5;
+    return rotl(x, 1);
+}

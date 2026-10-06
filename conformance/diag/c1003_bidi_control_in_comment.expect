@@ -1,0 +1,6 @@
+case diag/c1003_bidi_control_in_comment
+clause SPEC-04 3.1 (CVE-2021-42574); SPEC-04 17.1, 17.2
+source compile-error
+outcome compile-error
+diagnostic.code C1003
+diagnostic.position diag/c1003_bidi_control_in_comment.ci:8:18

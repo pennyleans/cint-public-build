@@ -1,0 +1,14 @@
+case control/fuel_while_true
+clause SPEC-01 10.2, 10.3
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 10
+fault.code E_FUEL
+fault.operation fuel.charge
+fault.exact none
+fault.limit I64 10
+fault.position control/fuel_while_true.ci:9:5
+fault.revision self
+fault.address none
+fault.stack-depth 0

@@ -1,0 +1,12 @@
+// case: struct/nested_argument_fault
+// clause: SPEC-04 LS-77, LS-141; SPEC-01 IM-107
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: fault E_DIV_ZERO, with the first argument store retained
+
+struct Pair { Leaf a; Leaf b; }
+struct Leaf { I64 v; }
+I64 seen = 0;
+I64 tick(I64 v) { seen = seen * 10 + v; return v; }
+I64 divide(I64 v) { return 10 / v; }
+export I64 run() { Pair a = Pair(Leaf(tick(1)), Leaf(divide(0))); return a.a.v; }

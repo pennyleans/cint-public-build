@@ -1,0 +1,23 @@
+// case: arith/runtime_and_constant_operand
+// clause: SPEC-01 IM-23; SPEC-04 LS-264 (decision 2026-10-03, slice 2 patch D-9)
+// subset: cint-boot-1
+// entry: taken, skipped; args: none
+// spec outcome: taken: fault E_DIV_ZERO at 9:27 at run time (the constant operand runs when reached); skipped: value I64 0, no fault
+
+export I64 taken() {
+    I64 x = 2;
+    Bool b = x == 2 && (1 / 0 == 0);
+    if (b) {
+        return 1;
+    }
+    return 0;
+}
+
+export I64 skipped() {
+    I64 x = 1;
+    Bool b = x == 2 && (1 / 0 == 0);
+    if (b) {
+        return 1;
+    }
+    return 0;
+}

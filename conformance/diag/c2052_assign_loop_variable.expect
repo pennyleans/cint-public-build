@@ -1,0 +1,6 @@
+case diag/c2052_assign_loop_variable
+clause SPEC-04 8.4; SPEC-04 17.1, 17.2
+source compile-error
+outcome compile-error
+diagnostic.code C2052
+diagnostic.position diag/c2052_assign_loop_variable.ci:9:9

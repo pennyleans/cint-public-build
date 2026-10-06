@@ -1,0 +1,21 @@
+// case: view/slice_strided
+// clause: SPEC-04 LS-161; SPEC-02 V-4, V-10 (a[1..8 by 3] holds a[1], a[4], a[7])
+// subset: cint-core-1 (array slices, by)
+// entry: run; args: none
+// spec outcome: value I64 12 (1 + 4 + 7); fuel 15 (entry, 10 fill iterations, call, 3 iterations)
+
+I64 total[n](in I64[n] xs) {
+    I64 s = 0;
+    for i in 0..n {
+        s = s + xs[i];
+    }
+    return s;
+}
+
+export I64 run() {
+    I64[10] a;
+    for i in 0..10 {
+        a[i] = i;
+    }
+    return total(a[1..8 by 3]);
+}

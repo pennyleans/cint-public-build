@@ -1,0 +1,7 @@
+// Helper module of module/stack_cross_module (task 2.13 part (iii)): the function that
+// faults, two modules below the root.
+
+export I64 boom(I64 x) {
+    I64 zero = x - x;
+    return x / zero;
+}

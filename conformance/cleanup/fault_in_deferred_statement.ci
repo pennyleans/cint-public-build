@@ -1,0 +1,15 @@
+// case: cleanup/fault_in_deferred_statement
+// clause: SPEC-04 LS-278, LS-317; SPEC-01 IM-106, IM-107; decision 2026-10-05, BX12-11
+// subset: cint-core-1 (`defer`)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 9:17, the `+` of the deferred statement, operation add.checked.i64, operands I64 1 and I64 9223372036854775807, exact 9223372036854775808, limit I64 9223372036854775807; stack depth 1, 14:12, the call of bump in run: the stack of the function that declared it; fuel 2
+
+I64 bump(I64 x) {
+    I64 y = 0;
+    defer y = x + I64.max;
+    return y;
+}
+
+export I64 run() {
+    return bump(1);
+}

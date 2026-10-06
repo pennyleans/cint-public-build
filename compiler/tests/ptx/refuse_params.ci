@@ -1,0 +1,80 @@
+// The refusal of an entry with more than rt/cint_cuda.h's 61 parameters after p_base,
+// p_end and p_fault (two for each of 31 `reduce` targets, and the view a) by
+// compiler/back_ptx.ci (box 11 unit 3; compiler/tests/ptx_suite.py).
+
+kernel k[n](in I64[n] a, out I64 r0, out I64 r1, out I64 r2, out I64 r3, out I64 r4, out I64 r5,
+        out I64 r6, out I64 r7, out I64 r8, out I64 r9, out I64 r10, out I64 r11, out I64 r12,
+        out I64 r13, out I64 r14, out I64 r15, out I64 r16, out I64 r17, out I64 r18, out I64 r19,
+        out I64 r20, out I64 r21, out I64 r22, out I64 r23, out I64 r24, out I64 r25, out I64 r26,
+        out I64 r27, out I64 r28, out I64 r29, out I64 r30) over [i: n] {
+    reduce r0 = sum(a[i]);
+    reduce r1 = sum(a[i]);
+    reduce r2 = sum(a[i]);
+    reduce r3 = sum(a[i]);
+    reduce r4 = sum(a[i]);
+    reduce r5 = sum(a[i]);
+    reduce r6 = sum(a[i]);
+    reduce r7 = sum(a[i]);
+    reduce r8 = sum(a[i]);
+    reduce r9 = sum(a[i]);
+    reduce r10 = sum(a[i]);
+    reduce r11 = sum(a[i]);
+    reduce r12 = sum(a[i]);
+    reduce r13 = sum(a[i]);
+    reduce r14 = sum(a[i]);
+    reduce r15 = sum(a[i]);
+    reduce r16 = sum(a[i]);
+    reduce r17 = sum(a[i]);
+    reduce r18 = sum(a[i]);
+    reduce r19 = sum(a[i]);
+    reduce r20 = sum(a[i]);
+    reduce r21 = sum(a[i]);
+    reduce r22 = sum(a[i]);
+    reduce r23 = sum(a[i]);
+    reduce r24 = sum(a[i]);
+    reduce r25 = sum(a[i]);
+    reduce r26 = sum(a[i]);
+    reduce r27 = sum(a[i]);
+    reduce r28 = sum(a[i]);
+    reduce r29 = sum(a[i]);
+    reduce r30 = sum(a[i]);
+}
+
+export I64 run() {
+    I64[2] a = [3, 4];
+    I64 r0 = 0;
+    I64 r1 = 0;
+    I64 r2 = 0;
+    I64 r3 = 0;
+    I64 r4 = 0;
+    I64 r5 = 0;
+    I64 r6 = 0;
+    I64 r7 = 0;
+    I64 r8 = 0;
+    I64 r9 = 0;
+    I64 r10 = 0;
+    I64 r11 = 0;
+    I64 r12 = 0;
+    I64 r13 = 0;
+    I64 r14 = 0;
+    I64 r15 = 0;
+    I64 r16 = 0;
+    I64 r17 = 0;
+    I64 r18 = 0;
+    I64 r19 = 0;
+    I64 r20 = 0;
+    I64 r21 = 0;
+    I64 r22 = 0;
+    I64 r23 = 0;
+    I64 r24 = 0;
+    I64 r25 = 0;
+    I64 r26 = 0;
+    I64 r27 = 0;
+    I64 r28 = 0;
+    I64 r29 = 0;
+    I64 r30 = 0;
+    k(a, r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19,
+            r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30);
+    return r0 + r1 + r2 + r3 + r4 + r5 + r6 + r7 + r8 + r9 + r10 + r11 + r12 + r13 + r14 + r15 +
+        r16 + r17 + r18 + r19 + r20 + r21 + r22 + r23 + r24 + r25 + r26 + r27 + r28 + r29 + r30;
+}

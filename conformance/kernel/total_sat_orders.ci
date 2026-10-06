@@ -1,0 +1,19 @@
+// case: kernel/total_sat_orders
+// clause: SPEC-02 R-2, 8.5 (the two total_sat rows: logical order is ascending work-item index)
+// subset: cint-core-1 (kernel)
+// entry: run; args: none
+// spec outcome: value I64 7120 (7 and 120); fuel 7 (entry, two dispatches of N = 3). Box 09 ruling R7
+
+kernel total_sat[n](in I8[n] x, out I8 s) over [i: n] {
+    reduce s = sum_sat(x[i]);
+}
+
+export I64 run() {
+    I8[3] p = [120, 120, -120];
+    I8[3] q = [120, -120, 120];
+    I8 s1 = 0;
+    I8 s2 = 0;
+    total_sat(p, s1);
+    total_sat(q, s2);
+    return (s1 as I64) * 1000 + (s2 as I64);
+}

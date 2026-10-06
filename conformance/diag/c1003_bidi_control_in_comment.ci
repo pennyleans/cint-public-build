@@ -1,0 +1,10 @@
+// case: diag/c1003_bidi_control_in_comment
+// clause: SPEC-04 3.1 (CVE-2021-42574); SPEC-04 17.1, 17.2
+// subset: cint-core-1 (non-ASCII bytes are outside cint-boot-1 sources, SPEC-09 5.3)
+// entry: run; args: none
+// spec outcome: compile error C1003 at 8:18: U+202E in a comment (position: first character of the offending construct, SPEC-04 17.1; see ref/OPEN.md O-13)
+
+export I64 run() {
+    // reversed: ‮ text
+    return 0;
+}

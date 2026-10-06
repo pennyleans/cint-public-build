@@ -1,0 +1,7 @@
+case control/for_range_half_open
+clause SPEC-04 8.4; SPEC-09 5.2 (for i in 0..n)
+source reference
+outcome value
+stdout-bytes 0
+return I64 45
+fuel-consumed 11

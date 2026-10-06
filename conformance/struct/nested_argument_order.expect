@@ -1,0 +1,9 @@
+case struct/nested_argument_order
+clause SPEC-04 LS-77, LS-141
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 2112
+fuel-consumed 3
+state.global struct.nested_argument_order seen I64 21

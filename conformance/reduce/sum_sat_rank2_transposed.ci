@@ -1,0 +1,10 @@
+// case: reduce/sum_sat_rank2_transposed
+// clause: SPEC-01 IM-75, IM-76 (the IM-75 table: sum_sat in column-major order is -73)
+// subset: cint-core-1 (rank 2, transpose)
+// entry: run; args: none
+// spec outcome: value I8 -73 (100 + 100 saturates to 127; 27; -73); fuel 2. Spelling: box 09 ruling R4
+
+export I8 run() {
+    I8[2, 2] a = [[100, -100], [100, -100]];
+    return sum_sat(transpose(a));
+}

@@ -1,0 +1,23 @@
+// case: cleanup/errdefer_on_returned_error_value
+// clause: SPEC-04 LS-130, LS-189; decision 2026-10-05, BX12-08
+// subset: cint-core-1 (error sets, `catch`, `errdefer`, module-level variable)
+// entry: run; args: none
+// spec outcome: value I64 19, state trail I64 5: push(1) returns success and skips its errdefer, and push(5) returns `.full`, which runs it; fuel 3
+
+error QueueError { full, stalled }
+
+I64 trail = 0;
+
+QueueError!I64 push(I64 n) {
+    errdefer trail = trail * 10 + n;
+    if (n > 2) {
+        return .full;
+    }
+    return n;
+}
+
+export I64 run() {
+    I64 a = push(1) catch 0;
+    I64 b = push(5) catch 9;
+    return a * 10 + b;
+}

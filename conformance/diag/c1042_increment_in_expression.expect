@@ -1,0 +1,6 @@
+case diag/c1042_increment_in_expression
+clause SPEC-04 8.1; SPEC-04 17.1, 17.2
+source compile-error
+outcome compile-error
+diagnostic.code C1042
+diagnostic.position diag/c1042_increment_in_expression.ci:10:15

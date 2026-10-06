@@ -1,0 +1,24 @@
+// case: module/import_record_views
+// clause: SPEC-04 LS-73, LS-117, LS-119, LS-120, LS-226; SPEC-09 BOOT-01, CINTC-16
+// subset: cint-boot-1
+// entry: run; args: none
+
+import module.lib.import_records;
+import module.lib.import_view_helpers;
+
+I64 take(import_records.R value) { return value.value; }
+void fixed(inout import_records.R[2] rows) { rows[0].value += 1; }
+I64 wildcard(in import_records.R[_] rows) { return rows[0].value; }
+I64 view_size[n](in import_records.R[n] rows) { return n; }
+
+export I64 run() {
+    import_records.R[2] rows;
+    import_records.R[0] empty;
+    rows[0].value = 7;
+    rows[1].value = 8;
+    fixed(rows);
+    import_records.bump(rows);
+    import_records.R value = import_records.R(true, 4);
+    return take(value) + wildcard(rows) + import_records.read(rows) +
+        import_view_helpers.total(rows) + view_size(empty);
+}

@@ -1,0 +1,22 @@
+case memory/frame_arena_recursion_exhausts
+clause SPEC-04 LS-110, LS-62; SPEC-03 M-19; decision 2026-10-05, BX12-18, BX12-23; ref/OPEN.md REF-OQ-45
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 4
+fault.code E_BOUNDS
+fault.operation arena.alloc
+fault.operand I64 1000000
+fault.operand I64 2000000
+fault.operand I64 2097152
+fault.exact none
+fault.limit none
+fault.position memory/frame_arena_recursion_exhausts.ci:8:20
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 3
+fault.stack memory/frame_arena_recursion_exhausts.ci:17:12
+fault.stack memory/frame_arena_recursion_exhausts.ci:13:12
+fault.stack memory/frame_arena_recursion_exhausts.ci:13:12

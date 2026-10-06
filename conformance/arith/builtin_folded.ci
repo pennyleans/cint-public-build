@@ -1,0 +1,14 @@
+// case: arith/builtin_folded
+// clause: SPEC-01 2.4, 4.3 to 4.10, 8.3; SPEC-04 4.2 rule 4.7
+// subset: cint-core-1 (built-in functions are not in cint-boot-1, SPEC-09 5.2)
+// entry: run; args: none
+// spec outcome: value I64 25, built-in calls on constant operands only
+
+export I64 run() {
+    I64 x = abs(-7) + min(3, 9) + max(-4, -5) + clamp(12, 0, 10);
+    I64 y = div_trunc(-7, 2) + rem_trunc(-7, 2) + div_euclid(-7, 2) + rem_euclid(-7, 2);
+    I64 z = div_round(-13, 5, half_even) + muldiv(I64, I64.max, I64.max, I64.max, floor) - I64.max;
+    U8 r = rotl(0x81 as U8, 1) + rotr(0x02 as U8, 1);
+    I64 q = isqrt(99) + isqrt_round(99, ceil) + (uabs(I8.min) as I64) + (mul_full(-128 as I8, 2 as I8) as I64);
+    return x + y + z + (r as I64) + q + 124;
+}

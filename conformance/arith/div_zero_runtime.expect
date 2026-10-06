@@ -1,0 +1,16 @@
+case arith/div_zero_runtime
+clause SPEC-01 IM-39, IM-106
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_DIV_ZERO
+fault.operation div.checked.i64
+fault.operand I64 5
+fault.operand I64 0
+fault.exact none
+fault.limit none
+fault.position arith/div_zero_runtime.ci:10:14
+fault.revision self
+fault.address none
+fault.stack-depth 0

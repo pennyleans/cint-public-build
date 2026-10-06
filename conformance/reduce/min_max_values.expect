@@ -1,0 +1,8 @@
+case reduce/min_max_values
+clause SPEC-01 IM-77, IM-85; SPEC-04 LS-145 (an array argument selects the reduction form)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 1193
+fuel-consumed 3

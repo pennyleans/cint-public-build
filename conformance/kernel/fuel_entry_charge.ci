@@ -1,0 +1,17 @@
+// case: kernel/fuel_entry_charge
+// clause: SPEC-02 X-8 item 1, F-5 check 9, 15.4 E-11 (the dispatch charge exceeds the allowance)
+// subset: cint-core-1 (kernel)
+// entry: run; args: none; fuel 3
+// spec outcome: fault E_FUEL at 15:5 (the dispatch site), phase entry, address dispatch 0, operation fuel.charge, no operands, no exact, limit I64 3; stack depth 0; fuel 1. Box 09 rulings R7 and R9
+
+kernel advance[n](in I64[n] old, in I64[n] increment, out I64[n] next) {
+    next = old + increment;
+}
+
+export I64 run() {
+    I64[3] a;
+    I64[3] d;
+    I64[3] b;
+    advance(a, d, b);
+    return b[0];
+}

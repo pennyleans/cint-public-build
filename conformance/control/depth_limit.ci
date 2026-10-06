@@ -1,0 +1,9 @@
+// case: control/depth_limit
+// clause: SPEC-01 IM-119, IM-107, IM-139 (fixture 116); SPEC-04 LS-144
+// subset: cint-core-1 (recursion is outside cint-boot-1, SPEC-09 5.3)
+// entry: f; args: I64 0; depth 4
+// spec outcome: fault E_DEPTH at the fifth call (8:12, the callee name, SPEC-04 17.1), operation call.enter, limit 4; fuel consumed 4
+
+export I64 f(I64 n) {
+    return f(n + 1);
+}

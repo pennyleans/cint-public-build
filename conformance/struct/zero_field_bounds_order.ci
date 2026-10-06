@@ -1,0 +1,12 @@
+// case: struct/zero_field_bounds_order
+// clause: SPEC-04 LS-68, LS-73, LS-139, LS-141
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS, hit 1
+
+I64 hit = 0;
+struct Element { I64 value; }
+struct Record { U8 live; Element[0] none; }
+I64 index() { hit += 1; return 0; }
+Element value() { hit += 100; Element a; return a; }
+export I64 run() { Record a; a.none[index()] = value(); return 0; }

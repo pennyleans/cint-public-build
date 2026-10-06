@@ -1,0 +1,22 @@
+case kernel/dispatch_number_second
+clause SPEC-02 F-1, F-3 (the second dispatch of an entry has number 1)
+format 4
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 7
+fault.code E_OVERFLOW
+fault.operation fold_checked.add.i64
+fault.operand I64 1
+fault.operand I64 9223372036854775807
+fault.operand I64 1
+fault.exact 9223372036854775808
+fault.limit I64 9223372036854775807
+fault.position kernel/dispatch_number_second.ci:12:16
+fault.revision self
+fault.source-map self
+fault.phase work-item
+fault.kernel kernel.dispatch_number_second.total_checked
+fault.address 1 1 1
+fault.stack-depth 1
+fault.stack kernel/dispatch_number_second.ci:21:5

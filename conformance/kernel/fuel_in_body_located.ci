@@ -1,0 +1,20 @@
+// case: kernel/fuel_in_body_located
+// clause: SPEC-02 X-8 items 2 to 4, F-6a item 2 (an in-body loop charge exceeds the allowance inside work-item 1)
+// subset: cint-core-1 (kernel)
+// entry: run; args: none; fuel 7
+// spec outcome: fault E_FUEL at 9:5 (the loop keyword), phase work-item, address dispatch 0, work-item 1, step 2 (two counted operations before the second iteration's charge), operation fuel.charge, no operands, no exact, limit I64 7; stack depth 1, stack 18:5; fuel 7 (entry 1, N = 2, work-item 0 three iterations, work-item 1 one iteration). Box 09 rulings R7 and R9
+
+kernel rowsum[n, k](in I64[n, k] a, out I64[n] s) over [i: n] {
+    I64 acc = 0;
+    for j in 0..k {
+        acc = acc + a[i, j];
+    }
+    s[i] = acc;
+}
+
+export I64 run() {
+    I64[2, 3] a;
+    I64[2] s;
+    rowsum(a, s);
+    return s[0];
+}

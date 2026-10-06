@@ -1,0 +1,6 @@
+case diag/c1032_unknown_escape
+clause SPEC-04 3.8 (escapes), LS-278; seed/OPEN.md SEED-OQ-09
+source compile-error
+outcome compile-error
+diagnostic.code C1032
+diagnostic.position diag/c1032_unknown_escape.ci:8:13

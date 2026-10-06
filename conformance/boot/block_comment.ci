@@ -1,0 +1,13 @@
+// case: boot/block_comment
+// clause: SPEC-09 BOOT-01 (BLOCK_COMMENT); SPEC-04 LS-13
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 3
+
+/* A block comment
+   over three lines. */
+export I64 run() {
+    I64 x = 1 /* inside an expression */ + 2;
+    /**/
+    return /* before the value */ x;
+}

@@ -1,0 +1,7 @@
+case view/slice_by_zero_c2053
+clause SPEC-04 LS-161 (`by` takes a nonzero compile-time constant)
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2053
+diagnostic.position view/slice_by_zero_c2053.ci:9:26

@@ -1,0 +1,7 @@
+case control/nest_for_c_49
+clause SPEC-04 8.4, LS-311; SPEC-09 SEED-15, CINTC-02
+source reference
+outcome value
+stdout-bytes 0
+return I64 1
+fuel-consumed 50

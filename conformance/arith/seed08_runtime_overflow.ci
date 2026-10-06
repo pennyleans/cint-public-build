@@ -1,0 +1,11 @@
+// case: arith/seed08_runtime_overflow
+// clause: SPEC-09 SEED-08 row 4; SPEC-01 IM-30, IM-106
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 9:15, operation add.checked.i64, operands I64 9223372036854775807 and I64 1, exact 9223372036854775808, limit I64 9223372036854775807 (the same code and operands as seed08_const_i64_overflow)
+
+export I64 run() {
+    I64 a = 9223372036854775807;
+    I64 c = a + 1;
+    return c;
+}

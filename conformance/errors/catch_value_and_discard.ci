@@ -1,0 +1,21 @@
+// case: errors/catch_value_and_discard
+// clause: SPEC-04 LS-95, LS-130, LS-132
+// subset: cint-core-1 (error sets, error unions, `catch`)
+// entry: run; args: none
+// spec outcome: value I64 49: `catch 0` leaves the 4 of a success, `catch 9` gives 9 for the error, and `_ =` discards an error; fuel 4
+
+error ParseError { empty, bad_digit, too_large }
+
+ParseError!I64 digit(U8 c) {
+    if (c < '0' || c > '9') {
+        return .bad_digit;
+    }
+    return (c - '0') as I64;
+}
+
+export I64 run() {
+    I64 a = digit('4') catch 0;
+    I64 b = digit('x') catch 9;
+    _ = digit('y');
+    return a * 10 + b;
+}

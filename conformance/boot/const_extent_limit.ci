@@ -1,0 +1,7 @@
+// case: boot/const_extent_limit
+// clause: SPEC-04 LS-62, LS-311; SPEC-09 BOOT-01, EMIT-30
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 7
+
+export I64 run() { I64[256 * 2] a; a[511] = 7; return a[511]; }

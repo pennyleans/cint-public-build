@@ -1,0 +1,8 @@
+case kernel/heat_rounding_rf3
+clause SPEC-02 15.3 RF-3 (ties to even add heat: 1.5 rounds to 2)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 14000006
+fuel-consumed 65

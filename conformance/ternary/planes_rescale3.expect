@@ -1,0 +1,9 @@
+case ternary/planes_rescale3
+clause SPEC-05 TR-DIG-2 to TR-DIG-5, 4.2 P1 to P5, 9.4 (rescale3, rescale3_rem, shl3 and trit as shifts and reads of two bit planes, against the U64 algorithm of 9.4)
+format 2
+source reference
+outcome value
+stdout-bytes 5648
+stdout-sha256 013119a559dac7f0446efae0ffb086d3b428c2ce864d803d4b336c6a3e2138c1
+return I64 0
+fuel-consumed 13379

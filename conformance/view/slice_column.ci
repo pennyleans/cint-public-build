@@ -1,0 +1,22 @@
+// case: view/slice_column
+// clause: SPEC-04 LS-161 (m[.., j] is column j, a strided rank-1 view)
+// subset: cint-core-1 (rank 2, array slices)
+// entry: run; args: none
+// spec outcome: value I64 6 (1 + 2 + 3); fuel 5 (entry, call, 3 iterations)
+
+I64 total[n](in I64[n] xs) {
+    I64 s = 0;
+    for i in 0..n {
+        s = s + xs[i];
+    }
+    return s;
+}
+
+export I64 run() {
+    I64[3, 4] m;
+    m[0, 2] = 1;
+    m[1, 2] = 2;
+    m[2, 2] = 3;
+    m[1, 3] = 50;
+    return total(m[.., 2]);
+}

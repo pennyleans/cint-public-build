@@ -1,0 +1,22 @@
+// case: struct/by_value_parameter
+// clause: SPEC-04 6.2 (in is the default mode; structs are read-only)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I32 20
+
+export struct Token {
+    I32 kind;
+    I32 start;
+    I32 length;
+    I32 line;
+    I32 column;
+}
+
+I32 span_end(Token t) {
+    return t.start + t.length;
+}
+
+export I32 run() {
+    Token t = Token(1, 13, 7, 3, 9);
+    return span_end(t);
+}

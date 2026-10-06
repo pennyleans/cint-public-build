@@ -1,0 +1,13 @@
+// case: view/index_compound_place_first
+// clause: SPEC-01 IM-98, IM-186; SPEC-04 LS-139, LS-278 (a compound assignment checks its place before the value is evaluated)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 11:6 (the `[`), operand I64 4, limit I64 4; the division by zero on the right is never evaluated
+
+export I64 run() {
+    I64[4] a;
+    I64 z = 0;
+    I64 i = 4;
+    a[i] += 1 / z;
+    return 0;
+}

@@ -1,0 +1,11 @@
+// case: arith/narrow_runtime
+// clause: SPEC-01 IM-50
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_NARROW at 9:15, operation as.checked.i64.i32, operand I64 2147483648, exact 2147483648, limit I32 2147483647
+
+export I32 run() {
+    I64 x = 2147483648;
+    I32 y = x as I32;
+    return y;
+}

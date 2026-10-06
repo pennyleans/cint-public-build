@@ -1,0 +1,7 @@
+case switch/multi_items
+clause SPEC-04 8.5
+source reference
+outcome value
+stdout-bytes 0
+return I64 84
+fuel-consumed 21

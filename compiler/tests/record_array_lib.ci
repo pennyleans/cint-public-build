@@ -1,0 +1,5 @@
+struct Item { Bool[2] flags; I64[2] values; }
+export struct Packet { Item[2] items; Bool tail; }
+export struct Value { Bool active; I64 value; }
+
+export Value make(I64 value) { return Value(true, value); }

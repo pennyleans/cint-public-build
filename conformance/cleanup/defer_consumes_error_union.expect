@@ -1,0 +1,9 @@
+case cleanup/defer_consumes_error_union
+clause SPEC-04 LS-95, LS-320; decision 2026-10-05, BX12-11
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 5
+fuel-consumed 3
+state.global cleanup.defer_consumes_error_union trail I64 4

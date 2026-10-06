@@ -1,0 +1,12 @@
+// case: module/missing_beside_type_error_c3009
+// clause: SPEC-04 LS-225, LS-226 (imports resolve before any module is checked); decision 27 item 3; SPEC-09 CINTC-05
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C3009 at 8:8, the missing import, not the type error of module.lib.dep_type_error
+
+import module.lib.dep_type_error;
+import module.lib.absent_three;
+
+export I64 run() {
+    return dep_type_error.bad();
+}

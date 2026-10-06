@@ -1,0 +1,9 @@
+// case: boot/decl_extent_field_fault_before_cycle
+// clause: SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile-error
+
+struct Cycle { Cycle c; }
+struct R { I64[1 / 0] a; }
+export I64 run() { return 0; }

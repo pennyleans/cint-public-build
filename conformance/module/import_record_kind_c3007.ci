@@ -1,0 +1,9 @@
+// case: module/import_record_kind_c3007
+// clause: SPEC-04 LS-226, LS-228; SPEC-09 CINTC-16 Lookup
+// subset: cint-boot-1
+// entry: run; args: none
+
+import module.lib.import_records;
+
+I64 take(in import_records.TOKEN[_] rows) { return 0; }
+export I64 run() { return 0; }

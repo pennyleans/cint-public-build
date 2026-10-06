@@ -1,0 +1,21 @@
+// case: view/slice_inclusive
+// clause: SPEC-04 LS-161 (a[lo..=hi] includes hi)
+// subset: cint-core-1 (array slices)
+// entry: run; args: none
+// spec outcome: value I64 27 (2 through 7); fuel 18
+
+I64 total[n](in I64[n] xs) {
+    I64 s = 0;
+    for i in 0..n {
+        s = s + xs[i];
+    }
+    return s;
+}
+
+export I64 run() {
+    I64[10] a;
+    for i in 0..10 {
+        a[i] = i;
+    }
+    return total(a[2..=7]);
+}

@@ -1,0 +1,8 @@
+case reduce/sum_i32_into_i64
+clause SPEC-01 IM-77, IM-80 (sum(R, xs) with a wider result; the twin of reduce/loop_sum_wide_accumulator)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 2147483648
+fuel-consumed 2

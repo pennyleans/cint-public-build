@@ -1,0 +1,19 @@
+case reduce/loop_fold_forward_faults
+clause SPEC-01 IM-73, IM-74, IM-83 (a checked left fold depends on order: forward over 2000000000, 2000000000, -2000000000 faults at index 1)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 4
+fault.code E_OVERFLOW
+fault.operation add.checked.i32
+fault.operand I32 2000000000
+fault.operand I32 2000000000
+fault.exact 4000000000
+fault.limit I32 2147483647
+fault.position reduce/loop_fold_forward_faults.ci:10:19
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 1
+fault.stack reduce/loop_fold_forward_faults.ci:20:12

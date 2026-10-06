@@ -1,0 +1,10 @@
+// case: reduce/sum_sat_i8
+// clause: SPEC-01 IM-77, IM-84 (the IM-79 listing)
+// subset: cint-core-1 (built-in sum_sat)
+// entry: run; args: none
+// spec outcome: value I8 7 (0 + 120 = 120; 120 + 120 saturates to 127; 127 - 120 = 7); fuel 2
+
+export I8 run() {
+    I8[3] v = [120, 120, -120];
+    return sum_sat(v);
+}

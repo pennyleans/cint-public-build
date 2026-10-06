@@ -1,0 +1,19 @@
+case view/call_slices_runtime_alias
+clause SPEC-04 LS-121, LS-123; ref/OPEN.md REF-OQ-32 (overlapping slices bound to `inout` and `in` at run time)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 2
+fault.code E_ALIAS
+fault.operation bind.alias
+fault.operand I64 0
+fault.operand I64 1
+fault.exact none
+fault.limit none
+fault.position view/call_slices_runtime_alias.ci:12:5
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 1
+fault.stack view/call_slices_runtime_alias.ci:17:5

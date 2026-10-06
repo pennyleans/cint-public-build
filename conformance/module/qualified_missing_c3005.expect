@@ -1,0 +1,6 @@
+case module/qualified_missing_c3005
+clause SPEC-04 LS-225 (a qualified name names an exported declaration); SPEC-09 CINTC-16
+source compile-error
+outcome compile-error
+diagnostic.code C3005
+diagnostic.position module/qualified_missing_c3005.ci:10:20

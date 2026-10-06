@@ -1,0 +1,10 @@
+// case: module/import_string_view
+// clause: SPEC-09 BOOT-01, BOOT-02, CINTC-16; SPEC-04 LS-40, LS-42, LS-44, LS-45, LS-117, LS-119
+// subset: cint-boot-1
+// entry: run; args: none
+
+import module.lib.string_views;
+
+export I64 run() {
+    return string_views.weigh("a\\\"\'\n\r\t\0\x41\x7F{{}}" "bc") * 1000 + string_views.first("Z");
+}

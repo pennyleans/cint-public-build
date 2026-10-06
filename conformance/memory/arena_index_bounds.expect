@@ -1,0 +1,17 @@
+case memory/arena_index_bounds
+clause SPEC-03 M-14a; SPEC-01 IM-186; ref/OPEN.md REF-OQ-45
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_BOUNDS
+fault.operation index.checked.i64
+fault.operand I64 4
+fault.exact none
+fault.limit I64 4
+fault.position memory/arena_index_bounds.ci:13:24
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

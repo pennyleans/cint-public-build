@@ -1,0 +1,18 @@
+// case: memory/pool_full_insert_faults
+// clause: SPEC-03 M-19; decision 2026-10-05, BX12-26; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (pool, handles, struct elements)
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 16:29 (the member name `insert`), operation pool.insert, operands I64 2, I64 0, I64 2 (occupied, retired, capacity), no exact, no limit; stack depth 0; fuel 1. The removed slot was reused by `c`, so the pool is full when `d` is inserted
+
+struct Body { I64 mass; I64 vel; }
+
+Pool(Body, 2) bodies;
+
+export I64 run() {
+    Handle(Body) a = bodies.insert(Body(mass = 1, vel = 0));
+    Handle(Body) b = bodies.insert(Body(mass = 2, vel = 0));
+    bodies.remove(a);
+    Handle(Body) c = bodies.insert(Body(mass = 3, vel = 0));
+    Handle(Body) d = bodies.insert(Body(mass = 4, vel = 0));
+    return bodies[d].mass;
+}

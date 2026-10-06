@@ -1,0 +1,13 @@
+// case: control/fuel_total_n3
+// clause: SPEC-01 10.1, 10.2 (fixture 95)
+// subset: cint-boot-1
+// entry: total; args: I64[3] [1, 2, 3]; fuel 3
+// spec outcome: fault E_FUEL at the third iteration's charge point; fuel consumed 3 (call 1, iterations 1 and 2; the third iteration's charge would make 4). Position: ref/OPEN.md O-11
+
+export I64 total[n](in I64[n] xs) {
+    I64 s = 0;
+    for (I64 i = 0; i < n; i++) {
+        s = s + xs[i];
+    }
+    return s;
+}

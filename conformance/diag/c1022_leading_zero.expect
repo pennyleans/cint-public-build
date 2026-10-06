@@ -1,0 +1,6 @@
+case diag/c1022_leading_zero
+clause SPEC-04 3.5 rule 3; SPEC-04 17.1, 17.2
+source compile-error
+outcome compile-error
+diagnostic.code C1022
+diagnostic.position diag/c1022_leading_zero.ci:8:13

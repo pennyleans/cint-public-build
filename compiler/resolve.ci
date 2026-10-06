@@ -1,0 +1,2323 @@
+// compiler/resolve.ci: names of one module (SPEC-04 5, 10, LS-112, LS-218 to LS-221;
+// SPEC-09 CINTC-01, CINTC-02; slice 2 task 2.10c).
+//
+// Resolution of a single module: the symbol table, the scopes of function and script
+// bodies, the module-level pass that finds whether the module is a script, registers its
+// functions, constants and module-level variables, and resolves the types of every
+// signature, and the lookup of a name with the diagnostics `cint_ref` gives (C3001,
+// C3004, C3005, C3006, C3011, C2064, C2066). compiler/check.ci walks the bodies and calls
+// declare, lookup, and the scope functions here.
+//
+// Ordinary names use the Name prefix with FNV-1a and linear probing. Hashing costs
+// O(length); probing has no worst-case constant bound (CINTC-08 remains open).
+// A Name row holds the innermost visible symbol of that name (`bind`), its class (a
+// built-in function of the prelude, SPEC-04 LS-145; a built-in type name; a script
+// local), and the number of enclosing loops labeled with it.
+//
+// Scopes. A local symbol remembers the binding it hides (`prev`, always -1 or another
+// local: a local never shares a name with a module-level declaration, which is C3001,
+// SPEC-04 LS-112) and the previous live local (`link`); a scope is the value of RState.top
+// when it opened, and closing it unbinds every local declared since, so scopes cost O(1)
+// per symbol. Module-level symbols are bound for the whole module. While a constant's
+// initializer is evaluated at module level (ctx CTX_MODULE), local bindings are hidden,
+// as `cint_ref` checks it with no local scope.
+//
+// Diagnostics stop at the first error, as `cint_ref` stops (compiler/OPEN.md CINTC-OQ-13):
+// the first code goes to RState.err and the diagnostic table, and every later report is
+// ignored. A diagnostic that depends on whether the module is a script (C3004, C3011, and
+// the module-level initializer's C6004; SPEC-04 LS-312, decision patch D-22) carries its
+// note in detail[0] to detail[2]: the line and column of the first top-level statement that
+// makes the module a script and NOTE_SCRIPT, or 0, 0 and NOTE_MODULE when it has none
+// (compiler/OPEN.md CINTC-OQ-14).
+//
+// The checked output (for compiler/lower.ci, task 2.11) is the Sem table, one row per
+// node: the static type (`ty`, a fold.ci tag; 0 for an untyped integer expression, which
+// is I64 once checked), the symbol a name or declaration resolves to, flags, a literal's
+// bytes in the literal-value table, and a constant expression's value.
+//
+// Imported names use the compressed bit trie below: one block scan at alias binding,
+// O(block rows + top-level name bytes) construction, and O(name length) lookup,
+// including misses. Each module has a directory slot; two aliases reuse one index.
+// At most 2*T rows for T keys fit the 2*Decl-capacity reserve. Table 13 stays module
+// scoped: added bytes are 40*(4096 + 2*D), at most 84,049,920. This is no K proof.
+// Other resolver/checker scans and ordinary-name probes remain outside this bound.
+
+import fold;
+import limits;
+import parse;
+import scan;
+
+// One row per node of the module (the checked output).
+export struct Sem {
+    I64 ty;
+    I64 sym;
+    I64 flags;
+    I64 opty;
+    I64 lit_at;
+    I64 lit_len;
+    U64 bits;
+}
+
+// One symbol: a module-level function, constant or variable, or a local.
+export struct Sym {
+    I64 kind;
+    I64 ty;
+    I64 node;
+    I64 tok;
+    I64 name;
+    I64 prev;
+    I64 link;
+    I64 state;
+    I64 flags;
+    U64 value;
+}
+
+// One ordinary identifier, imported module directory entry, leaf, or branch (below).
+export struct Name {
+    I64 tok;
+    I64 bind;
+    I64 cls;
+    I64 loops;
+    U64 hash;
+}
+
+export struct RState {
+    I64 module;
+    I64 nsym;
+    I64 nname;
+    I64 top;
+    I64 ctx;
+    I64 script;
+    I64 err;
+    I64 row;
+    I64 main;
+    I64 loops;
+    I64 name_cap;
+    I64 import_next;
+}
+
+// Bytes of one Sem, Sym and Name row: the element sizes of their tables.
+export const I64 SEM_BYTES = 56;
+export const I64 SYM_BYTES = 80;
+export const I64 NAME_BYTES = 40;
+
+// Types beyond fold.ci's tags: an untyped integer expression, the result of a call of a
+// void function, and (box 12) an error value `.name` before its context gives its set.
+export const I64 TY_NONE = 0;
+export const I64 TY_VOID = 2;
+export const I64 TY_DOTNAME = 0x0E;
+
+// Sem.flags.
+export const I64 SEM_CONST = 1;
+export const I64 SEM_FOLDED = 2;
+export const I64 SEM_LIT = 4;
+export const I64 SEM_COMPLETES = 8;
+export const I64 SEM_STRING_OK = 16;
+export const I64 SEM_NAMED_OK = 32;
+// A qualified name `alias.x` of an import (compiler/check.ci, task 2.13 part (iii)).
+export const I64 SEM_IMPORT = 128;
+// A call of an integer built-in (box 07), and its callee, type and mode arguments: the
+// gate admits them (check.ci mark_builtin); fold.ci holds the ids (fold.BI_*).
+export const I64 SEM_BUILTIN = 1024;
+// Box 09. An index that gives a view (fewer indices than the rank, or a slice) and one that
+// is a partial index (a view without a slice); a call of an array built-in (AF_* in
+// lit_at); for the gate, a type whose shape may have 2 to 4 extents and an array literal
+// that initializes a local variable; an element-form kernel's name of an array parameter,
+// which denotes its element (SPEC-02 K-12).
+export const I64 SEM_VIEW = 524288;
+export const I64 SEM_PARTIAL = 1048576;
+export const I64 SEM_ARRAYFN = 2048;
+export const I64 SEM_SHAPE_OK = 4096;
+export const I64 SEM_LITERAL_OK = 2097152;
+export const I64 SEM_ELEMENT = 4194304;
+// Box 12. SEM_ERRVAL: an error value the checker resolved, its tag in bits and the set its
+// context gives in ty. SEM_WIDEN: a value of a set that converts to the set type in bits
+// (BX12-28; ty stays the value's own set). SEM_UNION_OK: an expression whose error union
+// `try`, `catch` or `_ =` consumes (C2040 otherwise, LS-95). SEM_TOP: a `try` or `catch`
+// that is the whole expression of a statement, or a union that is a function's result
+// (check.ci gate; any other position is C9102, compiler/OPEN.md CINTC-OQ-15).
+export const I64 SEM_ERRVAL = 256;
+export const I64 SEM_WIDEN = 512;
+export const I64 SEM_UNION_OK = 8192;
+export const I64 SEM_TOP = 16384;
+// Box 12 memory lifetimes. SEM_MEM_OK: an `Arena(T)`, `Pool(T)` or `Handle(T)` type in a
+// position the gate admits (check.ci mem_admit). SEM_MEMBER: a member call of an arena or a
+// pool, its MB_* id in lit_at. SEM_DEREF: `a[h]` or `p[h]`, an index whose base is an arena
+// or a pool (with SEM_VIEW for an arena).
+export const I64 SEM_MEM_OK = 8388608;
+export const I64 SEM_MEMBER = 16777216;
+export const I64 SEM_DEREF = 33554432;
+
+// Symbol kinds and flags.
+export const I64 SK_FUNC = 1;
+export const I64 SK_CONST = 2;
+export const I64 SK_MODVAR = 3;
+export const I64 SK_VAR = 4;
+export const I64 SK_PARAM = 5;
+export const I64 SK_LOOPVAR = 6;
+export const I64 SK_STRUCT = 7;
+// An import's alias (task 2.13 part (iii)): ty the module index, value its block's module
+// row in the declaration table (compiler/decl.ci).
+export const I64 SK_ALIAS = 8;
+// Box 09: a kernel (node its N_KERNEL), and a view variable (SF_INOUT for `inout`).
+export const I64 SK_KERNEL = 10;
+export const I64 SK_VIEW = 11;
+export const I64 SF_LOCAL = 1;
+export const I64 SF_INOUT = 2;
+// A kernel's `out` parameter (SPEC-02 K-2).
+export const I64 SF_OUT = 4;
+
+// The state of a module-level constant.
+export const I64 CS_NEW = 0;
+export const I64 CS_BUSY = 1;
+export const I64 CS_DONE = 2;
+
+// Name classes.
+export const I64 NC_PRELUDE = 1;
+export const I64 NC_TYPE = 2;
+export const I64 NC_SCRIPT = 4;
+// Set by check.ci's gate on a prelude name: it has looked for a declaration of the name
+// (NC_LOOKED), and found one (NC_DECLARED).
+export const I64 NC_LOOKED = 8;
+export const I64 NC_DECLARED = 16;
+
+// Contexts.
+export const I64 CTX_MODULE = 0;
+export const I64 CTX_FUNCTION = 1;
+export const I64 CTX_SCRIPT = 2;
+// A kernel body (box 09; `cint_ref` ctx "kernel").
+export const I64 CTX_KERNEL = 3;
+
+// The note of a script-mode diagnostic (detail[2]).
+export const I64 NOTE_SCRIPT = 1;
+export const I64 NOTE_MODULE = 2;
+
+// Codes of SPEC-04 17.2 that resolution and checking report.
+export const I64 C_TYPE_MISMATCH = 2001;
+export const I64 C_NOT_BOOL = 2002;
+export const I64 C_LITERAL_RANGE = 2003;
+export const I64 C_NO_CONTEXT = 2007;
+export const I64 C_ROUND_CLAUSE = 2009;
+export const I64 C_ARG_COUNT = 2022;
+export const I64 C_UNINITIALIZED = 2050;
+export const I64 C_LOOP_VAR = 2052;
+export const I64 C_STEP = 2053;
+export const I64 C_STRUCT_CYCLE = 2055;
+export const I64 C_INT_AS_BOOL = 2056;
+export const I64 C_NO_CONVERSION = 2008;
+// Box 12 (SPEC-04 17.2): a set too large for its underlying type, an error union not
+// consumed, a set that does not hold the values converted to it at `try` or `return`, `try`
+// of no error union, a short form that several member sets declare, a zero-filled error
+// value, a catch block that completes, a deferred statement left, and an errdefer no error
+// can leave.
+export const I64 C_SET_RANGE = 2031;
+export const I64 C_UNCONSUMED = 2040;
+export const I64 C_SET_NARROW = 2042;
+export const I64 C_NOT_UNION = 2043;
+export const I64 C_SHARED_NAME = 2044;
+export const I64 C_ZERO_FILL = 2054;
+export const I64 C_CATCH_COMPLETES = 4002;
+export const I64 C_DEFER_LEAVES = 4030;
+export const I64 C_ERRDEFER = 4031;
+export const I64 C_NOT_PLACE = 2058;
+export const I64 C_PARAM_ASSIGNED = 2060;
+export const I64 C_INOUT_SCALAR = 2064;
+export const I64 C_UNBOUND_SIZE = 2065;
+export const I64 C_RETURN_VALUE = 2066;
+export const I64 C_NO_OPERATOR = 2103;
+export const I64 C_DUPLICATE = 3001;
+export const I64 C_SCRIPT_LOCAL = 3004;
+export const I64 C_UNDEFINED = 3005;
+export const I64 C_UNKNOWN_TYPE = 3006;
+export const I64 C_WRONG_KIND = 3007;
+export const I64 C_PRIVATE = 3008;
+export const I64 C_SCRIPT_MAIN = 3011;
+export const I64 C_MISSING_RETURN = 4001;
+export const I64 C_FUNCTION_VALUE = 4010;
+export const I64 C_RESULT_UNUSED = 4011;
+export const I64 C_JUMP = 4013;
+export const I64 C_FALLTHROUGH = 4014;
+export const I64 C_SWITCH_COVERAGE = 4020;
+export const I64 C_SWITCH_OVERLAP = 4021;
+export const I64 C_SWITCH_RANGE = 4024;
+export const I64 C_SWITCH_TYPE = 4026;
+export const I64 C_CONST_REQUIRED = 6004;
+export const I64 C_SELF_DEPENDENT = 6005;
+export const I64 C_STATIC_ASSERT = 6010;
+export const I64 C_UNSUPPORTED = 9102;
+
+// ---------------------------------------------------------------- diagnostics
+
+// The first error: code at line:col with d0, d1 in detail[0..2); later errors are ignored.
+export void fail_at[r](inout limits.CompilerDiag[r] diag, inout RState[_] rs, I64 code, I64 line, I64 col,
+        I64 d0, I64 d1) {
+    if (rs[0].err == 0) {
+        rs[0].err = code;
+        rs[0].row = limits.diag_add(diag, code, rs[0].module, line, col, d0, d1);
+    }
+}
+
+export void fail[t, r](in scan.Token[t] toks, inout limits.CompilerDiag[r] diag, inout RState[_] rs, I64 code,
+        I64 tok) {
+    fail_at(diag, rs, code, toks[tok].line as I64, toks[tok].col as I64, 0, 0);
+}
+
+// The error `code` at token tok with the LS-312 note: the first top-level statement that
+// makes the module a script, or none.
+export void fail_note[t, r](in scan.Token[t] toks, in parse.Node[_] nodes, inout limits.CompilerDiag[r] diag,
+        inout RState[_] rs, I64 code, I64 tok) {
+    if (rs[0].err != 0) {
+        return;
+    }
+    I64 s = rs[0].script;
+    if (s >= 0) {
+        I64 st = nodes[s].tok as I64;
+        fail_at(diag, rs, code, toks[tok].line as I64, toks[tok].col as I64, toks[st].line as I64,
+            toks[st].col as I64);
+    } else {
+        fail_at(diag, rs, code, toks[tok].line as I64, toks[tok].col as I64, 0, 0);
+    }
+    if (rs[0].row > 0) {
+        if (s >= 0) {
+            diag[rs[0].row].detail[2] = NOTE_SCRIPT;
+        } else {
+            diag[rs[0].row].detail[2] = NOTE_MODULE;
+        }
+    }
+}
+
+// ---------------------------------------------------------------- interned names
+
+// Whether src[s..s + len) spells `word`.
+Bool spells[n, k](in U8[n] src, I64 s, I64 blen, in U8[k] word) {
+    if (blen != k) {
+        return false;
+    }
+    for j in 0..k {
+        if (src[s + j] != word[j]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// The built-in functions of the prelude (SPEC-04 LS-145, the 57 names of `cint_ref`'s
+// PRELUDE with box 09's four), which no declaration may take (LS-22, LS-112).
+Bool prelude_name[n](in U8[n] src, I64 s, I64 blen) {
+    if (blen < 3 || blen > 12) {
+        return false;
+    }
+    return spells(src, s, blen, "len") || spells(src, s, blen, "extent") || spells(src, s, blen, "size") ||
+        spells(src, s, blen, "lower") || spells(src, s, blen, "copy") || spells(src, s, blen, "fill") ||
+        spells(src, s, blen, "equal") || spells(src, s, blen, "swap") || spells(src, s, blen, "abs") ||
+        spells(src, s, blen, "uabs") || spells(src, s, blen, "min") || spells(src, s, blen, "max") ||
+        spells(src, s, blen, "clamp") || spells(src, s, blen, "div_trunc") || spells(src, s, blen, "rem_trunc") ||
+        spells(src, s, blen, "div_euclid") || spells(src, s, blen, "rem_euclid") || spells(src, s, blen, "divmod") ||
+        spells(src, s, blen, "div_round") || spells(src, s, blen, "muldiv") || spells(src, s, blen, "mul_full") ||
+        spells(src, s, blen, "isqrt") || spells(src, s, blen, "isqrt_round") || spells(src, s, blen, "add_result") ||
+        spells(src, s, blen, "sub_result") || spells(src, s, blen, "mul_result") ||
+        spells(src, s, blen, "div_result") || spells(src, s, blen, "rem_result") ||
+        spells(src, s, blen, "shl_result") || spells(src, s, blen, "rotl") || spells(src, s, blen, "rotr") ||
+        spells(src, s, blen, "mul") || spells(src, s, blen, "div") || spells(src, s, blen, "mul_wrap") ||
+        spells(src, s, blen, "mul_sat") || spells(src, s, blen, "sqrt") || spells(src, s, blen, "sum") ||
+        spells(src, s, blen, "fold_checked") || spells(src, s, blen, "sum_wrap") || spells(src, s, blen, "sum_sat") ||
+        spells(src, s, blen, "count") || spells(src, s, blen, "wrap_bits") || spells(src, s, blen, "rescale3") ||
+        spells(src, s, blen, "rescale3_rem") || spells(src, s, blen, "shl3") || spells(src, s, blen, "sign") ||
+        spells(src, s, blen, "tdot") || spells(src, s, blen, "random") || spells(src, s, blen, "format") ||
+        spells(src, s, blen, "utf8") || spells(src, s, blen, "embed") || spells(src, s, blen, "to_device") ||
+        spells(src, s, blen, "to_host") || spells(src, s, blen, "dot") || spells(src, s, blen, "transpose") ||
+        spells(src, s, blen, "reverse") || spells(src, s, blen, "reshape");
+}
+
+// The array built-ins of box 09 (SPEC-04 LS-145; rulings R4, R6): `len`, the view
+// functions, `extent`, `size`, `copy`, `fill` and the reductions; `min` and `max` are
+// reductions when their last argument is an array (check.ci decides). AF_* ids from 1.
+export const I64 AF_LEN = 1;
+export const I64 AF_EXTENT = 2;
+export const I64 AF_SIZE = 3;
+export const I64 AF_COPY = 4;
+export const I64 AF_FILL = 5;
+export const I64 AF_TRANSPOSE = 6;
+export const I64 AF_REVERSE = 7;
+export const I64 AF_RESHAPE = 8;
+export const I64 AF_SUM = 9;
+export const I64 AF_FOLD = 10;
+export const I64 AF_SUM_WRAP = 11;
+export const I64 AF_SUM_SAT = 12;
+export const I64 AF_COUNT = 13;
+export const I64 AF_DOT = 14;
+export const I64 AF_MIN = 15;
+export const I64 AF_MAX = 16;
+
+// The array built-in (AF_*) that src[s..s + blen) names, or 0; `min` and `max` included.
+export I64 array_builtin[n](in U8[n] src, I64 s, I64 blen) {
+    if (blen < 3 || blen > 12) {
+        return 0;
+    }
+    if (spells(src, s, blen, "len")) { return AF_LEN; }
+    if (spells(src, s, blen, "extent")) { return AF_EXTENT; }
+    if (spells(src, s, blen, "size")) { return AF_SIZE; }
+    if (spells(src, s, blen, "copy")) { return AF_COPY; }
+    if (spells(src, s, blen, "fill")) { return AF_FILL; }
+    if (spells(src, s, blen, "transpose")) { return AF_TRANSPOSE; }
+    if (spells(src, s, blen, "reverse")) { return AF_REVERSE; }
+    if (spells(src, s, blen, "reshape")) { return AF_RESHAPE; }
+    if (spells(src, s, blen, "sum")) { return AF_SUM; }
+    if (spells(src, s, blen, "fold_checked")) { return AF_FOLD; }
+    if (spells(src, s, blen, "sum_wrap")) { return AF_SUM_WRAP; }
+    if (spells(src, s, blen, "sum_sat")) { return AF_SUM_SAT; }
+    if (spells(src, s, blen, "count")) { return AF_COUNT; }
+    if (spells(src, s, blen, "dot")) { return AF_DOT; }
+    if (spells(src, s, blen, "min")) { return AF_MIN; }
+    if (spells(src, s, blen, "max")) { return AF_MAX; }
+    return 0;
+}
+
+// The integer built-in (fold.BI_*) that src[s..s + blen) names, or 0.
+export I64 builtin_id[n](in U8[n] src, I64 s, I64 blen) {
+    if (blen < 3 || blen > 11) {
+        return 0;
+    }
+    if (spells(src, s, blen, "abs")) { return fold.BI_ABS; }
+    if (spells(src, s, blen, "uabs")) { return fold.BI_UABS; }
+    if (spells(src, s, blen, "min")) { return fold.BI_MIN; }
+    if (spells(src, s, blen, "max")) { return fold.BI_MAX; }
+    if (spells(src, s, blen, "clamp")) { return fold.BI_CLAMP; }
+    if (spells(src, s, blen, "div_trunc")) { return fold.BI_DIV_TRUNC; }
+    if (spells(src, s, blen, "rem_trunc")) { return fold.BI_REM_TRUNC; }
+    if (spells(src, s, blen, "div_euclid")) { return fold.BI_DIV_EUCLID; }
+    if (spells(src, s, blen, "rem_euclid")) { return fold.BI_REM_EUCLID; }
+    if (spells(src, s, blen, "div_round")) { return fold.BI_DIV_ROUND; }
+    if (spells(src, s, blen, "muldiv")) { return fold.BI_MULDIV; }
+    if (spells(src, s, blen, "mul_full")) { return fold.BI_MUL_FULL; }
+    if (spells(src, s, blen, "isqrt")) { return fold.BI_ISQRT; }
+    if (spells(src, s, blen, "isqrt_round")) { return fold.BI_ISQRT_ROUND; }
+    if (spells(src, s, blen, "rotl")) { return fold.BI_ROTL; }
+    if (spells(src, s, blen, "rotr")) { return fold.BI_ROTR; }
+    if (spells(src, s, blen, "add_result")) { return fold.BI_ADD_RESULT; }
+    if (spells(src, s, blen, "sub_result")) { return fold.BI_SUB_RESULT; }
+    if (spells(src, s, blen, "mul_result")) { return fold.BI_MUL_RESULT; }
+    if (spells(src, s, blen, "div_result")) { return fold.BI_DIV_RESULT; }
+    if (spells(src, s, blen, "rem_result")) { return fold.BI_REM_RESULT; }
+    if (spells(src, s, blen, "shl_result")) { return fold.BI_SHL_RESULT; }
+    return 0;
+}
+
+// The rounding mode src[s..s + blen) names (SPEC-01 4.5, in its order, from 1), or 0.
+export I64 round_mode[n](in U8[n] src, I64 s, I64 blen) {
+    if (spells(src, s, blen, "floor")) { return 1; }
+    if (spells(src, s, blen, "ceil")) { return 2; }
+    if (spells(src, s, blen, "trunc")) { return 3; }
+    if (spells(src, s, blen, "away")) { return 4; }
+    if (spells(src, s, blen, "half_even")) { return 5; }
+    if (spells(src, s, blen, "half_away")) { return 6; }
+    if (spells(src, s, blen, "half_trunc")) { return 7; }
+    if (spells(src, s, blen, "half_up")) { return 8; }
+    if (spells(src, s, blen, "half_down")) { return 9; }
+    return 0;
+}
+
+// The built-in type classes that no declaration may take. Checks Round, ArithError
+// (SPEC-01 IM-188) and AllocError (box 12) by spelling in intern: IDC_ROUND denotes the
+// lowercase contextual keyword, not the enum name.
+Bool builtin_type(I32 cls) {
+    return cls == scan.IDC_BOOL || cls == scan.IDC_STR || cls == scan.IDC_T1 ||
+        cls == scan.IDC_T27 || cls == scan.IDC_PT5 || cls == scan.IDC_PT4 || cls == scan.IDC_ARENA ||
+        cls == scan.IDC_POOL || cls == scan.IDC_HANDLE;
+}
+
+// Clear only the ordinary prefix and available directory, not the spare index rows.
+export void names_clear[q](inout Name[q] names, I64 upto) {
+    for i in 0..upto {
+        names[i].tok = -1;
+        names[i].bind = -1;
+        names[i].cls = 0;
+        names[i].loops = 0;
+        names[i].hash = 0;
+    }
+}
+
+U64 name_hash[n](in U8[n] src, I64 s, I64 blen) {
+    U64 h = 2166136261;
+    for k in s..s + blen {
+        h = ((h ^ (src[k] as U64)) *% 16777619) & 0xFFFFFFFF;
+    }
+    return h;
+}
+
+// The Name row of the identifier at token tok, created on first use; -1 with C9001 when the
+// table is more than half full.
+export I64 intern[n, t, q, r](in U8[n] src, in scan.Token[t] toks, inout Name[q] names,
+        inout limits.CompilerDiag[r] diag, inout RState[_] rs, I64 tok) {
+    I64 cap = rs[0].name_cap;
+    if (cap < 2 || cap > q) {
+        fail_at(diag, rs, limits.C_LIMIT, toks[tok].line as I64, toks[tok].col as I64, limits.LIM_SYMBOLS, q / 2);
+        return -1;
+    }
+    I64 s = toks[tok].start as I64;
+    I64 l = toks[tok].len as I64;
+    U64 h = name_hash(src, s, l);
+    I64 i = (h % (cap as U64)) as I64;
+    while (names[i].tok >= 0) {
+        if (names[i].hash == h) {
+            I64 o = toks[names[i].tok].start as I64;
+            if ((toks[names[i].tok].len as I64) == l) {
+                Bool same = true;
+                I64 k = 0;
+                while (same && k < l) {
+                    same = src[o + k] == src[s + k];
+                    k += 1;
+                }
+                if (same) {
+                    return i;
+                }
+            }
+        }
+        i += 1;
+        if (i == cap) {
+            i = 0;
+        }
+    }
+    if (2 * (rs[0].nname + 1) > cap) {
+        fail_at(diag, rs, limits.C_LIMIT, toks[tok].line as I64, toks[tok].col as I64, limits.LIM_SYMBOLS, cap / 2);
+        return -1;
+    }
+    rs[0].nname += 1;
+    names[i].tok = tok;
+    names[i].hash = h;
+    names[i].bind = -1;
+    names[i].loops = 0;
+    names[i].cls = 0;
+    if (prelude_name(src, s, l)) {
+        names[i].cls = NC_PRELUDE;
+    } else if (builtin_type(toks[tok].aux & 255) || spells(src, s, l, "Round") || spells(src, s, l, "ArithError") ||
+            spells(src, s, l, "AllocError")) {
+        names[i].cls = NC_TYPE;
+    }
+    return i;
+}
+
+// ------------------------------------------------------------ imported-name index
+// Table 13 keeps ordinary names in [0, name_cap), then MODULES_MAX directory rows.
+// A directory row stores block/root in tok/bind. The remaining rows are a compressed
+// bit trie: leaves store a canonical Decl row in tok; branches have tok -2, children
+// bind/cls, critical bit loops, and a representative Decl row in hash. No Decl writes.
+// Keys are one length byte then all name bytes, most significant bit first. Increasing
+// critical bits bound lookup by 8 + 8*name_bytes decisions and one full comparison.
+// A length mismatch below the length bits stops immediately, including short misses.
+
+Bool import_record[k](in limits.Decl[k] d, I64 row) {
+    if (row < 1 || row >= k) { return false; }
+    I64 nb = d[row].name_len as I64;
+    return nb > 0 && (nb + 31) / 32 <= k - row;
+}
+
+I64 import_byte(in limits.Decl[_] d, I64 row, I64 pos) {
+    if (pos == 0) { return d[row].name_len as I64; }
+    return d[row + (pos - 1) / 32].name[(pos - 1) % 32] as I64;
+}
+
+I64 import_bit(in limits.Decl[_] d, I64 row, I64 bit) {
+    return (import_byte(d, row, bit / 8) >> (7 - bit % 8)) & 1;
+}
+
+I64 query_bit(in U8[_] src, I64 at, I64 nb, I64 bit) {
+    I64 b = nb;
+    if (bit >= 8) { b = src[at + bit / 8 - 1] as I64; }
+    return (b >> (7 - bit % 8)) & 1;
+}
+
+// -2 is malformed internal input, never an absent language name (-1).
+export I64 import_find[q, k, n](in Name[q] names, in limits.Decl[k] d, in RState[_] rs,
+        I64 module, in U8[n] src, I64 at, I64 nb) {
+    I64 base = rs[0].name_cap + limits.MODULES_MAX;
+    if (module < 0 || module >= limits.MODULES_MAX || base > q || at < 0 || nb < 1 || nb > 255 || at > n - nb) {
+        return -2;
+    }
+    I64 slot = rs[0].name_cap + module;
+    if (names[slot].tok < 1) { return -2; }
+    I64 cur = names[slot].bind;
+    if (cur == -1) { return -1; }
+    I64 prev = -1;
+    while (true) {
+        if (cur < base || cur >= rs[0].import_next || cur >= q) { return -2; }
+        if (names[cur].tok != -2) { break; }
+        I64 bit = names[cur].loops;
+        I64 rep = names[cur].hash as% I64;
+        if (!import_record(d, rep) || bit <= prev || bit >= 8 + 8 * (d[rep].name_len as I64)) { return -2; }
+        if (bit >= 8 && (d[rep].name_len as I64) != nb) { return -1; }
+        prev = bit;
+        if (query_bit(src, at, nb, bit) == 0) { cur = names[cur].bind; }
+        else { cur = names[cur].cls; }
+    }
+    I64 row = names[cur].tok;
+    if (!import_record(d, row)) { return -2; }
+    if ((d[row].name_len as I64) != nb) { return -1; }
+    for j in 0..nb {
+        if (import_byte(d, row, j + 1) != (src[at + j] as I64)) { return -1; }
+    }
+    return row;
+}
+
+void import_node(inout Name[_] names, I64 at, I64 row) {
+    names[at].tok = row;
+    names[at].bind = -1;
+    names[at].cls = -1;
+    names[at].loops = -1;
+    names[at].hash = 0;
+}
+
+// Returns a new root, -1 on exhausted index storage, or -2 on malformed input.
+// Checks both new rows before writing the leaf/branch pair or changing a link.
+I64 import_insert[q](inout Name[q] names, in limits.Decl[_] d, inout RState[_] rs, I64 root, I64 row) {
+    I64 base = rs[0].name_cap + limits.MODULES_MAX;
+    I64 fresh = rs[0].import_next;
+    if (root < 0) {
+        if (fresh >= q) { return -1; }
+        import_node(names, fresh, row);
+        rs[0].import_next = fresh + 1;
+        return fresh;
+    }
+    I64 cur = root;
+    I64 prev = -1;
+    I64 candidate = -1;
+    while (true) {
+        if (cur < base || cur >= fresh || cur >= q) { return -2; }
+        if (names[cur].tok != -2) { candidate = names[cur].tok; break; }
+        I64 bit = names[cur].loops;
+        I64 rep = names[cur].hash as% I64;
+        if (!import_record(d, rep) || bit <= prev || bit >= 8 + 8 * (d[rep].name_len as I64)) { return -2; }
+        if (bit >= 8 && d[rep].name_len != d[row].name_len) { candidate = rep; break; }
+        prev = bit;
+        if (import_bit(d, row, bit) == 0) { cur = names[cur].bind; }
+        else { cur = names[cur].cls; }
+    }
+    if (!import_record(d, candidate)) { return -2; }
+    I64 pos = 0;
+    I64 diff = 0;
+    while (pos <= (d[row].name_len as I64)) {
+        diff = import_byte(d, row, pos) ^ import_byte(d, candidate, pos);
+        if (diff != 0) { break; }
+        pos += 1;
+    }
+    if (diff == 0) { return -2; }
+    I64 critical = pos * 8;
+    I64 mask = 128;
+    while ((diff & mask) == 0) { critical += 1; mask = mask / 2; }
+    cur = root;
+    I64 parent = -1;
+    I64 direction = 0;
+    while (names[cur].tok == -2 && names[cur].loops < critical) {
+        parent = cur;
+        direction = import_bit(d, row, names[cur].loops);
+        if (direction == 0) { cur = names[cur].bind; }
+        else { cur = names[cur].cls; }
+        if (cur < base || cur >= fresh || cur >= q) { return -2; }
+    }
+    if (fresh > q - 2) { return -1; }
+    import_node(names, fresh, row);
+    import_node(names, fresh + 1, -2);
+    names[fresh + 1].loops = critical;
+    names[fresh + 1].hash = row as U64;
+    if (import_bit(d, row, critical) == 0) {
+        names[fresh + 1].bind = fresh;
+        names[fresh + 1].cls = cur;
+    } else {
+        names[fresh + 1].bind = cur;
+        names[fresh + 1].cls = fresh;
+    }
+    rs[0].import_next = fresh + 2;
+    if (parent < 0) { return fresh + 1; }
+    if (direction == 0) { names[parent].bind = fresh + 1; }
+    else { names[parent].cls = fresh + 1; }
+    return root;
+}
+
+// Scan a block once at alias binding, reusing a published directory entry for aliases
+// of the same module. Publish only after all top-level names fit; a failure stops checking.
+export void import_bind[q, k](in scan.Token[_] toks, inout Name[q] names, in limits.Decl[k] d,
+        inout limits.CompilerDiag[_] diag, inout RState[_] rs, I64 module, I64 block, I64 tk) {
+    I64 base = rs[0].name_cap + limits.MODULES_MAX;
+    I64 usable = q - base;
+    if (usable < 0) { usable = 0; }
+    if (base > q) {
+        fail_at(diag, rs, limits.C_LIMIT, toks[tk].line as I64, toks[tk].col as I64, limits.LIM_IMPORT_NAMES, usable);
+        return;
+    }
+    if (module < 0 || module >= limits.MODULES_MAX || block < 1 || block >= k) {
+        fail(toks, diag, rs, C_UNSUPPORTED, tk); return;
+    }
+    I64 slot = rs[0].name_cap + module;
+    if (names[slot].tok >= 1) {
+        if (names[slot].tok != block) { fail(toks, diag, rs, C_UNSUPPORTED, tk); }
+        return;
+    }
+    if (d[0].kind != limits.DK_HEADER || d[0].a > k || d[block].kind != limits.DK_MODULE ||
+            (d[block].module as I64) != module || d[block].a < 1 || d[block].a > d[0].a - block) {
+        fail(toks, diag, rs, C_UNSUPPORTED, tk); return;
+    }
+    I64 saved = rs[0].import_next;
+    I64 root = -1;
+    I64 end = block + d[block].a;
+    I64 top = 0;
+    I64 row = block + 1;
+    while (row < end && rs[0].err == 0) {
+        U8 kd = d[row].kind;
+        if (kd == limits.DK_CONST || kd == limits.DK_VAR || kd == limits.DK_FUNC || kd == limits.DK_STRUCT) {
+            I64 nb = d[row].name_len as I64;
+            if (!import_record(d, row) || (nb + 31) / 32 > end - row) {
+                fail(toks, diag, rs, C_UNSUPPORTED, tk); break;
+            }
+            for j in 1..(nb + 31) / 32 {
+                if (d[row + j].kind != limits.DK_NAME) { fail(toks, diag, rs, C_UNSUPPORTED, tk); }
+            }
+            if (rs[0].err != 0) { break; }
+            I64 next = import_insert(names, d, rs, root, row);
+            if (next == -1) {
+                fail_at(diag, rs, limits.C_LIMIT, toks[tk].line as I64, toks[tk].col as I64, limits.LIM_IMPORT_NAMES, usable);
+            } else if (next == -2) { fail(toks, diag, rs, C_UNSUPPORTED, tk); }
+            else { root = next; }
+            top += 1;
+        } else if (kd != limits.DK_FIELD && kd != limits.DK_PARAM && kd != limits.DK_NAME) {
+            fail(toks, diag, rs, C_UNSUPPORTED, tk);
+        }
+        row += 1;
+    }
+    if (rs[0].err == 0 && top != d[block].b) { fail(toks, diag, rs, C_UNSUPPORTED, tk); }
+    if (rs[0].err != 0) { rs[0].import_next = saved; return; }
+    names[slot].bind = root;
+    names[slot].tok = block;
+}
+
+// ---------------------------------------------------------------- symbols and scopes
+
+// The symbol of name row id visible in the current context, or -1.
+export I64 binding(in Sym[_] syms, in Name[_] names, in RState[_] rs, I64 id) {
+    I64 b = names[id].bind;
+    if (b >= 0 && rs[0].ctx == CTX_MODULE && (syms[b].flags & SF_LOCAL) != 0) {
+        return -1;
+    }
+    return b;
+}
+
+// Whether a declaration of name row id would clash (SPEC-04 LS-22, LS-112).
+Bool taken(in Sym[_] syms, in Name[_] names, in RState[_] rs, I64 id) {
+    return binding(syms, names, rs, id) >= 0 || (names[id].cls & (NC_PRELUDE | NC_TYPE)) != 0;
+}
+
+export I64 new_sym[t, y, r](in scan.Token[t] toks, inout Sym[y] syms, inout limits.CompilerDiag[r] diag,
+        inout RState[_] rs, I64 kind, I64 ty, I64 node, I64 tok, I64 id) {
+    I64 k = rs[0].nsym;
+    if (k == y) {
+        fail_at(diag, rs, limits.C_LIMIT, toks[tok].line as I64, toks[tok].col as I64, limits.LIM_SYMBOLS, y);
+        return -1;
+    }
+    rs[0].nsym = k + 1;
+    syms[k].kind = kind;
+    syms[k].ty = ty;
+    syms[k].node = node;
+    syms[k].tok = tok;
+    syms[k].name = id;
+    syms[k].prev = -1;
+    syms[k].link = -1;
+    syms[k].state = CS_DONE;
+    syms[k].flags = 0;
+    syms[k].value = 0;
+    return k;
+}
+
+// Declares a local named by token tok (C3001 when the name is visible or reserved, at tok).
+// Returns the symbol, or -1.
+export I64 declare[n, t, y, q, r](in U8[n] src, in scan.Token[t] toks, inout Sym[y] syms, inout Name[q] names,
+        inout limits.CompilerDiag[r] diag, inout RState[_] rs, I64 kind, I64 ty, I64 node, I64 tok) {
+    I64 id = intern(src, toks, names, diag, rs, tok);
+    if (id < 0) {
+        return -1;
+    }
+    if (taken(syms, names, rs, id)) {
+        fail(toks, diag, rs, C_DUPLICATE, tok);
+        return -1;
+    }
+    I64 k = new_sym(toks, syms, diag, rs, kind, ty, node, tok, id);
+    if (k < 0) {
+        return -1;
+    }
+    syms[k].flags = SF_LOCAL;
+    syms[k].prev = names[id].bind;
+    syms[k].link = rs[0].top;
+    names[id].bind = k;
+    rs[0].top = k;
+    return k;
+}
+
+// Declares a module-level name (C3001 when it is taken, at tok).
+I64 global[n, t, y, q, r](in U8[n] src, in scan.Token[t] toks, inout Sym[y] syms, inout Name[q] names,
+        inout limits.CompilerDiag[r] diag, inout RState[_] rs, I64 kind, I64 node, I64 tok) {
+    I64 id = intern(src, toks, names, diag, rs, tok);
+    if (id < 0) {
+        return -1;
+    }
+    if (names[id].bind >= 0 || (names[id].cls & (NC_PRELUDE | NC_TYPE)) != 0) {
+        fail(toks, diag, rs, C_DUPLICATE, tok);
+        return -1;
+    }
+    I64 k = new_sym(toks, syms, diag, rs, kind, TY_NONE, node, tok, id);
+    if (k >= 0) {
+        names[id].bind = k;
+    }
+    return k;
+}
+
+// The current scope, to close later.
+export I64 scope_open(in RState[_] rs) {
+    return rs[0].top;
+}
+
+// Unbinds every local declared since `mark`.
+export void scope_close(in Sym[_] syms, inout Name[_] names, inout RState[_] rs, I64 mark) {
+    while (rs[0].top != mark && rs[0].top >= 0) {
+        I64 k = rs[0].top;
+        names[syms[k].name].bind = syms[k].prev;
+        rs[0].top = syms[k].link;
+    }
+}
+
+// The symbol the name at token tok denotes in the current context, or -1 after C3004
+// (a script local outside the script body, with its note) or C3005, at token pos.
+export I64 lookup[n, t, y, q, r](in U8[n] src, in scan.Token[t] toks, in parse.Node[_] nodes, inout Sym[y] syms,
+        inout Name[q] names, inout limits.CompilerDiag[r] diag, inout RState[_] rs, I64 tok, I64 pos) {
+    I64 id = intern(src, toks, names, diag, rs, tok);
+    if (id < 0) {
+        return -1;
+    }
+    I64 b = binding(syms, names, rs, id);
+    if (b >= 0) {
+        return b;
+    }
+    if ((names[id].cls & NC_SCRIPT) != 0 && rs[0].ctx != CTX_SCRIPT) {
+        fail_note(toks, nodes, diag, rs, C_SCRIPT_LOCAL, pos);
+    } else if ((names[id].cls & NC_PRELUDE) != 0) {
+        fail(toks, diag, rs, C_UNSUPPORTED, pos);
+    } else {
+        fail(toks, diag, rs, C_UNDEFINED, pos);
+    }
+    return -1;
+}
+
+// ---------------------------------------------------------------- types
+
+// The type identifier class cls names among the eight integer types of cint-boot-1 (I8 to
+// I64, U8 to U64), or 0.
+export I64 int_class(I32 cls) {
+    switch (cls) {
+        case scan.IDC_I8: return fold.TY_I8;
+        case scan.IDC_I16: return fold.TY_I16;
+        case scan.IDC_I32: return fold.TY_I32;
+        case scan.IDC_I64: return fold.TY_I64;
+        case scan.IDC_U8: return fold.TY_U8;
+        case scan.IDC_U16: return fold.TY_U16;
+        case scan.IDC_U32: return fold.TY_U32;
+        case scan.IDC_U64: return fold.TY_U64;
+        default: return 0;
+    }
+}
+
+// Whether ty is one of the eight integer types.
+export Bool is_int(I64 ty) {
+    return (ty >= fold.TY_I8 && ty <= fold.TY_I64) || (ty >= fold.TY_U8 && ty <= fold.TY_U64);
+}
+
+// The type an N_TYPE node names: an integer type of int_class, or Bool; C3006 at its name
+// for a name that is not a type, C9102 for a type outside the subset compiler/check.ci
+// implements. 0 after an error.
+export I64 type_of[t, r](in scan.Token[t] toks, in parse.Node[_] nodes, inout limits.CompilerDiag[r] diag,
+        inout RState[_] rs, I64 x) {
+    I64 tok = nodes[x].tok as I64;
+    I32 cls = toks[tok].aux & 255;
+    if (toks[tok].kind == scan.TK_IDENT && nodes[x].op == 1 && nodes[x].a < 0 && nodes[x].b < 0) {
+        if (int_class(cls) != 0) {
+            return int_class(cls);
+        }
+        if (cls == scan.IDC_BOOL) {
+            return fold.TY_BOOL;
+        }
+        if (scan.ordinary_name_class(cls)) {
+            fail(toks, diag, rs, C_UNKNOWN_TYPE, tok);
+            return 0;
+        }
+    }
+    fail(toks, diag, rs, C_UNSUPPORTED, tok);
+    return 0;
+}
+
+// ---------------------------------------------------------------- arrays and views
+
+// Task 2.13 part (b): the array and view types of cint-boot-1 (SPEC-04 LS-62 to LS-67,
+// LS-117, LS-119; SPEC-03 5.2), rank 1 with a scalar element. A type is TY_ARRAY plus
+// 65536 times the extent code plus the element's fold.ci tag: the extent code is the
+// extent plus 1 for an extent written as a decimal literal, and 0 for `_` (known at run
+// time). Other extents, size parameters among them, are C9102 (compiler/OPEN.md
+// CINTC-OQ-15). A local array's static extent v above ARRAY_EXTENT_MAX has the code
+// BIG_CODE + v, up to BIG_EXTENT_MAX (check.ci h_type; decision 2026-10-06 on OQ-213).
+export const I64 TY_ARRAY = 1099511627776;
+export const I64 ARRAY_EXTENT_MAX = 65534;
+export const I64 BIG_CODE = 4294967296;
+export const I64 BIG_EXTENT_MAX = 4294967296;
+
+// Box 09: arrays and views of rank 2 to 4 (SPEC-02 V-2; SPEC-04 LS-62 to LS-67). A type of
+// rank r is TY_NARRAY + (r - 2) * 2^60 + elem * 2^48 plus, for each dimension d, its extent
+// code times 2^(36 - 12 d). An extent code has 12 bits: 0 for an extent known at run time
+// (`_`, an I64 expression of size parameters, a kernel shape expression), v + 1 for a static
+// extent v of at most NARRAY_EXTENT_MAX, and NSIZE_CODE + j for size parameter j. elem is the
+// element code of a rank-1 type, below NELEM_MAX. Larger extents and element codes are C9102
+// (compiler/OPEN.md CINTC-OQ-15).
+export const I64 TY_NARRAY = 4611686018427387904;
+export const I64 NARRAY_EXTENT_MAX = 3070;
+export const I64 NSIZE_CODE = 3072;
+export const I64 NELEM_MAX = 4096;
+const I64 RANK_STEP = 1152921504606846976;
+const I64 ELEM_STEP = 281474976710656;
+
+export Bool is_array(I64 ty) {
+    return ty >= TY_ARRAY;
+}
+
+// The rank of array type ty.
+export I64 array_rank(I64 ty) {
+    if (ty >= TY_NARRAY) {
+        return 2 + (ty - TY_NARRAY) / RANK_STEP;
+    }
+    return 1;
+}
+
+// The element code of array type ty: a scalar's fold.ci tag, ELEM_STRUCT + s, or an error
+// set's code from ELEM_SET (rank 1 only).
+export I64 elem_code(I64 ty) {
+    if (ty >= TY_NARRAY) {
+        return ((ty - TY_NARRAY) / ELEM_STEP) % NELEM_MAX;
+    }
+    return (ty - TY_ARRAY) % 65536;
+}
+
+// The element type of array type ty: a scalar's fold.ci tag, (task 2.14) the struct type
+// TY_STRUCT + s for an element code ELEM_STRUCT + s, or (box 12) the error set type of an
+// element code from ELEM_SET (errset_elem).
+export I64 array_elem(I64 ty) {
+    I64 e = elem_code(ty);
+    if (e >= ELEM_SET) {
+        I64 k = (e - ELEM_SET) / 4;
+        if (k == ELEM_SETS) {
+            k = ARITH_SET;
+        }
+        return TY_ERRSET + 256 * k + fold.TY_U8 + (e - ELEM_SET) % 4;
+    }
+    if (e >= ELEM_STRUCT) {
+        return TY_STRUCT + e - ELEM_STRUCT;
+    }
+    return e;
+}
+
+// The extent code of dimension d of array type ty in the rank-1 form: 0 for an extent known
+// at run time, v + 1 for a static extent v, SIZE_CODE + j for size parameter j.
+export I64 dim_code(I64 ty, I64 d) {
+    if (ty < TY_NARRAY) {
+        return (ty - TY_ARRAY) / 65536;
+    }
+    I64 c = ((ty - TY_NARRAY) >> (36 - 12 * d)) & 4095;
+    if (c >= NSIZE_CODE) {
+        return SIZE_CODE + c - NSIZE_CODE;
+    }
+    return c;
+}
+
+// The static extent of dimension d of array type ty, or -1 when it is known at run time.
+export I64 dim_extent(I64 ty, I64 d) {
+    I64 c = dim_code(ty, d);
+    if (c >= BIG_CODE) {
+        return c - BIG_CODE;
+    }
+    if (c >= SIZE_CODE) {
+        return -1;
+    }
+    return c - 1;
+}
+
+// The position of the size parameter that is the extent of dimension d of view type ty, or -1.
+export I64 dim_size(I64 ty, I64 d) {
+    I64 c = dim_code(ty, d);
+    if (c >= SIZE_CODE && c < BIG_CODE) {
+        return c - SIZE_CODE;
+    }
+    return -1;
+}
+
+// The array type of element code elem and rank r whose dimensions have the extent codes
+// g0 to g3 in dim_code's form (those past r ignored); 0 when a code or the element does
+// not fit rank r's encoding.
+export I64 shaped(I64 elem, I64 r, I64 g0, I64 g1, I64 g2, I64 g3) {
+    if (r == 1) {
+        return TY_ARRAY + g0 * 65536 + elem;
+    }
+    if (r < 1 || r > 4 || elem >= NELEM_MAX) {
+        return 0;
+    }
+    I64 ty = TY_NARRAY + (r - 2) * RANK_STEP + elem * ELEM_STEP;
+    for d in 0..r {
+        I64 g = g0;
+        if (d == 1) {
+            g = g1;
+        } else if (d == 2) {
+            g = g2;
+        } else if (d == 3) {
+            g = g3;
+        }
+        I64 c = g;
+        if (g >= SIZE_CODE) {
+            if (g - SIZE_CODE >= NELEM_MAX - NSIZE_CODE) {
+                return 0;
+            }
+            c = NSIZE_CODE + g - SIZE_CODE;
+        } else if (g > NARRAY_EXTENT_MAX + 1) {
+            return 0;
+        }
+        ty += c << (36 - 12 * d);
+    }
+    return ty;
+}
+
+// Array type ty with dimension d's extent code replaced by g (dim_code's form); 0 when g
+// does not fit.
+export I64 with_dim(I64 ty, I64 d, I64 g) {
+    I64[4] c;
+    I64 r = array_rank(ty);
+    for k in 0..4 {
+        c[k] = 0;
+        if (k < r) {
+            c[k] = dim_code(ty, k);
+        }
+    }
+    c[d] = g;
+    return shaped(elem_code(ty), r, c[0], c[1], c[2], c[3]);
+}
+
+// Task 2.14: the element code of a struct element type TY_STRUCT + s is ELEM_STRUCT + s,
+// for a struct symbol s below ELEM_STRUCT_MAX (C9102 above it, compiler/OPEN.md CINTC-OQ-15).
+export const I64 ELEM_STRUCT = 256;
+export const I64 ELEM_STRUCT_MAX = 65280;
+
+// The static extent of rank-1 array type ty, or -1 when it is known at run time (or ty has
+// a higher rank).
+export I64 array_extent(I64 ty) {
+    if (ty >= TY_NARRAY) {
+        return -1;
+    }
+    I64 c = (ty - TY_ARRAY) / 65536;
+    if (c >= BIG_CODE) {
+        return c - BIG_CODE;
+    }
+    if (c >= SIZE_CODE) {
+        return -1;
+    }
+    return c - 1;
+}
+
+// The extent code of a view whose extent is size parameter j of its function is
+// SIZE_CODE + j (SPEC-04 LS-117).
+export const I64 SIZE_CODE = 65536;
+
+// The position of the size parameter that is the extent of rank-1 view type ty, or -1.
+export I64 array_size(I64 ty) {
+    if (ty >= TY_NARRAY) {
+        return -1;
+    }
+    I64 c = (ty - TY_ARRAY) / 65536;
+    if (c >= SIZE_CODE && c < BIG_CODE) {
+        return c - SIZE_CODE;
+    }
+    return -1;
+}
+
+// The position in the `[...]` list of function node f of the size parameter spelled by
+// token tok, or -1.
+export I64 size_index[n, t](in U8[n] src, in scan.Token[t] toks, in parse.Node[_] nodes, I64 f, I64 tok) {
+    if (f < 0) {
+        return -1;
+    }
+    I64 j = 0;
+    I64 z = nodes[f].d as I64;
+    while (z >= 0) {
+        I64 zt = nodes[z].tok as I64;
+        if (toks[zt].len == toks[tok].len && same_text(src, toks[zt].start as I64, toks[tok].start as I64,
+                toks[tok].len as I64)) {
+            return j;
+        }
+        j += 1;
+        z = nodes[z].next as I64;
+    }
+    return -1;
+}
+
+export Bool same_text[n](in U8[n] src, I64 a, I64 b, I64 nbytes) {
+    for i in 0..nbytes {
+        if (src[a + i] != src[b + i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// type_of, and the array type of an N_TYPE node whose shape has one extent.
+export I64 shaped_type_of[n, t, r](in U8[n] src, in scan.Token[t] toks, in parse.Node[_] nodes,
+        inout limits.CompilerDiag[r] diag, inout RState[_] rs, I64 x) {
+    return param_type_of(src, toks, nodes, diag, rs, x, -1, -2);
+}
+
+// shaped_type_of for a parameter of function node f, whose extent may name one of f's
+// size parameters.
+export I64 param_type_of[n, t, r](in U8[n] src, in scan.Token[t] toks, in parse.Node[_] nodes,
+        inout limits.CompilerDiag[r] diag, inout RState[_] rs, I64 x, I64 f, I64 checked_extent) {
+    I64 tok = nodes[x].tok as I64;
+    I32 cls = toks[tok].aux & 255;
+    if (toks[tok].kind != scan.TK_IDENT || nodes[x].op != 1 || nodes[x].a < 0 || nodes[x].b >= 0 ||
+            (int_class(cls) == 0 && cls != scan.IDC_BOOL)) {
+        return type_of(toks, nodes, diag, rs, x);
+    }
+    I64 elem = fold.TY_BOOL;
+    if (int_class(cls) != 0) {
+        elem = int_class(cls);
+    }
+    return shape_type(src, toks, nodes, diag, rs, x, f, elem, checked_extent);
+}
+
+// The array type of N_TYPE node x of function node f (-1 outside a parameter), whose shape
+// has one extent, with element code elem; 0 after C9102 for another shape or extent. A
+// shape of 2 to 4 extents (box 09) is checked by the caller (checked_extent -1), which
+// gets the rank-1 type of element code elem and builds the type itself (check.ci h_type);
+// more than 4 is C9102 (`cint_ref` refuses it, SPEC-02 V-2).
+I64 shape_type[n, t, r](in U8[n] src, in scan.Token[t] toks, in parse.Node[_] nodes,
+        inout limits.CompilerDiag[r] diag, inout RState[_] rs, I64 x, I64 f, I64 elem, I64 checked_extent) {
+    I64 shape = nodes[x].a as I64;
+    I64 e = nodes[shape].a as I64;
+    I64 rank = 0;
+    I64 z = e;
+    while (z >= 0) {
+        rank += 1;
+        z = nodes[z].next as I64;
+    }
+    if (rank == 0 || rank > 4 || (rank > 1 && checked_extent != -1)) {
+        fail(toks, diag, rs, C_UNSUPPORTED, nodes[shape].tok as I64);
+        return 0;
+    }
+    if (rank > 1) {
+        return TY_ARRAY + elem;
+    }
+    if (checked_extent >= -1) {
+        return TY_ARRAY + (checked_extent + 1) * 65536 + elem;
+    }
+    I32 k = nodes[e].kind;
+    if (k == parse.N_WILD) {
+        return TY_ARRAY + elem;
+    }
+    I64 et = nodes[e].tok as I64;
+    if (k == parse.N_NAME) {
+        I64 j = size_index(src, toks, nodes, f, et);
+        if (j >= 0) {
+            return TY_ARRAY + (SIZE_CODE + j) * 65536 + elem;
+        }
+    }
+    I64 nd = toks[et].len as I64;
+    if (k != parse.N_LIT || toks[et].kind != scan.TK_INT || toks[et].sub != 10 || nd > 5) {
+        fail(toks, diag, rs, C_UNSUPPORTED, et);
+        return 0;
+    }
+    I64 v = 0;
+    I64 s = toks[et].start as I64;
+    for i in 0..nd {
+        U8 c = src[s + i];
+        if (c >= '0' && c <= '9') {
+            v = v * 10 + ((c - '0') as I64);
+        }
+    }
+    if (v > ARRAY_EXTENT_MAX) {
+        fail(toks, diag, rs, C_UNSUPPORTED, et);
+        return 0;
+    }
+    return TY_ARRAY + (v + 1) * 65536 + elem;
+}
+
+// ---------------------------------------------------------------- string values
+
+// Task 2.13 part (ii): a string literal passed to an `in U8` view (SPEC-04 LS-58, LS-119):
+// its bytes are the decoded bytes of its tokens, in order (escapes, `{{` and `}}`).
+
+// The bytes of the one escape, doubled brace, or byte at text[k] of a string body ending at
+// `end`: got[0..got[4]) the bytes, got[4] their count; returns the index after it.
+export I64 string_next[n](in U8[n] text, I64 k, I64 end, inout I64[_] got) {
+    I64 c = text[k] as I64;
+    got[4] = 1;
+    if (c == 92) {
+        I64[2] esc;
+        I64 v = scan.escape_at(text, k, end, false, esc);
+        if (v < 0x80) {
+            got[0] = v;
+        } else if (v < 0x800) {
+            got[0] = 0xC0 | (v >> 6);
+            got[1] = 0x80 | (v & 0x3F);
+            got[4] = 2;
+        } else if (v < 0x10000) {
+            got[0] = 0xE0 | (v >> 12);
+            got[1] = 0x80 | ((v >> 6) & 0x3F);
+            got[2] = 0x80 | (v & 0x3F);
+            got[4] = 3;
+        } else {
+            got[0] = 0xF0 | (v >> 18);
+            got[1] = 0x80 | ((v >> 12) & 0x3F);
+            got[2] = 0x80 | ((v >> 6) & 0x3F);
+            got[3] = 0x80 | (v & 0x3F);
+            got[4] = 4;
+        }
+        return esc[0];
+    }
+    got[0] = c;
+    if ((c == '{' || c == '}') && k + 1 < end && (text[k + 1] as I64) == c) {
+        return k + 2;
+    }
+    return k + 1;
+}
+
+// The number of bytes of the string literal of the ntok string tokens from token tk.
+export I64 string_length[n, t](in U8[n] text, in scan.Token[t] toks, I64 tk, I64 ntok) {
+    I64 total = 0;
+    I64[5] bytes5;
+    for q in tk..tk + ntok {
+        I64 k = (toks[q].start as I64) + 1;
+        I64 end = (toks[q].start as I64) + (toks[q].len as I64) - 1;
+        while (k < end) {
+            k = string_next(text, k, end, bytes5);
+            total += bytes5[4];
+        }
+    }
+    return total;
+}
+
+// ---------------------------------------------------------------- structs
+
+// Task 2.13 part (ii): the struct types of a module (SPEC-04 section 6, LS-73 to LS-79).
+// The type of the struct whose symbol is s is TY_STRUCT + s, so the declaration of a struct
+// type is syms[ty - TY_STRUCT].node, an N_STRUCT node whose fields are its N_FIELD_DECL
+// list, each with its type in Sem. A field's type is a scalar; a field of struct or array
+// type is C9102 (compiler/OPEN.md CINTC-OQ-15).
+export const I64 TY_STRUCT = 549755813888;
+
+export Bool is_struct(I64 ty) {
+    return ty >= TY_STRUCT && ty < TY_ARRAY;
+}
+
+// The N_STRUCT node of struct type ty.
+export I64 struct_node(in Sym[_] syms, I64 ty) {
+    return syms[ty - TY_STRUCT].node;
+}
+
+// The N_FIELD_DECL node of the field named by token tok in struct type ty, or -1.
+export I64 field_of[n, t](in U8[n] src, in scan.Token[t] toks, in parse.Node[_] nodes, in Sym[_] syms, I64 ty,
+        I64 tok) {
+    I64 fd = nodes[struct_node(syms, ty)].a as I64;
+    while (fd >= 0) {
+        I64 ft = nodes[fd].tok as I64;
+        if (toks[ft].len == toks[tok].len && same_text(src, toks[ft].start as I64, toks[tok].start as I64,
+                toks[tok].len as I64)) {
+            return fd;
+        }
+        fd = nodes[fd].next as I64;
+    }
+    return -1;
+}
+
+// The type an N_TYPE node names, as param_type_of, where a plain name may also name a
+// struct or (box 12) an error set of the module, ArithError or AllocError.
+export I64 named_type[n, t, y, q, r](in U8[n] src, in scan.Token[t] toks, in parse.Node[_] nodes, in Sym[y] syms,
+        inout Name[q] names, inout limits.CompilerDiag[r] diag, inout RState[_] rs, I64 x, I64 f, I64 checked_extent) {
+    I64 tok = nodes[x].tok as I64;
+    if (toks[tok].kind == scan.TK_IDENT && scan.ordinary_name_class(toks[tok].aux & 255) && nodes[x].op == 1 &&
+            nodes[x].b < 0) {
+        I64 id = intern(src, toks, names, diag, rs, tok);
+        if (id < 0) {
+            return 0;
+        }
+        I64 bound = binding(syms, names, rs, id);
+        I64 set = 0;
+        if (bound >= 0 && syms[bound].kind == SK_ERRSET) {
+            set = syms[bound].ty;
+        } else if (bound < 0 && spells(src, toks[tok].start as I64, toks[tok].len as I64, "ArithError")) {
+            set = TY_ARITH;
+        } else if (bound < 0 && spells(src, toks[tok].start as I64, toks[tok].len as I64, "AllocError")) {
+            set = TY_ALLOC;
+        }
+        if (set != 0) {
+            if (nodes[x].a < 0) {
+                return set;
+            }
+            // An array or a view of error values (LS-314).
+            if (errset_elem(set) < 0) {
+                fail(toks, diag, rs, C_UNSUPPORTED, tok);
+                return 0;
+            }
+            return shape_type(src, toks, nodes, diag, rs, x, f, errset_elem(set), checked_extent);
+        }
+        if (bound >= 0 && syms[bound].kind == SK_STRUCT) {
+            if (nodes[x].a >= 0) {
+                // An array or a view of struct elements (task 2.14; SPEC-04 4.3, LS-119).
+                if (bound >= ELEM_STRUCT_MAX) {
+                    fail(toks, diag, rs, C_UNSUPPORTED, tok);
+                    return 0;
+                }
+                return shape_type(src, toks, nodes, diag, rs, x, f, ELEM_STRUCT + bound, checked_extent);
+            }
+            return syms[bound].ty;
+        }
+    }
+    if (checked_extent >= -1 && nodes[x].a >= 0 && scan.ordinary_name_class(toks[tok].aux & 255)) {
+        fail(toks, diag, rs, C_UNKNOWN_TYPE, tok);
+        return 0;
+    }
+    return param_type_of(src, toks, nodes, diag, rs, x, f, checked_extent);
+}
+
+// Keeps one checker symbol per canonical imported record row, including aliases.
+export I64 import_struct_ty[y](in scan.Token[_] toks, inout Sym[y] syms, inout limits.CompilerDiag[_] diag,
+        inout RState[_] rs, I64 row, I64 tok) {
+    for k in 0..rs[0].nsym {
+        if (syms[k].kind == SK_STRUCT && syms[k].node < 0 && (syms[k].value as% I64) == row) {
+            return syms[k].ty;
+        }
+    }
+    I64 s = new_sym(toks, syms, diag, rs, SK_STRUCT, 0, -1, tok, 0);
+    if (s < 0) { return 0; }
+    syms[s].ty = TY_STRUCT + s;
+    syms[s].value = row as% U64;
+    return syms[s].ty;
+}
+
+// Resolves the module and member before the shape, with privacy before kind
+// (SPEC-04 LS-226 to LS-228; CINTC-16 Lookup). Qualified names use the imported index.
+export I64 type_ref[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, inout Sem[_] sem,
+        inout Sym[_] syms, inout Name[_] names, in limits.Decl[_] decls,
+        inout limits.CompilerDiag[_] diag, inout RState[_] rs, I64 x, I64 f, I64 checked_extent) {
+    if (mem_node(toks, nodes, x)) {
+        // A result, a union's value or a module-level variable (box 12).
+        return mem_type_ref(src, toks, nodes, syms, names, diag, rs, x, MW_OTHER);
+    }
+    if (nodes[x].kind != parse.N_TYPE || nodes[x].op != 2 || nodes[x].b >= 0) {
+        return named_type(src, toks, nodes, syms, names, diag, rs, x, f, checked_extent);
+    }
+    I64 at = nodes[x].start as I64;
+    I64 tk = nodes[x].tok as I64;
+    I64 id = intern(src, toks, names, diag, rs, at);
+    if (id < 0) { return 0; }
+    I64 al = binding(syms, names, rs, id);
+    if (al < 0 || syms[al].kind != SK_ALIAS) {
+        fail(toks, diag, rs, C_UNKNOWN_TYPE, at);
+        return 0;
+    }
+    I64 row = import_find(names, decls, rs, syms[al].ty, src, toks[tk].start as I64, toks[tk].len as I64);
+    if (row == -2) { fail(toks, diag, rs, C_UNSUPPORTED, tk); }
+    if (row < 0) {
+        fail(toks, diag, rs, C_UNDEFINED, tk);
+        return 0;
+    }
+    if (decls[row].vis == 0) {
+        fail(toks, diag, rs, C_PRIVATE, tk);
+        return 0;
+    }
+    if (decls[row].kind != limits.DK_STRUCT) {
+        fail(toks, diag, rs, C_WRONG_KIND, tk);
+        return 0;
+    }
+    sem[x].lit_at = row;
+    sem[x].opty = syms[al].ty;
+    sem[x].flags = sem[x].flags | SEM_IMPORT;
+    I64 ty = import_struct_ty(toks, syms, diag, rs, row, tk);
+    if (ty == 0 || nodes[x].a < 0) { return ty; }
+    I64 sym = ty - TY_STRUCT;
+    if (sym >= ELEM_STRUCT_MAX) {
+        fail(toks, diag, rs, C_UNSUPPORTED, tk);
+        return 0;
+    }
+    return shape_type(src, toks, nodes, diag, rs, x, f, ELEM_STRUCT + sym, checked_extent);
+}
+
+// Checks size names before parameter types, then requires each size to occur in a
+// checked view before resolving the result (SPEC-04 LS-117; cint_ref._signature).
+// Ordinary Name.loops rows are temporary membership marks, cleared on success.
+export void signature_sizes(in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, in Sem[_] sem,
+        in Sym[_] syms, inout Name[_] names, inout limits.CompilerDiag[_] diag,
+        inout RState[_] rs, I64 f, Bool bound) {
+    I64 z = nodes[f].d as I64;
+    if (!bound) {
+        while (z >= 0 && rs[0].err == 0) {
+            I64 tk = nodes[z].tok as I64;
+            I64 id = intern(src, toks, names, diag, rs, tk);
+            if (id < 0) { return; }
+            if (taken(syms, names, rs, id) || names[id].loops != 0) {
+                fail(toks, diag, rs, C_DUPLICATE, tk);
+                return;
+            }
+            names[id].loops = 1;
+            z = nodes[z].next as I64;
+        }
+    } else {
+        // Every extent of an array parameter that is a size parameter binds it (box 09: of
+        // any dimension; a kernel's shape symbols likewise, SPEC-02 K-5).
+        I64 p = nodes[f].b as I64;
+        while (p >= 0 && rs[0].err == 0) {
+            if (is_array(sem[p].ty)) {
+                I64 ty = nodes[p].a as I64;
+                I64 shape = nodes[ty].a as I64;
+                I64 e = nodes[shape].a as I64;
+                I64 d = 0;
+                while (e >= 0) {
+                    if (dim_size(sem[p].ty, d) >= 0) {
+                        I64 id = intern(src, toks, names, diag, rs, nodes[e].tok as I64);
+                        if (id < 0) { return; }
+                        names[id].loops = 1;
+                    }
+                    d += 1;
+                    e = nodes[e].next as I64;
+                }
+            }
+            p = nodes[p].next as I64;
+        }
+    }
+    z = nodes[f].d as I64;
+    while (z >= 0 && rs[0].err == 0) {
+        I64 tk = nodes[z].tok as I64;
+        I64 id = intern(src, toks, names, diag, rs, tk);
+        if (id < 0) { return; }
+        if (bound && names[id].loops == 0) {
+            fail(toks, diag, rs, C_UNBOUND_SIZE, tk);
+            return;
+        }
+        names[id].loops = 0;
+        z = nodes[z].next as I64;
+    }
+}
+
+// Checks each field name before its type, in declaration order.
+export void field_name(in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes,
+        inout limits.CompilerDiag[_] diag, inout RState[_] rs, I64 x, I64 fd) {
+    I64 ft = nodes[fd].tok as I64;
+    I64 g = nodes[x].a as I64;
+    while (g != fd) {
+        I64 gt = nodes[g].tok as I64;
+        if (toks[gt].len == toks[ft].len && same_text(src, toks[gt].start as I64, toks[ft].start as I64,
+                toks[ft].len as I64)) {
+            fail(toks, diag, rs, C_DUPLICATE, ft);
+            return;
+        }
+        g = nodes[g].next as I64;
+    }
+}
+
+// Publishes a checked field type and its imported layout metadata together.
+export void field_type(in scan.Token[_] toks, in parse.Node[_] nodes, inout Sem[_] sem,
+        in limits.Decl[_] decls, inout limits.CompilerDiag[_] diag, inout RState[_] rs, I64 fd) {
+    I64 tn = nodes[fd].a as I64;
+    I64 ty = sem[tn].ty;
+    I64 elem = ty;
+    if (is_array(elem)) { elem = array_elem(elem); }
+    if (is_struct(elem) && (sem[tn].flags & SEM_IMPORT) != 0) {
+        I64 row = sem[tn].lit_at;
+        sem[fd].opty = decls[row].align as I64;
+        sem[fd].lit_len = decls[row].b;
+    }
+    Bool field_array = is_array(ty) && array_extent(ty) >= 0;
+    if (is_array(ty) && !field_array) {
+        fail(toks, diag, rs, C_UNSUPPORTED, nodes[tn].tok as I64);
+        return;
+    }
+    sem[fd].ty = ty;
+}
+
+// Visits local records and their fields in declaration order. The struct Sem rows
+// hold the traversal state, parent, and next field until layout replaces that scratch.
+// Each record and field is visited once; imported records were checked in their module.
+export void struct_cycles(in scan.Token[_] toks, in parse.Node[_] nodes, inout Sem[_] sem,
+        in Sym[_] syms, inout limits.CompilerDiag[_] diag, inout RState[_] rs, I64 root) {
+    I64 item = nodes[root].a as I64;
+    while (item >= 0 && rs[0].err == 0) {
+        if (nodes[item].kind == parse.N_STRUCT && sem[item].bits == 0) {
+            I64 x = item;
+            sem[x].lit_at = -1;
+            sem[x].opty = nodes[x].a as I64;
+            sem[x].bits = 1;
+            while (x >= 0) {
+                I64 fd = sem[x].opty;
+                if (fd < 0) {
+                    sem[x].bits = 2;
+                    x = sem[x].lit_at;
+                    continue;
+                }
+                sem[x].opty = nodes[fd].next as I64;
+                I64 ty = sem[fd].ty;
+                if (is_array(ty)) { ty = array_elem(ty); }
+                if (!is_struct(ty)) { continue; }
+                I64 child = struct_node(syms, ty);
+                if (child < 0 || sem[child].bits == 2) { continue; }
+                if (sem[child].bits == 1) {
+                    fail(toks, diag, rs, C_STRUCT_CYCLE, nodes[fd].tok as I64);
+                    return;
+                }
+                sem[child].lit_at = x;
+                sem[child].opty = nodes[child].a as I64;
+                sem[child].bits = 1;
+                x = child;
+            }
+        }
+        item = nodes[item].next as I64;
+    }
+}
+
+// ---------------------------------------------------------------- error sets
+
+// Box 12 (SPEC-04 LS-92 to LS-97, LS-314; SPEC-01 IM-188). Set k of a module is its k-th
+// N_ERROR_DECL item in source order, and ArithError, the built-in set of the result-returning
+// forms, is set ARITH_SET. The type of set k with underlying type u (a fold.ci tag, U8 to
+// U64) is TY_ERRSET + 256 * k + u. The type of the error union `E!T`, a function result only
+// (LS-95), is TY_ERRUNION + 256 * (E - TY_ERRSET) + v, where v is the fold.ci tag of T, or
+// TY_VOID for `E!void`.
+//
+// A set's bases are the sets that declare its values, in order: a set that declares its
+// values is its own only base, and a combined set's bases are its operands' bases,
+// concatenated, each kept once at its first position (LS-97). A value is a base and its index
+// there from 1, and its tag in a set is the offset of its base there plus that index, so a
+// value of set s converts to set w when every base of s is a base of w, through the offsets
+// of its base in both (BX12-03, BX12-28). An N_ERROR_DECL node keeps its set's type in Sem.ty
+// and its symbol in Sem.sym; an operand of a combined set keeps the type of the set it names
+// in its Sem.ty (resolve_errsets).
+export const I64 TY_ERRUNION = 137438953472;
+export const I64 TY_ERRSET = 274877906944;
+export const I64 ARITH_SET = 1048575;
+// The type of ArithError, TY_ERRSET + 256 * ARITH_SET + fold.TY_U16.
+export const I64 TY_ARITH = 275146342178;
+export const I64 SK_ERRSET = 9;
+// ArithError among the bases of a set.
+export const I64 ARITH_BASE = -2;
+// AllocError, the set of the `_result` members of arenas and pools (SPEC-03 M-19; ref/OPEN.md
+// REF-OQ-45): set ALLOC_SET, one value `full` with tag U16 1, and ALLOC_BASE among the bases
+// of a set. Its type is TY_ERRSET + 256 * ALLOC_SET + fold.TY_U16.
+export const I64 ALLOC_SET = 1048574;
+export const I64 TY_ALLOC = 275146341922;
+export const I64 ALLOC_BASE = -3;
+// The error union of a handle (`AllocError!Handle(T)`, `AllocError!Handle(T[])`): TY_ERRUNION
+// + UNION_MEM + (h - TY_MEM) for handle type h, above every union of a scalar value; its set
+// is AllocError.
+const I64 UNION_MEM = 68719476736;
+// The most bases of one set, and of combined sets that nest or that one set reaches (C9102
+// above them, at the set's name).
+export const I64 BASES_MAX = 256;
+export const I64 BASES_DEPTH = 128;
+// The element code of an array of set k (k below ELEM_SETS; ELEM_SETS for ArithError) with
+// underlying type u is ELEM_SET + 4 * k + u - fold.TY_U8 (C9102 for a later set).
+export const I64 ELEM_SET = 65280;
+export const I64 ELEM_SETS = 63;
+
+export Bool is_errset(I64 ty) {
+    return ty >= TY_ERRSET && ty < TY_STRUCT;
+}
+
+export Bool is_errunion(I64 ty) {
+    return ty >= TY_ERRUNION && ty < TY_ERRSET;
+}
+
+// The index k of set type ty.
+export I64 errset_index(I64 ty) {
+    return (ty - TY_ERRSET) / 256;
+}
+
+// The underlying type of set type ty.
+export I64 errset_under(I64 ty) {
+    return (ty - TY_ERRSET) % 256;
+}
+
+// The union type of set type set and value type v (a handle's set is AllocError).
+export I64 union_type(I64 set, I64 v) {
+    if (is_mem(v)) {
+        return TY_ERRUNION + UNION_MEM + (v - TY_MEM);
+    }
+    return TY_ERRUNION + 256 * (set - TY_ERRSET) + v;
+}
+
+// The set type of union type ty.
+export I64 union_set(I64 ty) {
+    if (ty >= TY_ERRUNION + UNION_MEM) {
+        return TY_ALLOC;
+    }
+    return TY_ERRSET + (ty - TY_ERRUNION) / 256;
+}
+
+// The value type of union type ty (TY_VOID for `E!void`).
+export I64 union_value(I64 ty) {
+    if (ty >= TY_ERRUNION + UNION_MEM) {
+        return TY_MEM + (ty - TY_ERRUNION - UNION_MEM);
+    }
+    return (ty - TY_ERRUNION) % 256;
+}
+
+// The array element code of set type ty, or -1 when no code is left for it (AllocError has
+// none).
+export I64 errset_elem(I64 ty) {
+    I64 k = errset_index(ty);
+    if (k == ARITH_SET) {
+        k = ELEM_SETS;
+    } else if (k >= ELEM_SETS) {
+        return -1;
+    }
+    return ELEM_SET + 4 * k + errset_under(ty) - fold.TY_U8;
+}
+
+// The N_ERROR_DECL node of set type ty, ARITH_BASE for ArithError, or ALLOC_BASE for
+// AllocError. Node 0 is the N_MODULE node (parse.parse makes it first).
+export I64 errset_node(in parse.Node[_] nodes, I64 ty) {
+    I64 k = errset_index(ty);
+    if (k == ARITH_SET) {
+        return ARITH_BASE;
+    }
+    if (k == ALLOC_SET) {
+        return ALLOC_BASE;
+    }
+    I64 j = 0;
+    I64 x = nodes[0].a as I64;
+    while (x >= 0) {
+        if (nodes[x].kind == parse.N_ERROR_DECL) {
+            if (j == k) {
+                return x;
+            }
+            j += 1;
+        }
+        x = nodes[x].next as I64;
+    }
+    return -1;
+}
+
+// The underlying type the N_ERROR_DECL node x declares, U16 by default (LS-93).
+export I64 errset_decl_under(in scan.Token[_] toks, in parse.Node[_] nodes, I64 x) {
+    I64 c = nodes[x].c as I64;
+    if (c < 0) {
+        return fold.TY_U16;
+    }
+    return int_class(toks[c].aux & 255);
+}
+
+// The number of values base b declares: ArithError has four (IM-188), AllocError one.
+export I64 base_size(in parse.Node[_] nodes, I64 b) {
+    if (b == ARITH_BASE) {
+        return 4;
+    }
+    if (b == ALLOC_BASE) {
+        return 1;
+    }
+    I64 n = 0;
+    I64 v = nodes[b].a as I64;
+    while (v >= 0) {
+        n += 1;
+        v = nodes[v].next as I64;
+    }
+    return n;
+}
+
+// The index from 1 in base b of the value named by token tok, or 0.
+export I64 base_value[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, I64 b, I64 tok) {
+    I64 s = toks[tok].start as I64;
+    I64 l = toks[tok].len as I64;
+    if (b == ARITH_BASE) {
+        if (spells(src, s, l, "overflow")) { return 1; }
+        if (spells(src, s, l, "div_zero")) { return 2; }
+        if (spells(src, s, l, "shift")) { return 3; }
+        if (spells(src, s, l, "narrow")) { return 4; }
+        return 0;
+    }
+    if (b == ALLOC_BASE) {
+        if (spells(src, s, l, "full")) { return 1; }
+        return 0;
+    }
+    I64 j = 1;
+    I64 v = nodes[b].a as I64;
+    while (v >= 0) {
+        I64 vt = nodes[v].tok as I64;
+        if ((toks[vt].len as I64) == l && same_text(src, toks[vt].start as I64, s, l)) {
+            return j;
+        }
+        j += 1;
+        v = nodes[v].next as I64;
+    }
+    return 0;
+}
+
+// Writes the bases of set type ty in order to bases[0..count) and returns count. A
+// combined set reached a second time adds nothing. Returns -1 when an operand names a
+// combined set whose bases are being expanded (a cycle), and -2 beyond BASES_MAX bases or
+// BASES_DEPTH combined sets; bases[0] is then that operand, or -1 for ty's own set.
+export I64 errset_bases(in parse.Node[_] nodes, in Sem[_] sem, I64 ty, inout I64[_] bases) {
+    I64[256] stack;
+    I64[128] done;
+    I64 nbase = 0;
+    I64 sp = 0;
+    I64 ndone = 0;
+    I64 d = errset_node(nodes, ty);
+    I64 at = -1;
+    while (true) {
+        if (d == ARITH_BASE || d == ALLOC_BASE || (d >= 0 && nodes[d].op != 1)) {
+            Bool seen = false;
+            for i in 0..nbase {
+                if (bases[i] == d) {
+                    seen = true;
+                }
+            }
+            if (!seen) {
+                if (nbase == BASES_MAX) {
+                    bases[0] = at;
+                    return -2;
+                }
+                bases[nbase] = d;
+                nbase += 1;
+            }
+        } else if (d >= 0) {
+            Bool skip = false;
+            for i in 0..ndone {
+                if (done[i] == d) {
+                    skip = true;
+                }
+            }
+            for i in 0..sp {
+                if (stack[2 * i] == d) {
+                    bases[0] = at;
+                    return -1;
+                }
+            }
+            if (!skip) {
+                if (sp == BASES_DEPTH) {
+                    bases[0] = at;
+                    return -2;
+                }
+                stack[2 * sp] = d;
+                stack[2 * sp + 1] = nodes[d].a as I64;
+                sp += 1;
+            }
+        }
+        d = -1;
+        if (sp == 0) {
+            return nbase;
+        }
+        I64 z = stack[2 * sp - 1];
+        if (z < 0) {
+            sp -= 1;
+            if (ndone == BASES_DEPTH) {
+                bases[0] = at;
+                return -2;
+            }
+            done[ndone] = stack[2 * sp];
+            ndone += 1;
+        } else {
+            stack[2 * sp - 1] = nodes[z].next as I64;
+            at = z;
+            d = errset_node(nodes, sem[z].ty);
+        }
+    }
+    return nbase;
+}
+
+// The number of values of set type ty.
+export I64 errset_size(in parse.Node[_] nodes, in Sem[_] sem, I64 ty) {
+    I64[256] bases;
+    I64 nb = errset_bases(nodes, sem, ty, bases);
+    I64 n = 0;
+    for i in 0..nb {
+        n += base_size(nodes, bases[i]);
+    }
+    return n;
+}
+
+// The tag in set type ty of the value named by token tok: 0 when no base of ty declares the
+// name, -1 when several do (C2044, LS-97).
+export I64 errset_find[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, in Sem[_] sem, I64 ty,
+        I64 tok) {
+    I64[256] bases;
+    I64 nb = errset_bases(nodes, sem, ty, bases);
+    I64 tag = 0;
+    I64 off = 0;
+    for i in 0..nb {
+        I64 j = base_value(src, toks, nodes, bases[i], tok);
+        if (j > 0) {
+            if (tag != 0) {
+                return -1;
+            }
+            tag = off + j;
+        }
+        off += base_size(nodes, bases[i]);
+    }
+    return tag;
+}
+
+// The base of the value whose tag in set type ty is t, with its index there in got[0], or
+// -1 when ty has no such tag.
+export I64 errset_value(in parse.Node[_] nodes, in Sem[_] sem, I64 ty, I64 t, inout I64[_] got) {
+    I64[256] bases;
+    I64 nb = errset_bases(nodes, sem, ty, bases);
+    I64 off = 0;
+    for i in 0..nb {
+        I64 n = base_size(nodes, bases[i]);
+        if (t > off && t <= off + n) {
+            got[0] = t - off;
+            return bases[i];
+        }
+        off += n;
+    }
+    return -1;
+}
+
+// The offset of base b among the bases of set type ty, or -1 when b is not one of them.
+export I64 errset_offset(in parse.Node[_] nodes, in Sem[_] sem, I64 ty, I64 b) {
+    I64[256] bases;
+    I64 nb = errset_bases(nodes, sem, ty, bases);
+    I64 off = 0;
+    for i in 0..nb {
+        if (bases[i] == b) {
+            return off;
+        }
+        off += base_size(nodes, bases[i]);
+    }
+    return -1;
+}
+
+// Whether set type w holds every value of set type s (BX12-28).
+export Bool errset_holds(in parse.Node[_] nodes, in Sem[_] sem, I64 w, I64 s) {
+    if (errset_index(w) == errset_index(s)) {
+        return true;
+    }
+    I64[256] bases;
+    I64 ns = errset_bases(nodes, sem, s, bases);
+    if (ns < 0) {
+        return false;
+    }
+    for i in 0..ns {
+        if (errset_offset(nodes, sem, w, bases[i]) < 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// The tag in set type w of the value whose tag in set type s is t, or 0 when w does not
+// hold it.
+export I64 errset_convert(in parse.Node[_] nodes, in Sem[_] sem, I64 s, I64 t, I64 w) {
+    if (errset_index(w) == errset_index(s)) {
+        return t;
+    }
+    I64[1] got;
+    I64 b = errset_value(nodes, sem, s, t, got);
+    if (b == -1) {
+        return 0;
+    }
+    I64 off = errset_offset(nodes, sem, w, b);
+    if (off < 0) {
+        return 0;
+    }
+    return off + got[0];
+}
+
+// The largest tag underlying type u holds.
+U64 under_max(I64 u) {
+    if (u == fold.TY_U8) {
+        return 255;
+    }
+    if (u == fold.TY_U16) {
+        return 65535;
+    }
+    if (u == fold.TY_U32) {
+        return 4294967295;
+    }
+    return 18446744073709551615;
+}
+
+// The set type that operand z of a combined set names, kept in its Sem.ty; 0 after C3006
+// (no type of that name), C3007 (a name that is not an error set), or C9102 (a qualified
+// name: imported sets are compiler/OPEN.md CINTC-OQ-15), at its name.
+I64 errset_operand[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, inout Sem[_] sem,
+        in Sym[_] syms, inout Name[_] names, inout limits.CompilerDiag[_] diag, inout RState[_] rs, I64 z) {
+    I64 tok = nodes[z].tok as I64;
+    if (nodes[z].op != 1) {
+        fail(toks, diag, rs, C_UNSUPPORTED, nodes[z].start as I64);
+        return 0;
+    }
+    I64 id = intern(src, toks, names, diag, rs, tok);
+    if (id < 0) {
+        return 0;
+    }
+    I64 b = binding(syms, names, rs, id);
+    I64 ty = 0;
+    if (b >= 0 && syms[b].kind == SK_ERRSET) {
+        ty = syms[b].ty;
+        sem[z].sym = b;
+    } else if (b < 0 && spells(src, toks[tok].start as I64, toks[tok].len as I64, "ArithError")) {
+        ty = TY_ARITH;
+    } else if (b < 0 && spells(src, toks[tok].start as I64, toks[tok].len as I64, "AllocError")) {
+        ty = TY_ALLOC;
+    } else if (b >= 0 || (names[id].cls & (NC_TYPE | NC_PRELUDE)) != 0 || int_class(toks[tok].aux & 255) != 0) {
+        fail(toks, diag, rs, C_WRONG_KIND, tok);
+        return 0;
+    } else {
+        fail(toks, diag, rs, C_UNKNOWN_TYPE, tok);
+        return 0;
+    }
+    sem[z].ty = ty;
+    return ty;
+}
+
+// Checks the error sets of the module whose N_MODULE node is root, after resolve_globals
+// registered them (SPEC-04 LS-92, LS-93, LS-97). First, in source order: a signed
+// underlying type is C2031 at it; a value name declared twice in one set is C3001 at the
+// second; each operand of a combined set names an error set (errset_operand). Then, for each
+// set in source order: an operand that names a combined set whose bases are being expanded
+// closes a cycle, C3007 at that operand; more values than the underlying type holds are C2031
+// at its `error` (cint_ref's position, ref/OPEN.md REF-OQ-43), and more bases than
+// BASES_MAX, or combined sets beyond BASES_DEPTH, are C9102 at its name. Returns 0, or the
+// error's code.
+export I64 resolve_errsets[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, inout Sem[_] sem,
+        in Sym[_] syms, inout Name[_] names, inout limits.CompilerDiag[_] diag, inout RState[_] rs, I64 root) {
+    I64 x = nodes[root].a as I64;
+    while (x >= 0 && rs[0].err == 0) {
+        if (nodes[x].kind == parse.N_ERROR_DECL) {
+            I64 c = nodes[x].c as I64;
+            if (c >= 0 && errset_decl_under(toks, nodes, x) < fold.TY_U8) {
+                fail(toks, diag, rs, C_SET_RANGE, c);
+                return rs[0].err;
+            }
+            I64 v = nodes[x].a as I64;
+            while (v >= 0 && rs[0].err == 0) {
+                if (nodes[x].op == 1) {
+                    _ = errset_operand(src, toks, nodes, sem, syms, names, diag, rs, v);
+                } else {
+                    I64 vt = nodes[v].tok as I64;
+                    I64 w = nodes[x].a as I64;
+                    while (w != v) {
+                        I64 wt = nodes[w].tok as I64;
+                        if (toks[wt].len == toks[vt].len && same_text(src, toks[wt].start as I64,
+                                toks[vt].start as I64, toks[vt].len as I64)) {
+                            fail(toks, diag, rs, C_DUPLICATE, vt);
+                            return rs[0].err;
+                        }
+                        w = nodes[w].next as I64;
+                    }
+                }
+                v = nodes[v].next as I64;
+            }
+        }
+        x = nodes[x].next as I64;
+    }
+    x = nodes[root].a as I64;
+    while (x >= 0 && rs[0].err == 0) {
+        if (nodes[x].kind == parse.N_ERROR_DECL) {
+            I64[256] bases;
+            I64 nb = errset_bases(nodes, sem, sem[x].ty, bases);
+            if (nb == -1) {
+                fail(toks, diag, rs, C_WRONG_KIND, nodes[bases[0]].tok as I64);
+            } else if (nb < 0) {
+                fail(toks, diag, rs, C_UNSUPPORTED, nodes[x].tok as I64);
+            } else if ((errset_size(nodes, sem, sem[x].ty) as U64) > under_max(errset_under(sem[x].ty))) {
+                fail(toks, diag, rs, C_SET_RANGE, nodes[x].start as I64);
+            }
+        }
+        x = nodes[x].next as I64;
+    }
+    return rs[0].err;
+}
+
+// ---------------------------------------------------------------- arenas, pools and handles
+
+// Box 12 memory lifetimes (SPEC-03 M-12 to M-23; SPEC-04 LS-145; ref/OPEN.md REF-OQ-45). The
+// type of an arena `Arena(T)`, a pool `Pool(T)`, a pool slot's handle `Handle(T)` or an arena
+// allocation's handle `Handle(T[])` is TY_MEM + 65536 * kind + e, with kind MK_ARENA,
+// MK_POOL, MK_HANDLE or MK_SPAN and e the element code of a rank-1 array of T (a scalar's
+// fold.ci tag or ELEM_STRUCT + s). A module-level `Arena(T, capacity) name;` or `Pool(T,
+// capacity) name;` is an SK_MEMORY symbol of that type, its capacity in value once checked;
+// it is no module-level variable and no statement of a script.
+export const I64 TY_MEM = 68719476736;
+export const I64 MK_ARENA = 1;
+export const I64 MK_POOL = 2;
+export const I64 MK_HANDLE = 3;
+export const I64 MK_SPAN = 4;
+export const I64 SK_MEMORY = 12;
+// Where a memory type is written (`cint_ref` memory_type's `where`): a parameter, a local
+// variable, a module-level declaration with a capacity, or elsewhere (a field, a result, a
+// module-level variable, the T of another memory type).
+export const I64 MW_PARAM = 1;
+export const I64 MW_LOCAL = 2;
+export const I64 MW_MEMORY = 3;
+export const I64 MW_OTHER = 4;
+// C2051: an arena or pool value outside a local variable or a parameter.
+export const I64 C_MEMORY_VALUE = 2051;
+
+export Bool is_mem(I64 ty) {
+    return ty >= TY_MEM && ty < TY_ERRUNION;
+}
+
+// The kind (MK_*) of memory type ty.
+export I64 mem_kind(I64 ty) {
+    return (ty - TY_MEM) / 65536;
+}
+
+export Bool is_handle(I64 ty) {
+    return is_mem(ty) && mem_kind(ty) >= MK_HANDLE;
+}
+
+// The element code of memory type ty, as array_elem's.
+export I64 mem_code(I64 ty) {
+    return (ty - TY_MEM) % 65536;
+}
+
+// The element type T of memory type ty.
+export I64 mem_elem(I64 ty) {
+    return array_elem(TY_ARRAY + mem_code(ty));
+}
+
+export I64 mem_type(I64 kind, I64 code) {
+    return TY_MEM + 65536 * kind + code;
+}
+
+// The handle type of arena or pool type ty: `Handle(T[])` of an arena, `Handle(T)` of a pool.
+export I64 handle_of(I64 ty) {
+    if (mem_kind(ty) == MK_ARENA) {
+        return mem_type(MK_SPAN, mem_code(ty));
+    }
+    return mem_type(MK_HANDLE, mem_code(ty));
+}
+
+// The members of an arena and of a pool (SPEC-04 LS-145, LS-306; SPEC-03 M-14 to M-20), in
+// Sem.lit_at of a member call (SEM_MEMBER).
+export const I64 MB_ALLOC = 1;
+export const I64 MB_ALLOC_RESULT = 2;
+export const I64 MB_CHILD = 3;
+export const I64 MB_RESET = 4;
+export const I64 MB_INSERT = 5;
+export const I64 MB_INSERT_RESULT = 6;
+export const I64 MB_REMOVE = 7;
+
+// The member of arena or pool type ty that the name at s (blen bytes) spells, or 0.
+export I64 member_id[n](in U8[n] src, I64 s, I64 blen, I64 ty) {
+    if (mem_kind(ty) == MK_ARENA) {
+        if (spells(src, s, blen, "alloc")) { return MB_ALLOC; }
+        if (spells(src, s, blen, "alloc_result")) { return MB_ALLOC_RESULT; }
+        if (spells(src, s, blen, "child")) { return MB_CHILD; }
+        if (spells(src, s, blen, "reset")) { return MB_RESET; }
+        return 0;
+    }
+    if (spells(src, s, blen, "insert")) { return MB_INSERT; }
+    if (spells(src, s, blen, "insert_result")) { return MB_INSERT_RESULT; }
+    if (spells(src, s, blen, "remove")) { return MB_REMOVE; }
+    return 0;
+}
+
+// The number of arguments member m takes.
+export I64 member_arity(I64 m) {
+    if (m == MB_RESET) {
+        return 0;
+    }
+    return 1;
+}
+
+// Whether node x is the N_TYPE of `Arena(T)`, `Pool(T)` or `Handle(T)`, T in its b.
+export Bool mem_node(in scan.Token[_] toks, in parse.Node[_] nodes, I64 x) {
+    if (x < 0 || nodes[x].kind != parse.N_TYPE || nodes[x].b < 0) {
+        return false;
+    }
+    I32 cls = toks[nodes[x].tok as I64].aux & 255;
+    return toks[nodes[x].tok as I64].kind == scan.TK_IDENT && cls >= scan.IDC_ARENA && cls <= scan.IDC_HANDLE;
+}
+
+// Whether memory N_TYPE node x is a Handle whose T is written `E[]` or `E[_]`.
+Bool span_node(in scan.Token[_] toks, in parse.Node[_] nodes, I64 x) {
+    I64 inner = nodes[x].b as I64;
+    return (toks[nodes[x].tok as I64].aux & 255) == scan.IDC_HANDLE && nodes[inner].kind == parse.N_TYPE &&
+        nodes[inner].a >= 0;
+}
+
+// The type that memory N_TYPE node x names at the site `site` (MW_*) says (`cint_ref` memory_type),
+// or 0 after an error. Top down: a capacity anywhere but a module-level declaration, and the
+// T of a Handle written with a shape other than `[]` or `[_]`, are C9102 (`cint_ref` refuses
+// them). Then the innermost T: an integer type, Bool or a struct of the module; C3006 at an
+// unknown name; C9102 for any other T (`cint_ref` refuses an error set; imported structs are
+// compiler/OPEN.md CINTC-OQ-15). Then, from the innermost memory type out: an arena or pool
+// type is C2051 at its name outside a parameter, a local variable or a declaration, and in an
+// array; a memory type whose T is another one, and an array of handles, are C9102.
+export I64 mem_type_ref[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, in Sym[_] syms,
+        inout Name[_] names, inout limits.CompilerDiag[_] diag, inout RState[_] rs, I64 x, I64 site) {
+    I64 y = x;
+    I64 parent = -1;
+    I64 depth = 0;
+    while (mem_node(toks, nodes, y)) {
+        if (nodes[y].c >= 0 && (depth > 0 || site != MW_MEMORY)) {
+            fail(toks, diag, rs, C_UNSUPPORTED, nodes[nodes[y].c as I64].start as I64);
+            return 0;
+        }
+        if (span_node(toks, nodes, y)) {
+            I64 sh = nodes[nodes[y].b as I64].a as I64;
+            I64 e = nodes[sh].a as I64;
+            if (e >= 0 && (nodes[e].kind != parse.N_WILD || nodes[e].next >= 0)) {
+                fail(toks, diag, rs, C_UNSUPPORTED, nodes[sh].tok as I64);
+                return 0;
+            }
+        }
+        parent = y;
+        y = nodes[y].b as I64;
+        depth += 1;
+    }
+    I64 tok = nodes[y].tok as I64;
+    I32 cls = toks[tok].aux & 255;
+    if (nodes[y].kind != parse.N_TYPE || nodes[y].op != 1 || toks[tok].kind != scan.TK_IDENT ||
+            (nodes[y].a >= 0 && !span_node(toks, nodes, parent))) {
+        fail(toks, diag, rs, C_UNSUPPORTED, nodes[y].start as I64);
+        return 0;
+    }
+    I64 code = int_class(cls);
+    if (cls == scan.IDC_BOOL) {
+        code = fold.TY_BOOL;
+    } else if (code == 0 && scan.ordinary_name_class(cls)) {
+        I64 id = intern(src, toks, names, diag, rs, tok);
+        if (id < 0) {
+            return 0;
+        }
+        I64 bound = binding(syms, names, rs, id);
+        I64 s = toks[tok].start as I64;
+        I64 l = toks[tok].len as I64;
+        if (bound >= 0 && syms[bound].kind == SK_STRUCT && bound < ELEM_STRUCT_MAX) {
+            code = ELEM_STRUCT + bound;
+        } else if ((bound >= 0 && (syms[bound].kind == SK_STRUCT || syms[bound].kind == SK_ERRSET)) ||
+                (bound < 0 && (spells(src, s, l, "ArithError") || spells(src, s, l, "AllocError")))) {
+            fail(toks, diag, rs, C_UNSUPPORTED, tok);
+            return 0;
+        } else {
+            fail(toks, diag, rs, C_UNKNOWN_TYPE, tok);
+            return 0;
+        }
+    } else if (code == 0) {
+        fail(toks, diag, rs, C_UNSUPPORTED, tok);
+        return 0;
+    }
+    I64 kind = MK_HANDLE;
+    I32 pc = toks[nodes[parent].tok as I64].aux & 255;
+    if (pc == scan.IDC_ARENA) {
+        kind = MK_ARENA;
+    } else if (pc == scan.IDC_POOL) {
+        kind = MK_POOL;
+    } else if (span_node(toks, nodes, parent)) {
+        kind = MK_SPAN;
+    }
+    if (kind == MK_ARENA || kind == MK_POOL) {
+        I64 w = site;
+        if (depth > 1) {
+            w = MW_OTHER;
+        }
+        if ((w != MW_PARAM && w != MW_LOCAL && w != MW_MEMORY) || nodes[parent].a >= 0) {
+            fail(toks, diag, rs, C_MEMORY_VALUE, nodes[parent].tok as I64);
+            return 0;
+        }
+    }
+    if (depth > 1 || nodes[x].a >= 0) {
+        fail(toks, diag, rs, C_UNSUPPORTED, nodes[x].tok as I64);
+        return 0;
+    }
+    return mem_type(kind, code);
+}
+
+// ---------------------------------------------------------------- the module pass
+
+// Whether item x of the module is a module-level arena or pool declaration with a capacity
+// (box 12).
+export Bool is_memory_decl(in parse.Node[_] nodes, I64 x) {
+    if (nodes[x].kind != parse.N_VAR || (nodes[x].flags & parse.F_CONST) != 0 || nodes[x].a < 0) {
+        return false;
+    }
+    I64 ty = nodes[x].a as I64;
+    return nodes[ty].kind == parse.N_TYPE && nodes[ty].c >= 0;
+}
+
+// Whether item x of the module is a statement (a top-level statement or variable; not a
+// function, constant, struct, test, static_assert, import, profile line or (box 12) arena or
+// pool declaration).
+export Bool is_statement(in parse.Node[_] nodes, I64 x) {
+    I32 k = nodes[x].kind;
+    if (k == parse.N_VAR) {
+        return (nodes[x].flags & parse.F_CONST) == 0 && !is_memory_decl(nodes, x);
+    }
+    return k != parse.N_FUNC && k != parse.N_STRUCT && k != parse.N_TEST && k != parse.N_STATIC_ASSERT &&
+        k != parse.N_IMPORT && k != parse.N_PROFILE && k != parse.N_ENUM && k != parse.N_ERROR_DECL &&
+        k != parse.N_TYPE_DECL && k != parse.N_KERNEL && k != parse.N_SCHEDULE;
+}
+
+// Whether the identifier at token tok spells `main`.
+Bool is_main[n, t](in U8[n] src, in scan.Token[t] toks, I64 tok) {
+    return spells(src, toks[tok].start as I64, toks[tok].len as I64, "main");
+}
+
+// Resets the state for module `module`; the tables are emptied.
+export void resolve_init[q](inout Name[q] names, inout RState[_] rs, I64 module, I64 symbols) {
+    rs[0].name_cap = 2 * symbols;
+    rs[0].import_next = 2 * symbols + limits.MODULES_MAX;
+    I64 upto = rs[0].import_next;
+    if (upto > q) { upto = q; }
+    names_clear(names, upto);
+    rs[0].module = module;
+    rs[0].nsym = 0;
+    rs[0].nname = 0;
+    rs[0].top = -1;
+    rs[0].ctx = CTX_MODULE;
+    rs[0].script = -1;
+    rs[0].err = 0;
+    rs[0].row = 0;
+    rs[0].main = -1;
+    rs[0].loops = 0;
+}
+
+// The module-level pass over the items of the module whose N_MODULE node is root, in the
+// order `cint_ref` takes (ref/cint_ref/check.py, Checker.check): find the first top-level
+// statement that makes the module a script (LS-218); register error sets (box 12),
+// structs, functions, kernels, constants, arenas and pools (box 12) and, in a module,
+// module-level variables in source order (C3001 at the later name); resolve
+// the parameter and result types of every function (C3006; C2064 for an `inout` scalar,
+// at the parameter's first token); in a script, mark its variables as script locals and
+// refuse a function `main` (C3011, LS-221); in a module, resolve the type of every
+// module-level variable and refuse a `main` with a result other than `E!void` (C2066 at
+// its result type).
+// Returns 0, or the error's code.
+export I64 resolve_globals[n, t, y, q, r](in U8[n] src, in scan.Token[t] toks, in parse.Node[_] nodes,
+        inout Sem[_] sem, inout Sym[y] syms, inout Name[q] names, inout limits.CompilerDiag[r] diag,
+        inout RState[_] rs, I64 root, in limits.Decl[_] decls) {
+    // Imports first, as `cint_ref`'s Checker._imports: each alias is a module-level name
+    // (C3001 at the second of two equal aliases, and at an alias that is a prelude or
+    // built-in type name), so a later declaration of that name is C3001 at the declaration
+    // and a local of that name C3001 at the local (SPEC-04 LS-228, CINTC-16 "Lookup").
+    // compiler/check.ci put the module index in the import's Sem.opty and the block row
+    // in its Sem.bits.
+    I64 x = nodes[root].a as I64;
+    while (x >= 0 && rs[0].err == 0) {
+        if (nodes[x].kind == parse.N_IMPORT) {
+            I64 al = global(src, toks, syms, names, diag, rs, SK_ALIAS, x, nodes[x].b as I64);
+            if (al >= 0) {
+                syms[al].ty = sem[x].opty;
+                syms[al].value = sem[x].bits;
+                sem[x].sym = al;
+                import_bind(toks, names, decls, diag, rs, syms[al].ty, syms[al].value as I64, nodes[x].b as I64);
+            }
+        }
+        x = nodes[x].next as I64;
+    }
+    if (rs[0].err != 0) {
+        return rs[0].err;
+    }
+    x = nodes[root].a as I64;
+    while (x >= 0 && rs[0].script < 0) {
+
+        if (is_statement(nodes, x) && nodes[x].kind != parse.N_VAR) {
+            rs[0].script = x;
+        }
+        x = nodes[x].next as I64;
+    }
+    Bool script = rs[0].script >= 0;
+    I64 nset = 0;
+    x = nodes[root].a as I64;
+    while (x >= 0 && rs[0].err == 0) {
+        I32 k = nodes[x].kind;
+        I64 s = -1;
+        if (k == parse.N_ERROR_DECL) {
+            s = global(src, toks, syms, names, diag, rs, SK_ERRSET, x, nodes[x].tok as I64);
+            if (s >= 0) {
+                syms[s].ty = TY_ERRSET + 256 * nset + errset_decl_under(toks, nodes, x);
+                sem[x].ty = syms[s].ty;
+            }
+            nset += 1;
+        } else if (k == parse.N_STRUCT) {
+            s = global(src, toks, syms, names, diag, rs, SK_STRUCT, x, nodes[x].tok as I64);
+            if (s >= 0) {
+                syms[s].ty = TY_STRUCT + s;
+                sem[x].ty = TY_STRUCT + s;
+            }
+        } else if (k == parse.N_FUNC) {
+            s = global(src, toks, syms, names, diag, rs, SK_FUNC, x, nodes[x].tok as I64);
+            if (s >= 0) { syms[s].state = CS_NEW; }
+            if (s >= 0 && is_main(src, toks, nodes[x].tok as I64)) {
+                rs[0].main = s;
+            }
+        } else if (k == parse.N_KERNEL) {
+            // A kernel (box 09; SPEC-04 LS-244), registered as `cint_ref` registers it.
+            s = global(src, toks, syms, names, diag, rs, SK_KERNEL, x, nodes[x].tok as I64);
+            if (s >= 0) { syms[s].state = CS_NEW; }
+        } else if (k == parse.N_VAR && (nodes[x].flags & parse.F_CONST) != 0) {
+            s = global(src, toks, syms, names, diag, rs, SK_CONST, x, nodes[x].tok as I64);
+            if (s >= 0) {
+                syms[s].state = CS_NEW;
+            }
+        } else if (is_memory_decl(nodes, x)) {
+            // An arena or pool, a module-level name in a script too (box 12; SPEC-03 M-20).
+            s = global(src, toks, syms, names, diag, rs, SK_MEMORY, x, nodes[x].tok as I64);
+        } else if (k == parse.N_VAR && !script) {
+            s = global(src, toks, syms, names, diag, rs, SK_MODVAR, x, nodes[x].tok as I64);
+        }
+        if (s >= 0) {
+            sem[x].sym = s;
+        }
+        x = nodes[x].next as I64;
+    }
+    return rs[0].err;
+}
+
+// Finishes module variable and script rules after fields and signatures.
+export I64 resolve_remainder(in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes,
+        inout Sem[_] sem, inout Sym[_] syms, inout Name[_] names, inout limits.CompilerDiag[_] diag,
+        inout RState[_] rs, I64 root, in limits.Decl[_] decls) {
+    I64 x = nodes[root].a as I64;
+    Bool script = rs[0].script >= 0;
+    if (script) {
+        x = nodes[root].a as I64;
+        while (x >= 0 && rs[0].err == 0) {
+            if (nodes[x].kind == parse.N_VAR && is_statement(nodes, x)) {
+                I64 id = intern(src, toks, names, diag, rs, nodes[x].tok as I64);
+                if (id >= 0) {
+                    names[id].cls = names[id].cls | NC_SCRIPT;
+                }
+            }
+            x = nodes[x].next as I64;
+        }
+        if (rs[0].main >= 0) {
+            fail_note(toks, nodes, diag, rs, C_SCRIPT_MAIN, syms[rs[0].main].tok);
+        }
+        return rs[0].err;
+    }
+    x = nodes[root].a as I64;
+    while (x >= 0 && rs[0].err == 0) {
+        if (nodes[x].kind == parse.N_VAR && is_statement(nodes, x)) {
+            I64 ty = type_ref(src, toks, nodes, sem, syms, names, decls, diag, rs, nodes[x].a as I64, -1, -2);
+            if (rs[0].err == 0 && (is_struct(ty) || is_array(ty) || is_handle(ty))) {
+                // A module-level handle is compiler/OPEN.md CINTC-OQ-15 (box 12).
+                fail(toks, diag, rs, C_UNSUPPORTED, nodes[nodes[x].a as I64].tok as I64);
+            }
+            sem[x].ty = ty;
+            if (sem[x].sym >= 0) {
+                syms[sem[x].sym].ty = ty;
+            }
+        }
+        x = nodes[x].next as I64;
+    }
+    if (rs[0].err == 0 && rs[0].main >= 0) {
+        // `main` returns nothing, or (box 12, SPEC-06 3.4a) an error result `E!void`.
+        I64 f = syms[rs[0].main].node;
+        I64 a = nodes[f].a as I64;
+        if (a >= 0 && nodes[a].kind == parse.N_ERRUNION) {
+            if (nodes[a].b >= 0) {
+                fail(toks, diag, rs, C_RETURN_VALUE, nodes[nodes[a].a as I64].start as I64);
+            }
+        } else if (a >= 0) {
+            fail(toks, diag, rs, C_RETURN_VALUE, nodes[a].tok as I64);
+        }
+    }
+    return rs[0].err;
+}

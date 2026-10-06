@@ -1,0 +1,10 @@
+// case: reduce/fold_checked_i8_overflow
+// clause: SPEC-01 IM-77, IM-83 (the IM-79 listing: the left fold leaves I8 at index 1)
+// subset: cint-core-1 (built-in fold_checked)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 9:12 (callee `fold_checked`), operation fold_checked.add.i8, operands I64 1 (index), I8 120 (accumulator), I8 120 (element), exact 240, limit I8 127; stack depth 0; fuel 2. Operand order: IM-83; record layout box 09 ruling R5
+
+export I8 run() {
+    I8[3] v = [120, 120, -120];
+    return fold_checked(add, 0, v);
+}

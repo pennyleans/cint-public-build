@@ -1,0 +1,29 @@
+// case: arith/builtin_values
+// clause: SPEC-01 2.4, 4.3 to 4.10, IM-134; SPEC-04 4.2 rule 4.7
+// subset: cint-core-1 (built-in functions and print are not in cint-boot-1, SPEC-09 5.2)
+// entry: run; args: none
+// spec outcome: value I64 -1 with 399 bytes of output, each built-in at run time on typed operands
+
+export I64 run() {
+    I64 a = -7;
+    I64 b = 2;
+    I8 m = -128;
+    U8 u = 0x81;
+    U16 h = 65535;
+    I32 p = 2_000_000_000;
+    U64 big = 0xFFFF_FFFF_FFFF_FFFF;
+    I64 mn = I64.min;
+    "abs {abs(a)} {abs(b)} uabs {uabs(m)} {uabs(mn)}\n";
+    "min {min(a, b)} max {max(a, b)} {max(big, 3)} clamp {clamp(a, -3, 3)} {clamp(b, -3, 1)} {clamp(0, a, b)}\n";
+    "trunc {div_trunc(a, b)} {rem_trunc(a, b)} {div_trunc(7, -b)} {rem_trunc(7, -b)}\n";
+    "euclid {div_euclid(a, b)} {rem_euclid(a, b)} {div_euclid(a, -b)} {rem_euclid(a, -b)} {div_euclid(mn, 3)} {rem_euclid(mn, -1)}\n";
+    "round {div_round(a, b, floor)} {div_round(a, b, ceil)} {div_round(a, b, trunc)} {div_round(a, b, away)}\n";
+    "half {div_round(a, b, half_even)} {div_round(a, b, half_away)} {div_round(a, b, half_trunc)} {div_round(a, b, half_up)} {div_round(a, b, half_down)} {div_round(5, b, half_even)}\n";
+    "muldiv {muldiv(I32, p, 2, 4, floor)} {muldiv(I64, a, 3, 4, half_even)} {muldiv(I32, h, h, 65535, trunc)} {muldiv(U64, big, big, big, floor)} {muldiv(I64, mn, mn, mn, ceil)}\n";
+    "mul_full {mul_full(p, p)} {mul_full(m, m)} {mul_full(h, h)} {mul_full(u, u)}\n";
+    "isqrt {isqrt(b)} {isqrt(big)} {isqrt_round(99, floor)} {isqrt_round(99, ceil)} {isqrt_round(90, half_even)} {isqrt_round(91, half_down)} {isqrt_round(big, away)}\n";
+    "rot {rotl(u, 1)} {rotr(u, 1)} {rotl(u, b)} {rotr(h, 15)} {rotl(big, 63)} {rotr(u, 0)}\n";
+    U8 s = max(200, 100) + (u - 0x80);
+    "context {s} {min(a, 5) + 1}\n";
+    return abs(a) + min(a, b) + 1 - max(1, b);
+}

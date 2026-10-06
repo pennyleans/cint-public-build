@@ -1,0 +1,20 @@
+// case: view/slice_lo_above_hi
+// clause: SPEC-04 LS-161 (lo above hi faults E_BOUNDS)
+// subset: cint-core-1 (array slices)
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 19:19, operation slice.checked.i64, operands I64 5 and I64 3, no exact, limit I64 10; stack depth 0; fuel 1. Box 09 ruling R2
+
+I64 total[n](in I64[n] xs) {
+    I64 s = 0;
+    for i in 0..n {
+        s = s + xs[i];
+    }
+    return s;
+}
+
+export I64 run() {
+    I64[10] a;
+    I64 lo = 5;
+    I64 hi = 3;
+    return total(a[lo..hi]);
+}

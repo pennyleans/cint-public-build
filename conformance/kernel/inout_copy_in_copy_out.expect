@@ -1,0 +1,8 @@
+case kernel/inout_copy_in_copy_out
+clause SPEC-02 K-2, P-4 (a staged `inout` reads pre-dispatch values; unwritten elements keep theirs)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 233
+fuel-consumed 4

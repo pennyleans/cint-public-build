@@ -1,0 +1,271 @@
+// compiler/emit.ci: the two-pass text writer of SPEC-09 CINTC-04 (slice 2 task 2.9).
+//
+// An emitter runs twice over the same SIR, in separate bridge calls (CINTC-05): `measure`
+// counts the bytes of each output file, the bridge allocates exactly that many, and `emit`
+// writes them. Both passes call the same rendering code with a Writer: w_measure starts a
+// count, w_emit(cap) starts a write of exactly cap bytes into `dst`, every w_* call
+// advances w[0].pos by the bytes it renders, and w_finish gives the outcome:
+//
+//   W_OK          the pass is complete (measure: at most OUTPUT_BYTES_MAX bytes; emit:
+//                 exactly cap bytes written);
+//   W_OVER_LIMIT  measure counted more than OUTPUT_BYTES_MAX (CINTC-02): the caller
+//                 reports C9001 with limits.LIM_OUTPUT;
+//   W_MISMATCH    emit wrote a different number of bytes than measured: an internal
+//                 error (CINTC-04).
+//
+// In the emit pass a write past the end of `dst` is the checked index dst[pos], which
+// faults E_BOUNDS: the bridge gives `dst` exactly the measured extent, so writing more
+// than was measured is an internal compiler error with the canonical record (CINTC-10).
+// The measure pass never touches `dst`; any U8 view may be passed there.
+//
+// Output is ASCII; numbers are decimal without separators, hexadecimal in lowercase.
+//
+// Lines mode (w_lines; box 11 unit 4): while w[0].lines is 1, w_nl ends a C string literal
+// and its array element and opens the next, so text written between an opening `"` and a
+// closing `"` becomes one string literal per line, each shorter than C17's 4,095 characters
+// (5.2.4.1). The text must hold no `"` or `\` (compiler/back_ptx.ci writes none).
+//
+// Bound (CINTC-13): O(1) per byte written, O(n) per call of n bytes.
+
+import limits;
+
+export struct Writer {
+    I64 pos;
+    I64 cap;
+    I64 mode;
+    I64 status;
+    I64 lines;
+}
+
+export const I64 W_MEASURE = 0;
+export const I64 W_EMIT = 1;
+export const I64 W_OK = 0;
+export const I64 W_OVER_LIMIT = 1;
+export const I64 W_MISMATCH = 2;
+
+// Starts the measure pass.
+export void w_measure(inout Writer[_] w) {
+    w[0].pos = 0;
+    w[0].cap = 0;
+    w[0].mode = W_MEASURE;
+    w[0].status = W_OK;
+    w[0].lines = 0;
+}
+
+// Starts the emit pass of exactly `cap` bytes, the count of the measure pass.
+export void w_emit(inout Writer[_] w, I64 cap) {
+    w[0].pos = 0;
+    w[0].cap = cap;
+    w[0].mode = W_EMIT;
+    w[0].status = W_OK;
+    w[0].lines = 0;
+}
+
+// The outcome of the pass (above).
+export I64 w_finish(inout Writer[_] w) {
+    if (w[0].mode == W_MEASURE) {
+        if (w[0].pos > limits.OUTPUT_BYTES_MAX) {
+            w[0].status = W_OVER_LIMIT;
+        }
+    } else if (w[0].pos != w[0].cap) {
+        w[0].status = W_MISMATCH;
+    }
+    return w[0].status;
+}
+
+// One byte.
+export void w_byte[b](inout Writer[_] w, inout U8[b] dst, U8 c) {
+    if (w[0].mode == W_EMIT) {
+        dst[w[0].pos] = c;
+    }
+    w[0].pos += 1;
+}
+
+// Every byte of `text`, usually a string literal.
+export void w_text[b, n](inout Writer[_] w, inout U8[b] dst, in U8[n] text) {
+    if (w[0].mode == W_EMIT) {
+        for i in 0..n {
+            dst[w[0].pos + i] = text[i];
+        }
+    }
+    w[0].pos += n;
+}
+
+// src[start..start + nbytes), for example an identifier in the source.
+export void w_bytes[b, n](inout Writer[_] w, inout U8[b] dst, in U8[n] src, I64 start, I64 nbytes) {
+    if (w[0].mode == W_EMIT) {
+        for i in 0..nbytes {
+            dst[w[0].pos + i] = src[start + i];
+        }
+    }
+    w[0].pos += nbytes;
+}
+
+// A line feed (CINTC-07: generated text uses LF only); in lines mode, `\n",`, the line
+// feed, and the opening `"` of the next line's literal.
+export void w_nl[b](inout Writer[_] w, inout U8[b] dst) {
+    if (w[0].lines != 0) {
+        w_text(w, dst, "\\n\",");
+        w_byte(w, dst, 10);
+        w_text(w, dst, "    \"");
+        return;
+    }
+    w_byte(w, dst, 10);
+}
+
+// Lines mode on (1) or off (0).
+export void w_lines(inout Writer[_] w, I64 on) {
+    w[0].lines = on;
+}
+
+// Four spaces per level.
+export void w_indent[b](inout Writer[_] w, inout U8[b] dst, I64 depth) {
+    for i in 0..4 * depth {
+        w_byte(w, dst, ' ');
+    }
+}
+
+// The decimal digits of v, most significant first.
+export void w_u64[b](inout Writer[_] w, inout U8[b] dst, U64 v) {
+    U8[20] digits;
+    I64 n = 0;
+    U64 x = v;
+    while (n == 0 || x != 0) {
+        digits[n] = (48 + x % 10) as U8;
+        x = x / 10;
+        n += 1;
+    }
+    while (n > 0) {
+        n -= 1;
+        w_byte(w, dst, digits[n]);
+    }
+}
+
+// v in decimal, with `-` when negative.
+export void w_i64[b](inout Writer[_] w, inout U8[b] dst, I64 v) {
+    U64 magnitude = v as% U64;
+    if (v < 0) {
+        w_byte(w, dst, '-');
+        magnitude = 0 -% magnitude;
+    }
+    w_u64(w, dst, magnitude);
+}
+
+// The low `digits` hexadecimal digits of v (1 <= digits <= 16), lowercase, zero-padded.
+export void w_hex[b](inout Writer[_] w, inout U8[b] dst, U64 v, I64 digits) {
+    for i in 0..digits {
+        U64 nibble = (v >> (4 * (digits - 1 - i))) & 15;
+        if (nibble < 10) {
+            w_byte(w, dst, (48 + nibble) as U8);
+        } else {
+            w_byte(w, dst, (87 + nibble) as U8);
+        }
+    }
+}
+
+// ---------------------------------------------------------------- test entries
+
+// The sample text of case k; compiler/tests/run.py renders the same text in Python.
+void sample[b](inout Writer[_] w, inout U8[b] dst, I64 k) {
+    if (k == 1) {
+        w_text(w, dst, "hello, world");
+        w_nl(w, dst);
+    } else if (k == 2) {
+        w_i64(w, dst, -9223372036854775807 - 1);
+        w_byte(w, dst, ' ');
+        w_i64(w, dst, 9223372036854775807);
+        w_byte(w, dst, ' ');
+        w_i64(w, dst, 0);
+        w_byte(w, dst, ' ');
+        w_i64(w, dst, -1);
+        w_byte(w, dst, ' ');
+        w_i64(w, dst, 42);
+        w_nl(w, dst);
+    } else if (k == 3) {
+        w_u64(w, dst, 18446744073709551615);
+        w_byte(w, dst, ' ');
+        w_u64(w, dst, 10);
+        w_byte(w, dst, ' ');
+        w_hex(w, dst, 0xdeadbeef, 8);
+        w_byte(w, dst, ' ');
+        w_hex(w, dst, 0xdeadbeef, 16);
+        w_byte(w, dst, ' ');
+        w_hex(w, dst, 0xfedcba9876543210, 16);
+        w_byte(w, dst, ' ');
+        w_hex(w, dst, 0xabc, 1);
+        w_nl(w, dst);
+    } else if (k == 4) {
+        w_text(w, dst, "int64_t f(void) {{");
+        w_nl(w, dst);
+        w_indent(w, dst, 1);
+        w_text(w, dst, "return 0;");
+        w_nl(w, dst);
+        w_indent(w, dst, 3);
+        w_text(w, dst, "}}");
+        w_nl(w, dst);
+    } else if (k == 5) {
+        w_bytes(w, dst, "abcdefgh", 2, 3);
+        w_bytes(w, dst, "abcdefgh", 0, 0);
+        w_bytes(w, dst, "abcdefgh", 7, 1);
+        w_nl(w, dst);
+    } else if (k == 6) {
+        for i in 0..100 {
+            w_text(w, dst, "line ");
+            w_i64(w, dst, i);
+            w_text(w, dst, " {{x}}\t");
+            w_hex(w, dst, (i * 2654435761) as U64, 8);
+            w_nl(w, dst);
+        }
+    } else if (k == 7) {
+        for i in 0..1000 {
+            w_text(w, dst, "0123456789");
+        }
+    }
+}
+
+// FNV-1a 64 of dst[0..n).
+U64 fnv[b](in U8[b] dst, I64 n) {
+    U64 h = 0xcbf29ce484222325;
+    for i in 0..n {
+        h = (h ^ (dst[i] as U64)) *% 0x100000001b3;
+    }
+    return h;
+}
+
+// Case k through both passes into a 4,096-byte buffer, the emit pass started with
+// cap = measured + extra (extra 0 is the CINTC-04 pass). what 0: the measured count;
+// 1: the bytes written;
+// 2: w_finish of the emit pass; 3: FNV-1a 64 of the written bytes, as I64 (wrapped);
+// 4: w_finish of the measure pass.
+export I64 emit_test(I64 k, I64 what, I64 extra) {
+    Writer[1] w;
+    U8[4096] dst;
+    w_measure(w);
+    sample(w, dst, k);
+    I64 measured = w[0].pos;
+    I64 status = w_finish(w);
+    if (what == 0) {
+        return measured;
+    }
+    if (what == 4) {
+        return status;
+    }
+    w_emit(w, measured + extra);
+    sample(w, dst, k);
+    status = w_finish(w);
+    if (what == 1) {
+        return w[0].pos;
+    }
+    if (what == 2) {
+        return status;
+    }
+    return fnv(dst, w[0].pos) as% I64;
+}
+
+// w_finish of a measure pass that counted `n` bytes.
+export I64 emit_limit(I64 n) {
+    Writer[1] w;
+    w_measure(w);
+    w[0].pos = n;
+    return w_finish(w);
+}

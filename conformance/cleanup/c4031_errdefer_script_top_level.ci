@@ -1,0 +1,8 @@
+// case: cleanup/c4031_errdefer_script_top_level
+// clause: SPEC-04 LS-219, LS-322; decision 2026-10-05, BX12-25
+// subset: cint-core-1 (`errdefer`, print)
+// spec outcome: compile error C4031 at 7:1, an `errdefer` at the top level of a script, whose implicit entry returns no error union
+
+"start\n";
+errdefer { "never\n"; }
+"end\n";

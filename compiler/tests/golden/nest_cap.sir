@@ -1,0 +1,227 @@
+module nest_cap
+sites nest_cap.ci 1:4:12:fuel.charge
+export func @nest_cap.run(%c: Bool, %x: I64) -> I64 {
+  fuel.charge 1                                  #1 @nest_cap.ci:4:12
+  local $sc.0: I64
+  if {
+    arm {
+    } then %c {
+      store.local $sc.0, %x
+    }
+    else {
+      local $sc.1: I64
+      if {
+        arm {
+        } then %c {
+          store.local $sc.1, %x
+        }
+        else {
+          local $sc.2: I64
+          if {
+            arm {
+            } then %c {
+              store.local $sc.2, %x
+            }
+            else {
+              local $sc.3: I64
+              if {
+                arm {
+                } then %c {
+                  store.local $sc.3, %x
+                }
+                else {
+                  local $sc.4: I64
+                  if {
+                    arm {
+                    } then %c {
+                      store.local $sc.4, %x
+                    }
+                    else {
+                      local $sc.5: I64
+                      if {
+                        arm {
+                        } then %c {
+                          store.local $sc.5, %x
+                        }
+                        else {
+                          local $sc.6: I64
+                          if {
+                            arm {
+                            } then %c {
+                              store.local $sc.6, %x
+                            }
+                            else {
+                              local $sc.7: I64
+                              if {
+                                arm {
+                                } then %c {
+                                store.local $sc.7, %x
+                                }
+                                else {
+                                local $sc.8: I64
+                                if {
+                                arm {
+                                } then %c {
+                                store.local $sc.8, %x
+                                }
+                                else {
+                                local $sc.9: I64
+                                if {
+                                arm {
+                                } then %c {
+                                store.local $sc.9, %x
+                                }
+                                else {
+                                local $sc.10: I64
+                                if {
+                                arm {
+                                } then %c {
+                                store.local $sc.10, %x
+                                }
+                                else {
+                                local $sc.11: I64
+                                if {
+                                arm {
+                                } then %c {
+                                store.local $sc.11, %x
+                                }
+                                else {
+                                local $sc.12: I64
+                                if {
+                                arm {
+                                } then %c {
+                                store.local $sc.12, %x
+                                }
+                                else {
+                                local $sc.13: I64
+                                if {
+                                arm {
+                                } then %c {
+                                store.local $sc.13, %x
+                                }
+                                else {
+                                local $sc.14: I64
+                                if {
+                                arm {
+                                } then %c {
+                                store.local $sc.14, %x
+                                }
+                                else {
+                                local $sc.15: I64
+                                if {
+                                arm {
+                                } then %c {
+                                store.local $sc.15, %x
+                                }
+                                else {
+                                local $sc.16: I64
+                                if {
+                                arm {
+                                } then %c {
+                                store.local $sc.16, %x
+                                }
+                                else {
+                                local $sc.17: I64
+                                if {
+                                arm {
+                                } then %c {
+                                store.local $sc.17, %x
+                                }
+                                else {
+                                local $sc.18: I64
+                                if {
+                                arm {
+                                } then %c {
+                                store.local $sc.18, %x
+                                }
+                                else {
+                                local $sc.19: I64
+                                if {
+                                arm {
+                                } then %c {
+                                store.local $sc.19, %x
+                                }
+                                else {
+                                %t0 = const I64 0
+                                store.local $sc.19, %t0
+                                }
+                                }
+                                %t1 = load.local $sc.19
+                                store.local $sc.18, %t1
+                                }
+                                }
+                                %t2 = load.local $sc.18
+                                store.local $sc.17, %t2
+                                }
+                                }
+                                %t3 = load.local $sc.17
+                                store.local $sc.16, %t3
+                                }
+                                }
+                                %t4 = load.local $sc.16
+                                store.local $sc.15, %t4
+                                }
+                                }
+                                %t5 = load.local $sc.15
+                                store.local $sc.14, %t5
+                                }
+                                }
+                                %t6 = load.local $sc.14
+                                store.local $sc.13, %t6
+                                }
+                                }
+                                %t7 = load.local $sc.13
+                                store.local $sc.12, %t7
+                                }
+                                }
+                                %t8 = load.local $sc.12
+                                store.local $sc.11, %t8
+                                }
+                                }
+                                %t9 = load.local $sc.11
+                                store.local $sc.10, %t9
+                                }
+                                }
+                                %t10 = load.local $sc.10
+                                store.local $sc.9, %t10
+                                }
+                                }
+                                %t11 = load.local $sc.9
+                                store.local $sc.8, %t11
+                                }
+                                }
+                                %t12 = load.local $sc.8
+                                store.local $sc.7, %t12
+                                }
+                              }
+                              %t13 = load.local $sc.7
+                              store.local $sc.6, %t13
+                            }
+                          }
+                          %t14 = load.local $sc.6
+                          store.local $sc.5, %t14
+                        }
+                      }
+                      %t15 = load.local $sc.5
+                      store.local $sc.4, %t15
+                    }
+                  }
+                  %t16 = load.local $sc.4
+                  store.local $sc.3, %t16
+                }
+              }
+              %t17 = load.local $sc.3
+              store.local $sc.2, %t17
+            }
+          }
+          %t18 = load.local $sc.2
+          store.local $sc.1, %t18
+        }
+      }
+      %t19 = load.local $sc.1
+      store.local $sc.0, %t19
+    }
+  }
+  %t20 = load.local $sc.0
+  return %t20
+}

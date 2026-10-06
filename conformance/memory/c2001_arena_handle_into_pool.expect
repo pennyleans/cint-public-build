@@ -1,0 +1,7 @@
+case memory/c2001_arena_handle_into_pool
+clause SPEC-03 M-12; SPEC-04 LS-130; ref/OPEN.md REF-OQ-45
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2001
+diagnostic.position memory/c2001_arena_handle_into_pool.ci:12:19

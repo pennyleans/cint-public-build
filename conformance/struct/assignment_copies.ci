@@ -1,0 +1,20 @@
+// case: struct/assignment_copies
+// clause: SPEC-04 4.4 (assignment copies the whole struct)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I32 1 (the original is unchanged)
+
+export struct Token {
+    I32 kind;
+    I32 start;
+    I32 length;
+    I32 line;
+    I32 column;
+}
+
+export I32 run() {
+    Token a = Token(1, 0, 7, 3, 9);
+    Token b = a;
+    b.kind = 9;
+    return a.kind;
+}

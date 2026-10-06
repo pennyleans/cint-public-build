@@ -1,0 +1,6 @@
+case diag/c3001_duplicate_name
+clause SPEC-04 5.3, 11; SPEC-04 17.1, 17.2
+source compile-error
+outcome compile-error
+diagnostic.code C3001
+diagnostic.position diag/c3001_duplicate_name.ci:9:9

@@ -1,0 +1,10 @@
+case errors/underlying_type_u8
+clause SPEC-04 LS-93; SPEC-09 CONF-11 rule 12; decision 2026-10-05, BX12-21
+format 3
+source reference
+outcome error
+stdout-bytes 0
+fuel-consumed 1
+error.set errors.underlying_type_u8.IoError
+error.value full
+error.tag U8 2

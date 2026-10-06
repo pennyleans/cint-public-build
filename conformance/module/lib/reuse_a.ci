@@ -1,0 +1,24 @@
+// Helper module of module/reuse_after_large_module (G-C1 fixture, not a case). It sorts
+// before module/lib/reuse_big.ci, so B1 compiles it first; reuse_big's scratch tables then
+// overwrite every row this module used, and only its declaration-table block survives.
+
+export const I64 A_BASE = 1000;
+export const I16 A_SMALL = -7;
+export const U8 A_MASK = 0x5A;
+const I64 A_HIDDEN = 3;
+
+export I64 a_scale(I64 x, I64 y) {
+    return x * A_BASE + y * A_HIDDEN;
+}
+
+export I64 a_sum_to(I64 n) {
+    I64 s = 0;
+    for i in 0..n {
+        s += i;
+    }
+    return s;
+}
+
+export Bool a_odd(I64 x) {
+    return x % 2 != 0;
+}

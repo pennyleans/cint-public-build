@@ -1,0 +1,53 @@
+import field_views_lib as lib;
+
+struct R { I64[2] data; I64[0] empty; }
+struct E { I64 value; }
+struct Rows { E[2] data; }
+struct Outer { R[2] inner; }
+
+I64 take[n](in I64[n] a) { return a[1] + n; }
+I64 length[n](in I64[n] a) { return n; }
+void put(inout I64[_] a) { a[1] = 7; }
+void put_record(inout E[_] a) { a[1].value = 7; }
+
+export I64 scalar() { R r; r.data[1] = 7; return take(r.data); }
+export I64 nested() { Outer r; r.inner[1].data[1] = 7; return take(r.inner[1].data); }
+export I64 mutable() { R r; put(r.data); return r.data[1]; }
+export I64 record() { Rows r; put_record(r.data); return r.data[1].value; }
+export I64 empty() { R r; return length(r.empty); }
+export I64 imported() { lib.Bucket r; r.data[1] = 7; return lib.take(r.data); }
+
+I64 mutate(inout I64[1] index) { index[0] = 0; return 0; }
+I64 captured(in I64[2] a, I64 ignored) { return a[1]; }
+export I64 capture() {
+    R[2] r;
+    I64[1] index;
+    index[0] = 1;
+    r[0].data[1] = 9;
+    r[1].data[1] = 7;
+    return captured(r[index[0]].data, mutate(index));
+}
+
+I64 step(inout I64[1] c) { c[0] += 1; return c[0] - 1; }
+I64 seen(in I64[2] a, I64 n) { return a[1] * 10 + n; }
+export I64 once() {
+    R[2] r;
+    r[0].data[1] = 7;
+    r[1].data[1] = 9;
+    I64[1] c;
+    return seen(r[step(c)].data, c[0]);
+}
+
+I64 fail(I64 x) { return I64.max + x; }
+export I64 outer_bounds(I64 index) {
+    R[2] r;
+    return captured(r[index].data, fail(1));
+}
+
+I64 first(in I64[_] a) { return a[0]; }
+export I64 empty_bounds() { R r; return first(r.empty); }
+
+I64 pair[n](in I64[n] a, in I64[n] b) { return n; }
+I64 forward(in I64[_] a) { R r; return pair(a, r.data); }
+export I64 shape_equal() { I64[2] a; return forward(a); }
+export I64 shape_different() { I64[3] a; return forward(a); }

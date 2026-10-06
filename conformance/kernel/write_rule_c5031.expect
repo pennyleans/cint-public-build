@@ -1,0 +1,7 @@
+case kernel/write_rule_c5031
+clause SPEC-02 K-10; SPEC-04 LS-283 (a write outside the own block)
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C5031
+diagnostic.position kernel/write_rule_c5031.ci:8:5

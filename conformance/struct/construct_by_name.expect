@@ -1,0 +1,7 @@
+case struct/construct_by_name
+clause SPEC-04 4.4 (constructor by name)
+source reference
+outcome value
+stdout-bytes 0
+return I32 12
+fuel-consumed 1

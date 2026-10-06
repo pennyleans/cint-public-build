@@ -1,0 +1,18 @@
+case view/partial_index_bounds
+clause SPEC-04 LS-64, LS-65; SPEC-01 IM-186 (a partial index out of range faults before the call)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_BOUNDS
+fault.operation index.checked.i64
+fault.operand I64 0
+fault.operand I64 3
+fault.exact none
+fault.limit I64 3
+fault.position view/partial_index_bounds.ci:18:19
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

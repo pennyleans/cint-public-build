@@ -1,0 +1,7 @@
+case struct/array_of_structs
+clause SPEC-04 4.3, 4.4; SPEC-09 5.2 (arrays and views of structs)
+source reference
+outcome value
+stdout-bytes 0
+return I32 10
+fuel-consumed 10

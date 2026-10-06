@@ -1,0 +1,19 @@
+case memory/arena_child_carved_from_parent
+clause SPEC-03 M-14, M-20; decision 2026-10-05, BX12-05, BX12-14; ref/OPEN.md REF-OQ-45
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_BOUNDS
+fault.operation arena.alloc
+fault.operand I64 3
+fault.operand I64 6
+fault.operand I64 8
+fault.exact none
+fault.limit none
+fault.position memory/arena_child_carved_from_parent.ci:20:31
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

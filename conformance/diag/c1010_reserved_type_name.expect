@@ -1,0 +1,6 @@
+case diag/c1010_reserved_type_name
+clause SPEC-04 3.4; SPEC-04 17.1, 17.2
+source compile-error
+outcome compile-error
+diagnostic.code C1010
+diagnostic.position diag/c1010_reserved_type_name.ci:8:9

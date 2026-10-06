@@ -1,0 +1,15 @@
+// case: diag/c2101_mixed_logical
+// clause: SPEC-04 7.2; SPEC-04 17.1, 17.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2101 at 11:9: && and || in one expression need parentheses (position: SPEC-04 LS-313, decision 2026-10-03, slice 2 patch D-11)
+
+export I64 run() {
+    Bool a = true;
+    Bool b = false;
+    Bool c = true;
+    if (a && b || c) {
+        return 1;
+    }
+    return 0;
+}

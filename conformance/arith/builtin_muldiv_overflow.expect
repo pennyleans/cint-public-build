@@ -1,0 +1,19 @@
+case arith/builtin_muldiv_overflow
+clause SPEC-01 4.5, 4.10, 9.2, IM-134
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_OVERFLOW
+fault.operation muldiv.checked.i64.i32.half_even
+fault.operand I64 9223372036854775807
+fault.operand I64 -9223372036854775807
+fault.operand I64 3
+fault.exact -28356863910078205282465635928077500416
+fault.limit I32 -2147483648
+fault.position arith/builtin_muldiv_overflow.ci:10:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

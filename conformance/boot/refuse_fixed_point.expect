@@ -1,0 +1,6 @@
+case boot/refuse_fixed_point
+clause SPEC-09 BOOT-01 (FIXED_TYPE, round_clause), SEED-06; SPEC-04 LS-36, LS-133
+source compile-error
+outcome compile-error
+diagnostic.code C9100
+diagnostic.position boot/refuse_fixed_point.ci:10:5

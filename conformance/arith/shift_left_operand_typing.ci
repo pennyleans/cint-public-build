@@ -1,0 +1,11 @@
+// case: arith/shift_left_operand_typing
+// clause: SPEC-01 3.2 (fixture 109), 4.6
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 1099511627776 (the 1 is typed I64 from the declaration, not U8 from the count)
+
+export I64 run() {
+    U8 k = 40;
+    I64 v = 1 << k;
+    return v;
+}

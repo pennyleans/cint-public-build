@@ -1,0 +1,12 @@
+// case: boot/refuse_fixed_point
+// clause: SPEC-09 BOOT-01 (FIXED_TYPE, round_clause), SEED-06; SPEC-04 LS-36, LS-133
+// subset: cint-core-1
+// entry: run; args: none
+// seed outcome: C9100 at 10:5
+// spec outcome: value I64 3 under cint-core-1 (3 as Q16.16 has raw 196608; it converts back to 3); the seed refuses the fixed-point type name
+
+export I64 run() {
+    I32 r = 3;
+    Q16.16 h = r as Q16.16;
+    return h as I64 round floor;
+}

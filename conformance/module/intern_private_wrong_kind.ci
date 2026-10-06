@@ -1,0 +1,8 @@
+// case: module/intern_private_wrong_kind
+// clause: SPEC-09 CINTC-16 Lookup; SPEC-04 LS-15, LS-227, LS-228
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: C3008 before the kind check
+
+import module.lib.intern_names;
+export I64 run() { intern_names.hidden v = 0; return 0; }

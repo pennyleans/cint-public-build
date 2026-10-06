@@ -1,0 +1,11 @@
+case cleanup/try_runs_defer_and_errdefer
+clause SPEC-04 LS-129, LS-185, LS-189; SPEC-09 CONF-11 rule 12; decision 2026-10-05, BX12-08, BX12-21
+format 3
+source reference
+outcome error
+stdout-bytes 0
+fuel-consumed 2
+error.set cleanup.try_runs_defer_and_errdefer.ParseError
+error.value bad_digit
+error.tag U16 2
+state.global cleanup.try_runs_defer_and_errdefer trail I64 132

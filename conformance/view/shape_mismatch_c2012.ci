@@ -1,0 +1,15 @@
+// case: view/shape_mismatch_c2012
+// clause: SPEC-04 LS-117 (two views bind one size parameter to different static extents: C2012)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2012 at 14:25, the second argument
+
+I64 first_sum[n](in I64[n] a, in I64[n] b) {
+    return a[0] + b[0];
+}
+
+export I64 run() {
+    I64[4] a;
+    I64[3] b;
+    return first_sum(a, b);
+}

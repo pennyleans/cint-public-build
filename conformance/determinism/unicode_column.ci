@@ -1,0 +1,11 @@
+// case: determinism/unicode_column
+// clause: SPEC-04 LS-10, LS-39 (columns count Unicode scalar values); SPEC-01 IM-106
+// subset: cint-core-1 (a non-ASCII character literal)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 9:25: 'é' is one column, not two bytes; ('é' - 232) is 1
+
+export I64 run() {
+    I64 a = 9223372036854775807;
+    I64 b = ('é' - 232) + a;
+    return b;
+}

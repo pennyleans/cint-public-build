@@ -1,0 +1,10 @@
+// case: reduce/fuel_reduction_charge
+// clause: SPEC-01 IM-139 (a reduction over 65 elements charges ceil(65 / 64) = 2)
+// subset: cint-core-1 (built-in sum)
+// entry: run; args: none
+// spec outcome: value I64 0; fuel 3
+
+export I64 run() {
+    I64[65] a;
+    return sum(a);
+}

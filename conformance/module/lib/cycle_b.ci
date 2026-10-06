@@ -1,0 +1,8 @@
+// Helper module of module/import_cycle_c3003 (G-C1 fixture, not a case): it closes the
+// cycle module.lib.cycle_a, module.lib.cycle_b, module.lib.cycle_a.
+
+import module.lib.cycle_a;
+
+export I64 pong(I64 x) {
+    return x + 2;
+}

@@ -1,0 +1,7 @@
+case memory/c6004_capacity_not_constant
+clause SPEC-03 M-20; SPEC-04 LS-113; ref/OPEN.md REF-OQ-45
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C6004
+diagnostic.position memory/c6004_capacity_not_constant.ci:8:11

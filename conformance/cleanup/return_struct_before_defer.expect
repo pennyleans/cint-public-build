@@ -1,0 +1,8 @@
+case cleanup/return_struct_before_defer
+clause SPEC-04 LS-185, LS-316; decision 2026-10-05, BX12-11
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 347855
+fuel-consumed 4

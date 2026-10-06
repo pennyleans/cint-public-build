@@ -1,0 +1,8 @@
+// case: module/import_string_fixed_c2012
+// clause: SPEC-09 BOOT-02, CINTC-16; SPEC-04 LS-70, LS-117
+// subset: cint-boot-1
+// entry: run; args: none
+
+import module.lib.string_views;
+
+export I64 run() { return string_views.fixed("ab"); }

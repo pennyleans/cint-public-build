@@ -1,0 +1,7 @@
+case module/fold_after_dependency_c3009
+clause SPEC-09 CINTC-12 (case folding compares with the paths of the program so far, in load order); SPEC-04 LS-225; compiler/OPEN.md CINTC-OQ-50
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C3009
+diagnostic.position module/fold_after_dependency_c3009.ci:8:8

@@ -1,0 +1,8 @@
+module add
+sites add.ci 1:2:12:fuel.charge 2:3:14:add.checked.i64 3:3:18:add.checked.i64
+export func @add.add3(%a: I64, %b: I64, %c: I64) -> I64 {
+  fuel.charge 1                                  #1 @add.ci:2:12
+  %t0 = add.checked.i64 %a, %b                   #2 @add.ci:3:14
+  %t1 = add.checked.i64 %t0, %c                  #3 @add.ci:3:18
+  return %t1
+}

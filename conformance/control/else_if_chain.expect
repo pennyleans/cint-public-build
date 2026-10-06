@@ -1,0 +1,7 @@
+case control/else_if_chain
+clause SPEC-04 8.2
+source reference
+outcome value
+stdout-bytes 0
+return I64 3
+fuel-consumed 2

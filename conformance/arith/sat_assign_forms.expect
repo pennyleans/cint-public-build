@@ -1,0 +1,7 @@
+case arith/sat_assign_forms
+clause SPEC-04 LS-48, LS-157, LS-165; SPEC-01 4.1
+source reference
+outcome value
+stdout-bytes 0
+return I64 1061
+fuel-consumed 1

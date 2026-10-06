@@ -1,0 +1,22 @@
+case kernel/alias_uncertain_columns
+clause SPEC-02 A-5, A-6, 5.5, 15.4 E-6 (adjacent column blocks: bounding intervals intersect, gcd 1, uncertain)
+format 4
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_ALIAS
+fault.operation bind.alias
+fault.operand I64 1
+fault.operand I64 0
+fault.descriptor I32 none 2 8 8 0 16 8 0 1 write
+fault.descriptor I32 none 2 0 8 0 16 8 0 1 write
+fault.exact none
+fault.limit none
+fault.position kernel/alias_uncertain_columns.ci:13:5
+fault.revision self
+fault.source-map self
+fault.phase entry
+fault.kernel kernel.alias_uncertain_columns.copy2
+fault.address 0 none none
+fault.stack-depth 0

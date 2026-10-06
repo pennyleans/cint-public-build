@@ -1,0 +1,7 @@
+case diag/module_var_forward_reference
+clause SPEC-04 LS-112, LS-218, LS-219, LS-312 (decision 2026-10-03, slice 2 patch D-22)
+source reference
+outcome value
+stdout-bytes 0
+return I64 5
+fuel-consumed 1

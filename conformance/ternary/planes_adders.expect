@@ -1,0 +1,9 @@
+case ternary/planes_adders
+clause SPEC-05 TR-PRIN-1, TR-DIG-1 (a balanced-ternary half adder and full adder on U64 bit planes, every trit pair and every triple)
+format 2
+source reference
+outcome value
+stdout-bytes 1292
+stdout-sha256 58a4d570abc9887b6c80fa1522a0c28f00abab8016d40590aaceb5428ca10bed
+return I64 0
+fuel-consumed 525

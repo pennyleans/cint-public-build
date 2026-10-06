@@ -1,0 +1,15 @@
+// case: module/alias_function_c3001
+// clause: SPEC-04 LS-228 (a module-level declaration named like an alias: C3001); SPEC-09 CINTC-16
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C3001 at 9:5, the function named like the alias `plain_math`
+
+import module.lib.plain_math;
+
+I64 plain_math() {
+    return 1;
+}
+
+export I64 run() {
+    return plain_math.SCALE;
+}

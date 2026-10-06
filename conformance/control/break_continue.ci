@@ -1,0 +1,21 @@
+// case: control/break_continue
+// clause: SPEC-04 8.6; SPEC-09 5.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 25 (1 + 3 + 5 + 7 + 9; the loop breaks at 11)
+
+export I64 run() {
+    I64 s = 0;
+    I64 i = 0;
+    while (true) {
+        i = i + 1;
+        if (i > 10) {
+            break;
+        }
+        if (i % 2 == 0) {
+            continue;
+        }
+        s = s + i;
+    }
+    return s;
+}

@@ -1,0 +1,11 @@
+// case: diag/c2001_shift_left_operand_rule4
+// clause: SPEC-01 IM-23; SPEC-04 LS-264 (decision 2026-10-03, slice 2 patch D-9); SPEC-04 LS-57
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2001 at 9:16: `1 << 6` is I64 (rule 6, never rule 4), and `I8 + I64` is a type mismatch
+
+export I64 run() {
+    I8 x = 1;
+    I8 y = x + (1 << 6);
+    return y as I64;
+}

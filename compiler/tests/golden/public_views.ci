@@ -1,0 +1,25 @@
+// cint-core-1: public scalar views and ordinary source-parameter numbering.
+export I64 paired[n, m](inout I64[n] a, I64 bias, in I64[n] b, in U8[m] bytes, in U8[m] more) {
+    if (n == 0) { return m; }
+    a[0] = b[0] + bias;
+    return a[0] + (bytes[0] as I64) + (more[0] as I64);
+}
+
+export I64 fixed(inout I32[4] a, in U8[_] b) {
+    a[0] = b[0] as I32;
+    return a[0] as I64;
+}
+
+export Bool bits(Bool a, in Bool[_] b) {
+    return a && b[0];
+}
+
+export I64 faulting(inout I64[_] a, I64 divisor) {
+    a[0] = 42;
+    return 10 / divisor;
+}
+
+export I64 readonly[n](in I64[n] a, in I64[n] b) {
+    if (n == 0) { return 0; }
+    return a[0] + b[0];
+}

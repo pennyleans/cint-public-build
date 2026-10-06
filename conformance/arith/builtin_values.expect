@@ -1,0 +1,9 @@
+case arith/builtin_values
+clause SPEC-01 2.4, 4.3 to 4.10, IM-134; SPEC-04 4.2 rule 4.7
+format 2
+source reference
+outcome value
+stdout-bytes 399
+stdout-sha256 2dd836e8f45221b2083bb72028bdf34cd7d172b4d379a6a2f213ef6bd7186ef9
+return I64 -1
+fuel-consumed 1

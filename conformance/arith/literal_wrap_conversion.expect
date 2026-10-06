@@ -1,0 +1,7 @@
+case arith/literal_wrap_conversion
+clause SPEC-01 3.2 (conversion sources)
+source reference
+outcome value
+stdout-bytes 0
+return U64 18446744073709551615
+fuel-consumed 1

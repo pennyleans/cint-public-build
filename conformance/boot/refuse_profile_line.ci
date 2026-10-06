@@ -1,0 +1,12 @@
+// case: boot/refuse_profile_line
+// clause: SPEC-09 BOOT-01 (profile_decl), SEED-06; SPEC-04 LS-299
+// subset: cint-core-1
+// entry: run; args: none
+// seed outcome: C9100 at 8:1
+// spec outcome: value I64 1 under cint-core-1; the seed refuses the `profile` line
+
+profile "cint-core-1";
+
+export I64 run() {
+    return 1;
+}

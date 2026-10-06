@@ -1,0 +1,16 @@
+// case: kernel/alias_same_view_c5010
+// clause: SPEC-02 A-8, 15.4 E-5 (the same variable bound to `in` and `out`: compile error)
+// subset: cint-core-1 (kernel)
+// entry: run; args: none
+// spec outcome: compile error C5010 at 14:19, the later argument
+
+kernel advance[n](in I64[n] old, in I64[n] increment, out I64[n] next) {
+    next = old + increment;
+}
+
+export I64 run() {
+    I64[3] a = [1, 2, 3];
+    I64[3] d = [10, 20, 30];
+    advance(a, d, a);
+    return a[0];
+}

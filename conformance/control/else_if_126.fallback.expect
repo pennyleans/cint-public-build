@@ -1,0 +1,7 @@
+case control/else_if_126.fallback
+clause SPEC-04 LS-168, LS-311; SPEC-09 CINTC-03
+source reference
+outcome value
+stdout-bytes 0
+return I64 -2
+fuel-consumed 2

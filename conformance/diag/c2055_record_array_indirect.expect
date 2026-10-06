@@ -1,0 +1,7 @@
+case diag/c2055_record_array_indirect
+clause SPEC-04 LS-73, LS-313
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2055
+diagnostic.position diag/c2055_record_array_indirect.ci:7:14

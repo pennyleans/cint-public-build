@@ -1,0 +1,19 @@
+// cint test fixture (slice 2 task 2.15): three tests, one expecting a fault.
+// `cint test cli/tests/fixtures/three_tests.ci` ends with `3 of 3 tests passed`.
+
+I64 add(I64 a, I64 b) {
+    return a + b;
+}
+
+test "adds small numbers" {
+    assert(add(2, 3) == 5);
+}
+
+test "checked add overflows" expect_fault E_OVERFLOW at 5 {
+    I64 big = 9223372036854775800;
+    I64 r = add(big, 12);
+}
+
+test "adds a negative number" {
+    assert(add(7, -2) == 5);
+}

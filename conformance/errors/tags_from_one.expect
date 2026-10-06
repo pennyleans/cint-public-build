@@ -1,0 +1,10 @@
+case errors/tags_from_one
+clause SPEC-04 LS-92, LS-93; SPEC-03 A-18; SPEC-09 CONF-11 rule 12; decision 2026-10-05, BX12-12, BX12-21
+format 3
+source reference
+outcome error
+stdout-bytes 0
+fuel-consumed 1
+error.set errors.tags_from_one.Stage
+error.value third
+error.tag U16 3

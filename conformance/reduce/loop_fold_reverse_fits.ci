@@ -1,0 +1,21 @@
+// case: reduce/loop_fold_reverse_fits
+// clause: SPEC-01 IM-73, IM-75, IM-83 (the same checked fold in reverse order over 2000000000, 2000000000, -2000000000 fits; the twin of reduce/fold_checked_reversed_view)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I32 2000000000 (-2000000000 + 2000000000 = 0; 0 + 2000000000 = 2000000000); fuel 5
+
+I32 fold_reverse[n](in I32[n] xs) {
+    I32 acc = 0;
+    for (I64 k = n - 1; k >= 0; k--) {
+        acc = acc + xs[k];
+    }
+    return acc;
+}
+
+export I32 run() {
+    I32[3] a;
+    a[0] = 2000000000;
+    a[1] = 2000000000;
+    a[2] = -2000000000;
+    return fold_reverse(a);
+}

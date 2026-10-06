@@ -1,0 +1,19 @@
+case memory/arena_child_exhausts_parent
+clause SPEC-03 M-19, M-20; ref/OPEN.md REF-OQ-45
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_BOUNDS
+fault.operation arena.alloc
+fault.operand I64 4
+fault.operand I64 5
+fault.operand I64 8
+fault.exact none
+fault.limit none
+fault.position memory/arena_child_exhausts_parent.ci:11:31
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

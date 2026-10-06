@@ -1,0 +1,46 @@
+// compiler/tests/golden/switch.ci: the switch exports of flow.ci (slice 2 task 2.11).
+// compiler/check.ci does not check `switch` yet, so compiler/main.ci refuses this module
+// with C9102 at the first `switch` before lowering (compiler/OPEN.md CINTC-OQ-45); the
+// golden suite expects that diagnostic until the checker takes `switch` (task 2.13), and
+// then its calls move back to the harness runs.
+
+export I64 sw(I64 x) {
+    I64 r = 0;
+    switch (x) {
+        case 0: r = 10;
+        case 1, 2: r = 20;
+        case 3..=5:
+            r = 30;
+            fallthrough;
+        case 6: r += 1;
+        case I64.min..=-1:
+            r = -7;
+            if (x == -1) {
+                break;
+            }
+            r -= 1;
+        default: r = -1;
+    }
+    return r;
+}
+
+export I64 sw_u8(U8 c) {
+    switch (c) {
+        case 'a'..='z', 'A'..='Z', '_': return 1;
+        case '0'..='9': return 2;
+        case 0..=31: return 3;
+        default: return 4;
+    }
+}
+
+export I64 sw_bool(Bool b) {
+    I64 r = 0;
+    while (true) {
+        switch (b) {
+            case true: r = 1;
+            case false: r = 2;
+        }
+        break;
+    }
+    return r;
+}

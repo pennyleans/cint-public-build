@@ -1,0 +1,33 @@
+// case: kernel/heat_e9_div_zero
+// clause: SPEC-02 15.4 E-9 (the first interior work-item 9 divides 0 by 0)
+// subset: cint-core-1 (kernel)
+// entry: run; args: none
+// spec outcome: fault E_DIV_ZERO at 19:20, phase work-item, address dispatch 0, work-item 9, step 23, operation div_round.checked.i64.half_even, operands I64 0 and I64 0, no exact, no limit; stack depth 1, stack 31:5; fuel 65. Box 09 rulings R7 and R9
+
+export kernel diffuse[h, w](
+    in  I32[h, w] u,
+    in  I64       kn,
+    in  I64       kd,
+    out I32[h, w] v,
+    out I64       total
+) over [y: h, x: w] {
+    I64 c = u[y, x] as I64;
+    I32 r = u[y, x];
+    if (y > 0 && y < h - 1 && x > 0 && x < w - 1) {
+        I64 lap = (u[y - 1, x] as I64) + (u[y + 1, x] as I64)
+                + (u[y, x - 1] as I64) + (u[y, x + 1] as I64) - 4 * c;
+        I64 flux = div_round(kn * lap, kd, half_even);
+        r = (c + flux) as I32;
+    }
+    v[y, x] = r;
+    reduce total = sum(r);
+}
+
+export I64 run() {
+    I32[8, 8] a;
+    I32[8, 8] b;
+    a[3, 4] = 1;
+    I64 total = 0;
+    diffuse(a, 1, 0, b, total);
+    return total;
+}

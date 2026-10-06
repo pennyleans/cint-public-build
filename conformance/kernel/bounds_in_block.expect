@@ -1,0 +1,21 @@
+case kernel/bounds_in_block
+clause SPEC-02 K-10, K-10a pattern 2, F-6, X-8 (an in-body read past the extent; in-body loop charges)
+format 4
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 5
+fault.code E_BOUNDS
+fault.operation index.checked.i64
+fault.operand I64 1
+fault.operand I64 2
+fault.exact none
+fault.limit I64 2
+fault.position kernel/bounds_in_block.ci:9:20
+fault.revision self
+fault.source-map self
+fault.phase work-item
+fault.kernel kernel.bounds_in_block.rows
+fault.address 0 0 5
+fault.stack-depth 1
+fault.stack kernel/bounds_in_block.ci:16:5

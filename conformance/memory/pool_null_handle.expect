@@ -1,0 +1,23 @@
+case memory/pool_null_handle
+clause SPEC-03 M-12, M-17; SPEC-04 LS-104; ref/OPEN.md REF-OQ-45
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_STALE_HANDLE
+fault.operation pool.deref
+fault.operand U64 0
+fault.operand I64 0
+fault.operand U64 0
+fault.operand U32 0
+fault.operand U8 0
+fault.operand U64 0
+fault.operand U8 1
+fault.exact none
+fault.limit none
+fault.position memory/pool_null_handle.ci:14:18
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

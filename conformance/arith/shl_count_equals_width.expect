@@ -1,0 +1,16 @@
+case arith/shl_count_equals_width
+clause SPEC-01 4.6, 9.1; plan Review Focus 3
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_SHIFT
+fault.operation shl.checked.i64
+fault.operand I64 1
+fault.operand I64 64
+fault.exact none
+fault.limit I64 63
+fault.position arith/shl_count_equals_width.ci:10:14
+fault.revision self
+fault.address none
+fault.stack-depth 0

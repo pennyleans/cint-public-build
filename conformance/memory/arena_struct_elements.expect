@@ -1,0 +1,8 @@
+case memory/arena_struct_elements
+clause SPEC-03 M-12, M-19; decision 2026-10-05, BX12-06; ref/OPEN.md REF-OQ-45
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 114
+fuel-consumed 1

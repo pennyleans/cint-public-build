@@ -1,0 +1,9 @@
+// case: module/c3030_not-an-identifier
+// clause: SPEC-09 CINTC-12 (each segment of a module path is an identifier); SPEC-04 LS-225, LS-278
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C3030 at module/c3030_not-an-identifier.ci:1:1, the root module's own path
+
+export I64 run() {
+    return 1;
+}

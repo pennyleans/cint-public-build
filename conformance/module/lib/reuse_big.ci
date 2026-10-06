@@ -1,0 +1,1804 @@
+// Helper module of module/reuse_after_large_module (G-C1 fixture, not a case): 300
+// constants and 150 functions with several hundred reference and call sites, so that its
+// scratch tables (tokens, nodes, symbols, functions, types, SIR) reach well past every
+// row module/lib/reuse_a used.
+
+export const I64 B_000 = -50;
+export const I64 B_001 = -13;
+export const I64 B_002 = 24;
+export const I64 B_003 = -40;
+export const I64 B_004 = -3;
+export const I64 B_005 = 34;
+export const I64 B_006 = -30;
+export const I64 B_007 = 7;
+export const I64 B_008 = 44;
+export const I64 B_009 = -20;
+export const I64 B_010 = 17;
+export const I64 B_011 = -47;
+export const I64 B_012 = -10;
+export const I64 B_013 = 27;
+export const I64 B_014 = -37;
+export const I64 B_015 = 0;
+export const I64 B_016 = 37;
+export const I64 B_017 = -27;
+export const I64 B_018 = 10;
+export const I64 B_019 = 47;
+export const I64 B_020 = -17;
+export const I64 B_021 = 20;
+export const I64 B_022 = -44;
+export const I64 B_023 = -7;
+export const I64 B_024 = 30;
+export const I64 B_025 = -34;
+export const I64 B_026 = 3;
+export const I64 B_027 = 40;
+export const I64 B_028 = -24;
+export const I64 B_029 = 13;
+export const I64 B_030 = 50;
+export const I64 B_031 = -14;
+export const I64 B_032 = 23;
+export const I64 B_033 = -41;
+export const I64 B_034 = -4;
+export const I64 B_035 = 33;
+export const I64 B_036 = -31;
+export const I64 B_037 = 6;
+export const I64 B_038 = 43;
+export const I64 B_039 = -21;
+export const I64 B_040 = 16;
+export const I64 B_041 = -48;
+export const I64 B_042 = -11;
+export const I64 B_043 = 26;
+export const I64 B_044 = -38;
+export const I64 B_045 = -1;
+export const I64 B_046 = 36;
+export const I64 B_047 = -28;
+export const I64 B_048 = 9;
+export const I64 B_049 = 46;
+export const I64 B_050 = -18;
+export const I64 B_051 = 19;
+export const I64 B_052 = -45;
+export const I64 B_053 = -8;
+export const I64 B_054 = 29;
+export const I64 B_055 = -35;
+export const I64 B_056 = 2;
+export const I64 B_057 = 39;
+export const I64 B_058 = -25;
+export const I64 B_059 = 12;
+export const I64 B_060 = 49;
+export const I64 B_061 = -15;
+export const I64 B_062 = 22;
+export const I64 B_063 = -42;
+export const I64 B_064 = -5;
+export const I64 B_065 = 32;
+export const I64 B_066 = -32;
+export const I64 B_067 = 5;
+export const I64 B_068 = 42;
+export const I64 B_069 = -22;
+export const I64 B_070 = 15;
+export const I64 B_071 = -49;
+export const I64 B_072 = -12;
+export const I64 B_073 = 25;
+export const I64 B_074 = -39;
+export const I64 B_075 = -2;
+export const I64 B_076 = 35;
+export const I64 B_077 = -29;
+export const I64 B_078 = 8;
+export const I64 B_079 = 45;
+export const I64 B_080 = -19;
+export const I64 B_081 = 18;
+export const I64 B_082 = -46;
+export const I64 B_083 = -9;
+export const I64 B_084 = 28;
+export const I64 B_085 = -36;
+export const I64 B_086 = 1;
+export const I64 B_087 = 38;
+export const I64 B_088 = -26;
+export const I64 B_089 = 11;
+export const I64 B_090 = 48;
+export const I64 B_091 = -16;
+export const I64 B_092 = 21;
+export const I64 B_093 = -43;
+export const I64 B_094 = -6;
+export const I64 B_095 = 31;
+export const I64 B_096 = -33;
+export const I64 B_097 = 4;
+export const I64 B_098 = 41;
+export const I64 B_099 = -23;
+export const I64 B_100 = 14;
+export const I64 B_101 = -50;
+export const I64 B_102 = -13;
+export const I64 B_103 = 24;
+export const I64 B_104 = -40;
+export const I64 B_105 = -3;
+export const I64 B_106 = 34;
+export const I64 B_107 = -30;
+export const I64 B_108 = 7;
+export const I64 B_109 = 44;
+export const I64 B_110 = -20;
+export const I64 B_111 = 17;
+export const I64 B_112 = -47;
+export const I64 B_113 = -10;
+export const I64 B_114 = 27;
+export const I64 B_115 = -37;
+export const I64 B_116 = 0;
+export const I64 B_117 = 37;
+export const I64 B_118 = -27;
+export const I64 B_119 = 10;
+export const I64 B_120 = 47;
+export const I64 B_121 = -17;
+export const I64 B_122 = 20;
+export const I64 B_123 = -44;
+export const I64 B_124 = -7;
+export const I64 B_125 = 30;
+export const I64 B_126 = -34;
+export const I64 B_127 = 3;
+export const I64 B_128 = 40;
+export const I64 B_129 = -24;
+export const I64 B_130 = 13;
+export const I64 B_131 = 50;
+export const I64 B_132 = -14;
+export const I64 B_133 = 23;
+export const I64 B_134 = -41;
+export const I64 B_135 = -4;
+export const I64 B_136 = 33;
+export const I64 B_137 = -31;
+export const I64 B_138 = 6;
+export const I64 B_139 = 43;
+export const I64 B_140 = -21;
+export const I64 B_141 = 16;
+export const I64 B_142 = -48;
+export const I64 B_143 = -11;
+export const I64 B_144 = 26;
+export const I64 B_145 = -38;
+export const I64 B_146 = -1;
+export const I64 B_147 = 36;
+export const I64 B_148 = -28;
+export const I64 B_149 = 9;
+export const I64 B_150 = 46;
+export const I64 B_151 = -18;
+export const I64 B_152 = 19;
+export const I64 B_153 = -45;
+export const I64 B_154 = -8;
+export const I64 B_155 = 29;
+export const I64 B_156 = -35;
+export const I64 B_157 = 2;
+export const I64 B_158 = 39;
+export const I64 B_159 = -25;
+export const I64 B_160 = 12;
+export const I64 B_161 = 49;
+export const I64 B_162 = -15;
+export const I64 B_163 = 22;
+export const I64 B_164 = -42;
+export const I64 B_165 = -5;
+export const I64 B_166 = 32;
+export const I64 B_167 = -32;
+export const I64 B_168 = 5;
+export const I64 B_169 = 42;
+export const I64 B_170 = -22;
+export const I64 B_171 = 15;
+export const I64 B_172 = -49;
+export const I64 B_173 = -12;
+export const I64 B_174 = 25;
+export const I64 B_175 = -39;
+export const I64 B_176 = -2;
+export const I64 B_177 = 35;
+export const I64 B_178 = -29;
+export const I64 B_179 = 8;
+export const I64 B_180 = 45;
+export const I64 B_181 = -19;
+export const I64 B_182 = 18;
+export const I64 B_183 = -46;
+export const I64 B_184 = -9;
+export const I64 B_185 = 28;
+export const I64 B_186 = -36;
+export const I64 B_187 = 1;
+export const I64 B_188 = 38;
+export const I64 B_189 = -26;
+export const I64 B_190 = 11;
+export const I64 B_191 = 48;
+export const I64 B_192 = -16;
+export const I64 B_193 = 21;
+export const I64 B_194 = -43;
+export const I64 B_195 = -6;
+export const I64 B_196 = 31;
+export const I64 B_197 = -33;
+export const I64 B_198 = 4;
+export const I64 B_199 = 41;
+export const I64 B_200 = -23;
+export const I64 B_201 = 14;
+export const I64 B_202 = -50;
+export const I64 B_203 = -13;
+export const I64 B_204 = 24;
+export const I64 B_205 = -40;
+export const I64 B_206 = -3;
+export const I64 B_207 = 34;
+export const I64 B_208 = -30;
+export const I64 B_209 = 7;
+export const I64 B_210 = 44;
+export const I64 B_211 = -20;
+export const I64 B_212 = 17;
+export const I64 B_213 = -47;
+export const I64 B_214 = -10;
+export const I64 B_215 = 27;
+export const I64 B_216 = -37;
+export const I64 B_217 = 0;
+export const I64 B_218 = 37;
+export const I64 B_219 = -27;
+export const I64 B_220 = 10;
+export const I64 B_221 = 47;
+export const I64 B_222 = -17;
+export const I64 B_223 = 20;
+export const I64 B_224 = -44;
+export const I64 B_225 = -7;
+export const I64 B_226 = 30;
+export const I64 B_227 = -34;
+export const I64 B_228 = 3;
+export const I64 B_229 = 40;
+export const I64 B_230 = -24;
+export const I64 B_231 = 13;
+export const I64 B_232 = 50;
+export const I64 B_233 = -14;
+export const I64 B_234 = 23;
+export const I64 B_235 = -41;
+export const I64 B_236 = -4;
+export const I64 B_237 = 33;
+export const I64 B_238 = -31;
+export const I64 B_239 = 6;
+export const I64 B_240 = 43;
+export const I64 B_241 = -21;
+export const I64 B_242 = 16;
+export const I64 B_243 = -48;
+export const I64 B_244 = -11;
+export const I64 B_245 = 26;
+export const I64 B_246 = -38;
+export const I64 B_247 = -1;
+export const I64 B_248 = 36;
+export const I64 B_249 = -28;
+export const I64 B_250 = 9;
+export const I64 B_251 = 46;
+export const I64 B_252 = -18;
+export const I64 B_253 = 19;
+export const I64 B_254 = -45;
+export const I64 B_255 = -8;
+export const I64 B_256 = 29;
+export const I64 B_257 = -35;
+export const I64 B_258 = 2;
+export const I64 B_259 = 39;
+export const I64 B_260 = -25;
+export const I64 B_261 = 12;
+export const I64 B_262 = 49;
+export const I64 B_263 = -15;
+export const I64 B_264 = 22;
+export const I64 B_265 = -42;
+export const I64 B_266 = -5;
+export const I64 B_267 = 32;
+export const I64 B_268 = -32;
+export const I64 B_269 = 5;
+export const I64 B_270 = 42;
+export const I64 B_271 = -22;
+export const I64 B_272 = 15;
+export const I64 B_273 = -49;
+export const I64 B_274 = -12;
+export const I64 B_275 = 25;
+export const I64 B_276 = -39;
+export const I64 B_277 = -2;
+export const I64 B_278 = 35;
+export const I64 B_279 = -29;
+export const I64 B_280 = 8;
+export const I64 B_281 = 45;
+export const I64 B_282 = -19;
+export const I64 B_283 = 18;
+export const I64 B_284 = -46;
+export const I64 B_285 = -9;
+export const I64 B_286 = 28;
+export const I64 B_287 = -36;
+export const I64 B_288 = 1;
+export const I64 B_289 = 38;
+export const I64 B_290 = -26;
+export const I64 B_291 = 11;
+export const I64 B_292 = 48;
+export const I64 B_293 = -16;
+export const I64 B_294 = 21;
+export const I64 B_295 = -43;
+export const I64 B_296 = -6;
+export const I64 B_297 = 31;
+export const I64 B_298 = -33;
+export const I64 B_299 = 4;
+
+export I64 b_f000(I64 x) {
+    I64 t = x + B_000;
+    t = t - B_001;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f001(I64 x) {
+    I64 t = x + B_002;
+    t = t - B_003;
+    t = t + b_f000(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f002(I64 x) {
+    I64 t = x + B_004;
+    t = t - B_005;
+    t = t + b_f001(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f003(I64 x) {
+    I64 t = x + B_006;
+    t = t - B_007;
+    t = t + b_f002(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f004(I64 x) {
+    I64 t = x + B_008;
+    t = t - B_009;
+    t = t + b_f003(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f005(I64 x) {
+    I64 t = x + B_010;
+    t = t - B_011;
+    t = t + b_f004(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f006(I64 x) {
+    I64 t = x + B_012;
+    t = t - B_013;
+    t = t + b_f005(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f007(I64 x) {
+    I64 t = x + B_014;
+    t = t - B_015;
+    t = t + b_f006(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f008(I64 x) {
+    I64 t = x + B_016;
+    t = t - B_017;
+    t = t + b_f007(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f009(I64 x) {
+    I64 t = x + B_018;
+    t = t - B_019;
+    t = t + b_f008(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f010(I64 x) {
+    I64 t = x + B_020;
+    t = t - B_021;
+    t = t + b_f009(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f011(I64 x) {
+    I64 t = x + B_022;
+    t = t - B_023;
+    t = t + b_f010(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f012(I64 x) {
+    I64 t = x + B_024;
+    t = t - B_025;
+    t = t + b_f011(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f013(I64 x) {
+    I64 t = x + B_026;
+    t = t - B_027;
+    t = t + b_f012(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f014(I64 x) {
+    I64 t = x + B_028;
+    t = t - B_029;
+    t = t + b_f013(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f015(I64 x) {
+    I64 t = x + B_030;
+    t = t - B_031;
+    t = t + b_f014(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f016(I64 x) {
+    I64 t = x + B_032;
+    t = t - B_033;
+    t = t + b_f015(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f017(I64 x) {
+    I64 t = x + B_034;
+    t = t - B_035;
+    t = t + b_f016(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f018(I64 x) {
+    I64 t = x + B_036;
+    t = t - B_037;
+    t = t + b_f017(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f019(I64 x) {
+    I64 t = x + B_038;
+    t = t - B_039;
+    t = t + b_f018(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f020(I64 x) {
+    I64 t = x + B_040;
+    t = t - B_041;
+    t = t + b_f019(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f021(I64 x) {
+    I64 t = x + B_042;
+    t = t - B_043;
+    t = t + b_f020(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f022(I64 x) {
+    I64 t = x + B_044;
+    t = t - B_045;
+    t = t + b_f021(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f023(I64 x) {
+    I64 t = x + B_046;
+    t = t - B_047;
+    t = t + b_f022(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f024(I64 x) {
+    I64 t = x + B_048;
+    t = t - B_049;
+    t = t + b_f023(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f025(I64 x) {
+    I64 t = x + B_050;
+    t = t - B_051;
+    t = t + b_f024(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f026(I64 x) {
+    I64 t = x + B_052;
+    t = t - B_053;
+    t = t + b_f025(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f027(I64 x) {
+    I64 t = x + B_054;
+    t = t - B_055;
+    t = t + b_f026(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f028(I64 x) {
+    I64 t = x + B_056;
+    t = t - B_057;
+    t = t + b_f027(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f029(I64 x) {
+    I64 t = x + B_058;
+    t = t - B_059;
+    t = t + b_f028(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f030(I64 x) {
+    I64 t = x + B_060;
+    t = t - B_061;
+    t = t + b_f029(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f031(I64 x) {
+    I64 t = x + B_062;
+    t = t - B_063;
+    t = t + b_f030(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f032(I64 x) {
+    I64 t = x + B_064;
+    t = t - B_065;
+    t = t + b_f031(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f033(I64 x) {
+    I64 t = x + B_066;
+    t = t - B_067;
+    t = t + b_f032(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f034(I64 x) {
+    I64 t = x + B_068;
+    t = t - B_069;
+    t = t + b_f033(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f035(I64 x) {
+    I64 t = x + B_070;
+    t = t - B_071;
+    t = t + b_f034(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f036(I64 x) {
+    I64 t = x + B_072;
+    t = t - B_073;
+    t = t + b_f035(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f037(I64 x) {
+    I64 t = x + B_074;
+    t = t - B_075;
+    t = t + b_f036(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f038(I64 x) {
+    I64 t = x + B_076;
+    t = t - B_077;
+    t = t + b_f037(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f039(I64 x) {
+    I64 t = x + B_078;
+    t = t - B_079;
+    t = t + b_f038(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f040(I64 x) {
+    I64 t = x + B_080;
+    t = t - B_081;
+    t = t + b_f039(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f041(I64 x) {
+    I64 t = x + B_082;
+    t = t - B_083;
+    t = t + b_f040(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f042(I64 x) {
+    I64 t = x + B_084;
+    t = t - B_085;
+    t = t + b_f041(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f043(I64 x) {
+    I64 t = x + B_086;
+    t = t - B_087;
+    t = t + b_f042(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f044(I64 x) {
+    I64 t = x + B_088;
+    t = t - B_089;
+    t = t + b_f043(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f045(I64 x) {
+    I64 t = x + B_090;
+    t = t - B_091;
+    t = t + b_f044(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f046(I64 x) {
+    I64 t = x + B_092;
+    t = t - B_093;
+    t = t + b_f045(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f047(I64 x) {
+    I64 t = x + B_094;
+    t = t - B_095;
+    t = t + b_f046(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f048(I64 x) {
+    I64 t = x + B_096;
+    t = t - B_097;
+    t = t + b_f047(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f049(I64 x) {
+    I64 t = x + B_098;
+    t = t - B_099;
+    t = t + b_f048(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f050(I64 x) {
+    I64 t = x + B_100;
+    t = t - B_101;
+    t = t + b_f049(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f051(I64 x) {
+    I64 t = x + B_102;
+    t = t - B_103;
+    t = t + b_f050(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f052(I64 x) {
+    I64 t = x + B_104;
+    t = t - B_105;
+    t = t + b_f051(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f053(I64 x) {
+    I64 t = x + B_106;
+    t = t - B_107;
+    t = t + b_f052(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f054(I64 x) {
+    I64 t = x + B_108;
+    t = t - B_109;
+    t = t + b_f053(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f055(I64 x) {
+    I64 t = x + B_110;
+    t = t - B_111;
+    t = t + b_f054(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f056(I64 x) {
+    I64 t = x + B_112;
+    t = t - B_113;
+    t = t + b_f055(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f057(I64 x) {
+    I64 t = x + B_114;
+    t = t - B_115;
+    t = t + b_f056(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f058(I64 x) {
+    I64 t = x + B_116;
+    t = t - B_117;
+    t = t + b_f057(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f059(I64 x) {
+    I64 t = x + B_118;
+    t = t - B_119;
+    t = t + b_f058(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f060(I64 x) {
+    I64 t = x + B_120;
+    t = t - B_121;
+    t = t + b_f059(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f061(I64 x) {
+    I64 t = x + B_122;
+    t = t - B_123;
+    t = t + b_f060(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f062(I64 x) {
+    I64 t = x + B_124;
+    t = t - B_125;
+    t = t + b_f061(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f063(I64 x) {
+    I64 t = x + B_126;
+    t = t - B_127;
+    t = t + b_f062(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f064(I64 x) {
+    I64 t = x + B_128;
+    t = t - B_129;
+    t = t + b_f063(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f065(I64 x) {
+    I64 t = x + B_130;
+    t = t - B_131;
+    t = t + b_f064(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f066(I64 x) {
+    I64 t = x + B_132;
+    t = t - B_133;
+    t = t + b_f065(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f067(I64 x) {
+    I64 t = x + B_134;
+    t = t - B_135;
+    t = t + b_f066(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f068(I64 x) {
+    I64 t = x + B_136;
+    t = t - B_137;
+    t = t + b_f067(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f069(I64 x) {
+    I64 t = x + B_138;
+    t = t - B_139;
+    t = t + b_f068(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f070(I64 x) {
+    I64 t = x + B_140;
+    t = t - B_141;
+    t = t + b_f069(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f071(I64 x) {
+    I64 t = x + B_142;
+    t = t - B_143;
+    t = t + b_f070(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f072(I64 x) {
+    I64 t = x + B_144;
+    t = t - B_145;
+    t = t + b_f071(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f073(I64 x) {
+    I64 t = x + B_146;
+    t = t - B_147;
+    t = t + b_f072(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f074(I64 x) {
+    I64 t = x + B_148;
+    t = t - B_149;
+    t = t + b_f073(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f075(I64 x) {
+    I64 t = x + B_150;
+    t = t - B_151;
+    t = t + b_f074(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f076(I64 x) {
+    I64 t = x + B_152;
+    t = t - B_153;
+    t = t + b_f075(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f077(I64 x) {
+    I64 t = x + B_154;
+    t = t - B_155;
+    t = t + b_f076(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f078(I64 x) {
+    I64 t = x + B_156;
+    t = t - B_157;
+    t = t + b_f077(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f079(I64 x) {
+    I64 t = x + B_158;
+    t = t - B_159;
+    t = t + b_f078(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f080(I64 x) {
+    I64 t = x + B_160;
+    t = t - B_161;
+    t = t + b_f079(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f081(I64 x) {
+    I64 t = x + B_162;
+    t = t - B_163;
+    t = t + b_f080(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f082(I64 x) {
+    I64 t = x + B_164;
+    t = t - B_165;
+    t = t + b_f081(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f083(I64 x) {
+    I64 t = x + B_166;
+    t = t - B_167;
+    t = t + b_f082(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f084(I64 x) {
+    I64 t = x + B_168;
+    t = t - B_169;
+    t = t + b_f083(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f085(I64 x) {
+    I64 t = x + B_170;
+    t = t - B_171;
+    t = t + b_f084(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f086(I64 x) {
+    I64 t = x + B_172;
+    t = t - B_173;
+    t = t + b_f085(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f087(I64 x) {
+    I64 t = x + B_174;
+    t = t - B_175;
+    t = t + b_f086(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f088(I64 x) {
+    I64 t = x + B_176;
+    t = t - B_177;
+    t = t + b_f087(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f089(I64 x) {
+    I64 t = x + B_178;
+    t = t - B_179;
+    t = t + b_f088(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f090(I64 x) {
+    I64 t = x + B_180;
+    t = t - B_181;
+    t = t + b_f089(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f091(I64 x) {
+    I64 t = x + B_182;
+    t = t - B_183;
+    t = t + b_f090(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f092(I64 x) {
+    I64 t = x + B_184;
+    t = t - B_185;
+    t = t + b_f091(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f093(I64 x) {
+    I64 t = x + B_186;
+    t = t - B_187;
+    t = t + b_f092(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f094(I64 x) {
+    I64 t = x + B_188;
+    t = t - B_189;
+    t = t + b_f093(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f095(I64 x) {
+    I64 t = x + B_190;
+    t = t - B_191;
+    t = t + b_f094(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f096(I64 x) {
+    I64 t = x + B_192;
+    t = t - B_193;
+    t = t + b_f095(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f097(I64 x) {
+    I64 t = x + B_194;
+    t = t - B_195;
+    t = t + b_f096(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f098(I64 x) {
+    I64 t = x + B_196;
+    t = t - B_197;
+    t = t + b_f097(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f099(I64 x) {
+    I64 t = x + B_198;
+    t = t - B_199;
+    t = t + b_f098(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f100(I64 x) {
+    I64 t = x + B_200;
+    t = t - B_201;
+    t = t + b_f099(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f101(I64 x) {
+    I64 t = x + B_202;
+    t = t - B_203;
+    t = t + b_f100(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f102(I64 x) {
+    I64 t = x + B_204;
+    t = t - B_205;
+    t = t + b_f101(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f103(I64 x) {
+    I64 t = x + B_206;
+    t = t - B_207;
+    t = t + b_f102(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f104(I64 x) {
+    I64 t = x + B_208;
+    t = t - B_209;
+    t = t + b_f103(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f105(I64 x) {
+    I64 t = x + B_210;
+    t = t - B_211;
+    t = t + b_f104(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f106(I64 x) {
+    I64 t = x + B_212;
+    t = t - B_213;
+    t = t + b_f105(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f107(I64 x) {
+    I64 t = x + B_214;
+    t = t - B_215;
+    t = t + b_f106(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f108(I64 x) {
+    I64 t = x + B_216;
+    t = t - B_217;
+    t = t + b_f107(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f109(I64 x) {
+    I64 t = x + B_218;
+    t = t - B_219;
+    t = t + b_f108(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f110(I64 x) {
+    I64 t = x + B_220;
+    t = t - B_221;
+    t = t + b_f109(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f111(I64 x) {
+    I64 t = x + B_222;
+    t = t - B_223;
+    t = t + b_f110(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f112(I64 x) {
+    I64 t = x + B_224;
+    t = t - B_225;
+    t = t + b_f111(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f113(I64 x) {
+    I64 t = x + B_226;
+    t = t - B_227;
+    t = t + b_f112(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f114(I64 x) {
+    I64 t = x + B_228;
+    t = t - B_229;
+    t = t + b_f113(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f115(I64 x) {
+    I64 t = x + B_230;
+    t = t - B_231;
+    t = t + b_f114(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f116(I64 x) {
+    I64 t = x + B_232;
+    t = t - B_233;
+    t = t + b_f115(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f117(I64 x) {
+    I64 t = x + B_234;
+    t = t - B_235;
+    t = t + b_f116(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f118(I64 x) {
+    I64 t = x + B_236;
+    t = t - B_237;
+    t = t + b_f117(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f119(I64 x) {
+    I64 t = x + B_238;
+    t = t - B_239;
+    t = t + b_f118(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f120(I64 x) {
+    I64 t = x + B_240;
+    t = t - B_241;
+    t = t + b_f119(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f121(I64 x) {
+    I64 t = x + B_242;
+    t = t - B_243;
+    t = t + b_f120(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f122(I64 x) {
+    I64 t = x + B_244;
+    t = t - B_245;
+    t = t + b_f121(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f123(I64 x) {
+    I64 t = x + B_246;
+    t = t - B_247;
+    t = t + b_f122(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f124(I64 x) {
+    I64 t = x + B_248;
+    t = t - B_249;
+    t = t + b_f123(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f125(I64 x) {
+    I64 t = x + B_250;
+    t = t - B_251;
+    t = t + b_f124(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f126(I64 x) {
+    I64 t = x + B_252;
+    t = t - B_253;
+    t = t + b_f125(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f127(I64 x) {
+    I64 t = x + B_254;
+    t = t - B_255;
+    t = t + b_f126(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f128(I64 x) {
+    I64 t = x + B_256;
+    t = t - B_257;
+    t = t + b_f127(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f129(I64 x) {
+    I64 t = x + B_258;
+    t = t - B_259;
+    t = t + b_f128(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f130(I64 x) {
+    I64 t = x + B_260;
+    t = t - B_261;
+    t = t + b_f129(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f131(I64 x) {
+    I64 t = x + B_262;
+    t = t - B_263;
+    t = t + b_f130(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f132(I64 x) {
+    I64 t = x + B_264;
+    t = t - B_265;
+    t = t + b_f131(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f133(I64 x) {
+    I64 t = x + B_266;
+    t = t - B_267;
+    t = t + b_f132(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f134(I64 x) {
+    I64 t = x + B_268;
+    t = t - B_269;
+    t = t + b_f133(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f135(I64 x) {
+    I64 t = x + B_270;
+    t = t - B_271;
+    t = t + b_f134(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f136(I64 x) {
+    I64 t = x + B_272;
+    t = t - B_273;
+    t = t + b_f135(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f137(I64 x) {
+    I64 t = x + B_274;
+    t = t - B_275;
+    t = t + b_f136(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f138(I64 x) {
+    I64 t = x + B_276;
+    t = t - B_277;
+    t = t + b_f137(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f139(I64 x) {
+    I64 t = x + B_278;
+    t = t - B_279;
+    t = t + b_f138(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f140(I64 x) {
+    I64 t = x + B_280;
+    t = t - B_281;
+    t = t + b_f139(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f141(I64 x) {
+    I64 t = x + B_282;
+    t = t - B_283;
+    t = t + b_f140(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f142(I64 x) {
+    I64 t = x + B_284;
+    t = t - B_285;
+    t = t + b_f141(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f143(I64 x) {
+    I64 t = x + B_286;
+    t = t - B_287;
+    t = t + b_f142(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f144(I64 x) {
+    I64 t = x + B_288;
+    t = t - B_289;
+    t = t + b_f143(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f145(I64 x) {
+    I64 t = x + B_290;
+    t = t - B_291;
+    t = t + b_f144(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f146(I64 x) {
+    I64 t = x + B_292;
+    t = t - B_293;
+    t = t + b_f145(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f147(I64 x) {
+    I64 t = x + B_294;
+    t = t - B_295;
+    t = t + b_f146(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f148(I64 x) {
+    I64 t = x + B_296;
+    t = t - B_297;
+    t = t + b_f147(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}
+
+export I64 b_f149(I64 x) {
+    I64 t = x + B_298;
+    t = t - B_299;
+    t = t + b_f148(x) % 3;
+    if (t > 100000) {
+        return 0;
+    }
+    return t;
+}

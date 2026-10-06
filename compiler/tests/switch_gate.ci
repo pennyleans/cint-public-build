@@ -1,0 +1,4 @@
+struct Pair { I64[0] xy; }
+export I64 run(I64 x) {
+    switch (x) { default: return 1; }
+}

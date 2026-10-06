@@ -1,0 +1,13 @@
+// case: module/qualified_alias_c3001
+// clause: SPEC-04 LS-228 (an alias is a module-level name); SPEC-09 CINTC-16
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C3001 at 9:11, a constant named like the alias `scalars`
+
+import module.lib.scalars;
+
+const I64 scalars = 1;
+
+export I64 run() {
+    return scalars.BASE;
+}

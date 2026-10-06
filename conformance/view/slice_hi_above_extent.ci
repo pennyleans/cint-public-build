@@ -1,0 +1,19 @@
+// case: view/slice_hi_above_extent
+// clause: SPEC-04 LS-161 (hi above the extent faults E_BOUNDS when the slice is formed)
+// subset: cint-core-1 (array slices)
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 18:19 (the slice's `[`), operation slice.checked.i64, operands I64 2 (lo) and I64 11 (hi), no exact, limit I64 10 (the extent); stack depth 0; fuel 1. Record: box 09 ruling R2
+
+I64 total[n](in I64[n] xs) {
+    I64 s = 0;
+    for i in 0..n {
+        s = s + xs[i];
+    }
+    return s;
+}
+
+export I64 run() {
+    I64[10] a;
+    I64 k = 11;
+    return total(a[2..k]);
+}

@@ -1,0 +1,10 @@
+// case: diag/c1021_doubled_separator
+// clause: SPEC-04 3.5 rule 2; SPEC-04 17.1, 17.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C1021 at 8:13: `1__0` repeats the digit separator (position: first character of the offending construct, SPEC-04 17.1; see ref/OPEN.md O-13)
+
+export I64 run() {
+    I64 x = 1__0;
+    return x;
+}

@@ -1,0 +1,19 @@
+case reduce/fold_rank2_transposed
+clause SPEC-01 IM-75, IM-76 (Fortran element order through transpose: 100, 100, -100, -100)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 2
+fault.code E_OVERFLOW
+fault.operation fold_checked.add.i8
+fault.operand I64 1
+fault.operand I8 100
+fault.operand I8 100
+fault.exact 200
+fault.limit I8 127
+fault.position reduce/fold_rank2_transposed.ci:9:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

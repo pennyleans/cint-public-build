@@ -1,0 +1,12 @@
+// case: view/rank2_indices_before_checks
+// clause: SPEC-01 IM-98, IM-113, IM-114; SPEC-04 LS-64 (every index is evaluated before the access is checked)
+// subset: cint-core-1 (rank 2)
+// entry: run; args: none
+// spec outcome: fault E_DIV_ZERO at 11:19 (the `/`), operation div.checked.i64, operands I64 1 and I64 0, no exact, no limit; stack depth 0; fuel 1. Not E_BOUNDS for i = 2: the subscript access is one counted operation after its index expressions (IM-114)
+
+export I64 run() {
+    I64[2, 3] m;
+    I64 i = 2;
+    I64 z = 0;
+    return m[i, 1 / z];
+}

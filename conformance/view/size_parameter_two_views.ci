@@ -1,0 +1,25 @@
+// case: view/size_parameter_two_views
+// clause: SPEC-04 LS-117 (two views bound to one size parameter), LS-121 (`in` views may overlap)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 34 (the dot of [1, 2, 3] and [4, 5, 6] is 32; the dot of [1] with itself, twice, adds 2)
+
+I64 mac[n](in I64[n] a, in I64[n] b) {
+    I64 s = 0;
+    for i in 0..n {
+        s = s + a[i] * b[i];
+    }
+    return s;
+}
+
+export I64 run() {
+    I64[3] a;
+    I64[3] b;
+    I64[1] c;
+    for i in 0..3 {
+        a[i] = i + 1;
+        b[i] = i + 4;
+    }
+    c[0] = 1;
+    return mac(a, b) + mac(c, c) + mac(c, c);
+}

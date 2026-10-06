@@ -1,0 +1,75 @@
+const I64 BASE = 1 + 2;
+
+export I64 constants(I64 x) {
+    const I64 LOCAL = BASE + 4;
+    switch (x) {
+        case -2 - 3: return 1;
+        case BASE: return 2;
+        case LOCAL..=LOCAL + 1: return 3;
+        default: return 4;
+    }
+}
+
+export I64 nested(I64 x) {
+    I64 s = 0;
+    for i in 0..3 {
+        switch (x) {
+            case 0: { if (i == 1) { break; } } s += 2;
+            case 1: while (true) { s += 1; break; } s += 3;
+            case 2: if (i == 1) { continue; } s += 5;
+            default: switch (i) { case 0: break; default: s += 7; } s += 1;
+        }
+    }
+    return s;
+}
+
+export I64 u64_edges(U64 x) {
+    switch (x) {
+        case 0..=9223372036854775807: return 1;
+        case 9223372036854775808..=U64.max: return 2;
+    }
+}
+
+// A U64 range across 2^63: its bounds as I64 bits are 1 and -1 (task 2.13a; the verifier
+// compared them as signed and reported an internal compiler error).
+export I64 u64_cross(U64 x) {
+    switch (x) {
+        case 1..=U64.max: return 1;
+        default: return 0;
+    }
+}
+
+export I64 signed_edges(I64 x) {
+    switch (x) {
+        case I64.min..=-1: return 1;
+        case 0..=I64.max: return 2;
+    }
+}
+
+export I64 i8_edges(I8 x) {
+    switch (x) { case I8.min..=-1: return 1; case 0..=I8.max: return 2; }
+}
+
+export I64 i16_edges(I16 x) {
+    switch (x) { case I16.min..=-1: return 1; case 0..=I16.max: return 2; }
+}
+
+export I64 i32_edges(I32 x) {
+    switch (x) { case I32.min..=-1: return 1; case 0..=I32.max: return 2; }
+}
+
+export I64 u8_edges(U8 x) {
+    switch (x) { case 0..=1: return 1; case 2..=U8.max: return 2; }
+}
+
+export I64 u16_edges(U16 x) {
+    switch (x) { case 0..=1: return 1; case 2..=U16.max: return 2; }
+}
+
+export I64 u32_edges(U32 x) {
+    switch (x) { case 0..=1: return 1; case 2..=U32.max: return 2; }
+}
+
+export I64 literal_scrutinee() {
+    switch (1 + 2) { case 3: return 1; default: return 0; }
+}

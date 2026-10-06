@@ -1,0 +1,20 @@
+case kernel/heat_e2_narrowing
+clause SPEC-02 15.4 E-2 (c + flux does not fit I32 at work-item 28)
+format 4
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 65
+fault.code E_NARROW
+fault.operation as.checked.i64.i32
+fault.operand I64 -6442450941
+fault.exact -6442450941
+fault.limit I32 -2147483648
+fault.position kernel/heat_e2_narrowing.ci:20:24
+fault.revision self
+fault.source-map self
+fault.phase work-item
+fault.kernel kernel.heat_e2_narrowing.diffuse
+fault.address 0 28 25
+fault.stack-depth 1
+fault.stack kernel/heat_e2_narrowing.ci:31:5

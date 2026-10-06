@@ -1,0 +1,12 @@
+// case: errors/c2054_zero_filled_error_value
+// clause: SPEC-04 LS-91, LS-314; decision 2026-10-05, BX12-09
+// subset: cint-core-1 (error sets, error-set values)
+// entry: run; args: none
+// spec outcome: compile error C2054 at 10:5, the declaration, whose elements would be zero-filled while no ParseError value is 0 (position: first character of the offending construct)
+
+error ParseError { empty, bad_digit, too_large }
+
+export I64 run() {
+    ParseError[2] seen;
+    return 0;
+}

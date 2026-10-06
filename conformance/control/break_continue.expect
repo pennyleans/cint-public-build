@@ -1,0 +1,7 @@
+case control/break_continue
+clause SPEC-04 8.6; SPEC-09 5.2
+source reference
+outcome value
+stdout-bytes 0
+return I64 25
+fuel-consumed 12

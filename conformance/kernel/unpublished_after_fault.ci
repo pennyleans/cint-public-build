@@ -1,0 +1,17 @@
+// case: kernel/unpublished_after_fault
+// clause: SPEC-02 P-1, P-11; SPEC-09 CONF-11 rule 10 (a faulted dispatch publishes no scalar out)
+// subset: cint-core-1 (kernel, module variable)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 8:16, phase work-item, address dispatch 0, work-item 1, step 1, operation fold_checked.add.i64 (as kernel/total_checked_fold); stack depth 1, stack 15:5; fuel 4; state total I64 3 (unchanged). Box 09 rulings R5, R7, R9
+
+kernel total_checked[n](in I64[n] x, out I64 s) over [i: n] {
+    reduce s = fold_checked(add, 0, x[i]);
+}
+
+I64 total = 3;
+
+export I64 run() {
+    I64[3] x = [9223372036854775807, 1, -1];
+    total_checked(x, total);
+    return total;
+}

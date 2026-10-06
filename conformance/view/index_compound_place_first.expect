@@ -1,0 +1,17 @@
+case view/index_compound_place_first
+clause SPEC-01 IM-98, IM-186; SPEC-04 LS-139, LS-278 (a compound assignment checks its place before the value is evaluated)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_BOUNDS
+fault.operation index.checked.i64
+fault.operand I64 4
+fault.exact none
+fault.limit I64 4
+fault.position view/index_compound_place_first.ci:11:6
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

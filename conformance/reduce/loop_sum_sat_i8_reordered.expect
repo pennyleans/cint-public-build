@@ -1,0 +1,8 @@
+case reduce/loop_sum_sat_i8_reordered
+clause SPEC-01 IM-73, IM-84 (the same elements in another order give another saturating total)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I8 120
+fuel-consumed 5

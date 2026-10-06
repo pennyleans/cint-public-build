@@ -1,0 +1,10 @@
+// case: diag/c2003_unsigned_minus_one
+// clause: SPEC-01 3.2; SPEC-04 4.2; SPEC-04 17.1, 17.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2003 at 8:12: -1 does not fit U8 (position: first character of the offending construct, SPEC-04 17.1; see ref/OPEN.md O-13)
+
+export U8 run() {
+    U8 u = -1;
+    return u;
+}

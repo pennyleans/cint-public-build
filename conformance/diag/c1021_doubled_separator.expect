@@ -1,0 +1,6 @@
+case diag/c1021_doubled_separator
+clause SPEC-04 3.5 rule 2; SPEC-04 17.1, 17.2
+source compile-error
+outcome compile-error
+diagnostic.code C1021
+diagnostic.position diag/c1021_doubled_separator.ci:8:13

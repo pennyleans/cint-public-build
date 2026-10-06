@@ -1,0 +1,16 @@
+case determinism/unicode_column
+clause SPEC-04 LS-10, LS-39 (columns count Unicode scalar values); SPEC-01 IM-106
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_OVERFLOW
+fault.operation add.checked.i64
+fault.operand I64 1
+fault.operand I64 9223372036854775807
+fault.exact 9223372036854775808
+fault.limit I64 9223372036854775807
+fault.position determinism/unicode_column.ci:9:25
+fault.revision self
+fault.address none
+fault.stack-depth 0

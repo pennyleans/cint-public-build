@@ -1,0 +1,8 @@
+case switch/full_range_fallthrough_default
+clause SPEC-04 8.5 (LS-178, LS-182, LS-183: a default after a case that covers the full range is reached only by fallthrough)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 11
+fuel-consumed 1

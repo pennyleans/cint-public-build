@@ -1,0 +1,10 @@
+case module/state_two_modules
+clause SPEC-09 CONF-11 rule 10 (state.global lines in module order: the root module first); SPEC-04 LS-113, LS-225
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 7
+fuel-consumed 2
+state.global module.state_two_modules seen I64 7
+state.global module.lib.tally calls I64 1

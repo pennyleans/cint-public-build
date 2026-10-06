@@ -1,0 +1,14 @@
+// case: view/copy_same_view_noop
+// clause: SPEC-04 LS-70; SPEC-02 A-5 T3 (copying a view onto itself has no effect)
+// subset: cint-core-1 (array slices, built-in copy)
+// entry: run; args: none
+// spec outcome: value I64 3; fuel 9
+
+export I64 run() {
+    I64[8] x;
+    for i in 0..8 {
+        x[i] = i;
+    }
+    copy(x[0..4], x[0..4]);
+    return x[3];
+}

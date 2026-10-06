@@ -1,0 +1,150 @@
+// case: ternary/tdot_planes
+// clause: SPEC-05 TR-DOT-1, TR-DOT-2, TR-DOT-7, 9.3, 12.4 (a ternary by ternary dot product through bit planes and a population count, fused and unfused, against the scalar sum at the lane boundaries)
+// subset: cint-core-1 (print statements)
+// entry: run; args: none
+// spec outcome: value I64 0 (at every length the fused and the four-count plane forms equal the scalar sum, and |S| <= n); 12 output lines
+// t27 set 1 (docs/design/notes/2026-10-05-t27-ternary-tests-scoping.md 5.2), with SPEC-05 12.2 TDOT-01 and TDOT-05 (the example of TR-DOT-7).
+// Lengths n = 0, 1, 63, 64, 65, 127, 128, 129 and 4096: L - 1, L, L + 1 and twice L for L = 64 trits per word (12.4).
+// Trit i of a is sm(70, i) % 3 - 1 and of b is sm(71, i) % 3 - 1, i from 0 to 4095, with sm(s, i) output i (from 0) of
+// SplitMix64 seeded with s, as in ternary/planes_add27; a length n uses the first n trits. Bit i % 64 of word i / 64
+// of the plus plane is set where trit i is +1, of the minus plane where it is -1; a length that ends inside a word
+// masks the word's tail. The population count is written with masks and *% (no built-in).
+// Output: the TDOT-05 line, one line per length (words, the fused sum, the four-count sum, the scalar sum), the
+// count of nonzero products at 4096, then the mismatch count.
+
+const U64 GAMMA = 0x9E37_79B9_7F4A_7C15;
+
+U64 mix(U64 z0) {
+    U64 z = (z0 ^ (z0 >> 30)) *% 0xBF58_476D_1CE4_E5B9;
+    z = (z ^ (z >> 27)) *% 0x94D0_49BB_1331_11EB;
+    return z ^ (z >> 31);
+}
+
+U64 sm(U64 seed, I64 i) {
+    return mix(seed +% ((i as U64) +% 1) *% GAMMA);
+}
+
+U64 popc(U64 v) {
+    U64 x = v - ((v >> 1) & 0x5555_5555_5555_5555);
+    x = (x & 0x3333_3333_3333_3333) + ((x >> 2) & 0x3333_3333_3333_3333);
+    x = (x + (x >> 4)) & 0x0F0F_0F0F_0F0F_0F0F;
+    return (x *% 0x0101_0101_0101_0101) >> 56;
+}
+
+U64 bit(I64 i) {
+    U64 one = 1;
+    return one << i;
+}
+
+// The mask of the trits of word w that lie below n.
+U64 tail_mask(I64 n, I64 w) {
+    I64 left = n - 64 * w;
+    if (left >= 64) {
+        return 0xFFFF_FFFF_FFFF_FFFF;
+    }
+    return bit(left) - 1;
+}
+
+// 9.3: popcount((Pa & Pb) | (Na & Nb)) - popcount((Pa & Nb) | (Na & Pb)); the masks of each union are disjoint.
+I64 dot_fused(in U64[64] ap, in U64[64] an, in U64[64] bp, in U64[64] bn, I64 n) {
+    I64 s = 0;
+    for w in 0..(n + 63) / 64 {
+        U64 m = tail_mask(n, w);
+        U64 pos = ((ap[w] & bp[w]) | (an[w] & bn[w])) & m;
+        U64 neg = ((ap[w] & bn[w]) | (an[w] & bp[w])) & m;
+        s = s + (popc(pos) as I64) - (popc(neg) as I64);
+    }
+    return s;
+}
+
+// TR-DOT-7: the four population counts.
+I64 dot_four(in U64[64] ap, in U64[64] an, in U64[64] bp, in U64[64] bn, I64 n) {
+    I64 s = 0;
+    for w in 0..(n + 63) / 64 {
+        U64 m = tail_mask(n, w);
+        s = s + (popc(ap[w] & bp[w] & m) as I64) + (popc(an[w] & bn[w] & m) as I64)
+              - (popc(ap[w] & bn[w] & m) as I64) - (popc(an[w] & bp[w] & m) as I64);
+    }
+    return s;
+}
+
+void to_planes[n](in I8[n] t, inout U64[64] p, inout U64[64] q) {
+    for w in 0..64 {
+        p[w] = 0;
+        q[w] = 0;
+    }
+    for i in 0..n {
+        if (t[i] == 1) {
+            p[i / 64] = p[i / 64] | bit(i % 64);
+        } else if (t[i] == -1) {
+            q[i / 64] = q[i / 64] | bit(i % 64);
+        }
+    }
+}
+
+export I64 run() {
+    I64 bad = 0;
+    I8[4096] a;
+    I8[4096] b;
+    U64[64] ap;
+    U64[64] an;
+    U64[64] bp;
+    U64[64] bn;
+
+    // TDOT-05: a = [1, -1, 0, 1, 1], b = [1, 1, -1, -1, 0] gives 1 + 0 - 1 - 1 = -1.
+    I8[5] x;
+    I8[5] y;
+    x[0] = 1;
+    x[1] = -1;
+    x[2] = 0;
+    x[3] = 1;
+    x[4] = 1;
+    y[0] = 1;
+    y[1] = 1;
+    y[2] = -1;
+    y[3] = -1;
+    y[4] = 0;
+    to_planes(x, ap, an);
+    to_planes(y, bp, bn);
+    I16 s5 = dot_fused(ap, an, bp, bn, 5) as I16;
+    "TDOT-05 [1, -1, 0, 1, 1] by [1, 1, -1, -1, 0]: {s5}\n";
+    bad += s5 != -1 ? 1 : 0;
+
+    for i in 0..4096 {
+        a[i] = ((sm(70, i) % 3) as I8) - 1;
+        b[i] = ((sm(71, i) % 3) as I8) - 1;
+    }
+    to_planes(a, ap, an);
+    to_planes(b, bp, bn);
+
+    I64[9] lengths;
+    lengths[0] = 0;
+    lengths[1] = 1;
+    lengths[2] = 63;
+    lengths[3] = 64;
+    lengths[4] = 65;
+    lengths[5] = 127;
+    lengths[6] = 128;
+    lengths[7] = 129;
+    lengths[8] = 4096;
+    I64 scalar = 0;
+    I64 nonzero = 0;
+    I64 at = 0;
+    for k in 0..9 {
+        I64 n = lengths[k];
+        for i in at..n {
+            I64 p = (a[i] as I64) * (b[i] as I64);
+            scalar = scalar + p;
+            nonzero += p != 0 ? 1 : 0;
+        }
+        at = n;
+        I64 fused = dot_fused(ap, an, bp, bn, n);
+        I64 four = dot_four(ap, an, bp, bn, n);
+        "n {n} (words {(n + 63) / 64}): fused {fused}, four counts {four}, scalar {scalar}\n";
+        bad += fused != scalar || four != scalar ? 1 : 0;
+        bad += scalar > n || scalar < -n ? 1 : 0;
+    }
+    "nonzero products at 4096: {nonzero}\n";
+    "mismatches {bad}\n";
+    return bad;
+}

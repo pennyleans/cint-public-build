@@ -1,0 +1,3 @@
+"hello, world\n";
+I64 answer = 6 * 7;
+"answer={answer}\n";

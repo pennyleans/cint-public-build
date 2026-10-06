@@ -1,0 +1,10 @@
+// Helper module of module/stack_three_modules (G-C1 fixture, not a case): it calls
+// module.lib.stack_mid, which calls module.lib.stack_leaf, so a fault in stack_leaf passes
+// through three modules below the root.
+
+import module.lib.stack_mid;
+
+export I64 enter(I64 x) {
+    I64 y = x * 2;
+    return stack_mid.relay(y) - 1;
+}

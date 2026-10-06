@@ -1,0 +1,7 @@
+case boot/block_comment
+clause SPEC-09 BOOT-01 (BLOCK_COMMENT); SPEC-04 LS-13
+source reference
+outcome value
+stdout-bytes 0
+return I64 3
+fuel-consumed 1

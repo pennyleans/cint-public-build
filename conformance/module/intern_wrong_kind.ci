@@ -1,0 +1,8 @@
+// case: module/intern_wrong_kind
+// clause: SPEC-09 CINTC-16 Lookup; SPEC-04 LS-15, LS-227, LS-228
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: C3007 at function used as a type
+
+import module.lib.intern_names;
+export I64 run() { intern_names.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaax v = 0; return 0; }

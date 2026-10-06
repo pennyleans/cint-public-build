@@ -1,0 +1,16 @@
+// case: errors/c2043_try_not_error_union
+// clause: SPEC-04 LS-129
+// subset: cint-core-1 (error sets, error unions, `try`)
+// entry: run; args: none
+// spec outcome: compile error C2043 at 14:13, `try` applied to a call whose result is I64 (position: first character of the offending construct)
+
+error ParseError { empty, bad_digit, too_large }
+
+I64 seven() {
+    return 7;
+}
+
+export ParseError!I64 run() {
+    I64 x = try seven();
+    return x;
+}

@@ -1,0 +1,4 @@
+// Helper module of module/alias_twice_c3001 (G-C1 fixture, not a case): its path ends in
+// the same name as module/lib/scalars.ci, so importing both binds the alias `scalars` twice.
+
+export const I64 BASE = 1;

@@ -1,0 +1,2 @@
+export struct Z { Bool[0] none; }
+export I64 span[n](in Z[n] a) { Z z = a[n - 1]; return n; }

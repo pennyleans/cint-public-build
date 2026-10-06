@@ -1,0 +1,14 @@
+case control/depth_limit
+clause SPEC-01 IM-119, IM-107, IM-139 (fixture 116); SPEC-04 LS-144
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 4
+fault.code E_DEPTH
+fault.operation call.enter
+fault.exact none
+fault.limit I64 4
+fault.position control/depth_limit.ci:8:12
+fault.revision self
+fault.address none
+fault.stack-depth 3

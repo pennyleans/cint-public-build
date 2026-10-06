@@ -1,0 +1,11 @@
+// case: arith/builtin_rotl_count
+// clause: SPEC-01 4.6, 9.2, IM-134
+// subset: cint-core-1 (built-in functions are not in cint-boot-1, SPEC-09 5.2)
+// entry: run; args: none
+// spec outcome: fault E_SHIFT at 10:12, operation rotl.checked.u16, operands U16 4660 and I32 16 (the count keeps its own type); no exact, limit I64 15
+
+export U16 run() {
+    U16 a = 0x1234;
+    I32 k = 16;
+    return rotl(a, k);
+}

@@ -1,0 +1,10 @@
+// case: diag/c1020_uppercase_hex_prefix
+// clause: SPEC-04 3.5 rule 1; SPEC-04 17.1, 17.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C1020 at 8:13: the prefix letter must be lowercase (position: first character of the offending construct, SPEC-04 17.1; see ref/OPEN.md O-13)
+
+export I64 run() {
+    I64 x = 0X1F;
+    return x;
+}

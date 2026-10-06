@@ -1,0 +1,11 @@
+// case: struct/nested_diamond
+// clause: SPEC-04 LS-73, LS-77; SPEC-09 BOOT-01, CINTC-16
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 8
+
+struct Root { Left l; Right r; }
+struct Left { Leaf item; }
+struct Right { Leaf item; }
+struct Leaf { Bool b; I64 v; }
+export I64 run() { Root a = Root(Left(Leaf(true, 3)), Right(Leaf(false, 5))); return a.l.item.v + a.r.item.v; }

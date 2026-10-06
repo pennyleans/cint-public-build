@@ -1,0 +1,9 @@
+case cleanup/defer_in_catch_block
+clause SPEC-04 LS-131, LS-319; decision 2026-10-05, BX12-11
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 17175
+fuel-consumed 5
+state.global cleanup.defer_in_catch_block trail I64 17175

@@ -1,0 +1,8 @@
+case view/call_slices_disjoint
+clause SPEC-04 LS-121; SPEC-02 A-5 T1 (disjoint slices of one buffer bound to `inout` and `in`)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 4
+fuel-consumed 11

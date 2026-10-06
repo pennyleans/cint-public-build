@@ -1,0 +1,14 @@
+// case: diag/c2102_chained_comparison
+// clause: SPEC-01 4.8; SPEC-04 7.3; SPEC-04 17.1, 17.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2102 at 10:9: comparisons are not chained (position: SPEC-04 LS-313, decision 2026-10-03, slice 2 patch D-11)
+
+export I64 run() {
+    I64 i = 1;
+    I64 n = 5;
+    if (0 <= i < n) {
+        return 1;
+    }
+    return 0;
+}

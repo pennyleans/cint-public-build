@@ -1,0 +1,7 @@
+case boot/const_extent_unknown_type_order
+clause SPEC-04 LS-62, LS-311; SPEC-09 BOOT-01, EMIT-30
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C3006
+diagnostic.position boot/const_extent_unknown_type_order.ci:7:20

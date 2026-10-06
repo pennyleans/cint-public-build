@@ -1,0 +1,8 @@
+case reduce/fold_checked_empty_init
+clause SPEC-01 IM-79 (an empty fold_checked returns init)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 42
+fuel-consumed 1

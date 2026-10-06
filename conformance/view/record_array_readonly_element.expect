@@ -1,0 +1,7 @@
+case view/record_array_readonly_element
+clause SPEC-04 LS-119, LS-120, LS-313
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2060
+diagnostic.position view/record_array_readonly_element.ci:8:32

@@ -1,0 +1,12 @@
+// case: memory/c6004_capacity_not_constant
+// clause: SPEC-03 M-20; SPEC-04 LS-113; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (pool, module-level variable)
+// entry: run; args: none
+// spec outcome: compile error C6004 at 8:11, the capacity `n`, a module-level variable rather than a constant expression
+
+I64 n = 4;
+Pool(I64, n) counts;
+
+export I64 run() {
+    return 0;
+}

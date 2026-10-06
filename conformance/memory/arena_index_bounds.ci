@@ -1,0 +1,14 @@
+// case: memory/arena_index_bounds
+// clause: SPEC-03 M-14a; SPEC-01 IM-186; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arena, handles)
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 13:24 (the index `[` of `scratch[tmp][4]`), operation index.checked.i64, operand I64 4, no exact, limit I64 4; stack depth 0; fuel 1. The view has the handle's length 4, so the access never reaches `u`'s elements
+
+Arena(I64, 16) scratch;
+
+export I64 run() {
+    Handle(I64[]) tmp = scratch.alloc(4);
+    Handle(I64[]) u = scratch.alloc(10);
+    scratch[u][0] = 7;
+    return scratch[tmp][4];
+}

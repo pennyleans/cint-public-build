@@ -1,0 +1,10 @@
+// case: reduce/fold_checked_empty_init
+// clause: SPEC-01 IM-79 (an empty fold_checked returns init)
+// subset: cint-core-1 (built-in fold_checked)
+// entry: run; args: none
+// spec outcome: value I64 42; fuel 1
+
+export I64 run() {
+    I64[0] none;
+    return fold_checked(add, 42, none);
+}

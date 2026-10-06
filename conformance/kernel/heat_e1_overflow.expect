@@ -1,0 +1,21 @@
+case kernel/heat_e1_overflow
+clause SPEC-02 15.4 E-1, F-3, F-6 (the least faulting work-item is 20; kn * lap is step 22)
+format 4
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 65
+fault.code E_OVERFLOW
+fault.operation mul.checked.i64
+fault.operand I64 2305843009213693952
+fault.operand I64 1000
+fault.exact 2305843009213693952000
+fault.limit I64 9223372036854775807
+fault.position kernel/heat_e1_overflow.ci:19:33
+fault.revision self
+fault.source-map self
+fault.phase work-item
+fault.kernel kernel.heat_e1_overflow.diffuse
+fault.address 0 20 22
+fault.stack-depth 1
+fault.stack kernel/heat_e1_overflow.ci:31:5

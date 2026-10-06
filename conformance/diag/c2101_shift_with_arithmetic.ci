@@ -1,0 +1,10 @@
+// case: diag/c2101_shift_with_arithmetic
+// clause: SPEC-04 7.2; SPEC-04 17.1, 17.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2101 at 9:12: a shift with an unparenthesized arithmetic operand (position: SPEC-04 LS-313, decision 2026-10-03, slice 2 patch D-11)
+
+export I64 run() {
+    I64 n = 3;
+    return 1 << n + 1;
+}

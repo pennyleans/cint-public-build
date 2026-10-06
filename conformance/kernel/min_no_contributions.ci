@@ -1,0 +1,16 @@
+// case: kernel/min_no_contributions
+// clause: SPEC-02 R-2, R-7 (min with no contributions faults E_SHAPE in the epilogue); O-9
+// subset: cint-core-1 (kernel)
+// entry: run; args: none
+// spec outcome: fault E_SHAPE at 8:16, phase epilogue, address dispatch 0, operation reduce_min.checked.i64, operand I64 0, no exact, no limit; stack depth 1, stack 14:5; fuel 1. Box 09 rulings R5 and R9
+
+kernel lowest[n](in I64[n] x, out I64 m) over [i: n] {
+    reduce m = min(x[i]);
+}
+
+export I64 run() {
+    I64[0] x;
+    I64 m = 0;
+    lowest(x, m);
+    return m;
+}

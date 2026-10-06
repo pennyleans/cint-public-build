@@ -1,0 +1,8 @@
+// case: boot/decl_extent_view_unbound_size_before_result
+// clause: SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile-error
+
+Missing f[n](in I64[1 + 1] a) { return 0; }
+export I64 run() { return 0; }

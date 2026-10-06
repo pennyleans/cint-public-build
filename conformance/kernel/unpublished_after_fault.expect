@@ -1,0 +1,23 @@
+case kernel/unpublished_after_fault
+clause SPEC-02 P-1, P-11; SPEC-09 CONF-11 rule 10 (a faulted dispatch publishes no scalar out)
+format 4
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 4
+fault.code E_OVERFLOW
+fault.operation fold_checked.add.i64
+fault.operand I64 1
+fault.operand I64 9223372036854775807
+fault.operand I64 1
+fault.exact 9223372036854775808
+fault.limit I64 9223372036854775807
+fault.position kernel/unpublished_after_fault.ci:8:16
+fault.revision self
+fault.source-map self
+fault.phase work-item
+fault.kernel kernel.unpublished_after_fault.total_checked
+fault.address 0 1 1
+fault.stack-depth 1
+fault.stack kernel/unpublished_after_fault.ci:15:5
+state.global kernel.unpublished_after_fault total I64 3

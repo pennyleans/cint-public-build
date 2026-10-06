@@ -1,0 +1,18 @@
+// case: struct/construct_by_name
+// clause: SPEC-04 4.4 (constructor by name)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I32 12
+
+export struct Token {
+    I32 kind;
+    I32 start;
+    I32 length;
+    I32 line;
+    I32 column;
+}
+
+export I32 run() {
+    Token t = Token(kind = 1, start = 0, length = 7, line = 3, column = 9);
+    return t.line + t.column;
+}

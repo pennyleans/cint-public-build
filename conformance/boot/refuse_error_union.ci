@@ -1,0 +1,20 @@
+// case: boot/refuse_error_union
+// clause: SPEC-09 BOOT-01 (error_decl), SEED-06; SPEC-04 LS-92, LS-94, LS-130
+// subset: cint-core-1
+// entry: run; args: none
+// seed outcome: C9100 at 8:1
+// spec outcome: value I64 7 under cint-core-1; the seed refuses the error set declaration
+
+error ParseError { bad_digit }
+
+ParseError!I64 digit(U8 c) {
+    if (c < '0' || c > '9') {
+        return .bad_digit;
+    }
+    return (c - '0') as I64;
+}
+
+export I64 run() {
+    I64 d = digit('7') catch 0;
+    return d;
+}

@@ -1,0 +1,7 @@
+export struct R { Bool active; I64 value; }
+struct Hidden { I64 value; }
+export const I64 TOKEN = 7;
+const I64 SECRET = 9;
+
+export I64 read(in R[_] rows) { return rows[0].value; }
+export void bump(inout R[2] rows) { rows[1].value += 5; }

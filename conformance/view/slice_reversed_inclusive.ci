@@ -1,0 +1,17 @@
+// case: view/slice_reversed_inclusive
+// clause: SPEC-04 LS-161 (a[hi..=lo by -1] runs from hi down to lo inclusive)
+// subset: cint-core-1 (array slices, by)
+// entry: run; args: none
+// spec outcome: value I64 72 (a[7] first, a[2] last); fuel 12
+
+I64 first_last[n](in I64[n] xs) {
+    return xs[0] * 10 + xs[n - 1];
+}
+
+export I64 run() {
+    I64[10] a;
+    for i in 0..10 {
+        a[i] = i;
+    }
+    return first_last(a[7..=2 by -1]);
+}

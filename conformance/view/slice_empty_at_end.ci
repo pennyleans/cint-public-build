@@ -1,0 +1,18 @@
+// case: view/slice_empty_at_end
+// clause: SPEC-04 LS-161, LS-162 (a[len(a)..] is a valid empty slice)
+// subset: cint-core-1 (array slices)
+// entry: run; args: none
+// spec outcome: value I64 0; fuel 2 (entry, call; no iteration)
+
+I64 total[n](in I64[n] xs) {
+    I64 s = 0;
+    for i in 0..n {
+        s = s + xs[i];
+    }
+    return s;
+}
+
+export I64 run() {
+    I64[10] a;
+    return total(a[10..]);
+}

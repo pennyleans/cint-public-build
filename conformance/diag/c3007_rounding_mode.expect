@@ -1,0 +1,7 @@
+case diag/c3007_rounding_mode
+clause SPEC-01 4.5; SPEC-04 17.2 (C3007)
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C3007
+diagnostic.position diag/c3007_rounding_mode.ci:9:28

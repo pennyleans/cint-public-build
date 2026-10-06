@@ -1,0 +1,16 @@
+// Helper module of module/imported_struct_inout (G-C1 fixture, not a case): an export
+// that takes a struct `inout`.
+
+export struct Pt {
+    I64 x;
+    I64 y;
+}
+
+export void grow(inout Pt p, I64 step) {
+    p.x += step;
+    p.y += step * 2;
+}
+
+export I64 norm1(Pt p) {
+    return p.x + p.y;
+}

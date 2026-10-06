@@ -1,0 +1,13 @@
+// case: control/short_circuit
+// clause: SPEC-01 8.1 (&& and || evaluate only the operands the result requires)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 1, no E_DIV_ZERO
+
+export I64 run() {
+    I64 z = 0;
+    if (z != 0 && 10 / z > 1) {
+        return 2;
+    }
+    return 1;
+}

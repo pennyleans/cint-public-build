@@ -1,0 +1,7 @@
+case memory/c2060_write_through_in_arena
+clause SPEC-03 M-14a, M-20; SPEC-04 LS-119, LS-120; ref/OPEN.md REF-OQ-45
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2060
+diagnostic.position memory/c2060_write_through_in_arena.ci:10:5

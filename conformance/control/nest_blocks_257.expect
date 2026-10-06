@@ -1,0 +1,6 @@
+case control/nest_blocks_257
+clause SPEC-09 CINTC-02, SEED-15; SPEC-04 LS-311 (decision 2026-10-03, slice 2 patch D-5)
+source compile-error
+outcome compile-error
+diagnostic.code C9004
+diagnostic.position control/nest_blocks_257.ci:9:261

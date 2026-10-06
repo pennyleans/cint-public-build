@@ -1,0 +1,15 @@
+// case: boot/refuse_destructuring
+// clause: SPEC-09 BOOT-01 (var_decl, typed_bind, tuple_type), SEED-06; SPEC-04 LS-98, LS-99
+// subset: cint-core-1
+// entry: run; args: none
+// seed outcome: C9100 at 9:5
+// spec outcome: value I64 31 under cint-core-1 (7 / 2 is 3 and 7 % 2 is 1); the seed refuses the destructuring declaration, which comes before the tuple type in the file
+
+export I64 run() {
+    (I64 q, I64 r) = split(7, 2);
+    return q * 10 + r;
+}
+
+(I64, I64) split(I64 a, I64 b) {
+    return (a / b, a % b);
+}

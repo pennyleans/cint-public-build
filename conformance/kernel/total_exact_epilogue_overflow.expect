@@ -1,0 +1,20 @@
+case kernel/total_exact_epilogue_overflow
+clause SPEC-02 R-7, F-3, F-8, 8.5 (the epilogue row: sum overflows only at the final check)
+format 4
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 3
+fault.code E_OVERFLOW
+fault.operation sum.checked.i64.i64
+fault.operand I64 2
+fault.exact 9223372036854775808
+fault.limit I64 9223372036854775807
+fault.position kernel/total_exact_epilogue_overflow.ci:8:16
+fault.revision self
+fault.source-map self
+fault.phase epilogue
+fault.kernel kernel.total_exact_epilogue_overflow.total_exact
+fault.address 0 none none
+fault.stack-depth 1
+fault.stack kernel/total_exact_epilogue_overflow.ci:14:5

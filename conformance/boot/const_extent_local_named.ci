@@ -1,0 +1,7 @@
+// case: boot/const_extent_local_named
+// clause: SPEC-04 LS-62, LS-311; SPEC-09 BOOT-01, EMIT-30
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 7
+
+export I64 run() { const I64 N = 2; I64[N] a; a[1] = 7; return a[1]; }

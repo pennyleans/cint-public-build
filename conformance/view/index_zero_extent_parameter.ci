@@ -1,0 +1,14 @@
+// case: view/index_zero_extent_parameter
+// clause: SPEC-04 LS-68, LS-117; SPEC-01 IM-186 (a size parameter bound to 0 from an empty argument; any index faults)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 8:14 in `at`, operand I64 0, limit I64 0; stack depth 1 (the call at 13:12)
+
+I64 at[n](in I64[n] xs, I64 i) {
+    return xs[i];
+}
+
+export I64 run() {
+    I64[0] none;
+    return at(none, 0);
+}

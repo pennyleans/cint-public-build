@@ -1,0 +1,17 @@
+// case: memory/pool_stale_generation
+// clause: SPEC-03 M-15, M-17; SPEC-02 V-14; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (pool, handles, struct elements)
+// entry: run; args: none
+// spec outcome: fault E_STALE_HANDLE at 15:21 (the `[` of `bodies[h]`), operation pool.deref, operands U64 0, I64 1, U64 0, U32 1, U8 2 (the handle: slot, length, generation, container, kind), U64 1 (the current generation), U8 3 (generation), no exact, no limit; stack depth 0; fuel 1. `remove` raised slot 0 to generation 1
+
+struct Body { I64 mass; I64 vel; }
+
+Pool(Body, 4) bodies;
+
+export I64 run() {
+    Handle(Body) h = bodies.insert(Body(mass = 7, vel = 1));
+    I64 m = bodies[h].mass;
+    bodies.remove(h);
+    I64 bad = bodies[h].mass;
+    return m + bad;
+}

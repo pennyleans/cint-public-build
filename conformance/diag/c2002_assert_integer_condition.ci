@@ -1,0 +1,11 @@
+// case: diag/c2002_assert_integer_condition
+// clause: SPEC-04 LS-191, 17.2 (C2002)
+// subset: cint-core-1 (assert)
+// entry: run; args: none
+// spec outcome: compile error C2002 at 9:12: an assert condition must have type Bool
+
+export I64 run() {
+    I64 a = 1;
+    assert(a + 1);
+    return a;
+}

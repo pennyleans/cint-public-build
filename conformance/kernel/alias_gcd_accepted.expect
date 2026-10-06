@@ -1,0 +1,8 @@
+case kernel/alias_gcd_accepted
+clause SPEC-02 A-5 T2, 5.5, 15.4 E-7 (even and odd columns of one buffer are accepted)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I32 42
+fuel-consumed 5

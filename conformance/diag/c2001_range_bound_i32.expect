@@ -1,0 +1,6 @@
+case diag/c2001_range_bound_i32
+clause SPEC-01 2.2 (fixture 110); SPEC-04 17.1, 17.2
+source compile-error
+outcome compile-error
+diagnostic.code C2001
+diagnostic.position diag/c2001_range_bound_i32.ci:10:17

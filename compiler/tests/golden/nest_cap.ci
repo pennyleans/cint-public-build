@@ -1,0 +1,6 @@
+// A conditional chain of 20 levels, whose SIR nests 41 levels: past 16 levels every node
+// is indented 32 spaces and braces carry the structure (SPEC-09 SIR-09, OQ-205).
+
+export I64 run(Bool c, I64 x) {
+    return c?x:c?x:c?x:c?x:c?x:c?x:c?x:c?x:c?x:c?x:c?x:c?x:c?x:c?x:c?x:c?x:c?x:c?x:c?x:c?x:0;
+}

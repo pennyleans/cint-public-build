@@ -1,0 +1,6 @@
+case module/c3030_case_fold
+clause SPEC-09 CINTC-12 (the paths of one program are distinct under ASCII case folding); SPEC-04 LS-225, LS-278
+source compile-error
+outcome compile-error
+diagnostic.code C3030
+diagnostic.position module/lib/Plain_math.ci:1:1

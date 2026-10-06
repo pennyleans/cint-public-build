@@ -1,0 +1,10 @@
+// case: arith/const_shift_count
+// clause: SPEC-01 3.2 (fixture 98), 4.6, 8.4
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C6001 E_SHIFT at 8:15 (the <<), operation shl.checked.i64, count 100, limit 63
+
+export I64 run() {
+    I64 s = 1 << 100 >> 90;
+    return s;
+}

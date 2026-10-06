@@ -1,0 +1,16 @@
+// case: kernel/write_rule_c5031
+// clause: SPEC-02 K-10; SPEC-04 LS-283 (a write outside the own block)
+// subset: cint-core-1 (kernel)
+// entry: run; args: none
+// spec outcome: compile error C5031 at 8:5, the write place
+
+kernel spill[n](in I64[n] a, out I64[n] b) over [i: n] {
+    b[i + 1] = a[i];
+}
+
+export I64 run() {
+    I64[3] a;
+    I64[3] b;
+    spill(a, b);
+    return b[0];
+}

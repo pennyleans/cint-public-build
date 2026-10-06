@@ -1,0 +1,95 @@
+module public_views
+sites public_views.ci 1:2:12:fuel.charge 2:4:6:index.checked.i64 3:4:13:index.checked.i64 4:4:17:add.checked.i64 5:5:13:index.checked.i64 6:5:25:index.checked.u8 7:5:29:as.checked.u8.i64 8:5:17:add.checked.i64 9:5:44:index.checked.u8 10:5:48:as.checked.u8.i64 11:5:37:add.checked.i64 12:8:12:fuel.charge 13:9:6:index.checked.i32 14:9:13:index.checked.u8 15:9:17:as.checked.u8.i32 16:10:13:index.checked.i32 17:10:17:as.checked.i32.i64 18:13:13:fuel.charge 19:14:18:index.checked.bool 20:17:12:fuel.charge 21:18:6:index.checked.i64 22:19:15:div.checked.i64 23:22:12:fuel.charge 24:24:13:index.checked.i64 25:24:20:index.checked.i64 26:24:17:add.checked.i64
+export func @public_views.paired(%n: I64, %m: I64, %a: I64[%n], %bias: I64, %b: I64[%n], %bytes: U8[%m], %more: U8[%m]) -> I64 {
+  fuel.charge 1                                  #1 @public_views.ci:2:12
+  if {
+    arm {
+      %t0 = const I64 0
+      %t1 = cmp.eq.i64 %n, %t0
+    } then %t1 {
+      return %m
+    }
+  }
+  %t2 = const I64 0
+  index.checked.i64 %a, %t2                      #2 @public_views.ci:4:6
+  %t3 = const I64 0
+  index.checked.i64 %b, %t3                      #3 @public_views.ci:4:13
+  %t4 = index.load %b, %t3
+  %t5 = add.checked.i64 %t4, %bias               #4 @public_views.ci:4:17
+  index.store %a, %t2, %t5
+  %t6 = const I64 0
+  index.checked.i64 %a, %t6                      #5 @public_views.ci:5:13
+  %t7 = index.load %a, %t6
+  %t8 = const I64 0
+  index.checked.u8 %bytes, %t8                   #6 @public_views.ci:5:25
+  %t9 = index.load %bytes, %t8
+  %t10 = as.checked.u8.i64 %t9                   #7 @public_views.ci:5:29
+  %t11 = add.checked.i64 %t7, %t10               #8 @public_views.ci:5:17
+  %t12 = const I64 0
+  index.checked.u8 %more, %t12                   #9 @public_views.ci:5:44
+  %t13 = index.load %more, %t12
+  %t14 = as.checked.u8.i64 %t13                  #10 @public_views.ci:5:48
+  %t15 = add.checked.i64 %t11, %t14              #11 @public_views.ci:5:37
+  return %t15
+}
+export func @public_views.fixed(%a: I32[4], %b: U8[_]) -> I64 {
+  fuel.charge 1                                  #12 @public_views.ci:8:12
+  %t0 = const I64 0
+  index.checked.i32 %a, %t0                      #13 @public_views.ci:9:6
+  %t1 = const I64 0
+  index.checked.u8 %b, %t1                       #14 @public_views.ci:9:13
+  %t2 = index.load %b, %t1
+  %t3 = as.checked.u8.i32 %t2                    #15 @public_views.ci:9:17
+  index.store %a, %t0, %t3
+  %t4 = const I64 0
+  index.checked.i32 %a, %t4                      #16 @public_views.ci:10:13
+  %t5 = index.load %a, %t4
+  %t6 = as.checked.i32.i64 %t5                   #17 @public_views.ci:10:17
+  return %t6
+}
+export func @public_views.bits(%a: Bool, %b: Bool[_]) -> Bool {
+  fuel.charge 1                                  #18 @public_views.ci:13:13
+  local $sc.0: Bool
+  store.local $sc.0, %a
+  if {
+    arm {
+    } then %a {
+      %t0 = const I64 0
+      index.checked.bool %b, %t0                 #19 @public_views.ci:14:18
+      %t1 = index.load %b, %t0
+      store.local $sc.0, %t1
+    }
+  }
+  %t2 = load.local $sc.0
+  return %t2
+}
+export func @public_views.faulting(%a: I64[_], %divisor: I64) -> I64 {
+  fuel.charge 1                                  #20 @public_views.ci:17:12
+  %t0 = const I64 0
+  index.checked.i64 %a, %t0                      #21 @public_views.ci:18:6
+  %t1 = const I64 42
+  index.store %a, %t0, %t1
+  %t2 = const I64 10
+  %t3 = div.checked.i64 %t2, %divisor            #22 @public_views.ci:19:15
+  return %t3
+}
+export func @public_views.readonly(%n: I64, %a: I64[%n], %b: I64[%n]) -> I64 {
+  fuel.charge 1                                  #23 @public_views.ci:22:12
+  if {
+    arm {
+      %t0 = const I64 0
+      %t1 = cmp.eq.i64 %n, %t0
+    } then %t1 {
+      %t2 = const I64 0
+      return %t2
+    }
+  }
+  %t3 = const I64 0
+  index.checked.i64 %a, %t3                      #24 @public_views.ci:24:13
+  %t4 = index.load %a, %t3
+  %t5 = const I64 0
+  index.checked.i64 %b, %t5                      #25 @public_views.ci:24:20
+  %t6 = index.load %b, %t5
+  %t7 = add.checked.i64 %t4, %t6                 #26 @public_views.ci:24:17
+  return %t7
+}

@@ -1,0 +1,6 @@
+case diag/c2002_assert_integer_condition
+clause SPEC-04 LS-191, 17.2 (C2002)
+source compile-error
+outcome compile-error
+diagnostic.code C2002
+diagnostic.position diag/c2002_assert_integer_condition.ci:9:12

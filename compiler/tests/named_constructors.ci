@@ -1,0 +1,50 @@
+import named_constructor_lib as records;
+import named_constructor_lib as other;
+
+export I64 single() {
+    records.Leaf r = records.Leaf(value = 7);
+    return r.value;
+}
+
+export I64 reordered() {
+    records.R r = records.R(second = 2, first = 7);
+    return r.first * 10 + r.second;
+}
+
+export I64 mixed() {
+    records.R r = records.R(7, second = 2);
+    return r.first * 10 + r.second;
+}
+
+export I64 alias() {
+    records.R r = other.R(second = 2, first = 7);
+    return r.first * 10 + r.second;
+}
+
+export I64 nested() {
+    records.Outer r = records.Outer(tail = 2, item = records.Leaf(value = 7));
+    return r.item.value * 10 + r.tail;
+}
+
+export I64 flag() {
+    records.Flag r = records.Flag(value = 7, active = true);
+    if (r.active) { return r.value; }
+    return 0;
+}
+
+I64 step(inout I64[1] a) { a[0] += 1; return a[0]; }
+
+export I64 written_order() {
+    I64[1] a;
+    records.R r = records.R(second = step(a), first = step(a));
+    return r.first * 10 + r.second;
+}
+
+I64 mutate(inout records.Leaf[1] a) { a[0].value = 9; return 0; }
+
+export I64 record_capture(I64 index) {
+    records.Leaf[1] a;
+    a[0].value = 1;
+    records.Outer r = records.Outer(item = a[index], tail = mutate(a));
+    return r.item.value;
+}

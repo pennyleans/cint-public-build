@@ -1,0 +1,18 @@
+case view/nested_array_field_outer_fault
+clause SPEC-04 LS-64, LS-139, LS-278; SPEC-01 IM-186
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 2
+fault.code E_BOUNDS
+fault.operation index.checked.struct
+fault.operand I64 1
+fault.exact none
+fault.limit I64 1
+fault.position view/nested_array_field_outer_fault.ci:10:29
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0
+state.global view.nested_array_field_outer_fault seen I64 1

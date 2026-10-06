@@ -1,0 +1,11 @@
+// case: arith/min_div_minus_one
+// clause: SPEC-01 IM-39, IM-124; plan Review Focus 2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 10:14, operation div.checked.i64, operands I64 -9223372036854775808 and I64 -1, exact 9223372036854775808, limit I64 9223372036854775807
+
+export I64 run() {
+    I64 a = -9223372036854775808;
+    I64 b = -1;
+    return a / b;
+}

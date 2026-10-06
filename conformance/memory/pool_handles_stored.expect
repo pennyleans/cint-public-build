@@ -1,0 +1,8 @@
+case memory/pool_handles_stored
+clause SPEC-03 M-12, M-22; ref/OPEN.md REF-OQ-45
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 83
+fuel-consumed 2

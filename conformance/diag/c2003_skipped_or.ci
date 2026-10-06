@@ -1,0 +1,12 @@
+// case: diag/c2003_skipped_or
+// clause: SPEC-01 3.2; SPEC-04 4.2 rules 1 and 7; SPEC-04 17.1, 17.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2003 at 10:27: 300 takes the type I8 of K and does not fit; that `||` never evaluates the comparison does not matter (position: the literal; see ref/OPEN.md REF-OQ-02)
+
+const I8 K = 5;
+
+export Bool run() {
+    Bool b = true || (K < 300);
+    return b;
+}

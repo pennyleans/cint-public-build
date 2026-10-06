@@ -1,0 +1,6 @@
+case diag/c3020_duplicate_test_name
+clause SPEC-04 LS-233, 17.2 (C3020)
+source compile-error
+outcome compile-error
+diagnostic.code C3020
+diagnostic.position diag/c3020_duplicate_test_name.ci:11:1

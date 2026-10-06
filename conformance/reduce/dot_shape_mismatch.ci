@@ -1,0 +1,15 @@
+// case: reduce/dot_shape_mismatch
+// clause: SPEC-01 IM-87 (dot of views whose extents differ at run time)
+// subset: cint-core-1 (built-in dot, array slices)
+// entry: run; args: none
+// spec outcome: fault E_SHAPE at 14:12 (callee `dot`), operation dot.checked.i64.i64, operands I64 0 (dimension) and I64 3 (extent of b), no exact, limit I64 2 (extent of a); stack depth 1, stack 10:12; fuel 2 (the shape check precedes the reduction charge). Box 09 ruling R6
+
+export I64 run() {
+    I64[2] a;
+    I64[3] b;
+    return d(a, b[0..3]);
+}
+
+I64 d(in I64[_] a, in I64[_] b) {
+    return dot(I64, a, b);
+}

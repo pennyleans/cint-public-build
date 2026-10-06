@@ -1,0 +1,7 @@
+case determinism/site_numbering
+clause SPEC-09 7.6, 9.5 (CONF-05), SEED-10
+source reference
+outcome value
+stdout-bytes 0
+return I64 6242
+fuel-consumed 101

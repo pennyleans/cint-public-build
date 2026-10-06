@@ -1,0 +1,16 @@
+// case: view/index_struct_out_of_range
+// clause: SPEC-04 LS-64; SPEC-01 IM-186 (`index.checked.struct` for a struct element)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 15:17, operation index.checked.struct, operand I64 3, limit I64 3
+
+struct Cell {
+    I32 kind;
+    I64 value;
+}
+
+export I64 run() {
+    Cell[3] cells;
+    I64 k = 3;
+    return cells[k].value;
+}

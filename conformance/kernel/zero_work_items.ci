@@ -1,0 +1,32 @@
+// case: kernel/zero_work_items
+// clause: SPEC-02 K-8, 15.7 Z-1 (an extent of 0: no work-items, empty output published, total 0)
+// subset: cint-core-1 (kernel)
+// entry: run; args: none
+// spec outcome: value I64 0; fuel 1. Box 09 ruling R7
+
+export kernel diffuse[h, w](
+    in  I32[h, w] u,
+    in  I64       kn,
+    in  I64       kd,
+    out I32[h, w] v,
+    out I64       total
+) over [y: h, x: w] {
+    I64 c = u[y, x] as I64;
+    I32 r = u[y, x];
+    if (y > 0 && y < h - 1 && x > 0 && x < w - 1) {
+        I64 lap = (u[y - 1, x] as I64) + (u[y + 1, x] as I64)
+                + (u[y, x - 1] as I64) + (u[y, x + 1] as I64) - 4 * c;
+        I64 flux = div_round(kn * lap, kd, half_even);
+        r = (c + flux) as I32;
+    }
+    v[y, x] = r;
+    reduce total = sum(r);
+}
+
+export I64 run() {
+    I32[0, 8] a;
+    I32[0, 8] b;
+    I64 total = 5;
+    diffuse(a, 1, 8, b, total);
+    return total;
+}

@@ -1,0 +1,8 @@
+case view/slice_reversed_inclusive
+clause SPEC-04 LS-161 (a[hi..=lo by -1] runs from hi down to lo inclusive)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 72
+fuel-consumed 12

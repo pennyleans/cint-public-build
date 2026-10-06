@@ -1,0 +1,12 @@
+// case: module/fold_after_dependency_c3009
+// clause: SPEC-09 CINTC-12 (case folding compares with the paths of the program so far, in load order); SPEC-04 LS-225; compiler/OPEN.md CINTC-OQ-50
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C3009 at 8:8: when the root's imports are loaded, module/lib/plain_math.ci is not yet a path of the program, so module/lib/Plain_math.ci folds onto nothing and names no file
+
+import module.lib.fold_dep;
+import module.lib.Plain_math;
+
+export I64 run() {
+    return fold_dep.scale();
+}

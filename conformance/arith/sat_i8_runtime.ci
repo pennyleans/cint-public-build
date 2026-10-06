@@ -1,0 +1,12 @@
+// case: arith/sat_i8_runtime
+// clause: SPEC-01 4.1, 4.2; outside review section 1
+// subset: cint-core-1 (saturating operators are outside cint-boot-1)
+// entry: run; args: none
+// spec outcome: value I8 7
+
+export I8 run() {
+    I8 a = 120;
+    I8 b = a +| a;
+    I8 c = b -| a;
+    return c;
+}

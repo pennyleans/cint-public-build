@@ -1,0 +1,8 @@
+case view/slice_empty_at_end
+clause SPEC-04 LS-161, LS-162 (a[len(a)..] is a valid empty slice)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 0
+fuel-consumed 2

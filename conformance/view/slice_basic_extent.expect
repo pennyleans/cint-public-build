@@ -1,0 +1,8 @@
+case view/slice_basic_extent
+clause SPEC-04 LS-161, LS-162 (a[lo..hi] views lo up to hi; its extent binds the size parameter)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 20
+fuel-consumed 17

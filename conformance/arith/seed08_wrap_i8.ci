@@ -1,0 +1,10 @@
+// case: arith/seed08_wrap_i8
+// clause: SPEC-09 SEED-08 row 5; SPEC-01 3.2 (fixture 99)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I8 -56
+
+export I8 run() {
+    I8 p = 100 +% 100;
+    return p;
+}

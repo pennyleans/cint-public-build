@@ -1,0 +1,10 @@
+// case: arith/paren_literal_as_narrow
+// clause: SPEC-01 IM-25, IM-26; SPEC-04 LS-28, LS-151 (decision 2026-10-03, slice 2 patch D-21 option 1)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C6001 at 8:18 (the `as`): E_NARROW, operation unassigned, operand Z 300, exact 300, limit I8 127
+
+export I64 run() {
+    I8 a = (300) as I8;
+    return a as I64;
+}

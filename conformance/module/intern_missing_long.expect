@@ -1,0 +1,7 @@
+case module/intern_missing_long
+clause SPEC-09 CINTC-16 Lookup; SPEC-04 LS-15, LS-227, LS-228
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C3005
+diagnostic.position module/intern_missing_long.ci:8:40

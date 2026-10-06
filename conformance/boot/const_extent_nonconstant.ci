@@ -1,0 +1,8 @@
+// case: boot/const_extent_nonconstant
+// clause: SPEC-04 LS-62, LS-311; SPEC-09 BOOT-01, EMIT-30
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile-error
+
+I64 f(I64 n) { I64[n] a; return 0; }
+export I64 run() { return f(2); }

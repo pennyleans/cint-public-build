@@ -1,0 +1,10 @@
+// case: view/nested_record
+// clause: SPEC-04 LS-73, LS-119, LS-139; SPEC-09 BOOT-01
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 11
+
+struct Outer { Inner item; }
+struct Inner { I64 v; }
+I64 touch(inout Outer[1] a) { a[0].item.v += 4; return a[0].item.v; }
+export I64 run() { Outer[1] a; a[0].item.v = 7; return touch(a); }

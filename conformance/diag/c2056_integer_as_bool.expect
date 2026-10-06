@@ -1,0 +1,6 @@
+case diag/c2056_integer_as_bool
+clause SPEC-01 2.3; SPEC-04 6.6; SPEC-04 17.1, 17.2
+source compile-error
+outcome compile-error
+diagnostic.code C2056
+diagnostic.position diag/c2056_integer_as_bool.ci:9:14

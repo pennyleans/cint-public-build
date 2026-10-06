@@ -1,0 +1,17 @@
+// case: memory/pool_slot_assign
+// clause: SPEC-03 M-15; SPEC-04 LS-139; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (pool, handles, struct elements)
+// entry: run; args: none
+// spec outcome: value I64 128 (the slot assigned Body(9, 2), then mass 9 + 3 = 12 and vel 2 * 4 = 8); fuel 1
+
+struct Body { I64 mass; I64 vel; }
+
+Pool(Body, 2) bodies;
+
+export I64 run() {
+    Handle(Body) h = bodies.insert(Body(mass = 5, vel = 1));
+    bodies[h] = Body(mass = 9, vel = 2);
+    bodies[h].mass += 3;
+    bodies[h].vel *= 4;
+    return bodies[h].mass * 10 + bodies[h].vel;
+}

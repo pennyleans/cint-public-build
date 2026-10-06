@@ -1,0 +1,11 @@
+// case: arith/eval_order_left_first
+// clause: SPEC-01 IM-92, IM-96 (fixture 92)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 10:15, operation add.checked.i64 (the left operand is evaluated first; the division by zero is never reached)
+
+export I64 run() {
+    I64 x = 9223372036854775807;
+    I64 y = 0;
+    return (x + 1) / y;
+}

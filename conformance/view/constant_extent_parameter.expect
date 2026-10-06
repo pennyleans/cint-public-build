@@ -1,0 +1,7 @@
+case view/constant_extent_parameter
+clause SPEC-04 LS-62, LS-119 (a view parameter with a constant extent)
+source reference
+outcome value
+stdout-bytes 0
+return I64 40
+fuel-consumed 11

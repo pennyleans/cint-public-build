@@ -1,0 +1,8 @@
+case struct/nested_constructor_alias
+clause SPEC-04 LS-77, LS-141
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 9
+fuel-consumed 2

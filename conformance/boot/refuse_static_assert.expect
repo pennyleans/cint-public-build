@@ -1,0 +1,6 @@
+case boot/refuse_static_assert
+clause SPEC-09 BOOT-01 (static_assert), SEED-06; SPEC-04 LS-192
+source compile-error
+outcome compile-error
+diagnostic.code C9100
+diagnostic.position boot/refuse_static_assert.ci:8:1

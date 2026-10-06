@@ -1,0 +1,18 @@
+case view/rank2_indices_before_checks
+clause SPEC-01 IM-98, IM-113, IM-114; SPEC-04 LS-64 (every index is evaluated before the access is checked)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_DIV_ZERO
+fault.operation div.checked.i64
+fault.operand I64 1
+fault.operand I64 0
+fault.exact none
+fault.limit none
+fault.position view/rank2_indices_before_checks.ci:11:19
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

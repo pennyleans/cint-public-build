@@ -1,0 +1,10 @@
+// case: determinism/fault_path_is_module_relative
+// clause: SPEC-01 IM-106 (position path is module-relative); SPEC-09 CONF-05
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_DIV_ZERO at 9:14; the recorded path is determinism/fault_path_is_module_relative.ci whatever the working directory or absolute source path
+
+export I64 run() {
+    I64 z = 0;
+    return 1 / z;
+}

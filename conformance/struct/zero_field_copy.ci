@@ -1,0 +1,12 @@
+// case: struct/zero_field_copy
+// clause: SPEC-04 LS-68, LS-73, LS-74, LS-78
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 12
+
+struct Record { U8 tag; I64[0] none; U8 tail; }
+export I64 run() {
+    Record a; a.tag = 3; a.tail = 9;
+    Record b = a; a.tail = 1;
+    return (b.tag as I64) + (b.tail as I64);
+}

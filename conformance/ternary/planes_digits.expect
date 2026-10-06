@@ -1,0 +1,9 @@
+case ternary/planes_digits
+clause SPEC-05 TR-DIG-1, TR-T27-5, TR-PT5-1, TR-PT5-4, section 6 totality facts, 11.4 (balanced digits into bit planes and back; the PT5[27] bytes of T27 values; the legacy word relation)
+format 2
+source reference
+outcome value
+stdout-bytes 6779
+stdout-sha256 310c75fdf7af489bcc1fcaa054beaec4fa01b2eb05f2917bf1e3aa899c1185cc
+return I64 0
+fuel-consumed 33771

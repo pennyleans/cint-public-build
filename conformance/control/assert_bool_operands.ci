@@ -1,0 +1,12 @@
+// case: control/assert_bool_operands
+// clause: SPEC-04 LS-191; SPEC-01 IM-104, IM-134, IM-145 (decision 2026-10-03: OQ-13)
+// subset: cint-core-1 (assert)
+// entry: run; args: none
+// spec outcome: fault E_ASSERT at 10:12, operands Bool true and Bool false: a comparison of two Bool values reports both
+
+export I64 run() {
+    Bool t = true;
+    Bool f = 1 > 2;
+    assert(t == f);
+    return 1;
+}

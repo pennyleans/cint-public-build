@@ -1,0 +1,7 @@
+case module/import_record_alias_c3006
+clause SPEC-04 LS-226, LS-228; SPEC-09 CINTC-16 Lookup
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C3006
+diagnostic.position module/import_record_alias_c3006.ci:8:13

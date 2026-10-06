@@ -1,0 +1,18 @@
+// case: struct/zero_fill
+// clause: SPEC-04 5.1 (a struct without an initializer is zero-filled)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I32 0
+
+export struct Token {
+    I32 kind;
+    I32 start;
+    I32 length;
+    I32 line;
+    I32 column;
+}
+
+export I32 run() {
+    Token t;
+    return t.kind + t.start + t.length + t.line + t.column;
+}

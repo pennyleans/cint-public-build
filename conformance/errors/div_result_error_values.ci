@@ -1,0 +1,19 @@
+// case: errors/div_result_error_values
+// clause: SPEC-04 LS-96, LS-131, LS-145, LS-314; SPEC-01 IM-30, IM-188; decision 2026-10-05, BX12-09, BX12-10
+// subset: cint-core-1 (`div_result`, `catch`, error-set values)
+// entry: run; args: none
+// spec outcome: value I64 479: div_result gives 5, then ArithError.div_zero (-2) and ArithError.overflow (-1), told apart by comparing the bound error value; fuel 4 (the entry and three calls of code)
+
+I64 code(I64 a, I64 b) {
+    I64 q = div_result(a, b) catch (e) {
+        if (e == ArithError.div_zero) {
+            return -2;
+        }
+        return -1;
+    };
+    return q;
+}
+
+export I64 run() {
+    return code(10, 2) * 100 + code(7, 0) * 10 + code(I64.min, -1);
+}

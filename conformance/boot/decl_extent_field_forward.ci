@@ -1,0 +1,9 @@
+// case: boot/decl_extent_field_forward
+// clause: SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value
+
+struct R { I64[N] a; }
+const I64 N = 2;
+export I64 run() { R r; r.a[1] = 7; return r.a[1]; }

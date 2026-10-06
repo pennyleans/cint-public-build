@@ -1,0 +1,8 @@
+case kernel/total_sat_orders
+clause SPEC-02 R-2, 8.5 (the two total_sat rows: logical order is ascending work-item index)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 7120
+fuel-consumed 7

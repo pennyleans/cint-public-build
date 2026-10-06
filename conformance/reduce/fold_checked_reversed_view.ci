@@ -1,0 +1,10 @@
+// case: reduce/fold_checked_reversed_view
+// clause: SPEC-01 IM-73, IM-83; SPEC-04 LS-161 (fold over a reversed view; the twin of reduce/loop_fold_reverse_fits)
+// subset: cint-core-1 (array slices, built-in fold_checked)
+// entry: run; args: none
+// spec outcome: value I32 2000000000; fuel 2
+
+export I32 run() {
+    I32[3] a = [2000000000, 2000000000, -2000000000];
+    return fold_checked(add, 0, a[.. by -1]);
+}

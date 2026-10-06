@@ -1,0 +1,7 @@
+case view/struct_view_inout
+clause SPEC-04 LS-119; SPEC-09 BOOT-01 (params: a view whose element type is a struct)
+source reference
+outcome value
+stdout-bytes 0
+return I32 12
+fuel-consumed 9

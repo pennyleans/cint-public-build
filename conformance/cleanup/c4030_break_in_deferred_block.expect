@@ -1,0 +1,7 @@
+case cleanup/c4030_break_in_deferred_block
+clause SPEC-04 LS-187
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C4030
+diagnostic.position cleanup/c4030_break_in_deferred_block.ci:11:13

@@ -1,0 +1,15 @@
+// case: module/imported_struct_inout
+// clause: SPEC-04 6.2, LS-119 (an `inout` struct parameter), across an import; SPEC-09 CINTC-16; decision 27 item 4 (imported structs)
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: value I64 39 (Pt(1, 2) grown by 4 twice is (9, 18), norm1 27, plus 12 from Pt(5, 7))
+
+import module.lib.shapes_inout;
+
+export I64 run() {
+    shapes_inout.Pt p = shapes_inout.Pt(1, 2);
+    shapes_inout.grow(p, 4);
+    shapes_inout.grow(p, 4);
+    shapes_inout.Pt q = shapes_inout.Pt(5, 7);
+    return shapes_inout.norm1(p) + shapes_inout.norm1(q);
+}

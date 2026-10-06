@@ -1,0 +1,7 @@
+case errors/c4002_catch_block_completes
+clause SPEC-04 LS-131
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C4002
+diagnostic.position errors/c4002_catch_block_completes.ci:15:31

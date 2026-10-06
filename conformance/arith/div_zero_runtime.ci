@@ -1,0 +1,11 @@
+// case: arith/div_zero_runtime
+// clause: SPEC-01 IM-39, IM-106
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_DIV_ZERO at 10:14, operation div.checked.i64, operands I64 5 and I64 0; no exact, no limit
+
+export I64 run() {
+    I64 a = 5;
+    I64 z = 0;
+    return a / z;
+}

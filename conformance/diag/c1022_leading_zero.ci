@@ -1,0 +1,10 @@
+// case: diag/c1022_leading_zero
+// clause: SPEC-04 3.5 rule 3; SPEC-04 17.1, 17.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C1022 at 8:13: `007` is a decimal literal with a leading zero (position: first character of the offending construct, SPEC-04 17.1; see ref/OPEN.md O-13)
+
+export I64 run() {
+    I64 x = 007;
+    return x;
+}

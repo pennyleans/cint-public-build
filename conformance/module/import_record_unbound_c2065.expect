@@ -1,0 +1,7 @@
+case module/import_record_unbound_c2065
+clause SPEC-04 LS-117, LS-119; SPEC-09 CINTC-16
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2065
+diagnostic.position module/import_record_unbound_c2065.ci:8:29

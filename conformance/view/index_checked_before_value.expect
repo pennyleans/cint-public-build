@@ -1,0 +1,15 @@
+case view/index_checked_before_value
+clause SPEC-04 LS-139 (the place's index is evaluated and checked before the value)
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_BOUNDS
+fault.operation index.checked.i64
+fault.operand I64 -1
+fault.exact none
+fault.limit I64 4
+fault.position view/index_checked_before_value.ci:11:6
+fault.revision self
+fault.address none
+fault.stack-depth 0

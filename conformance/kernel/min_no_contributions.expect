@@ -1,0 +1,20 @@
+case kernel/min_no_contributions
+clause SPEC-02 R-2, R-7 (min with no contributions faults E_SHAPE in the epilogue); O-9
+format 4
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_SHAPE
+fault.operation reduce_min.checked.i64
+fault.operand I64 0
+fault.exact none
+fault.limit none
+fault.position kernel/min_no_contributions.ci:8:16
+fault.revision self
+fault.source-map self
+fault.phase epilogue
+fault.kernel kernel.min_no_contributions.lowest
+fault.address 0 none none
+fault.stack-depth 1
+fault.stack kernel/min_no_contributions.ci:14:5

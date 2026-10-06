@@ -1,0 +1,8 @@
+case boot/decl_extent_field_forward
+clause SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 7
+fuel-consumed 1

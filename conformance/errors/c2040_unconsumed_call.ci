@@ -1,0 +1,16 @@
+// case: errors/c2040_unconsumed_call
+// clause: SPEC-04 LS-95
+// subset: cint-core-1 (error sets, error unions)
+// entry: run; args: none
+// spec outcome: compile error C2040 at 14:13, a call whose error union is not consumed by `try`, `catch`, or `_ =` (position: first character of the offending construct)
+
+error ParseError { empty, bad_digit, too_large }
+
+ParseError!I64 parse() {
+    return 7;
+}
+
+export I64 run() {
+    I64 x = parse();
+    return x;
+}

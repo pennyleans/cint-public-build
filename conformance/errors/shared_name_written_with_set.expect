@@ -1,0 +1,10 @@
+case errors/shared_name_written_with_set
+clause SPEC-04 LS-97; SPEC-09 CONF-11 rule 12; decision 2026-10-05, BX12-21, BX12-27
+format 3
+source reference
+outcome error
+stdout-bytes 0
+fuel-consumed 1
+error.set errors.shared_name_written_with_set.IoOrQueue
+error.value QueueError.full
+error.tag U16 3

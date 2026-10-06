@@ -1,0 +1,6 @@
+case boot/refuse_fraction_literal
+clause SPEC-09 BOOT-01 (DEC_FRAC), SEED-06; SPEC-04 LS-33, LS-35, LS-38
+source compile-error
+outcome compile-error
+diagnostic.code C9100
+diagnostic.position boot/refuse_fraction_literal.ci:9:21

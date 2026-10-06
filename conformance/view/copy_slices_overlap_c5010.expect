@@ -1,0 +1,7 @@
+case view/copy_slices_overlap_c5010
+clause SPEC-04 LS-70 (the LS-70 example: same buffer, intersecting bounding intervals, gcd test fails)
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C5010
+diagnostic.position view/copy_slices_overlap_c5010.ci:9:24

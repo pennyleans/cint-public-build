@@ -1,0 +1,8 @@
+case view/copy_slices_disjoint_gcd
+clause SPEC-04 LS-70; SPEC-02 A-5 T2 (odd and even elements of one buffer are disjoint by the gcd test)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 246
+fuel-consumed 9

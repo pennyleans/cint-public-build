@@ -1,0 +1,22 @@
+// case: memory/arena_parameters
+// clause: SPEC-03 M-14a, M-20; SPEC-04 LS-119; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arena, handles, arena parameters, reductions)
+// entry: run; args: none
+// spec outcome: value I64 104 (1 + 2 + 3 + 4 = 10, then the last element 4); fuel 8 (entry, calls to `count_up` and `last`, 4 iterations, one reduction)
+
+Arena(I64, 16) scratch;
+
+Handle(I64[]) count_up(inout Arena(I64) a, I64 n) {
+    Handle(I64[]) h = a.alloc(n);
+    for i in 0..n { a[h][i] = i + 1; }
+    return h;
+}
+
+I64 last(in Arena(I64) a, in Handle(I64[]) h, I64 n) {
+    return a[h][n - 1];
+}
+
+export I64 run() {
+    Handle(I64[]) h = count_up(scratch, 4);
+    return sum(scratch[h]) * 10 + last(scratch, h, 4);
+}

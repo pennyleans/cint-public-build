@@ -1,0 +1,22 @@
+// case: view/call_slices_disjoint
+// clause: SPEC-04 LS-121; SPEC-02 A-5 T1 (disjoint slices of one buffer bound to `inout` and `in`)
+// subset: cint-core-1 (array slices)
+// entry: run; args: none
+// spec outcome: value I64 4 (x[0] takes x[4]); fuel 11 (entry, 8 iterations, call to `pair`, call to `put`)
+
+void put[n](inout I64[n] d, in I64[n] s) {
+    d[0] = s[0];
+}
+
+void pair[m](inout I64[m] x, I64 k) {
+    put(x[0..k], x[k..k + k]);
+}
+
+export I64 run() {
+    I64[8] x;
+    for i in 0..8 {
+        x[i] = i;
+    }
+    pair(x, 4);
+    return x[0];
+}

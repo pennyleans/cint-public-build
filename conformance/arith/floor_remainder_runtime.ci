@@ -1,0 +1,11 @@
+// case: arith/floor_remainder_runtime
+// clause: SPEC-01 4.4
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 -1 (7 % -2 takes the divisor's sign)
+
+export I64 run() {
+    I64 a = 7;
+    I64 b = -2;
+    return a % b;
+}

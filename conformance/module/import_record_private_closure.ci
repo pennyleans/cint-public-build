@@ -1,0 +1,10 @@
+// case: module/import_record_private_closure
+// clause: SPEC-04 LS-73, LS-119, LS-226; SPEC-09 CINTC-16
+// subset: cint-core-1
+// entry: run; args: none
+
+import module.lib.import_hidden_record;
+
+export I64 run() {
+    return import_hidden_record.consume(import_hidden_record.produce());
+}

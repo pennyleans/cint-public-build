@@ -1,0 +1,10 @@
+// case: arith/literal_i8_128
+// clause: SPEC-01 3.2 (fixture 54); SPEC-04 3.5
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2003 at 8:12: 128 does not fit I8
+
+export I8 run() {
+    I8 b = 128;
+    return b;
+}

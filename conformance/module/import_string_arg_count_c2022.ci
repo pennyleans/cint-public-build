@@ -1,0 +1,8 @@
+// case: module/import_string_arg_count_c2022
+// clause: SPEC-09 BOOT-02, CINTC-16; SPEC-04 LS-114, LS-119
+// subset: cint-boot-1
+// entry: run; args: none
+
+import module.lib.string_views;
+
+export I64 run() { return string_views.first("x", "y"); }

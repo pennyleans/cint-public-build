@@ -1,0 +1,7 @@
+case kernel/body_print_c5020
+clause SPEC-02 K-11; SPEC-04 LS-283 (a print statement in a kernel body)
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C5020
+diagnostic.position kernel/body_print_c5020.ci:8:5

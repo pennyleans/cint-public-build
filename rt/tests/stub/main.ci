@@ -1,0 +1,196 @@
+// rt/tests/stub/main.ci: a stub compiler with the export shapes of SPEC-09 CINTC-14
+// (slice 2 task 2.6), built by the seed and driven through rt/cint_bridge.c by
+// rt/tests/test_bridge.py. It plans 17 tables (an I64 table at program level, a
+// per-module copy of the source, a per-module Tok table, and 14 empty ones),
+// copies each module to its first output and writes the module index to its
+// second; the program-level outputs name the modules. The bridge calls compile
+// twice per module (the discovery pass, then the full pass; CINTC-05), so t0[0]
+// is the number of modules seen, and the program-level emit calls with output
+// index 2 + m (module m's second output, read back) are inputs it ignores. A module of exactly 2
+// bytes gets diagnostic C2002 at 1:1 from plan, a module whose first byte is `!`
+// gets C2001 at 1:1 from compile, and one whose first byte is `~` loops until
+// its phase budget (CINTC-09) runs out. Records: TablePlan 0, CompilerDiag 1
+// (CINTC-14), ElemType 2, Tok 3 (the seed numbers structs in declaration order).
+
+export struct TablePlan {
+    I64 table;
+    I64 elem_bytes;
+    I64 elem_align;
+    I64 capacity;
+    I64 scope;
+    I64 reserved;
+    ElemType elem_type;
+}
+
+export struct CompilerDiag {
+    I64 code;
+    I64 module;
+    I64 line;
+    I64 column;
+    I64[4] detail;
+}
+
+export struct ElemType {
+    U16 code;
+    U8 storage;
+    U8 reserved0;
+    U16 frac_bits;
+    U16 reserved1;
+    U32 record_id;
+    U32 reserved2;
+}
+
+export struct Tok {
+    I32 kind;
+    I32 len;
+    I64 start;
+}
+
+export I64 plan[m, t](in I64[m] module_bytes, inout TablePlan[t] rows, inout CompilerDiag[101] diag) {
+    I64 most = 0;
+    for i in 0..m {
+        if (module_bytes[i] == 2) {
+            diag[0].detail[0] = 1;
+            diag[1].code = 2002;
+            diag[1].module = i;
+            diag[1].line = 1;
+            diag[1].column = 1;
+            return 1;
+        }
+        if (module_bytes[i] > most) {
+            most = module_bytes[i];
+        }
+    }
+    for k in 0..t {
+        rows[k].table = k;
+        rows[k].elem_bytes = 1;
+        rows[k].elem_align = 1;
+        rows[k].capacity = 0;
+        rows[k].scope = 1;
+        rows[k].reserved = 0;
+        rows[k].elem_type.code = 33;
+        rows[k].elem_type.storage = 0;
+        rows[k].elem_type.reserved0 = 0;
+        rows[k].elem_type.frac_bits = 0;
+        rows[k].elem_type.reserved1 = 0;
+        rows[k].elem_type.record_id = 0;
+        rows[k].elem_type.reserved2 = 0;
+    }
+    rows[0].elem_bytes = 8;
+    rows[0].elem_align = 8;
+    rows[0].capacity = m + 1;
+    rows[0].scope = 0;
+    rows[0].elem_type.code = 20;
+    rows[1].capacity = most;
+    rows[2].elem_bytes = 16;
+    rows[2].elem_align = 8;
+    rows[2].capacity = most + 1;
+    rows[2].elem_type.code = 113;
+    rows[2].elem_type.record_id = 3;
+    diag[0].code = 0;
+    diag[0].detail[0] = 0;
+    diag[0].detail[1] = 0;
+    return 0;
+}
+
+export I64 compile[n, p, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, f](I64 module_index, in U8[n] source, in U8[p] path,
+        inout I64[a0] t0, inout U8[a1] t1, inout Tok[a2] t2, inout U8[a3] t3, inout U8[a4] t4, inout U8[a5] t5, inout U8[a6] t6, inout U8[a7] t7, inout U8[a8] t8, inout U8[a9] t9, inout U8[a10] t10, inout U8[a11] t11, inout U8[a12] t12, inout U8[a13] t13, inout U8[a14] t14, inout U8[a15] t15, inout U8[a16] t16,
+        inout CompilerDiag[101] diag, inout U8[f] faults) {
+    I64 spins = 0;
+    I64 lines = 0;
+    I64 start = 0;
+    if (module_index + 1 > t0[0]) {
+        t0[0] = module_index + 1;
+    }
+    t0[1 + module_index] = n;
+    for i in 0..n {
+        t1[i] = source[i];
+        if (source[i] == 10) {
+            t2[lines].kind = 1;
+            t2[lines].len = (i - start) as I32;
+            t2[lines].start = start;
+            lines = lines + 1;
+            start = i + 1;
+        }
+    }
+    if (n > 2 && source[0] == 63) {
+        diag[0].detail[0] = 1;
+        diag[1].code = 3030;
+        diag[1].module = module_index;
+        diag[1].line = 1;
+        diag[1].column = 1;
+        diag[1].detail[0] = 2;
+        diag[1].detail[2] = 2;
+        diag[1].detail[3] = n - 2;
+        if (source[1] == 49) { diag[1].detail[2] = -1; }
+        if (source[1] == 50) { diag[1].detail[3] = -1; }
+        if (source[1] == 51) { diag[1].detail[2] = a1 + 1; }
+        if (source[1] == 52) { diag[1].detail[3] = a1; }
+        if (source[1] == 53) { diag[1].detail[3] = 0; }
+        if (source[1] == 54) { diag[0].detail[0] = 101; }
+        return 1;
+    }
+    if (n > 0 && source[0] == 33) {
+        diag[0].detail[0] = 1;
+        diag[1].code = 2001;
+        diag[1].module = module_index;
+        diag[1].line = 1;
+        diag[1].column = 1;
+        return 1;
+    }
+    while (n > 0 && source[0] == 126) {
+        spins = spins + 1;
+        if (spins > 1000000000000) {
+            spins = 0;
+        }
+    }
+    return 0;
+}
+
+export I64 measure[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, k, f](I64 module_index, inout I64[a0] t0, inout U8[a1] t1, inout Tok[a2] t2, inout U8[a3] t3, inout U8[a4] t4, inout U8[a5] t5, inout U8[a6] t6, inout U8[a7] t7, inout U8[a8] t8, inout U8[a9] t9, inout U8[a10] t10, inout U8[a11] t11, inout U8[a12] t12, inout U8[a13] t13, inout U8[a14] t14, inout U8[a15] t15, inout U8[a16] t16,
+        inout I64[k] output_bytes, inout CompilerDiag[101] diag, inout U8[f] faults) {
+    if (module_index == t0[0]) {
+        output_bytes[0] = module_index;
+        output_bytes[1] = 0;
+        return 0;
+    }
+    if (t0[1 + module_index] > 0 && t1[0] == 35) {
+        diag[0].detail[0] = 1;
+        diag[1].code = 2003;
+        diag[1].module = module_index;
+        diag[1].line = 1;
+        diag[1].column = 1;
+        return 1;
+    }
+    output_bytes[0] = t0[1 + module_index];
+    output_bytes[1] = 2;
+    if (t0[1 + module_index] > 0 && t1[0] == 94) {
+        output_bytes[1] = 0;
+    }
+    return 0;
+}
+
+export I64 emit[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, b, f](I64 module_index, I64 output_index, inout I64[a0] t0, inout U8[a1] t1, inout Tok[a2] t2, inout U8[a3] t3, inout U8[a4] t4, inout U8[a5] t5, inout U8[a6] t6, inout U8[a7] t7, inout U8[a8] t8, inout U8[a9] t9, inout U8[a10] t10, inout U8[a11] t11, inout U8[a12] t12, inout U8[a13] t13, inout U8[a14] t14, inout U8[a15] t15, inout U8[a16] t16,
+        inout U8[b] output, inout CompilerDiag[101] diag, inout U8[f] faults) {
+    if (module_index == t0[0] && output_index >= 2) {
+        return 0;
+    }
+    if (module_index == t0[0]) {
+        for i in 0..b {
+            output[i] = (97 + i) as U8;
+        }
+        return 0;
+    }
+    if (output_index == 0) {
+        for i in 0..b {
+            output[i] = t1[i];
+        }
+        return 0;
+    }
+    if (b == 0) {
+        return 0;
+    }
+    output[0] = (48 + module_index % 10) as U8;
+    output[1] = 10;
+    return 0;
+}

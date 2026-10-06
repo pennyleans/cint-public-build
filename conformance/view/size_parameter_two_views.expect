@@ -1,0 +1,7 @@
+case view/size_parameter_two_views
+clause SPEC-04 LS-117 (two views bound to one size parameter), LS-121 (`in` views may overlap)
+source reference
+outcome value
+stdout-bytes 0
+return I64 34
+fuel-consumed 12

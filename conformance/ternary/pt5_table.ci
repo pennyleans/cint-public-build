@@ -1,0 +1,196 @@
+// case: ternary/pt5_table
+// clause: SPEC-05 TR-PT5-1 to TR-PT5-4, TR-VAL-4, 9.1 (the 256-entry PT5 decode table built from TR-PT5-1 and checked for every U8 value; padding judged by the row length)
+// subset: cint-core-1 (print statements)
+// entry: run; args: none
+// spec outcome: value I64 0 (243 valid bytes round trip through the table and agree with repeated balanced residue by 3, the 13 unused bytes are flagged, and the valid last bytes number 3^r); 268 output lines
+// t27 set 1 (docs/design/notes/2026-10-05-t27-ternary-tests-scoping.md 5.2), with SPEC-05 12.2 PT5-01 to PT5-04 and PT5-07 to PT5-11 (and PT5-13).
+// Where a fixture expects a fault of decode_pt5, the case prints the verdict the fault reports (first invalid byte
+// in row order and the reason), not the fault record, which set 3 freezes with the built-ins.
+// The table holds five I8 trits per byte value, indexed by the full byte; the entries of the 13 unused values are
+// defined (zero trits) and flagged, as TR-VAL-4 requires of a total decoder.
+// Output: one line per byte value 00 to ff (the trits t0 to t4 and r, the count of trits up to the highest nonzero
+// one, 0 for byte 00, so the byte can end a row whose last byte holds at least r trits; or "unused"), a count line,
+// the valid last bytes for r = 1 to 4, one line per fixture, then the mismatch count.
+
+I64 pow3(I64 d) {
+    I64 p = 1;
+    for i in 0..d {
+        p = p * 3;
+    }
+    return p;
+}
+
+// Trit d of the signed value b, by repeated balanced residue by 3 (9.1, the second technique).
+I64 residue_trit(I64 b, I64 d) {
+    I64 v = b;
+    I64 t = 0;
+    for i in 0..d + 1 {
+        I64 r = v % 3;
+        t = r == 2 ? -1 : r;
+        v = r == 2 ? v / 3 + 1 : v / 3;
+    }
+    return t;
+}
+
+// The byte of trits t0 to t4 (TR-PT5-1).
+U8 encode5(I64 t0, I64 t1, I64 t2, I64 t3, I64 t4) {
+    I64 b = t0 + 3 * t1 + 9 * t2 + 27 * t3 + 81 * t4;
+    return b as% U8;
+}
+
+// The first invalid byte of a row of nb bytes holding k trits, or -1; why[0] receives 1 for an unused value, 2 for
+// nonzero padding (TR-PT5-2, TR-PT5-3). Only the table is read: decoding is a lookup.
+I64 first_invalid[nb](in U8[nb] row, I64 k, in I8[1280] tab, in I8[256] valid, inout I64[1] why) {
+    for j in 0..nb {
+        I64 u = row[j] as I64;
+        if (valid[u] == 0) {
+            why[0] = 1;
+            return j;
+        }
+        I64 r = k - 5 * j;
+        if (r < 5) {
+            for d in r..5 {
+                if (tab[u * 5 + d] != 0) {
+                    why[0] = 2;
+                    return j;
+                }
+            }
+        }
+    }
+    why[0] = 0;
+    return -1;
+}
+
+I64 verdict[nb](in U8[nb] row, I64 k, in I8[1280] tab, in I8[256] valid) {
+    I64[1] why;
+    I64 j = first_invalid(row, k, tab, valid, why);
+    for i in 0..nb {
+        " {row[i]:02x}";
+    }
+    " k {k}:";
+    if (j < 0) {
+        " valid, trits";
+        for i in 0..k {
+            I64 u = row[i / 5] as I64;
+            " {tab[u * 5 + i % 5]}";
+        }
+        "\n";
+    } else if (why[0] == 1) {
+        " byte {j} unused value\n";
+    } else {
+        " byte {j} nonzero padding\n";
+    }
+    return j;
+}
+
+export I64 run() {
+    I64 bad = 0;
+    I8[1280] tab;
+    I8[256] valid;
+    for u in 0..256 {
+        valid[u] = 0;
+        for d in 0..5 {
+            tab[u * 5 + d] = 0;
+        }
+    }
+    // Every 5-trit word, from TR-PT5-1: index s in 0..243 has trit d = s / 3^d % 3 - 1.
+    for s in 0..243 {
+        I64 b = 0;
+        for d in 0..5 {
+            b = b + (s / pow3(d) % 3 - 1) * pow3(d);
+        }
+        I64 u = (b as% U8) as I64;
+        bad += valid[u] != 0 ? 1 : 0;
+        valid[u] = 1;
+        for d in 0..5 {
+            tab[u * 5 + d] = (s / pow3(d) % 3 - 1) as I8;
+        }
+    }
+
+    I64 nvalid = 0;
+    I64[6] last;
+    for r in 0..6 {
+        last[r] = 0;
+    }
+    for u in 0..256 {
+        U8 ub = u as U8;
+        I64 b = (ub as% I8) as I64;
+        if (valid[u] == 0) {
+            "{ub:02x}: unused\n";
+            bad += b >= -121 && b <= 121 ? 1 : 0;
+            continue;
+        }
+        nvalid += 1;
+        I64 t0 = tab[u * 5] as I64;
+        I64 t1 = tab[u * 5 + 1] as I64;
+        I64 t2 = tab[u * 5 + 2] as I64;
+        I64 t3 = tab[u * 5 + 3] as I64;
+        I64 t4 = tab[u * 5 + 4] as I64;
+        I64 width = 0;
+        for d in 0..5 {
+            if (tab[u * 5 + d] != 0) {
+                width = d + 1;
+            }
+            bad += residue_trit(b, d) != (tab[u * 5 + d] as I64) ? 1 : 0;
+        }
+        "{ub:02x}: {t0} {t1} {t2} {t3} {t4} r {width}\n";
+        bad += encode5(t0, t1, t2, t3, t4) != ub ? 1 : 0;
+        // A valid last byte of a row with r trits in it: |b| <= R(r), that is, trits r to 4 zero.
+        for r in 1..6 {
+            if (width <= r) {
+                last[r] += 1;
+                bad += b > (pow3(r) - 1) / 2 || b < -(pow3(r) - 1) / 2 ? 1 : 0;
+            }
+        }
+    }
+    "valid {nvalid}, unused {256 - nvalid}\n";
+    "valid last bytes for r = 1 to 4: {last[1]} {last[2]} {last[3]} {last[4]}\n";
+    bad += nvalid != 243 ? 1 : 0;
+    for r in 1..6 {
+        bad += last[r] != pow3(r) ? 1 : 0;
+    }
+
+    U8 p1 = encode5(1, 0, -1, 1, 1);
+    U8 p2 = encode5(1, 1, 1, 1, 1);
+    U8 p3 = encode5(-1, -1, -1, -1, -1);
+    U8 p4a = encode5(1, 1, 1, 1, 1);
+    U8 p4b = encode5(-1, 1, 0, 0, 0);
+    "PT5-01 [1, 0, -1, 1, 1]: {p1:02x}\n";
+    "PT5-02 [1, 1, 1, 1, 1]: {p2:02x}\n";
+    "PT5-03 [-1, -1, -1, -1, -1]: {p3:02x}\n";
+    "PT5-04 [1, 1, 1, 1, 1, -1, 1]: {p4a:02x} {p4b:02x}\n";
+    bad += p1 != 0x64 || p2 != 0x79 || p3 != 0x87 || p4a != 0x79 || p4b != 0x02 ? 1 : 0;
+
+    U8[1] one;
+    U8[2] two;
+    U8[3] three;
+    "PT5-07";
+    I64 flagged = 0;
+    for u in 0x7a..0x87 {
+        one[0] = u as U8;
+        I64[1] why;
+        if (first_invalid(one, 5, tab, valid, why) == 0 && why[0] == 1) {
+            flagged += 1;
+        }
+    }
+    " the 13 values 7a to 86, k 5: {flagged} unused\n";
+    bad += flagged != 13 ? 1 : 0;
+    two[0] = 0x79;
+    two[1] = 0x03;
+    "PT5-09";
+    bad += verdict(two, 6, tab, valid) != 1 ? 1 : 0;
+    two[1] = 0x01;
+    "PT5-10";
+    bad += verdict(two, 6, tab, valid) != -1 ? 1 : 0;
+    two[0] = 0x00;
+    two[1] = 0x29;
+    "PT5-11";
+    bad += verdict(two, 9, tab, valid) != 1 ? 1 : 0;
+    three[0] = 0x00;
+    three[1] = 0x7a;
+    three[2] = 0x7a;
+    "PT5-13";
+    bad += verdict(three, 15, tab, valid) != 1 ? 1 : 0;
+    "mismatches {bad}\n";
+    return bad;
+}

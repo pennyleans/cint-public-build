@@ -1,0 +1,14 @@
+// case: control/test_block_entry_passes
+// clause: SPEC-04 LS-191, LS-232, LS-235; SPEC-09 CONF-01 (a test block as the entry); decision OQ-17
+// subset: cint-core-1 (test block, assert)
+// spec outcome: value with no return line: the module's only test block is the entry (cint_ref run), both asserts hold; fuel consumed is the entry's unit plus one per loop iteration
+
+test "sum of 0..4" {
+    I64 s = 0;
+    for i in 0..4 {
+        s += i;
+    }
+    assert(s == 6);
+    Bool small = s < 10;
+    assert(small);
+}

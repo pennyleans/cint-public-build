@@ -1,0 +1,7 @@
+case arith/narrow_wrap_runtime
+clause SPEC-01 4.9
+source reference
+outcome value
+stdout-bytes 0
+return I32 -2147483648
+fuel-consumed 1

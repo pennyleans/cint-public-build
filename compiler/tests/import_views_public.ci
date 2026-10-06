@@ -1,0 +1,23 @@
+import records;
+import records as other;
+import twin;
+
+export I64 read(in records.R[_] rows) { return rows[0].value; }
+export I64 fixed(inout records.R[2] rows) {
+    rows[1].value += 1;
+    return rows[1].value;
+}
+export I64 same[n](inout records.R[n] first, in other.R[n] second) {
+    first[0].value += second[0].value;
+    return n;
+}
+export records.R copied(in records.R input) {
+    records.R output = input;
+    output.value += 1;
+    return output;
+}
+export records.R fail(inout records.R item, I64 divisor) {
+    item.value = 42;
+    return records.R(false, 10 / divisor);
+}
+export I64 run() { return 1; }

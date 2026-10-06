@@ -1,0 +1,12 @@
+// case: module/qualified_local_c3001
+// clause: SPEC-04 LS-228 (a local may not take a visible alias); SPEC-09 CINTC-16
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C3001 at 10:9, a local named like the alias `scalars`
+
+import module.lib.scalars;
+
+export I64 run() {
+    I64 scalars = 1;
+    return scalars;
+}

@@ -1,0 +1,10 @@
+// case: diag/c4012_keyword_as_name
+// clause: SPEC-04 LS-167; SPEC-09 BOOT-01 (core-1 static diagnostics apply in boot-1)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C4012 at 8:5: `do` is a keyword, so `I64 do = 1;` is not a declaration, and `I64` cannot stand as a statement
+
+export I64 run() {
+    I64 do = 1;
+    return 1;
+}

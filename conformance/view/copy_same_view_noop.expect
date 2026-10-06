@@ -1,0 +1,8 @@
+case view/copy_same_view_noop
+clause SPEC-04 LS-70; SPEC-02 A-5 T3 (copying a view onto itself has no effect)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 3
+fuel-consumed 9

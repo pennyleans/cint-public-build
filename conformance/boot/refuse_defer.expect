@@ -1,0 +1,6 @@
+case boot/refuse_defer
+clause SPEC-09 BOOT-01 (defer_stmt), SEED-06; SPEC-04 LS-185, LS-186
+source compile-error
+outcome compile-error
+diagnostic.code C9100
+diagnostic.position boot/refuse_defer.ci:11:9

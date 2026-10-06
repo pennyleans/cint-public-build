@@ -1,0 +1,15 @@
+// case: memory/pool_insert_result_try_main
+// clause: SPEC-03 M-19; SPEC-04 LS-21, LS-129, LS-221; SPEC-09 CONF-11 rule 12; decision 2026-10-05, BX12-04, BX12-12; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (pool, handles, error unions, `try`, `main` with an error union, print)
+// spec outcome: error (format 3): error.set AllocError, error.value full, error.tag U16 1: the third `insert_result` returns `AllocError.full` and `try` returns it from `main`; stdout 8 bytes (`one`, `two`, each with a line feed); fuel 1
+
+Pool(I64, 2) counts;
+
+AllocError!void main() {
+    Handle(I64) a = try counts.insert_result(10);
+    "one\n";
+    Handle(I64) b = try counts.insert_result(20);
+    "two\n";
+    Handle(I64) c = try counts.insert_result(30);
+    "three\n";
+}

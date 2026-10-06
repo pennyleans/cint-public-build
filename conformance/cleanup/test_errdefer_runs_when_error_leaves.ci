@@ -1,0 +1,22 @@
+// case: cleanup/test_errdefer_runs_when_error_leaves
+// clause: SPEC-04 LS-189, LS-315, LS-322; SPEC-09 CONF-11 rule 12; decision 2026-10-05, BX12-13, BX12-21, BX12-25, BX12-30
+// subset: cint-core-1 (error sets, `try`, `defer` and `errdefer` in a test block, module-level variable)
+// spec outcome: error (format 3): error.set cleanup.test_errdefer_runs_when_error_leaves.ParseError, error.value bad_digit, error.tag U16 2; state trail I64 21: the error leaves the test by `try`, which runs the defer and then the errdefer and fails the test; stdout 0 bytes; fuel 2. error.set as in errors/test_try_any_set (BX12-30)
+
+error ParseError { empty, bad_digit, too_large }
+
+I64 trail = 0;
+
+ParseError!I64 digit(U8 c) {
+    if (c < '0' || c > '9') {
+        return .bad_digit;
+    }
+    return (c - '0') as I64;
+}
+
+test "errdefer in a test" {
+    errdefer trail = trail * 10 + 1;
+    defer trail = trail * 10 + 2;
+    I64 d = try digit('k');
+    trail = 99;
+}

@@ -1,0 +1,20 @@
+// case: module/reuse_after_large_module
+// clause: SPEC-09 CINTC-16 (Lookup; a block survives the reuse of the per-module tables); SPEC-04 LS-225, LS-227, LS-229; decision 27 item 4
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64, A's constants and calls read after the large module B, plus B's own calls
+
+import module.lib.reuse_a;
+import module.lib.reuse_big;
+
+export I64 run() {
+    I64 r = reuse_a.a_scale(3, 4);
+    r += reuse_a.A_BASE + (reuse_a.A_SMALL as I64) + (reuse_a.A_MASK as I64);
+    r += reuse_a.a_sum_to(10);
+    if (reuse_a.a_odd(reuse_big.B_007)) {
+        r += 1;
+    }
+    r += reuse_big.b_f149(5) + reuse_big.B_299;
+    r += reuse_a.a_scale(reuse_big.b_f000(1), reuse_a.A_SMALL as I64);
+    return r;
+}

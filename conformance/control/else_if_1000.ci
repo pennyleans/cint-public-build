@@ -1,0 +1,2015 @@
+// case: control/else_if_1000
+// clause: SPEC-04 LS-168, LS-311; SPEC-09 CINTC-02, CINTC-03 (decision 2026-10-03, slice 2 patch D-5)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 1998: the last of 1,000 arms of 13 tokens each; an `else if` chain does not nest
+
+I64 pick(I64 x) {
+    I64 r = -1;
+    if (x == 0) {
+        r = 0;
+    } else if (x == 1) {
+        r = 2;
+    } else if (x == 2) {
+        r = 4;
+    } else if (x == 3) {
+        r = 6;
+    } else if (x == 4) {
+        r = 8;
+    } else if (x == 5) {
+        r = 10;
+    } else if (x == 6) {
+        r = 12;
+    } else if (x == 7) {
+        r = 14;
+    } else if (x == 8) {
+        r = 16;
+    } else if (x == 9) {
+        r = 18;
+    } else if (x == 10) {
+        r = 20;
+    } else if (x == 11) {
+        r = 22;
+    } else if (x == 12) {
+        r = 24;
+    } else if (x == 13) {
+        r = 26;
+    } else if (x == 14) {
+        r = 28;
+    } else if (x == 15) {
+        r = 30;
+    } else if (x == 16) {
+        r = 32;
+    } else if (x == 17) {
+        r = 34;
+    } else if (x == 18) {
+        r = 36;
+    } else if (x == 19) {
+        r = 38;
+    } else if (x == 20) {
+        r = 40;
+    } else if (x == 21) {
+        r = 42;
+    } else if (x == 22) {
+        r = 44;
+    } else if (x == 23) {
+        r = 46;
+    } else if (x == 24) {
+        r = 48;
+    } else if (x == 25) {
+        r = 50;
+    } else if (x == 26) {
+        r = 52;
+    } else if (x == 27) {
+        r = 54;
+    } else if (x == 28) {
+        r = 56;
+    } else if (x == 29) {
+        r = 58;
+    } else if (x == 30) {
+        r = 60;
+    } else if (x == 31) {
+        r = 62;
+    } else if (x == 32) {
+        r = 64;
+    } else if (x == 33) {
+        r = 66;
+    } else if (x == 34) {
+        r = 68;
+    } else if (x == 35) {
+        r = 70;
+    } else if (x == 36) {
+        r = 72;
+    } else if (x == 37) {
+        r = 74;
+    } else if (x == 38) {
+        r = 76;
+    } else if (x == 39) {
+        r = 78;
+    } else if (x == 40) {
+        r = 80;
+    } else if (x == 41) {
+        r = 82;
+    } else if (x == 42) {
+        r = 84;
+    } else if (x == 43) {
+        r = 86;
+    } else if (x == 44) {
+        r = 88;
+    } else if (x == 45) {
+        r = 90;
+    } else if (x == 46) {
+        r = 92;
+    } else if (x == 47) {
+        r = 94;
+    } else if (x == 48) {
+        r = 96;
+    } else if (x == 49) {
+        r = 98;
+    } else if (x == 50) {
+        r = 100;
+    } else if (x == 51) {
+        r = 102;
+    } else if (x == 52) {
+        r = 104;
+    } else if (x == 53) {
+        r = 106;
+    } else if (x == 54) {
+        r = 108;
+    } else if (x == 55) {
+        r = 110;
+    } else if (x == 56) {
+        r = 112;
+    } else if (x == 57) {
+        r = 114;
+    } else if (x == 58) {
+        r = 116;
+    } else if (x == 59) {
+        r = 118;
+    } else if (x == 60) {
+        r = 120;
+    } else if (x == 61) {
+        r = 122;
+    } else if (x == 62) {
+        r = 124;
+    } else if (x == 63) {
+        r = 126;
+    } else if (x == 64) {
+        r = 128;
+    } else if (x == 65) {
+        r = 130;
+    } else if (x == 66) {
+        r = 132;
+    } else if (x == 67) {
+        r = 134;
+    } else if (x == 68) {
+        r = 136;
+    } else if (x == 69) {
+        r = 138;
+    } else if (x == 70) {
+        r = 140;
+    } else if (x == 71) {
+        r = 142;
+    } else if (x == 72) {
+        r = 144;
+    } else if (x == 73) {
+        r = 146;
+    } else if (x == 74) {
+        r = 148;
+    } else if (x == 75) {
+        r = 150;
+    } else if (x == 76) {
+        r = 152;
+    } else if (x == 77) {
+        r = 154;
+    } else if (x == 78) {
+        r = 156;
+    } else if (x == 79) {
+        r = 158;
+    } else if (x == 80) {
+        r = 160;
+    } else if (x == 81) {
+        r = 162;
+    } else if (x == 82) {
+        r = 164;
+    } else if (x == 83) {
+        r = 166;
+    } else if (x == 84) {
+        r = 168;
+    } else if (x == 85) {
+        r = 170;
+    } else if (x == 86) {
+        r = 172;
+    } else if (x == 87) {
+        r = 174;
+    } else if (x == 88) {
+        r = 176;
+    } else if (x == 89) {
+        r = 178;
+    } else if (x == 90) {
+        r = 180;
+    } else if (x == 91) {
+        r = 182;
+    } else if (x == 92) {
+        r = 184;
+    } else if (x == 93) {
+        r = 186;
+    } else if (x == 94) {
+        r = 188;
+    } else if (x == 95) {
+        r = 190;
+    } else if (x == 96) {
+        r = 192;
+    } else if (x == 97) {
+        r = 194;
+    } else if (x == 98) {
+        r = 196;
+    } else if (x == 99) {
+        r = 198;
+    } else if (x == 100) {
+        r = 200;
+    } else if (x == 101) {
+        r = 202;
+    } else if (x == 102) {
+        r = 204;
+    } else if (x == 103) {
+        r = 206;
+    } else if (x == 104) {
+        r = 208;
+    } else if (x == 105) {
+        r = 210;
+    } else if (x == 106) {
+        r = 212;
+    } else if (x == 107) {
+        r = 214;
+    } else if (x == 108) {
+        r = 216;
+    } else if (x == 109) {
+        r = 218;
+    } else if (x == 110) {
+        r = 220;
+    } else if (x == 111) {
+        r = 222;
+    } else if (x == 112) {
+        r = 224;
+    } else if (x == 113) {
+        r = 226;
+    } else if (x == 114) {
+        r = 228;
+    } else if (x == 115) {
+        r = 230;
+    } else if (x == 116) {
+        r = 232;
+    } else if (x == 117) {
+        r = 234;
+    } else if (x == 118) {
+        r = 236;
+    } else if (x == 119) {
+        r = 238;
+    } else if (x == 120) {
+        r = 240;
+    } else if (x == 121) {
+        r = 242;
+    } else if (x == 122) {
+        r = 244;
+    } else if (x == 123) {
+        r = 246;
+    } else if (x == 124) {
+        r = 248;
+    } else if (x == 125) {
+        r = 250;
+    } else if (x == 126) {
+        r = 252;
+    } else if (x == 127) {
+        r = 254;
+    } else if (x == 128) {
+        r = 256;
+    } else if (x == 129) {
+        r = 258;
+    } else if (x == 130) {
+        r = 260;
+    } else if (x == 131) {
+        r = 262;
+    } else if (x == 132) {
+        r = 264;
+    } else if (x == 133) {
+        r = 266;
+    } else if (x == 134) {
+        r = 268;
+    } else if (x == 135) {
+        r = 270;
+    } else if (x == 136) {
+        r = 272;
+    } else if (x == 137) {
+        r = 274;
+    } else if (x == 138) {
+        r = 276;
+    } else if (x == 139) {
+        r = 278;
+    } else if (x == 140) {
+        r = 280;
+    } else if (x == 141) {
+        r = 282;
+    } else if (x == 142) {
+        r = 284;
+    } else if (x == 143) {
+        r = 286;
+    } else if (x == 144) {
+        r = 288;
+    } else if (x == 145) {
+        r = 290;
+    } else if (x == 146) {
+        r = 292;
+    } else if (x == 147) {
+        r = 294;
+    } else if (x == 148) {
+        r = 296;
+    } else if (x == 149) {
+        r = 298;
+    } else if (x == 150) {
+        r = 300;
+    } else if (x == 151) {
+        r = 302;
+    } else if (x == 152) {
+        r = 304;
+    } else if (x == 153) {
+        r = 306;
+    } else if (x == 154) {
+        r = 308;
+    } else if (x == 155) {
+        r = 310;
+    } else if (x == 156) {
+        r = 312;
+    } else if (x == 157) {
+        r = 314;
+    } else if (x == 158) {
+        r = 316;
+    } else if (x == 159) {
+        r = 318;
+    } else if (x == 160) {
+        r = 320;
+    } else if (x == 161) {
+        r = 322;
+    } else if (x == 162) {
+        r = 324;
+    } else if (x == 163) {
+        r = 326;
+    } else if (x == 164) {
+        r = 328;
+    } else if (x == 165) {
+        r = 330;
+    } else if (x == 166) {
+        r = 332;
+    } else if (x == 167) {
+        r = 334;
+    } else if (x == 168) {
+        r = 336;
+    } else if (x == 169) {
+        r = 338;
+    } else if (x == 170) {
+        r = 340;
+    } else if (x == 171) {
+        r = 342;
+    } else if (x == 172) {
+        r = 344;
+    } else if (x == 173) {
+        r = 346;
+    } else if (x == 174) {
+        r = 348;
+    } else if (x == 175) {
+        r = 350;
+    } else if (x == 176) {
+        r = 352;
+    } else if (x == 177) {
+        r = 354;
+    } else if (x == 178) {
+        r = 356;
+    } else if (x == 179) {
+        r = 358;
+    } else if (x == 180) {
+        r = 360;
+    } else if (x == 181) {
+        r = 362;
+    } else if (x == 182) {
+        r = 364;
+    } else if (x == 183) {
+        r = 366;
+    } else if (x == 184) {
+        r = 368;
+    } else if (x == 185) {
+        r = 370;
+    } else if (x == 186) {
+        r = 372;
+    } else if (x == 187) {
+        r = 374;
+    } else if (x == 188) {
+        r = 376;
+    } else if (x == 189) {
+        r = 378;
+    } else if (x == 190) {
+        r = 380;
+    } else if (x == 191) {
+        r = 382;
+    } else if (x == 192) {
+        r = 384;
+    } else if (x == 193) {
+        r = 386;
+    } else if (x == 194) {
+        r = 388;
+    } else if (x == 195) {
+        r = 390;
+    } else if (x == 196) {
+        r = 392;
+    } else if (x == 197) {
+        r = 394;
+    } else if (x == 198) {
+        r = 396;
+    } else if (x == 199) {
+        r = 398;
+    } else if (x == 200) {
+        r = 400;
+    } else if (x == 201) {
+        r = 402;
+    } else if (x == 202) {
+        r = 404;
+    } else if (x == 203) {
+        r = 406;
+    } else if (x == 204) {
+        r = 408;
+    } else if (x == 205) {
+        r = 410;
+    } else if (x == 206) {
+        r = 412;
+    } else if (x == 207) {
+        r = 414;
+    } else if (x == 208) {
+        r = 416;
+    } else if (x == 209) {
+        r = 418;
+    } else if (x == 210) {
+        r = 420;
+    } else if (x == 211) {
+        r = 422;
+    } else if (x == 212) {
+        r = 424;
+    } else if (x == 213) {
+        r = 426;
+    } else if (x == 214) {
+        r = 428;
+    } else if (x == 215) {
+        r = 430;
+    } else if (x == 216) {
+        r = 432;
+    } else if (x == 217) {
+        r = 434;
+    } else if (x == 218) {
+        r = 436;
+    } else if (x == 219) {
+        r = 438;
+    } else if (x == 220) {
+        r = 440;
+    } else if (x == 221) {
+        r = 442;
+    } else if (x == 222) {
+        r = 444;
+    } else if (x == 223) {
+        r = 446;
+    } else if (x == 224) {
+        r = 448;
+    } else if (x == 225) {
+        r = 450;
+    } else if (x == 226) {
+        r = 452;
+    } else if (x == 227) {
+        r = 454;
+    } else if (x == 228) {
+        r = 456;
+    } else if (x == 229) {
+        r = 458;
+    } else if (x == 230) {
+        r = 460;
+    } else if (x == 231) {
+        r = 462;
+    } else if (x == 232) {
+        r = 464;
+    } else if (x == 233) {
+        r = 466;
+    } else if (x == 234) {
+        r = 468;
+    } else if (x == 235) {
+        r = 470;
+    } else if (x == 236) {
+        r = 472;
+    } else if (x == 237) {
+        r = 474;
+    } else if (x == 238) {
+        r = 476;
+    } else if (x == 239) {
+        r = 478;
+    } else if (x == 240) {
+        r = 480;
+    } else if (x == 241) {
+        r = 482;
+    } else if (x == 242) {
+        r = 484;
+    } else if (x == 243) {
+        r = 486;
+    } else if (x == 244) {
+        r = 488;
+    } else if (x == 245) {
+        r = 490;
+    } else if (x == 246) {
+        r = 492;
+    } else if (x == 247) {
+        r = 494;
+    } else if (x == 248) {
+        r = 496;
+    } else if (x == 249) {
+        r = 498;
+    } else if (x == 250) {
+        r = 500;
+    } else if (x == 251) {
+        r = 502;
+    } else if (x == 252) {
+        r = 504;
+    } else if (x == 253) {
+        r = 506;
+    } else if (x == 254) {
+        r = 508;
+    } else if (x == 255) {
+        r = 510;
+    } else if (x == 256) {
+        r = 512;
+    } else if (x == 257) {
+        r = 514;
+    } else if (x == 258) {
+        r = 516;
+    } else if (x == 259) {
+        r = 518;
+    } else if (x == 260) {
+        r = 520;
+    } else if (x == 261) {
+        r = 522;
+    } else if (x == 262) {
+        r = 524;
+    } else if (x == 263) {
+        r = 526;
+    } else if (x == 264) {
+        r = 528;
+    } else if (x == 265) {
+        r = 530;
+    } else if (x == 266) {
+        r = 532;
+    } else if (x == 267) {
+        r = 534;
+    } else if (x == 268) {
+        r = 536;
+    } else if (x == 269) {
+        r = 538;
+    } else if (x == 270) {
+        r = 540;
+    } else if (x == 271) {
+        r = 542;
+    } else if (x == 272) {
+        r = 544;
+    } else if (x == 273) {
+        r = 546;
+    } else if (x == 274) {
+        r = 548;
+    } else if (x == 275) {
+        r = 550;
+    } else if (x == 276) {
+        r = 552;
+    } else if (x == 277) {
+        r = 554;
+    } else if (x == 278) {
+        r = 556;
+    } else if (x == 279) {
+        r = 558;
+    } else if (x == 280) {
+        r = 560;
+    } else if (x == 281) {
+        r = 562;
+    } else if (x == 282) {
+        r = 564;
+    } else if (x == 283) {
+        r = 566;
+    } else if (x == 284) {
+        r = 568;
+    } else if (x == 285) {
+        r = 570;
+    } else if (x == 286) {
+        r = 572;
+    } else if (x == 287) {
+        r = 574;
+    } else if (x == 288) {
+        r = 576;
+    } else if (x == 289) {
+        r = 578;
+    } else if (x == 290) {
+        r = 580;
+    } else if (x == 291) {
+        r = 582;
+    } else if (x == 292) {
+        r = 584;
+    } else if (x == 293) {
+        r = 586;
+    } else if (x == 294) {
+        r = 588;
+    } else if (x == 295) {
+        r = 590;
+    } else if (x == 296) {
+        r = 592;
+    } else if (x == 297) {
+        r = 594;
+    } else if (x == 298) {
+        r = 596;
+    } else if (x == 299) {
+        r = 598;
+    } else if (x == 300) {
+        r = 600;
+    } else if (x == 301) {
+        r = 602;
+    } else if (x == 302) {
+        r = 604;
+    } else if (x == 303) {
+        r = 606;
+    } else if (x == 304) {
+        r = 608;
+    } else if (x == 305) {
+        r = 610;
+    } else if (x == 306) {
+        r = 612;
+    } else if (x == 307) {
+        r = 614;
+    } else if (x == 308) {
+        r = 616;
+    } else if (x == 309) {
+        r = 618;
+    } else if (x == 310) {
+        r = 620;
+    } else if (x == 311) {
+        r = 622;
+    } else if (x == 312) {
+        r = 624;
+    } else if (x == 313) {
+        r = 626;
+    } else if (x == 314) {
+        r = 628;
+    } else if (x == 315) {
+        r = 630;
+    } else if (x == 316) {
+        r = 632;
+    } else if (x == 317) {
+        r = 634;
+    } else if (x == 318) {
+        r = 636;
+    } else if (x == 319) {
+        r = 638;
+    } else if (x == 320) {
+        r = 640;
+    } else if (x == 321) {
+        r = 642;
+    } else if (x == 322) {
+        r = 644;
+    } else if (x == 323) {
+        r = 646;
+    } else if (x == 324) {
+        r = 648;
+    } else if (x == 325) {
+        r = 650;
+    } else if (x == 326) {
+        r = 652;
+    } else if (x == 327) {
+        r = 654;
+    } else if (x == 328) {
+        r = 656;
+    } else if (x == 329) {
+        r = 658;
+    } else if (x == 330) {
+        r = 660;
+    } else if (x == 331) {
+        r = 662;
+    } else if (x == 332) {
+        r = 664;
+    } else if (x == 333) {
+        r = 666;
+    } else if (x == 334) {
+        r = 668;
+    } else if (x == 335) {
+        r = 670;
+    } else if (x == 336) {
+        r = 672;
+    } else if (x == 337) {
+        r = 674;
+    } else if (x == 338) {
+        r = 676;
+    } else if (x == 339) {
+        r = 678;
+    } else if (x == 340) {
+        r = 680;
+    } else if (x == 341) {
+        r = 682;
+    } else if (x == 342) {
+        r = 684;
+    } else if (x == 343) {
+        r = 686;
+    } else if (x == 344) {
+        r = 688;
+    } else if (x == 345) {
+        r = 690;
+    } else if (x == 346) {
+        r = 692;
+    } else if (x == 347) {
+        r = 694;
+    } else if (x == 348) {
+        r = 696;
+    } else if (x == 349) {
+        r = 698;
+    } else if (x == 350) {
+        r = 700;
+    } else if (x == 351) {
+        r = 702;
+    } else if (x == 352) {
+        r = 704;
+    } else if (x == 353) {
+        r = 706;
+    } else if (x == 354) {
+        r = 708;
+    } else if (x == 355) {
+        r = 710;
+    } else if (x == 356) {
+        r = 712;
+    } else if (x == 357) {
+        r = 714;
+    } else if (x == 358) {
+        r = 716;
+    } else if (x == 359) {
+        r = 718;
+    } else if (x == 360) {
+        r = 720;
+    } else if (x == 361) {
+        r = 722;
+    } else if (x == 362) {
+        r = 724;
+    } else if (x == 363) {
+        r = 726;
+    } else if (x == 364) {
+        r = 728;
+    } else if (x == 365) {
+        r = 730;
+    } else if (x == 366) {
+        r = 732;
+    } else if (x == 367) {
+        r = 734;
+    } else if (x == 368) {
+        r = 736;
+    } else if (x == 369) {
+        r = 738;
+    } else if (x == 370) {
+        r = 740;
+    } else if (x == 371) {
+        r = 742;
+    } else if (x == 372) {
+        r = 744;
+    } else if (x == 373) {
+        r = 746;
+    } else if (x == 374) {
+        r = 748;
+    } else if (x == 375) {
+        r = 750;
+    } else if (x == 376) {
+        r = 752;
+    } else if (x == 377) {
+        r = 754;
+    } else if (x == 378) {
+        r = 756;
+    } else if (x == 379) {
+        r = 758;
+    } else if (x == 380) {
+        r = 760;
+    } else if (x == 381) {
+        r = 762;
+    } else if (x == 382) {
+        r = 764;
+    } else if (x == 383) {
+        r = 766;
+    } else if (x == 384) {
+        r = 768;
+    } else if (x == 385) {
+        r = 770;
+    } else if (x == 386) {
+        r = 772;
+    } else if (x == 387) {
+        r = 774;
+    } else if (x == 388) {
+        r = 776;
+    } else if (x == 389) {
+        r = 778;
+    } else if (x == 390) {
+        r = 780;
+    } else if (x == 391) {
+        r = 782;
+    } else if (x == 392) {
+        r = 784;
+    } else if (x == 393) {
+        r = 786;
+    } else if (x == 394) {
+        r = 788;
+    } else if (x == 395) {
+        r = 790;
+    } else if (x == 396) {
+        r = 792;
+    } else if (x == 397) {
+        r = 794;
+    } else if (x == 398) {
+        r = 796;
+    } else if (x == 399) {
+        r = 798;
+    } else if (x == 400) {
+        r = 800;
+    } else if (x == 401) {
+        r = 802;
+    } else if (x == 402) {
+        r = 804;
+    } else if (x == 403) {
+        r = 806;
+    } else if (x == 404) {
+        r = 808;
+    } else if (x == 405) {
+        r = 810;
+    } else if (x == 406) {
+        r = 812;
+    } else if (x == 407) {
+        r = 814;
+    } else if (x == 408) {
+        r = 816;
+    } else if (x == 409) {
+        r = 818;
+    } else if (x == 410) {
+        r = 820;
+    } else if (x == 411) {
+        r = 822;
+    } else if (x == 412) {
+        r = 824;
+    } else if (x == 413) {
+        r = 826;
+    } else if (x == 414) {
+        r = 828;
+    } else if (x == 415) {
+        r = 830;
+    } else if (x == 416) {
+        r = 832;
+    } else if (x == 417) {
+        r = 834;
+    } else if (x == 418) {
+        r = 836;
+    } else if (x == 419) {
+        r = 838;
+    } else if (x == 420) {
+        r = 840;
+    } else if (x == 421) {
+        r = 842;
+    } else if (x == 422) {
+        r = 844;
+    } else if (x == 423) {
+        r = 846;
+    } else if (x == 424) {
+        r = 848;
+    } else if (x == 425) {
+        r = 850;
+    } else if (x == 426) {
+        r = 852;
+    } else if (x == 427) {
+        r = 854;
+    } else if (x == 428) {
+        r = 856;
+    } else if (x == 429) {
+        r = 858;
+    } else if (x == 430) {
+        r = 860;
+    } else if (x == 431) {
+        r = 862;
+    } else if (x == 432) {
+        r = 864;
+    } else if (x == 433) {
+        r = 866;
+    } else if (x == 434) {
+        r = 868;
+    } else if (x == 435) {
+        r = 870;
+    } else if (x == 436) {
+        r = 872;
+    } else if (x == 437) {
+        r = 874;
+    } else if (x == 438) {
+        r = 876;
+    } else if (x == 439) {
+        r = 878;
+    } else if (x == 440) {
+        r = 880;
+    } else if (x == 441) {
+        r = 882;
+    } else if (x == 442) {
+        r = 884;
+    } else if (x == 443) {
+        r = 886;
+    } else if (x == 444) {
+        r = 888;
+    } else if (x == 445) {
+        r = 890;
+    } else if (x == 446) {
+        r = 892;
+    } else if (x == 447) {
+        r = 894;
+    } else if (x == 448) {
+        r = 896;
+    } else if (x == 449) {
+        r = 898;
+    } else if (x == 450) {
+        r = 900;
+    } else if (x == 451) {
+        r = 902;
+    } else if (x == 452) {
+        r = 904;
+    } else if (x == 453) {
+        r = 906;
+    } else if (x == 454) {
+        r = 908;
+    } else if (x == 455) {
+        r = 910;
+    } else if (x == 456) {
+        r = 912;
+    } else if (x == 457) {
+        r = 914;
+    } else if (x == 458) {
+        r = 916;
+    } else if (x == 459) {
+        r = 918;
+    } else if (x == 460) {
+        r = 920;
+    } else if (x == 461) {
+        r = 922;
+    } else if (x == 462) {
+        r = 924;
+    } else if (x == 463) {
+        r = 926;
+    } else if (x == 464) {
+        r = 928;
+    } else if (x == 465) {
+        r = 930;
+    } else if (x == 466) {
+        r = 932;
+    } else if (x == 467) {
+        r = 934;
+    } else if (x == 468) {
+        r = 936;
+    } else if (x == 469) {
+        r = 938;
+    } else if (x == 470) {
+        r = 940;
+    } else if (x == 471) {
+        r = 942;
+    } else if (x == 472) {
+        r = 944;
+    } else if (x == 473) {
+        r = 946;
+    } else if (x == 474) {
+        r = 948;
+    } else if (x == 475) {
+        r = 950;
+    } else if (x == 476) {
+        r = 952;
+    } else if (x == 477) {
+        r = 954;
+    } else if (x == 478) {
+        r = 956;
+    } else if (x == 479) {
+        r = 958;
+    } else if (x == 480) {
+        r = 960;
+    } else if (x == 481) {
+        r = 962;
+    } else if (x == 482) {
+        r = 964;
+    } else if (x == 483) {
+        r = 966;
+    } else if (x == 484) {
+        r = 968;
+    } else if (x == 485) {
+        r = 970;
+    } else if (x == 486) {
+        r = 972;
+    } else if (x == 487) {
+        r = 974;
+    } else if (x == 488) {
+        r = 976;
+    } else if (x == 489) {
+        r = 978;
+    } else if (x == 490) {
+        r = 980;
+    } else if (x == 491) {
+        r = 982;
+    } else if (x == 492) {
+        r = 984;
+    } else if (x == 493) {
+        r = 986;
+    } else if (x == 494) {
+        r = 988;
+    } else if (x == 495) {
+        r = 990;
+    } else if (x == 496) {
+        r = 992;
+    } else if (x == 497) {
+        r = 994;
+    } else if (x == 498) {
+        r = 996;
+    } else if (x == 499) {
+        r = 998;
+    } else if (x == 500) {
+        r = 1000;
+    } else if (x == 501) {
+        r = 1002;
+    } else if (x == 502) {
+        r = 1004;
+    } else if (x == 503) {
+        r = 1006;
+    } else if (x == 504) {
+        r = 1008;
+    } else if (x == 505) {
+        r = 1010;
+    } else if (x == 506) {
+        r = 1012;
+    } else if (x == 507) {
+        r = 1014;
+    } else if (x == 508) {
+        r = 1016;
+    } else if (x == 509) {
+        r = 1018;
+    } else if (x == 510) {
+        r = 1020;
+    } else if (x == 511) {
+        r = 1022;
+    } else if (x == 512) {
+        r = 1024;
+    } else if (x == 513) {
+        r = 1026;
+    } else if (x == 514) {
+        r = 1028;
+    } else if (x == 515) {
+        r = 1030;
+    } else if (x == 516) {
+        r = 1032;
+    } else if (x == 517) {
+        r = 1034;
+    } else if (x == 518) {
+        r = 1036;
+    } else if (x == 519) {
+        r = 1038;
+    } else if (x == 520) {
+        r = 1040;
+    } else if (x == 521) {
+        r = 1042;
+    } else if (x == 522) {
+        r = 1044;
+    } else if (x == 523) {
+        r = 1046;
+    } else if (x == 524) {
+        r = 1048;
+    } else if (x == 525) {
+        r = 1050;
+    } else if (x == 526) {
+        r = 1052;
+    } else if (x == 527) {
+        r = 1054;
+    } else if (x == 528) {
+        r = 1056;
+    } else if (x == 529) {
+        r = 1058;
+    } else if (x == 530) {
+        r = 1060;
+    } else if (x == 531) {
+        r = 1062;
+    } else if (x == 532) {
+        r = 1064;
+    } else if (x == 533) {
+        r = 1066;
+    } else if (x == 534) {
+        r = 1068;
+    } else if (x == 535) {
+        r = 1070;
+    } else if (x == 536) {
+        r = 1072;
+    } else if (x == 537) {
+        r = 1074;
+    } else if (x == 538) {
+        r = 1076;
+    } else if (x == 539) {
+        r = 1078;
+    } else if (x == 540) {
+        r = 1080;
+    } else if (x == 541) {
+        r = 1082;
+    } else if (x == 542) {
+        r = 1084;
+    } else if (x == 543) {
+        r = 1086;
+    } else if (x == 544) {
+        r = 1088;
+    } else if (x == 545) {
+        r = 1090;
+    } else if (x == 546) {
+        r = 1092;
+    } else if (x == 547) {
+        r = 1094;
+    } else if (x == 548) {
+        r = 1096;
+    } else if (x == 549) {
+        r = 1098;
+    } else if (x == 550) {
+        r = 1100;
+    } else if (x == 551) {
+        r = 1102;
+    } else if (x == 552) {
+        r = 1104;
+    } else if (x == 553) {
+        r = 1106;
+    } else if (x == 554) {
+        r = 1108;
+    } else if (x == 555) {
+        r = 1110;
+    } else if (x == 556) {
+        r = 1112;
+    } else if (x == 557) {
+        r = 1114;
+    } else if (x == 558) {
+        r = 1116;
+    } else if (x == 559) {
+        r = 1118;
+    } else if (x == 560) {
+        r = 1120;
+    } else if (x == 561) {
+        r = 1122;
+    } else if (x == 562) {
+        r = 1124;
+    } else if (x == 563) {
+        r = 1126;
+    } else if (x == 564) {
+        r = 1128;
+    } else if (x == 565) {
+        r = 1130;
+    } else if (x == 566) {
+        r = 1132;
+    } else if (x == 567) {
+        r = 1134;
+    } else if (x == 568) {
+        r = 1136;
+    } else if (x == 569) {
+        r = 1138;
+    } else if (x == 570) {
+        r = 1140;
+    } else if (x == 571) {
+        r = 1142;
+    } else if (x == 572) {
+        r = 1144;
+    } else if (x == 573) {
+        r = 1146;
+    } else if (x == 574) {
+        r = 1148;
+    } else if (x == 575) {
+        r = 1150;
+    } else if (x == 576) {
+        r = 1152;
+    } else if (x == 577) {
+        r = 1154;
+    } else if (x == 578) {
+        r = 1156;
+    } else if (x == 579) {
+        r = 1158;
+    } else if (x == 580) {
+        r = 1160;
+    } else if (x == 581) {
+        r = 1162;
+    } else if (x == 582) {
+        r = 1164;
+    } else if (x == 583) {
+        r = 1166;
+    } else if (x == 584) {
+        r = 1168;
+    } else if (x == 585) {
+        r = 1170;
+    } else if (x == 586) {
+        r = 1172;
+    } else if (x == 587) {
+        r = 1174;
+    } else if (x == 588) {
+        r = 1176;
+    } else if (x == 589) {
+        r = 1178;
+    } else if (x == 590) {
+        r = 1180;
+    } else if (x == 591) {
+        r = 1182;
+    } else if (x == 592) {
+        r = 1184;
+    } else if (x == 593) {
+        r = 1186;
+    } else if (x == 594) {
+        r = 1188;
+    } else if (x == 595) {
+        r = 1190;
+    } else if (x == 596) {
+        r = 1192;
+    } else if (x == 597) {
+        r = 1194;
+    } else if (x == 598) {
+        r = 1196;
+    } else if (x == 599) {
+        r = 1198;
+    } else if (x == 600) {
+        r = 1200;
+    } else if (x == 601) {
+        r = 1202;
+    } else if (x == 602) {
+        r = 1204;
+    } else if (x == 603) {
+        r = 1206;
+    } else if (x == 604) {
+        r = 1208;
+    } else if (x == 605) {
+        r = 1210;
+    } else if (x == 606) {
+        r = 1212;
+    } else if (x == 607) {
+        r = 1214;
+    } else if (x == 608) {
+        r = 1216;
+    } else if (x == 609) {
+        r = 1218;
+    } else if (x == 610) {
+        r = 1220;
+    } else if (x == 611) {
+        r = 1222;
+    } else if (x == 612) {
+        r = 1224;
+    } else if (x == 613) {
+        r = 1226;
+    } else if (x == 614) {
+        r = 1228;
+    } else if (x == 615) {
+        r = 1230;
+    } else if (x == 616) {
+        r = 1232;
+    } else if (x == 617) {
+        r = 1234;
+    } else if (x == 618) {
+        r = 1236;
+    } else if (x == 619) {
+        r = 1238;
+    } else if (x == 620) {
+        r = 1240;
+    } else if (x == 621) {
+        r = 1242;
+    } else if (x == 622) {
+        r = 1244;
+    } else if (x == 623) {
+        r = 1246;
+    } else if (x == 624) {
+        r = 1248;
+    } else if (x == 625) {
+        r = 1250;
+    } else if (x == 626) {
+        r = 1252;
+    } else if (x == 627) {
+        r = 1254;
+    } else if (x == 628) {
+        r = 1256;
+    } else if (x == 629) {
+        r = 1258;
+    } else if (x == 630) {
+        r = 1260;
+    } else if (x == 631) {
+        r = 1262;
+    } else if (x == 632) {
+        r = 1264;
+    } else if (x == 633) {
+        r = 1266;
+    } else if (x == 634) {
+        r = 1268;
+    } else if (x == 635) {
+        r = 1270;
+    } else if (x == 636) {
+        r = 1272;
+    } else if (x == 637) {
+        r = 1274;
+    } else if (x == 638) {
+        r = 1276;
+    } else if (x == 639) {
+        r = 1278;
+    } else if (x == 640) {
+        r = 1280;
+    } else if (x == 641) {
+        r = 1282;
+    } else if (x == 642) {
+        r = 1284;
+    } else if (x == 643) {
+        r = 1286;
+    } else if (x == 644) {
+        r = 1288;
+    } else if (x == 645) {
+        r = 1290;
+    } else if (x == 646) {
+        r = 1292;
+    } else if (x == 647) {
+        r = 1294;
+    } else if (x == 648) {
+        r = 1296;
+    } else if (x == 649) {
+        r = 1298;
+    } else if (x == 650) {
+        r = 1300;
+    } else if (x == 651) {
+        r = 1302;
+    } else if (x == 652) {
+        r = 1304;
+    } else if (x == 653) {
+        r = 1306;
+    } else if (x == 654) {
+        r = 1308;
+    } else if (x == 655) {
+        r = 1310;
+    } else if (x == 656) {
+        r = 1312;
+    } else if (x == 657) {
+        r = 1314;
+    } else if (x == 658) {
+        r = 1316;
+    } else if (x == 659) {
+        r = 1318;
+    } else if (x == 660) {
+        r = 1320;
+    } else if (x == 661) {
+        r = 1322;
+    } else if (x == 662) {
+        r = 1324;
+    } else if (x == 663) {
+        r = 1326;
+    } else if (x == 664) {
+        r = 1328;
+    } else if (x == 665) {
+        r = 1330;
+    } else if (x == 666) {
+        r = 1332;
+    } else if (x == 667) {
+        r = 1334;
+    } else if (x == 668) {
+        r = 1336;
+    } else if (x == 669) {
+        r = 1338;
+    } else if (x == 670) {
+        r = 1340;
+    } else if (x == 671) {
+        r = 1342;
+    } else if (x == 672) {
+        r = 1344;
+    } else if (x == 673) {
+        r = 1346;
+    } else if (x == 674) {
+        r = 1348;
+    } else if (x == 675) {
+        r = 1350;
+    } else if (x == 676) {
+        r = 1352;
+    } else if (x == 677) {
+        r = 1354;
+    } else if (x == 678) {
+        r = 1356;
+    } else if (x == 679) {
+        r = 1358;
+    } else if (x == 680) {
+        r = 1360;
+    } else if (x == 681) {
+        r = 1362;
+    } else if (x == 682) {
+        r = 1364;
+    } else if (x == 683) {
+        r = 1366;
+    } else if (x == 684) {
+        r = 1368;
+    } else if (x == 685) {
+        r = 1370;
+    } else if (x == 686) {
+        r = 1372;
+    } else if (x == 687) {
+        r = 1374;
+    } else if (x == 688) {
+        r = 1376;
+    } else if (x == 689) {
+        r = 1378;
+    } else if (x == 690) {
+        r = 1380;
+    } else if (x == 691) {
+        r = 1382;
+    } else if (x == 692) {
+        r = 1384;
+    } else if (x == 693) {
+        r = 1386;
+    } else if (x == 694) {
+        r = 1388;
+    } else if (x == 695) {
+        r = 1390;
+    } else if (x == 696) {
+        r = 1392;
+    } else if (x == 697) {
+        r = 1394;
+    } else if (x == 698) {
+        r = 1396;
+    } else if (x == 699) {
+        r = 1398;
+    } else if (x == 700) {
+        r = 1400;
+    } else if (x == 701) {
+        r = 1402;
+    } else if (x == 702) {
+        r = 1404;
+    } else if (x == 703) {
+        r = 1406;
+    } else if (x == 704) {
+        r = 1408;
+    } else if (x == 705) {
+        r = 1410;
+    } else if (x == 706) {
+        r = 1412;
+    } else if (x == 707) {
+        r = 1414;
+    } else if (x == 708) {
+        r = 1416;
+    } else if (x == 709) {
+        r = 1418;
+    } else if (x == 710) {
+        r = 1420;
+    } else if (x == 711) {
+        r = 1422;
+    } else if (x == 712) {
+        r = 1424;
+    } else if (x == 713) {
+        r = 1426;
+    } else if (x == 714) {
+        r = 1428;
+    } else if (x == 715) {
+        r = 1430;
+    } else if (x == 716) {
+        r = 1432;
+    } else if (x == 717) {
+        r = 1434;
+    } else if (x == 718) {
+        r = 1436;
+    } else if (x == 719) {
+        r = 1438;
+    } else if (x == 720) {
+        r = 1440;
+    } else if (x == 721) {
+        r = 1442;
+    } else if (x == 722) {
+        r = 1444;
+    } else if (x == 723) {
+        r = 1446;
+    } else if (x == 724) {
+        r = 1448;
+    } else if (x == 725) {
+        r = 1450;
+    } else if (x == 726) {
+        r = 1452;
+    } else if (x == 727) {
+        r = 1454;
+    } else if (x == 728) {
+        r = 1456;
+    } else if (x == 729) {
+        r = 1458;
+    } else if (x == 730) {
+        r = 1460;
+    } else if (x == 731) {
+        r = 1462;
+    } else if (x == 732) {
+        r = 1464;
+    } else if (x == 733) {
+        r = 1466;
+    } else if (x == 734) {
+        r = 1468;
+    } else if (x == 735) {
+        r = 1470;
+    } else if (x == 736) {
+        r = 1472;
+    } else if (x == 737) {
+        r = 1474;
+    } else if (x == 738) {
+        r = 1476;
+    } else if (x == 739) {
+        r = 1478;
+    } else if (x == 740) {
+        r = 1480;
+    } else if (x == 741) {
+        r = 1482;
+    } else if (x == 742) {
+        r = 1484;
+    } else if (x == 743) {
+        r = 1486;
+    } else if (x == 744) {
+        r = 1488;
+    } else if (x == 745) {
+        r = 1490;
+    } else if (x == 746) {
+        r = 1492;
+    } else if (x == 747) {
+        r = 1494;
+    } else if (x == 748) {
+        r = 1496;
+    } else if (x == 749) {
+        r = 1498;
+    } else if (x == 750) {
+        r = 1500;
+    } else if (x == 751) {
+        r = 1502;
+    } else if (x == 752) {
+        r = 1504;
+    } else if (x == 753) {
+        r = 1506;
+    } else if (x == 754) {
+        r = 1508;
+    } else if (x == 755) {
+        r = 1510;
+    } else if (x == 756) {
+        r = 1512;
+    } else if (x == 757) {
+        r = 1514;
+    } else if (x == 758) {
+        r = 1516;
+    } else if (x == 759) {
+        r = 1518;
+    } else if (x == 760) {
+        r = 1520;
+    } else if (x == 761) {
+        r = 1522;
+    } else if (x == 762) {
+        r = 1524;
+    } else if (x == 763) {
+        r = 1526;
+    } else if (x == 764) {
+        r = 1528;
+    } else if (x == 765) {
+        r = 1530;
+    } else if (x == 766) {
+        r = 1532;
+    } else if (x == 767) {
+        r = 1534;
+    } else if (x == 768) {
+        r = 1536;
+    } else if (x == 769) {
+        r = 1538;
+    } else if (x == 770) {
+        r = 1540;
+    } else if (x == 771) {
+        r = 1542;
+    } else if (x == 772) {
+        r = 1544;
+    } else if (x == 773) {
+        r = 1546;
+    } else if (x == 774) {
+        r = 1548;
+    } else if (x == 775) {
+        r = 1550;
+    } else if (x == 776) {
+        r = 1552;
+    } else if (x == 777) {
+        r = 1554;
+    } else if (x == 778) {
+        r = 1556;
+    } else if (x == 779) {
+        r = 1558;
+    } else if (x == 780) {
+        r = 1560;
+    } else if (x == 781) {
+        r = 1562;
+    } else if (x == 782) {
+        r = 1564;
+    } else if (x == 783) {
+        r = 1566;
+    } else if (x == 784) {
+        r = 1568;
+    } else if (x == 785) {
+        r = 1570;
+    } else if (x == 786) {
+        r = 1572;
+    } else if (x == 787) {
+        r = 1574;
+    } else if (x == 788) {
+        r = 1576;
+    } else if (x == 789) {
+        r = 1578;
+    } else if (x == 790) {
+        r = 1580;
+    } else if (x == 791) {
+        r = 1582;
+    } else if (x == 792) {
+        r = 1584;
+    } else if (x == 793) {
+        r = 1586;
+    } else if (x == 794) {
+        r = 1588;
+    } else if (x == 795) {
+        r = 1590;
+    } else if (x == 796) {
+        r = 1592;
+    } else if (x == 797) {
+        r = 1594;
+    } else if (x == 798) {
+        r = 1596;
+    } else if (x == 799) {
+        r = 1598;
+    } else if (x == 800) {
+        r = 1600;
+    } else if (x == 801) {
+        r = 1602;
+    } else if (x == 802) {
+        r = 1604;
+    } else if (x == 803) {
+        r = 1606;
+    } else if (x == 804) {
+        r = 1608;
+    } else if (x == 805) {
+        r = 1610;
+    } else if (x == 806) {
+        r = 1612;
+    } else if (x == 807) {
+        r = 1614;
+    } else if (x == 808) {
+        r = 1616;
+    } else if (x == 809) {
+        r = 1618;
+    } else if (x == 810) {
+        r = 1620;
+    } else if (x == 811) {
+        r = 1622;
+    } else if (x == 812) {
+        r = 1624;
+    } else if (x == 813) {
+        r = 1626;
+    } else if (x == 814) {
+        r = 1628;
+    } else if (x == 815) {
+        r = 1630;
+    } else if (x == 816) {
+        r = 1632;
+    } else if (x == 817) {
+        r = 1634;
+    } else if (x == 818) {
+        r = 1636;
+    } else if (x == 819) {
+        r = 1638;
+    } else if (x == 820) {
+        r = 1640;
+    } else if (x == 821) {
+        r = 1642;
+    } else if (x == 822) {
+        r = 1644;
+    } else if (x == 823) {
+        r = 1646;
+    } else if (x == 824) {
+        r = 1648;
+    } else if (x == 825) {
+        r = 1650;
+    } else if (x == 826) {
+        r = 1652;
+    } else if (x == 827) {
+        r = 1654;
+    } else if (x == 828) {
+        r = 1656;
+    } else if (x == 829) {
+        r = 1658;
+    } else if (x == 830) {
+        r = 1660;
+    } else if (x == 831) {
+        r = 1662;
+    } else if (x == 832) {
+        r = 1664;
+    } else if (x == 833) {
+        r = 1666;
+    } else if (x == 834) {
+        r = 1668;
+    } else if (x == 835) {
+        r = 1670;
+    } else if (x == 836) {
+        r = 1672;
+    } else if (x == 837) {
+        r = 1674;
+    } else if (x == 838) {
+        r = 1676;
+    } else if (x == 839) {
+        r = 1678;
+    } else if (x == 840) {
+        r = 1680;
+    } else if (x == 841) {
+        r = 1682;
+    } else if (x == 842) {
+        r = 1684;
+    } else if (x == 843) {
+        r = 1686;
+    } else if (x == 844) {
+        r = 1688;
+    } else if (x == 845) {
+        r = 1690;
+    } else if (x == 846) {
+        r = 1692;
+    } else if (x == 847) {
+        r = 1694;
+    } else if (x == 848) {
+        r = 1696;
+    } else if (x == 849) {
+        r = 1698;
+    } else if (x == 850) {
+        r = 1700;
+    } else if (x == 851) {
+        r = 1702;
+    } else if (x == 852) {
+        r = 1704;
+    } else if (x == 853) {
+        r = 1706;
+    } else if (x == 854) {
+        r = 1708;
+    } else if (x == 855) {
+        r = 1710;
+    } else if (x == 856) {
+        r = 1712;
+    } else if (x == 857) {
+        r = 1714;
+    } else if (x == 858) {
+        r = 1716;
+    } else if (x == 859) {
+        r = 1718;
+    } else if (x == 860) {
+        r = 1720;
+    } else if (x == 861) {
+        r = 1722;
+    } else if (x == 862) {
+        r = 1724;
+    } else if (x == 863) {
+        r = 1726;
+    } else if (x == 864) {
+        r = 1728;
+    } else if (x == 865) {
+        r = 1730;
+    } else if (x == 866) {
+        r = 1732;
+    } else if (x == 867) {
+        r = 1734;
+    } else if (x == 868) {
+        r = 1736;
+    } else if (x == 869) {
+        r = 1738;
+    } else if (x == 870) {
+        r = 1740;
+    } else if (x == 871) {
+        r = 1742;
+    } else if (x == 872) {
+        r = 1744;
+    } else if (x == 873) {
+        r = 1746;
+    } else if (x == 874) {
+        r = 1748;
+    } else if (x == 875) {
+        r = 1750;
+    } else if (x == 876) {
+        r = 1752;
+    } else if (x == 877) {
+        r = 1754;
+    } else if (x == 878) {
+        r = 1756;
+    } else if (x == 879) {
+        r = 1758;
+    } else if (x == 880) {
+        r = 1760;
+    } else if (x == 881) {
+        r = 1762;
+    } else if (x == 882) {
+        r = 1764;
+    } else if (x == 883) {
+        r = 1766;
+    } else if (x == 884) {
+        r = 1768;
+    } else if (x == 885) {
+        r = 1770;
+    } else if (x == 886) {
+        r = 1772;
+    } else if (x == 887) {
+        r = 1774;
+    } else if (x == 888) {
+        r = 1776;
+    } else if (x == 889) {
+        r = 1778;
+    } else if (x == 890) {
+        r = 1780;
+    } else if (x == 891) {
+        r = 1782;
+    } else if (x == 892) {
+        r = 1784;
+    } else if (x == 893) {
+        r = 1786;
+    } else if (x == 894) {
+        r = 1788;
+    } else if (x == 895) {
+        r = 1790;
+    } else if (x == 896) {
+        r = 1792;
+    } else if (x == 897) {
+        r = 1794;
+    } else if (x == 898) {
+        r = 1796;
+    } else if (x == 899) {
+        r = 1798;
+    } else if (x == 900) {
+        r = 1800;
+    } else if (x == 901) {
+        r = 1802;
+    } else if (x == 902) {
+        r = 1804;
+    } else if (x == 903) {
+        r = 1806;
+    } else if (x == 904) {
+        r = 1808;
+    } else if (x == 905) {
+        r = 1810;
+    } else if (x == 906) {
+        r = 1812;
+    } else if (x == 907) {
+        r = 1814;
+    } else if (x == 908) {
+        r = 1816;
+    } else if (x == 909) {
+        r = 1818;
+    } else if (x == 910) {
+        r = 1820;
+    } else if (x == 911) {
+        r = 1822;
+    } else if (x == 912) {
+        r = 1824;
+    } else if (x == 913) {
+        r = 1826;
+    } else if (x == 914) {
+        r = 1828;
+    } else if (x == 915) {
+        r = 1830;
+    } else if (x == 916) {
+        r = 1832;
+    } else if (x == 917) {
+        r = 1834;
+    } else if (x == 918) {
+        r = 1836;
+    } else if (x == 919) {
+        r = 1838;
+    } else if (x == 920) {
+        r = 1840;
+    } else if (x == 921) {
+        r = 1842;
+    } else if (x == 922) {
+        r = 1844;
+    } else if (x == 923) {
+        r = 1846;
+    } else if (x == 924) {
+        r = 1848;
+    } else if (x == 925) {
+        r = 1850;
+    } else if (x == 926) {
+        r = 1852;
+    } else if (x == 927) {
+        r = 1854;
+    } else if (x == 928) {
+        r = 1856;
+    } else if (x == 929) {
+        r = 1858;
+    } else if (x == 930) {
+        r = 1860;
+    } else if (x == 931) {
+        r = 1862;
+    } else if (x == 932) {
+        r = 1864;
+    } else if (x == 933) {
+        r = 1866;
+    } else if (x == 934) {
+        r = 1868;
+    } else if (x == 935) {
+        r = 1870;
+    } else if (x == 936) {
+        r = 1872;
+    } else if (x == 937) {
+        r = 1874;
+    } else if (x == 938) {
+        r = 1876;
+    } else if (x == 939) {
+        r = 1878;
+    } else if (x == 940) {
+        r = 1880;
+    } else if (x == 941) {
+        r = 1882;
+    } else if (x == 942) {
+        r = 1884;
+    } else if (x == 943) {
+        r = 1886;
+    } else if (x == 944) {
+        r = 1888;
+    } else if (x == 945) {
+        r = 1890;
+    } else if (x == 946) {
+        r = 1892;
+    } else if (x == 947) {
+        r = 1894;
+    } else if (x == 948) {
+        r = 1896;
+    } else if (x == 949) {
+        r = 1898;
+    } else if (x == 950) {
+        r = 1900;
+    } else if (x == 951) {
+        r = 1902;
+    } else if (x == 952) {
+        r = 1904;
+    } else if (x == 953) {
+        r = 1906;
+    } else if (x == 954) {
+        r = 1908;
+    } else if (x == 955) {
+        r = 1910;
+    } else if (x == 956) {
+        r = 1912;
+    } else if (x == 957) {
+        r = 1914;
+    } else if (x == 958) {
+        r = 1916;
+    } else if (x == 959) {
+        r = 1918;
+    } else if (x == 960) {
+        r = 1920;
+    } else if (x == 961) {
+        r = 1922;
+    } else if (x == 962) {
+        r = 1924;
+    } else if (x == 963) {
+        r = 1926;
+    } else if (x == 964) {
+        r = 1928;
+    } else if (x == 965) {
+        r = 1930;
+    } else if (x == 966) {
+        r = 1932;
+    } else if (x == 967) {
+        r = 1934;
+    } else if (x == 968) {
+        r = 1936;
+    } else if (x == 969) {
+        r = 1938;
+    } else if (x == 970) {
+        r = 1940;
+    } else if (x == 971) {
+        r = 1942;
+    } else if (x == 972) {
+        r = 1944;
+    } else if (x == 973) {
+        r = 1946;
+    } else if (x == 974) {
+        r = 1948;
+    } else if (x == 975) {
+        r = 1950;
+    } else if (x == 976) {
+        r = 1952;
+    } else if (x == 977) {
+        r = 1954;
+    } else if (x == 978) {
+        r = 1956;
+    } else if (x == 979) {
+        r = 1958;
+    } else if (x == 980) {
+        r = 1960;
+    } else if (x == 981) {
+        r = 1962;
+    } else if (x == 982) {
+        r = 1964;
+    } else if (x == 983) {
+        r = 1966;
+    } else if (x == 984) {
+        r = 1968;
+    } else if (x == 985) {
+        r = 1970;
+    } else if (x == 986) {
+        r = 1972;
+    } else if (x == 987) {
+        r = 1974;
+    } else if (x == 988) {
+        r = 1976;
+    } else if (x == 989) {
+        r = 1978;
+    } else if (x == 990) {
+        r = 1980;
+    } else if (x == 991) {
+        r = 1982;
+    } else if (x == 992) {
+        r = 1984;
+    } else if (x == 993) {
+        r = 1986;
+    } else if (x == 994) {
+        r = 1988;
+    } else if (x == 995) {
+        r = 1990;
+    } else if (x == 996) {
+        r = 1992;
+    } else if (x == 997) {
+        r = 1994;
+    } else if (x == 998) {
+        r = 1996;
+    } else if (x == 999) {
+        r = 1998;
+    }
+    return r;
+}
+
+export I64 run() {
+    return pick(999);
+}

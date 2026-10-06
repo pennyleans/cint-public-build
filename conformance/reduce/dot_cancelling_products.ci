@@ -1,0 +1,11 @@
+// case: reduce/dot_cancelling_products
+// clause: SPEC-01 IM-87 (products beyond I64 that cancel: no intermediate fault; contrast reduce/loop_dot_product_overflow)
+// subset: cint-core-1 (built-in dot)
+// entry: run; args: none
+// spec outcome: value I64 0; fuel 2. Box 09 ruling R6
+
+export I64 run() {
+    I64[2] a = [3037000500, 3037000500];
+    I64[2] b = [3037000500, -3037000500];
+    return dot(I64, a, b);
+}

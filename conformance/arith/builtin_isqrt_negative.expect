@@ -1,0 +1,17 @@
+case arith/builtin_isqrt_negative
+clause SPEC-01 4.9, 9.2, IM-134; interim decision OQ-01 (E_DOMAIN)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_DOMAIN
+fault.operation isqrt_round.checked.i16.ceil
+fault.operand I16 -4
+fault.exact none
+fault.limit none
+fault.position arith/builtin_isqrt_negative.ci:9:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

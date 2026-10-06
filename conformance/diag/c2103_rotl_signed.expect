@@ -1,0 +1,7 @@
+case diag/c2103_rotl_signed
+clause SPEC-01 2.4, 4.6; SPEC-04 17.2 (C2103)
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2103
+diagnostic.position diag/c2103_rotl_signed.ci:9:12

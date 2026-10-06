@@ -1,0 +1,9 @@
+// case: arith/const_builtin_overflow
+// clause: SPEC-01 4.4, 8.3, IM-134; SPEC-04 17.2 (C6001)
+// subset: cint-core-1 (built-in functions are not in cint-boot-1, SPEC-09 5.2)
+// entry: run; args: none
+// spec outcome: compile error C6001 at 8:12, the constant div_trunc(I32.min, -1) overflows I32
+
+export I32 run() {
+    return div_trunc(I32.min, -1);
+}

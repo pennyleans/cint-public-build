@@ -1,0 +1,7 @@
+case module/imported_view_overlap_c5010
+clause SPEC-04 LS-121 (an `inout` argument that provably overlaps another argument: C5010), across an import; SPEC-09 CINTC-16
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C5010
+diagnostic.position module/imported_view_overlap_c5010.ci:11:26

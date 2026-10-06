@@ -1,0 +1,22 @@
+// case: memory/pool_free_list_lifo
+// clause: SPEC-03 M-15, M-17, M-18; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (pool, handles, struct elements)
+// entry: run; args: none
+// spec outcome: fault E_STALE_HANDLE at 21:26 (the `[` of `bodies[x]`), operation pool.deref, operands U64 2, I64 1, U64 1, U32 1, U8 2 (the handle: slot, length, generation, container, kind), U64 2 (the current generation), U8 3 (generation), no exact, no limit; stack depth 0; fuel 1. The free list is last in, first out: `x` takes slot 2, freed last, and `y` slot 0; total 11 is not observed
+
+struct Body { I64 mass; I64 vel; }
+
+Pool(Body, 3) bodies;
+
+export I64 run() {
+    Handle(Body) a = bodies.insert(Body(mass = 1, vel = 0));
+    Handle(Body) b = bodies.insert(Body(mass = 2, vel = 0));
+    Handle(Body) c = bodies.insert(Body(mass = 3, vel = 0));
+    bodies.remove(a);
+    bodies.remove(c);
+    Handle(Body) x = bodies.insert(Body(mass = 4, vel = 0));
+    Handle(Body) y = bodies.insert(Body(mass = 5, vel = 0));
+    I64 total = bodies[b].mass + bodies[x].mass + bodies[y].mass;
+    bodies.remove(x);
+    return total + bodies[x].mass;
+}

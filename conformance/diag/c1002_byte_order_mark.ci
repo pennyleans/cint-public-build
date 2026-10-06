@@ -1,0 +1,9 @@
+﻿// case: diag/c1002_byte_order_mark
+// clause: SPEC-04 3.1; SPEC-04 17.1, 17.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C1002 at 1:1: the file begins with a UTF-8 byte-order mark (EF BB BF)
+
+export I64 run() {
+    return 0;
+}

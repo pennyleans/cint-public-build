@@ -1,0 +1,6 @@
+case diag/c6010_static_assert_failed
+clause SPEC-04 LS-192, 17.2 (C6010)
+source compile-error
+outcome compile-error
+diagnostic.code C6010
+diagnostic.position diag/c6010_static_assert_failed.ci:7:1

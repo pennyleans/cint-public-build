@@ -1,0 +1,10 @@
+// case: reduce/min_max_values
+// clause: SPEC-01 IM-77, IM-85; SPEC-04 LS-145 (an array argument selects the reduction form)
+// subset: cint-core-1 (built-ins min and max)
+// entry: run; args: none
+// spec outcome: value I64 1193 (max 12, min -7); fuel 3 (entry, two reduction charges)
+
+export I64 run() {
+    I32[4] v = [3, -7, 12, 0];
+    return (max(v) as I64) * 100 + (min(v) as I64);
+}

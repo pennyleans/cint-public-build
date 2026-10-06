@@ -1,0 +1,16 @@
+case control/for_c_form_i8_overflow
+clause SPEC-04 8.1, 8.4 (the I8 loop that faults instead of looping forever)
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 129
+fault.code E_OVERFLOW
+fault.operation add.checked.i8
+fault.operand I8 127
+fault.operand I8 1
+fault.exact 128
+fault.limit I8 127
+fault.position control/for_c_form_i8_overflow.ci:9:31
+fault.revision self
+fault.address none
+fault.stack-depth 0

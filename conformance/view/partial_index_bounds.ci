@@ -1,0 +1,19 @@
+// case: view/partial_index_bounds
+// clause: SPEC-04 LS-64, LS-65; SPEC-01 IM-186 (a partial index out of range faults before the call)
+// subset: cint-core-1 (rank 2)
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 18:19, operation index.checked.i64, operands I64 0 (dimension) and I64 3 (index), no exact, limit I64 3; stack depth 0; fuel 1 (the call is not entered). Box 09 ruling R1
+
+I64 total[n](in I64[n] row) {
+    I64 s = 0;
+    for i in 0..n {
+        s = s + row[i];
+    }
+    return s;
+}
+
+export I64 run() {
+    I64[3, 4] m;
+    I64 r = 3;
+    return total(m[r]);
+}

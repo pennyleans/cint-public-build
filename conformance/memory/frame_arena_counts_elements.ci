@@ -1,0 +1,17 @@
+// case: memory/frame_arena_counts_elements
+// clause: SPEC-04 LS-110; decision 2026-10-05, BX12-18, BX12-23; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (local arrays)
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 8:12 (the declared name `x` in `one`), operation arena.alloc, operands I64 1, I64 2097152, I64 2097152 (requested, used, capacity), no exact, no limit; stack depth 1; fuel 2 (entry, call to `one`). 2,097,152 `I64` elements fill the frame arena exactly, as each element counts once whatever its type
+
+I64 one() {
+    I64[1] x;
+    return 1;
+}
+
+export I64 run() {
+    I64[2_097_152] words;
+    words[2_097_151] = 7;
+    I64 r = words[2_097_151];
+    return r + one();
+}

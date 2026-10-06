@@ -1,0 +1,7 @@
+case memory/c2103_handle_compare
+clause SPEC-03 M-12; SPEC-04 LS-79, C2103 row; ref/OPEN.md REF-OQ-45
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2103
+diagnostic.position memory/c2103_handle_compare.ci:12:9

@@ -1,0 +1,192 @@
+// case: ternary/planes_add27
+// clause: SPEC-05 TR-T27-1, TR-T27-2, section 10 (a bit-sliced 27-trit adder: wrapped sum, carry out of trit 26, the same adder subtracting by swapped planes)
+// subset: cint-core-1 (print statements)
+// entry: run; args: none
+// spec outcome: value I64 0 (in every lane the sum is a +% b in T27, and the carry out of trit 26 is nonzero exactly when a + b leaves [-M, M]); 65 output lines
+// t27 set 1 (docs/design/notes/2026-10-05-t27-ternary-tests-scoping.md 5.2), with the operands of SPEC-05 12.2 TR27-01 to TR27-09.
+// 64 lanes by 27 trit positions: bit L of plus[i] is set where trit i of lane L's operand is +1, bit L of minus[i]
+// where it is -1. M = R(27) = 3812798742493 and 3^27 = 7625597484987. Lanes 0 to 11 hold the operand pairs listed in
+// run(); lane L from 12 to 63 holds a = sm(27, 2L) % 3^27 - M and b = sm(27, 2L + 1) % 3^27 - M, where sm(s, i) is
+// output i (from 0) of SplitMix64 seeded with s: the finalizer of mix() applied to s + (i + 1) * 0x9E3779B97F4A7C15
+// modulo 2^64. Output: one line per lane with a, b, the 27-trit sum and its carry out, the 27-trit difference and
+// its borrow out, then the mismatch count. The borrow is the carry out of a + (-b), so a - b = difference + 3^27 *
+// borrow: +1 when a - b > M, -1 when a - b < -M. TR27-06 (M +| 1 = M) and TR27-08 (the narrowing fault) are shown
+// by lane 1's carry 1, not by a value.
+
+const U64 GAMMA = 0x9E37_79B9_7F4A_7C15;
+const I64 M = 3_812_798_742_493;
+const I64 P27 = 7_625_597_484_987;
+
+U64 mix(U64 z0) {
+    U64 z = (z0 ^ (z0 >> 30)) *% 0xBF58_476D_1CE4_E5B9;
+    z = (z ^ (z >> 27)) *% 0x94D0_49BB_1331_11EB;
+    return z ^ (z >> 31);
+}
+
+U64 sm(U64 seed, I64 i) {
+    return mix(seed +% ((i as U64) +% 1) *% GAMMA);
+}
+
+I64 t27_of(U64 z) {
+    return ((z % (P27 as U64)) as I64) - M;
+}
+
+U64 bit(I64 lane) {
+    U64 one = 1;
+    return one << lane;
+}
+
+// Trits 0 to 26 of x, |x| <= M, into lane `lane` of the planes; returns what is left above trit 26 (0).
+// Floor `%` by 3 gives 0, 1 or 2; the digit 2 is the trit -1 with a carry into the next position.
+I64 to_planes(inout U64[27] p, inout U64[27] n, I64 x, I64 lane) {
+    I64 v = x;
+    for i in 0..27 {
+        I64 r = v % 3;
+        if (r == 1) {
+            p[i] = p[i] | bit(lane);
+            v = v / 3;
+        } else if (r == 2) {
+            n[i] = n[i] | bit(lane);
+            v = v / 3 + 1;
+        } else {
+            v = v / 3;
+        }
+    }
+    return v;
+}
+
+// The value of lane `lane`, trit 26 first: every partial value lies in [-M, M].
+I64 from_planes(in U64[27] p, in U64[27] n, I64 lane) {
+    I64 v = 0;
+    for j in 0..27 {
+        I64 i = 26 - j;
+        v = v * 3 + (((p[i] >> lane) & 1) as I64) - (((n[i] >> lane) & 1) as I64);
+    }
+    return v;
+}
+
+U64 ha_sum_plus(U64 ap, U64 an, U64 bp, U64 bn) {
+    U64 az = ~(ap | an);
+    U64 bz = ~(bp | bn);
+    return (ap & bz) | (az & bp) | (an & bn);
+}
+
+U64 ha_sum_minus(U64 ap, U64 an, U64 bp, U64 bn) {
+    U64 az = ~(ap | an);
+    U64 bz = ~(bp | bn);
+    return (an & bz) | (az & bn) | (ap & bp);
+}
+
+// Ripple-carry addition of all 64 lanes, trit 0 first: a full adder per position (two half adders, then
+// the two carries added). k[0] and k[1] receive the plus and minus planes of the carry out of trit 26.
+void add27(in U64[27] ap, in U64[27] an, in U64[27] bp, in U64[27] bn, inout U64[27] sp, inout U64[27] sn,
+           inout U64[2] k) {
+    U64 cp = 0;
+    U64 cn = 0;
+    for i in 0..27 {
+        U64 s1p = ha_sum_plus(ap[i], an[i], bp[i], bn[i]);
+        U64 s1n = ha_sum_minus(ap[i], an[i], bp[i], bn[i]);
+        U64 c1p = ap[i] & bp[i];
+        U64 c1n = an[i] & bn[i];
+        sp[i] = ha_sum_plus(s1p, s1n, cp, cn);
+        sn[i] = ha_sum_minus(s1p, s1n, cp, cn);
+        U64 c2p = s1p & cp;
+        U64 c2n = s1n & cn;
+        cp = ha_sum_plus(c1p, c1n, c2p, c2n);
+        cn = ha_sum_minus(c1p, c1n, c2p, c2n);
+    }
+    k[0] = cp;
+    k[1] = cn;
+}
+
+I64 carry_at(in U64[2] k, I64 lane) {
+    return (((k[0] >> lane) & 1) as I64) - (((k[1] >> lane) & 1) as I64);
+}
+
+// The scalar reference of one lane: the carry of the exact result e and its wrapped value.
+I64 carry_of(I64 e) {
+    if (e > M) {
+        return 1;
+    }
+    if (e < -M) {
+        return -1;
+    }
+    return 0;
+}
+
+export I64 run() {
+    I64 bad = 0;
+    I64[64] a;
+    I64[64] b;
+    a[0] = M;                  // TR27-01: M + 0
+    b[0] = 0;
+    a[1] = M;                  // TR27-02, TR27-05, TR27-06; TR27-08 and TR27-09 (3812798742494 = M + 1)
+    b[1] = 1;
+    a[2] = -M;                 // TR27-03: -M - 1, the difference
+    b[2] = 1;
+    a[3] = 0;                  // TR27-04: -(-M), the difference 0 - (-M)
+    b[3] = -M;
+    a[4] = 2_541_865_828_330;  // TR27-07: 1270932914165 * 3 = 2541865828330 + 1270932914165
+    b[4] = 1_270_932_914_165;
+    a[5] = M;
+    b[5] = M;
+    a[6] = -M;
+    b[6] = -M;
+    a[7] = M;
+    b[7] = -M;
+    a[8] = 0;
+    b[8] = 0;
+    a[9] = 1;
+    b[9] = -1;
+    a[10] = 1_270_932_914_164; // R(26)
+    b[10] = 1_270_932_914_164;
+    a[11] = 2_541_865_828_329; // 3^26 (RS-16)
+    b[11] = 2_541_865_828_329;
+    for lane in 12..64 {
+        a[lane] = t27_of(sm(27, 2 * lane));
+        b[lane] = t27_of(sm(27, 2 * lane + 1));
+    }
+
+    U64[27] ap;
+    U64[27] an;
+    U64[27] bp;
+    U64[27] bn;
+    for i in 0..27 {
+        ap[i] = 0;
+        an[i] = 0;
+        bp[i] = 0;
+        bn[i] = 0;
+    }
+    for lane in 0..64 {
+        if (to_planes(ap, an, a[lane], lane) != 0 || to_planes(bp, bn, b[lane], lane) != 0) {
+            bad += 1;
+        }
+    }
+
+    U64[27] sp;
+    U64[27] sn;
+    U64[27] dp;
+    U64[27] dn;
+    U64[2] ks;
+    U64[2] kd;
+    add27(ap, an, bp, bn, sp, sn, ks);
+    add27(ap, an, bn, bp, dp, dn, kd);   // b negated: its planes swapped
+
+    for lane in 0..64 {
+        I64 s = from_planes(sp, sn, lane);
+        I64 ks_lane = carry_at(ks, lane);
+        I64 d = from_planes(dp, dn, lane);
+        I64 kd_lane = carry_at(kd, lane);
+        "lane {lane}: a {a[lane]} b {b[lane]} sum {s} carry {ks_lane} difference {d} borrow {kd_lane}\n";
+        I64 e = a[lane] + b[lane];
+        if (ks_lane != carry_of(e) || s != e - carry_of(e) * P27) {
+            bad += 1;
+        }
+        I64 f = a[lane] - b[lane];
+        if (kd_lane != carry_of(f) || d != f - carry_of(f) * P27) {
+            bad += 1;
+        }
+    }
+    "mismatches {bad}\n";
+    return bad;
+}

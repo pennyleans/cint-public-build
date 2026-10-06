@@ -1,0 +1,1399 @@
+# Status: Approved 2026-10-04 (docs/cint/OPEN-QUESTIONS.md OQ-174).
+# SPEC-09 CONF-14, CONF-15, STAGE-01; D-15; plan tasks 2.12b, 2.13, 2.14, 2.18.
+# Requirements only. These categories are obligations, not new measured outcomes.
+# Seed requirements retain the reviewed T1 classifications of the available suite.
+# One case ID per program or table, including multi-entry programs; one per anchor.
+# Columns: <case> <compiler> <category> [<limit-or-open-item>].
+# The reference comment preceding each row gives its clause/limit derivation.
+# All 861 available IDs are accounted for. Imported library files are not case IDs.
+# B1 boot-scope requirements include held and the boot applicability of each listed anchor.
+# Unsupported seed limits become B1 comparison obligations under CINTC-02/LS-311.
+# Approval covers these rows and exclusions; a later change to either needs a new
+# approval. Stage acceptance still needs the fresh receipts of STAGE-01.
+# The following 371 core-only IDs (277 programs and tables, 18 saturating anchors,
+# 76 built-in anchors) are explicitly outside this boot scope. We assign no
+# outside_subset category to B1. This is not full T2 coverage. B1 compares the 18
+# saturating anchors since task 2.14b and the 76 built-in anchors since box 07.
+# 2026-10-05, box 07 (approved 2026-10-05, OQ-174 amendment): the 76 built-in
+# anchors move from cintc not_applicable rows to exclusions, and the 11 built-in cases
+# are excluded; no other row or exclusion changes.
+# 2026-10-05, F-1 (approved 2026-10-05, OQ-174 amendment): the boot cases
+# switch/full_range_single_case and switch/full_range_single_case_fault add two cintc
+# compared rows, and switch/full_range_fallthrough_default (fallthrough, core-only) is
+# excluded; no other row or exclusion changes.
+# 2026-10-05, box 09 (approved 2026-10-05, OQ-174 amendment, box 09 ruling R0): 15
+# compared rows for the new view/ and reduce/ cases, and 90 programs excluded: the 88
+# held cases, whose forms are outside cint-boot-1, so that a later release of one
+# changes no row here, and reduce/loop_sum_sat_i8 and reduce/loop_sum_sat_i8_reordered;
+# no other row or exclusion changes.
+# 2026-10-05, box 12 (approved 2026-10-05, OQ-174 amendment): 42 programs
+# excluded, the held cases of error sets and unions, `try`, `catch`, `as?`, `defer`
+# and `errdefer`, whose forms are outside cint-boot-1, so that a later release of
+# one changes no row here; no other row or exclusion changes.
+# 2026-10-05, t27 set 1 (approved 2026-10-05, OQ-174 amendment, OQ-209): the 8 conformance/ternary/
+# cases are excluded, as they print, which is outside cint-boot-1; B1 compares them under
+# T2 and conformance/required/t27-1.txt; no other row or exclusion changes.
+# 2026-10-05, P-1 (approved 2026-10-06, OQ-174 amendment): 2 programs excluded,
+# reduce/dot_i8_into_i16_fits and reduce/dot_i8_into_i16_overflow (t27 scoping note
+# P-1), whose built-in dot is outside cint-boot-1; no other row or exclusion changes.
+# 2026-10-06, box 12 memory lifetimes (approved 2026-10-06, OQ-210; OQ-174 amendment): 40
+# programs excluded, the held cases of arenas, pools, handles and the frame arena under
+# conformance/memory/, whose forms are outside cint-boot-1, so that a later release of
+# one changes no row here; no other row or exclusion changes.
+# 2026-10-06 (approved under OQ-206; OQ-174 amendment): 1 program excluded,
+# cleanup/return_struct_before_defer, the case of a cint_ref defect fix, whose `defer` is
+# outside cint-boot-1; no other row or exclusion changes.
+# 2026-10-06 (OQ-210 = A; OQ-174 amendment): the other 37 memory lifetimes cases are
+# frozen from cint_ref, and their exclusions say so; no row or exclusion is added or
+# removed.
+# Boot scope exclusion: anchors/abs.checked.i64.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/abs.checked.i64.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/abs.checked.i8.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/add.sat.i64.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (task 2.14b)
+# Boot scope exclusion: anchors/add.sat.i64.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (task 2.14b)
+# Boot scope exclusion: anchors/add.sat.i8.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (task 2.14b)
+# Boot scope exclusion: anchors/add.sat.i8.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (task 2.14b)
+# Boot scope exclusion: anchors/add.sat.i8.003 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (task 2.14b)
+# Boot scope exclusion: anchors/add.sat.u64.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (task 2.14b)
+# Boot scope exclusion: anchors/add.sat.u8.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (task 2.14b)
+# Boot scope exclusion: anchors/clamp.checked.i32.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_euclid.checked.i64.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_euclid.checked.i64.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_euclid.checked.i64.003 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_euclid.checked.i64.004 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.away.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.away.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.away.003 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.away.004 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.ceil.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.ceil.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.ceil.003 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.ceil.004 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.floor.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.floor.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.floor.003 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.floor.004 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.floor.005 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_away.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_away.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_away.003 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_away.004 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_down.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_down.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_down.003 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_down.004 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_even.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_even.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_even.003 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_even.004 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_even.005 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_even.006 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_trunc.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_trunc.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_trunc.003 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_trunc.004 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_up.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_up.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_up.003 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.half_up.004 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.trunc.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.trunc.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.trunc.003 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i64.trunc.004 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_round.checked.i8.half_up.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_trunc.checked.i64.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_trunc.checked.i64.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_trunc.checked.i64.003 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_trunc.checked.i64.004 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/div_trunc.checked.i64.005 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/isqrt.checked.i64.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/isqrt.checked.i64.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/isqrt.checked.i64.003 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/isqrt_round.checked.i64.ceil.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/max.checked.u8.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/min.checked.i64.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/mul.sat.i32.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (task 2.14b)
+# Boot scope exclusion: anchors/mul.sat.i32.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (task 2.14b)
+# Boot scope exclusion: anchors/mul.sat.i64.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (task 2.14b)
+# Boot scope exclusion: anchors/mul.sat.i8.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (task 2.14b)
+# Boot scope exclusion: anchors/mul.sat.u8.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (task 2.14b)
+# Boot scope exclusion: anchors/muldiv.checked.i64.i64.ceil.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/muldiv.checked.i64.i64.floor.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/muldiv.checked.i64.i64.floor.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/muldiv.checked.i64.i64.floor.003 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/muldiv.checked.i64.i64.half_even.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/muldiv.checked.i64.i64.half_even.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/muldiv.checked.i64.i64.half_even.003 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/rem_euclid.checked.i64.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/rem_euclid.checked.i64.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/rem_euclid.checked.i64.003 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/rem_euclid.checked.i64.004 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/rem_trunc.checked.i64.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/rem_trunc.checked.i64.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/rem_trunc.checked.i64.003 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/rem_trunc.checked.i64.004 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/sub.sat.i64.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (task 2.14b)
+# Boot scope exclusion: anchors/sub.sat.i64.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (task 2.14b)
+# Boot scope exclusion: anchors/sub.sat.i8.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (task 2.14b)
+# Boot scope exclusion: anchors/sub.sat.i8.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (task 2.14b)
+# Boot scope exclusion: anchors/sub.sat.i8.003 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (task 2.14b)
+# Boot scope exclusion: anchors/sub.sat.u8.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (task 2.14b)
+# Boot scope exclusion: anchors/uabs.checked.i64.u64.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: anchors/uabs.checked.i8.u8.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
+# Boot scope exclusion: arith/add_i64_overflow SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: arith/builtin_abs_overflow SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: arith/builtin_folded SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: arith/builtin_isqrt_negative SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: arith/builtin_muldiv_div_zero SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: arith/builtin_muldiv_overflow SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: arith/builtin_rotl_count SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: arith/builtin_values SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: arith/const_builtin_overflow SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: arith/const_skipped_cond_arm SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: arith/muldiv_wide_intermediate SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: arith/sat_assign_forms SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: arith/sat_i8_runtime SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: arith/stores_before_fault SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: boot/const_extent_overflow SPEC-09 BOOT-01; primary excludes elem_type.IDENT such as I64.max
+# Boot scope exclusion: boot/const_extent_short_circuit SPEC-09 BOOT-01; cond_expr excludes ?: expressions
+# Boot scope exclusion: boot/decl_extent_field_modvar_width SPEC-09 BOOT-01 excludes module variable; cint-core-1 fixture
+# Boot scope exclusion: boot/decl_extent_field_nonconstant SPEC-09 BOOT-01 excludes module variable; cint-core-1 fixture
+# Boot scope exclusion: boot/decl_extent_field_short_circuit SPEC-09 BOOT-01 excludes conditional expression ?:; cint-core-1 fixture
+# Boot scope exclusion: boot/refuse_attribute SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: boot/refuse_byte_string SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: boot/refuse_defer SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: boot/refuse_destructuring SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: boot/refuse_enum SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: boot/refuse_error_union SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: boot/refuse_fixed_point SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: boot/refuse_fraction_literal SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: boot/refuse_kernel SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: boot/refuse_print SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: boot/refuse_profile_line SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: boot/refuse_static_assert SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: boot/refuse_ternary_literal SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: boot/refuse_test_block SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: boot/refuse_type_alias SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: boot/refuse_where SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: cleanup/c4030_break_in_deferred_block SPEC-09 BOOT-01 excludes `defer`; held I-2 (box 12)
+# Boot scope exclusion: cleanup/c4030_try_in_deferred_statement SPEC-09 BOOT-01 excludes error sets, error unions, `try` and `defer`; held I-2 (box 12)
+# Boot scope exclusion: cleanup/c4031_errdefer_inside_deferred_statement SPEC-09 BOOT-01 excludes error sets, error unions, `try`, `defer` and `errdefer`; held I-2 (box 12)
+# Boot scope exclusion: cleanup/c4031_errdefer_script_top_level SPEC-09 BOOT-01 excludes `errdefer`; held I-2 (box 12)
+# Boot scope exclusion: cleanup/c4031_errdefer_without_error_union SPEC-09 BOOT-01 excludes `errdefer`; held I-2 (box 12)
+# Boot scope exclusion: cleanup/defer_charges_no_fuel SPEC-09 BOOT-01 excludes `defer`; held I-2 (box 12)
+# Boot scope exclusion: cleanup/defer_consumes_error_union SPEC-09 BOOT-01 excludes error sets, error unions, `catch` and `defer`; held I-2 (box 12)
+# Boot scope exclusion: cleanup/defer_in_catch_block SPEC-09 BOOT-01 excludes error sets, error unions, `catch` and `defer`; held I-2 (box 12)
+# Boot scope exclusion: cleanup/defer_in_loop_continue_break SPEC-09 BOOT-01 excludes `defer`; held I-2 (box 12)
+# Boot scope exclusion: cleanup/defer_reverse_order SPEC-09 BOOT-01 excludes `defer`; held I-2 (box 12)
+# Boot scope exclusion: cleanup/defer_runs_at_block_exit SPEC-09 BOOT-01 excludes `defer`; held I-2 (box 12)
+# Boot scope exclusion: cleanup/errdefer_on_returned_error_value SPEC-09 BOOT-01 excludes error sets, error unions, `catch` and `errdefer`; held I-2 (box 12)
+# Boot scope exclusion: cleanup/errdefer_skipped_on_success SPEC-09 BOOT-01 excludes error sets, error unions, `try`, `defer` and `errdefer`; held I-2 (box 12)
+# Boot scope exclusion: cleanup/fault_in_deferred_statement SPEC-09 BOOT-01 excludes `defer`; held I-2 (box 12)
+# Boot scope exclusion: cleanup/no_defer_after_fault SPEC-09 BOOT-01 excludes `defer`; held I-2 (box 12)
+# Boot scope exclusion: cleanup/return_struct_before_defer SPEC-09 BOOT-01 excludes `defer`; box 12 (cint_ref defect fix, LS-316)
+# Boot scope exclusion: cleanup/return_value_before_defer SPEC-09 BOOT-01 excludes `defer`; held I-2 (box 12)
+# Boot scope exclusion: cleanup/script_defer_runs_at_end SPEC-09 BOOT-01 excludes `defer`; held I-2 (box 12)
+# Boot scope exclusion: cleanup/test_errdefer_runs_when_error_leaves SPEC-09 BOOT-01 excludes error sets, error unions, `try`, `defer` and `errdefer`; held I-2 (box 12)
+# Boot scope exclusion: cleanup/try_runs_defer_and_errdefer SPEC-09 BOOT-01 excludes error sets, error unions, `try`, `defer` and `errdefer`; held I-2 (box 12)
+# Boot scope exclusion: control/assert_bool_fails SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: control/assert_bool_operands SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: control/assert_message_hole SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: control/assert_outside_test SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: control/assert_passes_returns SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: control/cond_select_runtime SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: control/cond_selected_arm_faults SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: control/depth_limit SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: control/expect_fault_test_entry SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: control/for_range_full_i8 SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: control/for_range_to_i64_max SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: control/labelled_jumps SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: control/main_with_test SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: control/print_hole_fault_partial SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: control/print_no_newline_then_fault SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: control/script_with_test SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: control/test_block_assert_fails SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: control/test_block_entry_passes SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: determinism/unicode_column SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: diag/block_comment_nested SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: diag/c2002_assert_integer_condition SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: diag/c2003_skipped_arm SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: diag/c2103_rotl_signed SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: diag/c3004_script_selected_by_print SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: diag/c3007_rounding_mode SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: diag/c3020_duplicate_test_name SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: diag/c3021_expect_fault_statement SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: diag/c6006_clamp_bounds SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: diag/c6010_static_assert_failed SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: diag/module_var_forward_reference SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: errors/as_question_narrow_catch SPEC-09 BOOT-01 excludes `catch` and `as?`; held I-2 (box 12)
+# Boot scope exclusion: errors/as_question_try_narrow SPEC-09 BOOT-01 excludes error unions, `try`, `catch` and `as?`; held I-2 (box 12)
+# Boot scope exclusion: errors/c2001_narrow_value SPEC-09 BOOT-01 excludes error sets and combined error sets; held I-2 (box 12)
+# Boot scope exclusion: errors/c2040_unconsumed_call SPEC-09 BOOT-01 excludes error sets and error unions; held I-2 (box 12)
+# Boot scope exclusion: errors/c2042_return_wider_value SPEC-09 BOOT-01 excludes error sets, combined error sets and error unions; held I-2 (box 12)
+# Boot scope exclusion: errors/c2042_try_from_wider_set SPEC-09 BOOT-01 excludes error sets, combined error sets, error unions and `try`; held I-2 (box 12)
+# Boot scope exclusion: errors/c2043_try_not_error_union SPEC-09 BOOT-01 excludes error sets, error unions and `try`; held I-2 (box 12)
+# Boot scope exclusion: errors/c2044_shared_name_short_form SPEC-09 BOOT-01 excludes error sets, combined error sets and error unions; held I-2 (box 12)
+# Boot scope exclusion: errors/c2054_zero_filled_error_value SPEC-09 BOOT-01 excludes error sets; held I-2 (box 12)
+# Boot scope exclusion: errors/c4002_catch_block_completes SPEC-09 BOOT-01 excludes error sets, error unions and `catch`; held I-2 (box 12)
+# Boot scope exclusion: errors/c4020_switch_missing_error_value SPEC-09 BOOT-01 excludes error sets, error unions and `catch`; held I-2 (box 12)
+# Boot scope exclusion: errors/catch_bind_switch_exhaustive SPEC-09 BOOT-01 excludes error sets, error unions and `catch`; held I-2 (box 12)
+# Boot scope exclusion: errors/catch_value_and_discard SPEC-09 BOOT-01 excludes error sets, error unions and `catch`; held I-2 (box 12)
+# Boot scope exclusion: errors/combined_set_once_at_first_position SPEC-09 BOOT-01 excludes error sets, combined error sets, error unions and `try`; held I-2 (box 12)
+# Boot scope exclusion: errors/combined_try_converts_tag SPEC-09 BOOT-01 excludes error sets, combined error sets, error unions and `try`; held I-2 (box 12)
+# Boot scope exclusion: errors/div_result_error_values SPEC-09 BOOT-01 excludes `catch` and the built-in div_result; held I-2 (box 12)
+# Boot scope exclusion: errors/error_values_in_array_struct_param SPEC-09 BOOT-01 excludes error sets; held I-2 (box 12)
+# Boot scope exclusion: errors/main_returns_error SPEC-09 BOOT-01 excludes error sets and error unions; held I-2 (box 12)
+# Boot scope exclusion: errors/shared_name_written_with_set SPEC-09 BOOT-01 excludes error sets, combined error sets and error unions; held I-2 (box 12)
+# Boot scope exclusion: errors/tags_from_one SPEC-09 BOOT-01 excludes error sets and error unions; held I-2 (box 12)
+# Boot scope exclusion: errors/test_try_any_set SPEC-09 BOOT-01 excludes error sets, error unions and `try`; held I-2 (box 12)
+# Boot scope exclusion: errors/underlying_type_u8 SPEC-09 BOOT-01 excludes error sets and error unions; held I-2 (box 12)
+# Boot scope exclusion: errors/widen_in_assignment_and_compare SPEC-09 BOOT-01 excludes error sets and combined error sets; held I-2 (box 12)
+# Boot scope exclusion: kernel/advance_element_form SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/alias_gcd_accepted SPEC-09 BOOT-01 excludes kernels and array slices; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/alias_same_view_c5010 SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/alias_uncertain_columns SPEC-09 BOOT-01 excludes kernels and array slices; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/body_print_c5020 SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/bounds_in_block SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/coverage_c5031 SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/dispatch_number_second SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/fuel_entry_charge SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/fuel_in_body_located SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/heat_e1_overflow SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/heat_e2_narrowing SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/heat_e9_div_zero SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/heat_fold_i32_work_item SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/heat_hot_spot SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/heat_rounding_rf3 SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/heat_sum_i32_epilogue SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/inout_copy_in_copy_out SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/min_no_contributions SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/scale_over_2d SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/shape_two_pass SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/total_checked_fold SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/total_empty SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/total_exact_epilogue_overflow SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/total_exact_sum SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/total_sat_orders SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/unpublished_after_fault SPEC-09 BOOT-01 excludes kernels and module variables; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/where_violation SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/write_rule_c5031 SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/zero_work_items SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: memory/arena_alloc_full SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/arena_alloc_negative SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/arena_alloc_result_full SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/arena_alloc_view_sum SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/arena_alloc_zero_filled SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/arena_child_carved_from_parent SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/arena_child_exhausts_parent SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/arena_child_retired_by_parent_reset SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/arena_grandchild_retired SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/arena_index_bounds SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/arena_parameters SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/arena_reset_stale_generation SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/arena_retired_alloc SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/arena_stale_view_after_callee_reset SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/arena_struct_elements SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/c2001_arena_handle_into_pool SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/c2051_arena_in_struct SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/c2058_child_arena_rebound SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/c2060_write_through_in_arena SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/c2067_reset_through_in_parameter SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/c2103_handle_compare SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/c4012_arena_in_function SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/c6004_capacity_not_constant SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/c6006_capacity_negative SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/frame_arena_counts_elements SPEC-09 BOOT-01 limits a local array to 4,096 bytes (EMIT-30); frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/frame_arena_recursion_exhausts SPEC-09 BOOT-01 limits a local array to 4,096 bytes (EMIT-30); frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/frame_arena_released_at_block_exit SPEC-09 BOOT-01 limits a local array to 4,096 bytes (EMIT-30); frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/pool_capacity_zero SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/pool_free_list_lifo SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/pool_full_insert_faults SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/pool_handles_stored SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/pool_insert_deref_remove SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/pool_insert_result_full SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/pool_insert_result_try_main SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/pool_null_handle SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/pool_other_container SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/pool_remove_stale SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/pool_slot_assign SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/pool_stale_generation SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/script_pool_module_level SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: module/import_record_private_closure SPEC-09 BOOT-01; fixture uses a struct result or an import alias
+# Boot scope exclusion: module/import_record_result SPEC-09 BOOT-01; fixture uses a struct result or an import alias
+# Boot scope exclusion: module/import_record_unbound_c2065 SPEC-09 BOOT-01; fixture uses a struct result or an import alias
+# Boot scope exclusion: module/state_across_import SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: module/state_two_modules SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: module/two_aliases_one_struct SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: reduce/count_mask SPEC-09 BOOT-01 excludes the built-in count; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/dot_cancelling_products SPEC-09 BOOT-01 excludes the built-in dot (Proposed); held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/dot_i8_into_i16_fits SPEC-09 BOOT-01 excludes the built-in dot (Proposed); box 09 ruling R6, t27 scoping note P-1
+# Boot scope exclusion: reduce/dot_i8_into_i16_overflow SPEC-09 BOOT-01 excludes the built-in dot (Proposed); box 09 ruling R6, t27 scoping note P-1
+# Boot scope exclusion: reduce/dot_overflow SPEC-09 BOOT-01 excludes the built-in dot (Proposed); held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/dot_shape_mismatch SPEC-09 BOOT-01 excludes the built-in dot (Proposed); held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/dot_value SPEC-09 BOOT-01 excludes the built-in dot (Proposed); held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/fold_checked_empty_init SPEC-09 BOOT-01 excludes the built-in fold_checked; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/fold_checked_i64_overflow SPEC-09 BOOT-01 excludes the built-in fold_checked; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/fold_checked_i8_overflow SPEC-09 BOOT-01 excludes the built-in fold_checked; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/fold_checked_reversed_view SPEC-09 BOOT-01 excludes array slices and the built-in fold_checked; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/fold_rank2_row_major SPEC-09 BOOT-01 excludes rank 2 and the built-in fold_checked; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/fold_rank2_transposed SPEC-09 BOOT-01 excludes rank 2 and transpose; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/fuel_reduction_charge SPEC-09 BOOT-01 excludes the built-in sum; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/fuel_reduction_e_fuel SPEC-09 BOOT-01 excludes the built-in sum; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/loop_sum_sat_i8 SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: reduce/loop_sum_sat_i8_reordered SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: reduce/max_init_empty SPEC-09 BOOT-01 excludes the built-in max; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/min_empty_e_shape SPEC-09 BOOT-01 excludes the built-in min; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/min_max_values SPEC-09 BOOT-01 excludes the built-ins min and max; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/sum_empty SPEC-09 BOOT-01 excludes the built-in sum; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/sum_i32_into_i64 SPEC-09 BOOT-01 excludes the built-in sum; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/sum_i64_exact SPEC-09 BOOT-01 excludes the built-in sum; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/sum_i64_overflow SPEC-09 BOOT-01 excludes the built-in sum; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/sum_i8_fits SPEC-09 BOOT-01 excludes the built-in sum and array literals; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/sum_narrow_overflow SPEC-09 BOOT-01 excludes the built-in sum; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/sum_sat_i8 SPEC-09 BOOT-01 excludes the built-in sum_sat; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/sum_sat_i8_reordered SPEC-09 BOOT-01 excludes the built-in sum_sat; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/sum_sat_rank2_transposed SPEC-09 BOOT-01 excludes rank 2 and transpose; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/sum_strided_view SPEC-09 BOOT-01 excludes array slices and the built-in sum; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/sum_widened_i16 SPEC-09 BOOT-01 excludes the built-in sum; held I-2 (box 09, R0)
+# Boot scope exclusion: reduce/sum_wrap_i8 SPEC-09 BOOT-01 excludes the built-in sum_wrap; held I-2 (box 09, R0)
+# Boot scope exclusion: struct/constructor_shape_effect SPEC-09 BOOT-01; declaration excludes module-level variables
+# Boot scope exclusion: struct/nested_argument_fault SPEC-09 BOOT-01; declaration excludes module-level variables
+# Boot scope exclusion: struct/nested_argument_order SPEC-09 BOOT-01; declaration excludes module-level variables
+# Boot scope exclusion: struct/nested_flat_257 SPEC-09 BOOT-01; result_type admits only void, integer, or Bool results
+# Boot scope exclusion: struct/zero_field_bounds_order SPEC-09 BOOT-01 excludes module variables and struct results; cint-core-1 fixture
+# Boot scope exclusion: switch/fallthrough SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: switch/full_range_fallthrough_default SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: tables/add_sat_i64 SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: tables/add_sat_i8 SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: tables/add_sat_u8 SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: tables/mul_sat_i64 SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: tables/mul_sat_i8 SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: tables/mul_sat_u8 SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: tables/sub_sat_i64 SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: tables/sub_sat_i8 SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: tables/sub_sat_u8 SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: ternary/planes_add27 SPEC-09 5.5; seed inventory outside_subset; t27 set 1, print statements
+# Boot scope exclusion: ternary/planes_adders SPEC-09 5.5; seed inventory outside_subset; t27 set 1, print statements
+# Boot scope exclusion: ternary/planes_digits SPEC-09 5.5; seed inventory outside_subset; t27 set 1, print statements
+# Boot scope exclusion: ternary/planes_rescale3 SPEC-09 5.5; seed inventory outside_subset; t27 set 1, print statements
+# Boot scope exclusion: ternary/pt4_planes SPEC-09 5.5; seed inventory outside_subset; t27 set 1, print statements
+# Boot scope exclusion: ternary/pt5_table SPEC-09 5.5; seed inventory outside_subset; t27 set 1, print statements
+# Boot scope exclusion: ternary/tdot_i8_lanes SPEC-09 5.5; seed inventory outside_subset; t27 set 1, print statements
+# Boot scope exclusion: ternary/tdot_planes SPEC-09 5.5; seed inventory outside_subset; t27 set 1, print statements
+# Boot scope exclusion: view/call_slices_disjoint SPEC-09 BOOT-01 excludes array slices; held I-2 (box 09, R0)
+# Boot scope exclusion: view/call_slices_runtime_alias SPEC-09 BOOT-01 excludes array slices; held I-2 (box 09, R0)
+# Boot scope exclusion: view/copy_same_view_noop SPEC-09 BOOT-01 excludes array slices and the built-in copy; held I-2 (box 09, R0)
+# Boot scope exclusion: view/copy_shape_dynamic_initializer SPEC-09 BOOT-01; var_decl excludes array initializers and requires constant local extents
+# Boot scope exclusion: view/copy_shape_fixed_initializer SPEC-09 BOOT-01; var_decl excludes array initializers
+# Boot scope exclusion: view/copy_shape_initializer_effect SPEC-09 BOOT-01; declaration excludes module variables and var_decl excludes array initializers
+# Boot scope exclusion: view/copy_slices_disjoint_gcd SPEC-09 BOOT-01 excludes array slices and the built-in copy; held I-2 (box 09, R0)
+# Boot scope exclusion: view/copy_slices_overlap_c5010 SPEC-09 BOOT-01 excludes array slices and the built-in copy; held I-2 (box 09, R0)
+# Boot scope exclusion: view/copy_slices_runtime_alias SPEC-09 BOOT-01 excludes array slices and the built-in copy; held I-2 (box 09, R0)
+# Boot scope exclusion: view/negative_extent_runtime SPEC-09 BOOT-01 excludes run-time local extents; held I-2 (box 09, R0)
+# Boot scope exclusion: view/nested_array_field_inner_fault SPEC-09 BOOT-01; declaration excludes module-level variables
+# Boot scope exclusion: view/nested_array_field_order SPEC-09 BOOT-01; declaration excludes module-level variables
+# Boot scope exclusion: view/nested_array_field_outer_fault SPEC-09 BOOT-01; declaration excludes module-level variables
+# Boot scope exclusion: view/nested_overlap_c5010 SPEC-09 BOOT-01; params admits scalar structs only in the in mode
+# Boot scope exclusion: view/partial_index_bounds SPEC-09 BOOT-01 excludes rank 2; held I-2 (box 09, R0)
+# Boot scope exclusion: view/partial_index_row_view SPEC-09 BOOT-01 excludes rank 2; held I-2 (box 09, R0)
+# Boot scope exclusion: view/rank2_index_both_bounds SPEC-09 BOOT-01 excludes rank 2; held I-2 (box 09, R0)
+# Boot scope exclusion: view/rank2_index_dim1_bounds SPEC-09 BOOT-01 excludes rank 2; held I-2 (box 09, R0)
+# Boot scope exclusion: view/rank2_index_value SPEC-09 BOOT-01 excludes rank 2; held I-2 (box 09, R0)
+# Boot scope exclusion: view/rank2_indices_before_checks SPEC-09 BOOT-01 excludes rank 2; held I-2 (box 09, R0)
+# Boot scope exclusion: view/rank3_index_value SPEC-09 BOOT-01 excludes rank 3; held I-2 (box 09, R0)
+# Boot scope exclusion: view/rank4_index_value SPEC-09 BOOT-01 excludes rank 4; held I-2 (box 09, R0)
+# Boot scope exclusion: view/slice_basic_extent SPEC-09 BOOT-01 excludes array slices; held I-2 (box 09, R0)
+# Boot scope exclusion: view/slice_by_variable_c2053 SPEC-09 BOOT-01 excludes array slices and the by step; held I-2 (box 09, R0)
+# Boot scope exclusion: view/slice_by_zero_c2053 SPEC-09 BOOT-01 excludes array slices and the by step; held I-2 (box 09, R0)
+# Boot scope exclusion: view/slice_column SPEC-09 BOOT-01 excludes rank 2 and array slices; held I-2 (box 09, R0)
+# Boot scope exclusion: view/slice_empty_at_end SPEC-09 BOOT-01 excludes array slices; held I-2 (box 09, R0)
+# Boot scope exclusion: view/slice_hi_above_extent SPEC-09 BOOT-01 excludes array slices; held I-2 (box 09, R0)
+# Boot scope exclusion: view/slice_inclusive SPEC-09 BOOT-01 excludes array slices; held I-2 (box 09, R0)
+# Boot scope exclusion: view/slice_lo_above_hi SPEC-09 BOOT-01 excludes array slices; held I-2 (box 09, R0)
+# Boot scope exclusion: view/slice_negative_lo SPEC-09 BOOT-01 excludes array slices; held I-2 (box 09, R0)
+# Boot scope exclusion: view/slice_open_ends SPEC-09 BOOT-01 excludes array slices and the built-in len; held I-2 (box 09, R0)
+# Boot scope exclusion: view/slice_readonly_inout_c2067 SPEC-09 BOOT-01 excludes array slices; held I-2 (box 09, R0)
+# Boot scope exclusion: view/slice_reversed SPEC-09 BOOT-01 excludes array slices and the by step; held I-2 (box 09, R0)
+# Boot scope exclusion: view/slice_reversed_inclusive SPEC-09 BOOT-01 excludes array slices and the by step; held I-2 (box 09, R0)
+# Boot scope exclusion: view/slice_strided SPEC-09 BOOT-01 excludes array slices and the by step; held I-2 (box 09, R0)
+# Boot scope exclusion: view/transpose_view SPEC-09 BOOT-01 excludes rank 2, local view variables and transpose; held I-2 (box 09, R0)
+# Reference: anchors/add.checked.i128.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; add.checked.i128
+anchors/add.checked.i128.001 cintc not_applicable
+# Reference: anchors/add.checked.i16.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation add.checked.i16
+anchors/add.checked.i16.001 cintc compared
+# Reference: anchors/add.checked.i32.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation add.checked.i32
+anchors/add.checked.i32.001 cintc compared
+# Reference: anchors/add.checked.i64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation add.checked.i64
+anchors/add.checked.i64.001 cintc compared
+# Reference: anchors/add.checked.i64.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation add.checked.i64
+anchors/add.checked.i64.002 cintc compared
+# Reference: anchors/add.checked.i64.003 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation add.checked.i64
+anchors/add.checked.i64.003 cintc compared
+# Reference: anchors/add.checked.i64.004 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation add.checked.i64
+anchors/add.checked.i64.004 cintc compared
+# Reference: anchors/add.checked.i8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation add.checked.i8
+anchors/add.checked.i8.001 cintc compared
+# Reference: anchors/add.checked.i8.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation add.checked.i8
+anchors/add.checked.i8.002 cintc compared
+# Reference: anchors/add.checked.u16.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation add.checked.u16
+anchors/add.checked.u16.001 cintc compared
+# Reference: anchors/add.checked.u32.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation add.checked.u32
+anchors/add.checked.u32.001 cintc compared
+# Reference: anchors/add.checked.u64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation add.checked.u64
+anchors/add.checked.u64.001 cintc compared
+# Reference: anchors/add.checked.u8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation add.checked.u8
+anchors/add.checked.u8.001 cintc compared
+# Reference: anchors/add.wrap.i32.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation add.wrap.i32
+anchors/add.wrap.i32.001 cintc compared
+# Reference: anchors/add.wrap.i64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation add.wrap.i64
+anchors/add.wrap.i64.001 cintc compared
+# Reference: anchors/add.wrap.i64.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation add.wrap.i64
+anchors/add.wrap.i64.002 cintc compared
+# Reference: anchors/add.wrap.i8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation add.wrap.i8
+anchors/add.wrap.i8.001 cintc compared
+# Reference: anchors/add.wrap.i8.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation add.wrap.i8
+anchors/add.wrap.i8.002 cintc compared
+# Reference: anchors/add.wrap.u64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation add.wrap.u64
+anchors/add.wrap.u64.001 cintc compared
+# Reference: anchors/add.wrap.u8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation add.wrap.u8
+anchors/add.wrap.u8.001 cintc compared
+# Reference: anchors/add.wrap.u8.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation add.wrap.u8
+anchors/add.wrap.u8.002 cintc compared
+# Reference: anchors/as.checked.i32.u16.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.i32.u16
+anchors/as.checked.i32.u16.001 cintc compared
+# Reference: anchors/as.checked.i32.u16.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.i32.u16
+anchors/as.checked.i32.u16.002 cintc compared
+# Reference: anchors/as.checked.i64.i128.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; as.checked.i64.i128
+anchors/as.checked.i64.i128.001 cintc not_applicable
+# Reference: anchors/as.checked.i64.i32.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.i64.i32
+anchors/as.checked.i64.i32.001 cintc compared
+# Reference: anchors/as.checked.i64.i32.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.i64.i32
+anchors/as.checked.i64.i32.002 cintc compared
+# Reference: anchors/as.checked.i64.i32.003 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.i64.i32
+anchors/as.checked.i64.i32.003 cintc compared
+# Reference: anchors/as.checked.i64.i32.004 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.i64.i32
+anchors/as.checked.i64.i32.004 cintc compared
+# Reference: anchors/as.checked.i64.i8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.i64.i8
+anchors/as.checked.i64.i8.001 cintc compared
+# Reference: anchors/as.checked.i64.i8.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.i64.i8
+anchors/as.checked.i64.i8.002 cintc compared
+# Reference: anchors/as.checked.i64.i8.003 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.i64.i8
+anchors/as.checked.i64.i8.003 cintc compared
+# Reference: anchors/as.checked.i64.i8.004 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.i64.i8
+anchors/as.checked.i64.i8.004 cintc compared
+# Reference: anchors/as.checked.i64.u64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.i64.u64
+anchors/as.checked.i64.u64.001 cintc compared
+# Reference: anchors/as.checked.i64.u64.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.i64.u64
+anchors/as.checked.i64.u64.002 cintc compared
+# Reference: anchors/as.checked.i64.u8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.i64.u8
+anchors/as.checked.i64.u8.001 cintc compared
+# Reference: anchors/as.checked.i64.u8.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.i64.u8
+anchors/as.checked.i64.u8.002 cintc compared
+# Reference: anchors/as.checked.i64.u8.003 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.i64.u8
+anchors/as.checked.i64.u8.003 cintc compared
+# Reference: anchors/as.checked.i8.i64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.i8.i64
+anchors/as.checked.i8.i64.001 cintc compared
+# Reference: anchors/as.checked.i8.u8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.i8.u8
+anchors/as.checked.i8.u8.001 cintc compared
+# Reference: anchors/as.checked.q16_16.i32.floor.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; as.checked.q16_16.i32.floor
+anchors/as.checked.q16_16.i32.floor.001 cintc not_applicable
+# Reference: anchors/as.checked.q16_16.i32.half_away.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; as.checked.q16_16.i32.half_away
+anchors/as.checked.q16_16.i32.half_away.001 cintc not_applicable
+# Reference: anchors/as.checked.q16_16.i32.half_even.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; as.checked.q16_16.i32.half_even
+anchors/as.checked.q16_16.i32.half_even.001 cintc not_applicable
+# Reference: anchors/as.checked.q16_16.q32_32.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; as.checked.q16_16.q32_32
+anchors/as.checked.q16_16.q32_32.001 cintc not_applicable
+# Reference: anchors/as.checked.q32_32.q16_16.ceil.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; as.checked.q32_32.q16_16.ceil
+anchors/as.checked.q32_32.q16_16.ceil.001 cintc not_applicable
+# Reference: anchors/as.checked.q32_32.q16_16.half_even.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; as.checked.q32_32.q16_16.half_even
+anchors/as.checked.q32_32.q16_16.half_even.001 cintc not_applicable
+# Reference: anchors/as.checked.q32_32.q16_16.half_even.002 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; as.checked.q32_32.q16_16.half_even
+anchors/as.checked.q32_32.q16_16.half_even.002 cintc not_applicable
+# Reference: anchors/as.checked.q32_32.q16_16.half_even.003 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; as.checked.q32_32.q16_16.half_even
+anchors/as.checked.q32_32.q16_16.half_even.003 cintc not_applicable
+# Reference: anchors/as.checked.u32.i32.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.u32.i32
+anchors/as.checked.u32.i32.001 cintc compared
+# Reference: anchors/as.checked.u64.i64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.u64.i64
+anchors/as.checked.u64.i64.001 cintc compared
+# Reference: anchors/as.checked.u64.i64.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.u64.i64
+anchors/as.checked.u64.i64.002 cintc compared
+# Reference: anchors/as.checked.u8.i8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.u8.i8
+anchors/as.checked.u8.i8.001 cintc compared
+# Reference: anchors/as.checked.u8.i8.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.checked.u8.i8
+anchors/as.checked.u8.i8.002 cintc compared
+# Reference: anchors/as.wrap.i64.i32.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.wrap.i64.i32
+anchors/as.wrap.i64.i32.001 cintc compared
+# Reference: anchors/as.wrap.i64.i32.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.wrap.i64.i32
+anchors/as.wrap.i64.i32.002 cintc compared
+# Reference: anchors/as.wrap.i64.i8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.wrap.i64.i8
+anchors/as.wrap.i64.i8.001 cintc compared
+# Reference: anchors/as.wrap.i64.i8.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.wrap.i64.i8
+anchors/as.wrap.i64.i8.002 cintc compared
+# Reference: anchors/as.wrap.i64.u64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.wrap.i64.u64
+anchors/as.wrap.i64.u64.001 cintc compared
+# Reference: anchors/as.wrap.i64.u8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.wrap.i64.u8
+anchors/as.wrap.i64.u8.001 cintc compared
+# Reference: anchors/as.wrap.i64.u8.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.wrap.i64.u8
+anchors/as.wrap.i64.u8.002 cintc compared
+# Reference: anchors/as.wrap.i8.u8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.wrap.i8.u8
+anchors/as.wrap.i8.u8.001 cintc compared
+# Reference: anchors/as.wrap.u32.i32.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.wrap.u32.i32
+anchors/as.wrap.u32.i32.001 cintc compared
+# Reference: anchors/as.wrap.u64.i64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.wrap.u64.i64
+anchors/as.wrap.u64.i64.001 cintc compared
+# Reference: anchors/as.wrap.u8.i8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation as.wrap.u8.i8
+anchors/as.wrap.u8.i8.001 cintc compared
+# Reference: anchors/div.checked.i64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation div.checked.i64
+anchors/div.checked.i64.001 cintc compared
+# Reference: anchors/div.checked.i64.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation div.checked.i64
+anchors/div.checked.i64.002 cintc compared
+# Reference: anchors/div.checked.i64.003 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation div.checked.i64
+anchors/div.checked.i64.003 cintc compared
+# Reference: anchors/div.checked.i64.004 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation div.checked.i64
+anchors/div.checked.i64.004 cintc compared
+# Reference: anchors/div.checked.i64.005 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation div.checked.i64
+anchors/div.checked.i64.005 cintc compared
+# Reference: anchors/div.checked.i64.006 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation div.checked.i64
+anchors/div.checked.i64.006 cintc compared
+# Reference: anchors/div.checked.i64.007 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation div.checked.i64
+anchors/div.checked.i64.007 cintc compared
+# Reference: anchors/div.checked.i64.008 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation div.checked.i64
+anchors/div.checked.i64.008 cintc compared
+# Reference: anchors/div.checked.i64.009 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation div.checked.i64
+anchors/div.checked.i64.009 cintc compared
+# Reference: anchors/div.checked.i64.010 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation div.checked.i64
+anchors/div.checked.i64.010 cintc compared
+# Reference: anchors/div.checked.i8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation div.checked.i8
+anchors/div.checked.i8.001 cintc compared
+# Reference: anchors/div.checked.q16_16.floor.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; div.checked.q16_16.floor
+anchors/div.checked.q16_16.floor.001 cintc not_applicable
+# Reference: anchors/div.checked.q16_16.half_even.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; div.checked.q16_16.half_even
+anchors/div.checked.q16_16.half_even.001 cintc not_applicable
+# Reference: anchors/div.checked.q16_16.half_even.002 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; div.checked.q16_16.half_even
+anchors/div.checked.q16_16.half_even.002 cintc not_applicable
+# Reference: anchors/div.checked.q16_16.half_even.003 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; div.checked.q16_16.half_even
+anchors/div.checked.q16_16.half_even.003 cintc not_applicable
+# Reference: anchors/div.checked.q16_16.half_even.004 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; div.checked.q16_16.half_even
+anchors/div.checked.q16_16.half_even.004 cintc not_applicable
+# Reference: anchors/div.checked.q16_16.half_even.005 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; div.checked.q16_16.half_even
+anchors/div.checked.q16_16.half_even.005 cintc not_applicable
+# Reference: anchors/div.checked.u8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation div.checked.u8
+anchors/div.checked.u8.001 cintc compared
+# Reference: anchors/fold_checked.add.i64.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; fold_checked.add.i64
+anchors/fold_checked.add.i64.001 cintc not_applicable
+# Reference: anchors/fold_checked.add.i64.002 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; fold_checked.add.i64
+anchors/fold_checked.add.i64.002 cintc not_applicable
+# Reference: anchors/fold_checked.add.i8.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; fold_checked.add.i8
+anchors/fold_checked.add.i8.001 cintc not_applicable
+# Reference: anchors/fold_checked.add.i8.002 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; fold_checked.add.i8
+anchors/fold_checked.add.i8.002 cintc not_applicable
+# Reference: anchors/fold_checked.add.i8.003 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; fold_checked.add.i8
+anchors/fold_checked.add.i8.003 cintc not_applicable
+# Reference: anchors/fold_checked.mul.i8.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; fold_checked.mul.i8
+anchors/fold_checked.mul.i8.001 cintc not_applicable
+# Reference: anchors/isqrt.checked.i128.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; isqrt.checked.i128
+anchors/isqrt.checked.i128.001 cintc not_applicable
+# Reference: anchors/isqrt_round.checked.i128.half_even.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; isqrt_round.checked.i128.half_even
+anchors/isqrt_round.checked.i128.half_even.001 cintc not_applicable
+# Reference: anchors/mul.checked.i32.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation mul.checked.i32
+anchors/mul.checked.i32.001 cintc compared
+# Reference: anchors/mul.checked.i32.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation mul.checked.i32
+anchors/mul.checked.i32.002 cintc compared
+# Reference: anchors/mul.checked.i64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation mul.checked.i64
+anchors/mul.checked.i64.001 cintc compared
+# Reference: anchors/mul.checked.i64.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation mul.checked.i64
+anchors/mul.checked.i64.002 cintc compared
+# Reference: anchors/mul.checked.i64.003 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation mul.checked.i64
+anchors/mul.checked.i64.003 cintc compared
+# Reference: anchors/mul.checked.i64.004 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation mul.checked.i64
+anchors/mul.checked.i64.004 cintc compared
+# Reference: anchors/mul.checked.i8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation mul.checked.i8
+anchors/mul.checked.i8.001 cintc compared
+# Reference: anchors/mul.checked.i8.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation mul.checked.i8
+anchors/mul.checked.i8.002 cintc compared
+# Reference: anchors/mul.checked.i8.003 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation mul.checked.i8
+anchors/mul.checked.i8.003 cintc compared
+# Reference: anchors/mul.checked.i8.004 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation mul.checked.i8
+anchors/mul.checked.i8.004 cintc compared
+# Reference: anchors/mul.checked.q16_16.floor.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; mul.checked.q16_16.floor
+anchors/mul.checked.q16_16.floor.001 cintc not_applicable
+# Reference: anchors/mul.checked.q16_16.floor.002 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; mul.checked.q16_16.floor
+anchors/mul.checked.q16_16.floor.002 cintc not_applicable
+# Reference: anchors/mul.checked.q16_16.half_away.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; mul.checked.q16_16.half_away
+anchors/mul.checked.q16_16.half_away.001 cintc not_applicable
+# Reference: anchors/mul.checked.q16_16.half_even.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; mul.checked.q16_16.half_even
+anchors/mul.checked.q16_16.half_even.001 cintc not_applicable
+# Reference: anchors/mul.checked.q16_16.half_even.002 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; mul.checked.q16_16.half_even
+anchors/mul.checked.q16_16.half_even.002 cintc not_applicable
+# Reference: anchors/mul.checked.q16_16.half_even.003 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; mul.checked.q16_16.half_even
+anchors/mul.checked.q16_16.half_even.003 cintc not_applicable
+# Reference: anchors/mul.checked.q16_16.half_even.004 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; mul.checked.q16_16.half_even
+anchors/mul.checked.q16_16.half_even.004 cintc not_applicable
+# Reference: anchors/mul.checked.q16_16.half_even.005 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; mul.checked.q16_16.half_even
+anchors/mul.checked.q16_16.half_even.005 cintc not_applicable
+# Reference: anchors/mul.checked.q16_16.half_even.006 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; mul.checked.q16_16.half_even
+anchors/mul.checked.q16_16.half_even.006 cintc not_applicable
+# Reference: anchors/mul.checked.q16_16.half_up.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; mul.checked.q16_16.half_up
+anchors/mul.checked.q16_16.half_up.001 cintc not_applicable
+# Reference: anchors/mul.checked.q16_16.trunc.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; mul.checked.q16_16.trunc
+anchors/mul.checked.q16_16.trunc.001 cintc not_applicable
+# Reference: anchors/mul.checked.u64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation mul.checked.u64
+anchors/mul.checked.u64.001 cintc compared
+# Reference: anchors/mul.checked.u8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation mul.checked.u8
+anchors/mul.checked.u8.001 cintc compared
+# Reference: anchors/mul.sat.q16_16.half_even.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; mul.sat.q16_16.half_even
+anchors/mul.sat.q16_16.half_even.001 cintc not_applicable
+# Reference: anchors/mul.wrap.i32.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation mul.wrap.i32
+anchors/mul.wrap.i32.001 cintc compared
+# Reference: anchors/mul.wrap.i64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation mul.wrap.i64
+anchors/mul.wrap.i64.001 cintc compared
+# Reference: anchors/mul.wrap.i8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation mul.wrap.i8
+anchors/mul.wrap.i8.001 cintc compared
+# Reference: anchors/mul.wrap.u64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation mul.wrap.u64
+anchors/mul.wrap.u64.001 cintc compared
+# Reference: anchors/mul.wrap.u8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation mul.wrap.u8
+anchors/mul.wrap.u8.001 cintc compared
+# Reference: anchors/mul_full.checked.i64.i128.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; mul_full.checked.i64.i128
+anchors/mul_full.checked.i64.i128.001 cintc not_applicable
+# Reference: anchors/mul_full.checked.i64.i128.002 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; mul_full.checked.i64.i128
+anchors/mul_full.checked.i64.i128.002 cintc not_applicable
+# Reference: anchors/neg.checked.i64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation neg.checked.i64
+anchors/neg.checked.i64.001 cintc compared
+# Reference: anchors/neg.checked.i8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation neg.checked.i8
+anchors/neg.checked.i8.001 cintc compared
+# Reference: anchors/neg.checked.i8.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation neg.checked.i8
+anchors/neg.checked.i8.002 cintc compared
+# Reference: anchors/neg.checked.u32.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation neg.checked.u32
+anchors/neg.checked.u32.001 cintc compared
+# Reference: anchors/neg.checked.u32.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation neg.checked.u32
+anchors/neg.checked.u32.002 cintc compared
+# Reference: anchors/reduce_max.checked.i64.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; reduce_max.checked.i64
+anchors/reduce_max.checked.i64.001 cintc not_applicable
+# Reference: anchors/reduce_min.checked.i64.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; reduce_min.checked.i64
+anchors/reduce_min.checked.i64.001 cintc not_applicable
+# Reference: anchors/rem.checked.i1024.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; rem.checked.i1024
+anchors/rem.checked.i1024.001 cintc not_applicable
+# Reference: anchors/rem.checked.i1024.002 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; rem.checked.i1024
+anchors/rem.checked.i1024.002 cintc not_applicable
+# Reference: anchors/rem.checked.i64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation rem.checked.i64
+anchors/rem.checked.i64.001 cintc compared
+# Reference: anchors/rem.checked.i64.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation rem.checked.i64
+anchors/rem.checked.i64.002 cintc compared
+# Reference: anchors/rem.checked.i64.003 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation rem.checked.i64
+anchors/rem.checked.i64.003 cintc compared
+# Reference: anchors/rem.checked.i64.004 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation rem.checked.i64
+anchors/rem.checked.i64.004 cintc compared
+# Reference: anchors/rem.checked.i64.005 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation rem.checked.i64
+anchors/rem.checked.i64.005 cintc compared
+# Reference: anchors/rem.checked.i64.006 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation rem.checked.i64
+anchors/rem.checked.i64.006 cintc compared
+# Reference: anchors/rem.checked.i64.007 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation rem.checked.i64
+anchors/rem.checked.i64.007 cintc compared
+# Reference: anchors/rem.checked.i64.008 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation rem.checked.i64
+anchors/rem.checked.i64.008 cintc compared
+# Reference: anchors/rem.checked.i8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation rem.checked.i8
+anchors/rem.checked.i8.001 cintc compared
+# Reference: anchors/rem.checked.u8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation rem.checked.u8
+anchors/rem.checked.u8.001 cintc compared
+# Reference: anchors/shl.checked.i32.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shl.checked.i32
+anchors/shl.checked.i32.001 cintc compared
+# Reference: anchors/shl.checked.i64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shl.checked.i64
+anchors/shl.checked.i64.001 cintc compared
+# Reference: anchors/shl.checked.i64.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shl.checked.i64
+anchors/shl.checked.i64.002 cintc compared
+# Reference: anchors/shl.checked.i64.003 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shl.checked.i64
+anchors/shl.checked.i64.003 cintc compared
+# Reference: anchors/shl.checked.i64.004 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shl.checked.i64
+anchors/shl.checked.i64.004 cintc compared
+# Reference: anchors/shl.checked.i64.005 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shl.checked.i64
+anchors/shl.checked.i64.005 cintc compared
+# Reference: anchors/shl.checked.i64.006 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shl.checked.i64
+anchors/shl.checked.i64.006 cintc compared
+# Reference: anchors/shl.checked.i8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shl.checked.i8
+anchors/shl.checked.i8.001 cintc compared
+# Reference: anchors/shl.checked.i8.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shl.checked.i8
+anchors/shl.checked.i8.002 cintc compared
+# Reference: anchors/shl.checked.i8.003 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shl.checked.i8
+anchors/shl.checked.i8.003 cintc compared
+# Reference: anchors/shl.checked.u32.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shl.checked.u32
+anchors/shl.checked.u32.001 cintc compared
+# Reference: anchors/shl.checked.u32.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shl.checked.u32
+anchors/shl.checked.u32.002 cintc compared
+# Reference: anchors/shl.checked.u8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shl.checked.u8
+anchors/shl.checked.u8.001 cintc compared
+# Reference: anchors/shl.checked.u8.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shl.checked.u8
+anchors/shl.checked.u8.002 cintc compared
+# Reference: anchors/shl.checked.u8.003 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shl.checked.u8
+anchors/shl.checked.u8.003 cintc compared
+# Reference: anchors/shl.wrap.i64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shl.wrap.i64
+anchors/shl.wrap.i64.001 cintc compared
+# Reference: anchors/shl.wrap.i64.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shl.wrap.i64
+anchors/shl.wrap.i64.002 cintc compared
+# Reference: anchors/shl.wrap.i64.003 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shl.wrap.i64
+anchors/shl.wrap.i64.003 cintc compared
+# Reference: anchors/shl.wrap.i8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shl.wrap.i8
+anchors/shl.wrap.i8.001 cintc compared
+# Reference: anchors/shl.wrap.u8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shl.wrap.u8
+anchors/shl.wrap.u8.001 cintc compared
+# Reference: anchors/shr.checked.i32.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shr.checked.i32
+anchors/shr.checked.i32.001 cintc compared
+# Reference: anchors/shr.checked.i64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shr.checked.i64
+anchors/shr.checked.i64.001 cintc compared
+# Reference: anchors/shr.checked.i64.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shr.checked.i64
+anchors/shr.checked.i64.002 cintc compared
+# Reference: anchors/shr.checked.i64.003 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shr.checked.i64
+anchors/shr.checked.i64.003 cintc compared
+# Reference: anchors/shr.checked.i64.004 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shr.checked.i64
+anchors/shr.checked.i64.004 cintc compared
+# Reference: anchors/shr.checked.i64.005 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shr.checked.i64
+anchors/shr.checked.i64.005 cintc compared
+# Reference: anchors/shr.checked.i8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shr.checked.i8
+anchors/shr.checked.i8.001 cintc compared
+# Reference: anchors/shr.checked.i8.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shr.checked.i8
+anchors/shr.checked.i8.002 cintc compared
+# Reference: anchors/shr.checked.u64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shr.checked.u64
+anchors/shr.checked.u64.001 cintc compared
+# Reference: anchors/shr.checked.u8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation shr.checked.u8
+anchors/shr.checked.u8.001 cintc compared
+# Reference: anchors/sqrt.checked.q16_16.floor.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sqrt.checked.q16_16.floor
+anchors/sqrt.checked.q16_16.floor.001 cintc not_applicable
+# Reference: anchors/sqrt.checked.q16_16.floor.002 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sqrt.checked.q16_16.floor
+anchors/sqrt.checked.q16_16.floor.002 cintc not_applicable
+# Reference: anchors/sqrt.checked.q16_16.half_even.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sqrt.checked.q16_16.half_even
+anchors/sqrt.checked.q16_16.half_even.001 cintc not_applicable
+# Reference: anchors/sqrt.checked.q16_16.half_even.002 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sqrt.checked.q16_16.half_even
+anchors/sqrt.checked.q16_16.half_even.002 cintc not_applicable
+# Reference: anchors/sqrt.checked.q16_16.half_even.003 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sqrt.checked.q16_16.half_even
+anchors/sqrt.checked.q16_16.half_even.003 cintc not_applicable
+# Reference: anchors/sqrt.checked.q1_15.away.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sqrt.checked.q1_15.away
+anchors/sqrt.checked.q1_15.away.001 cintc not_applicable
+# Reference: anchors/sqrt.checked.q1_15.ceil.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sqrt.checked.q1_15.ceil
+anchors/sqrt.checked.q1_15.ceil.001 cintc not_applicable
+# Reference: anchors/sqrt.checked.q1_15.floor.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sqrt.checked.q1_15.floor
+anchors/sqrt.checked.q1_15.floor.001 cintc not_applicable
+# Reference: anchors/sqrt.checked.q1_15.half_even.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sqrt.checked.q1_15.half_even
+anchors/sqrt.checked.q1_15.half_even.001 cintc not_applicable
+# Reference: anchors/sqrt.checked.q1_63.ceil.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sqrt.checked.q1_63.ceil
+anchors/sqrt.checked.q1_63.ceil.001 cintc not_applicable
+# Reference: anchors/sqrt.checked.q1_63.floor.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sqrt.checked.q1_63.floor
+anchors/sqrt.checked.q1_63.floor.001 cintc not_applicable
+# Reference: anchors/sqrt.checked.q1_63.half_even.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sqrt.checked.q1_63.half_even
+anchors/sqrt.checked.q1_63.half_even.001 cintc not_applicable
+# Reference: anchors/sqrt.checked.q32_32.floor.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sqrt.checked.q32_32.floor
+anchors/sqrt.checked.q32_32.floor.001 cintc not_applicable
+# Reference: anchors/sqrt.checked.q32_32.half_even.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sqrt.checked.q32_32.half_even
+anchors/sqrt.checked.q32_32.half_even.001 cintc not_applicable
+# Reference: anchors/sub.checked.i32.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation sub.checked.i32
+anchors/sub.checked.i32.001 cintc compared
+# Reference: anchors/sub.checked.i64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation sub.checked.i64
+anchors/sub.checked.i64.001 cintc compared
+# Reference: anchors/sub.checked.i64.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation sub.checked.i64
+anchors/sub.checked.i64.002 cintc compared
+# Reference: anchors/sub.checked.i8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation sub.checked.i8
+anchors/sub.checked.i8.001 cintc compared
+# Reference: anchors/sub.checked.u64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation sub.checked.u64
+anchors/sub.checked.u64.001 cintc compared
+# Reference: anchors/sub.checked.u8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation sub.checked.u8
+anchors/sub.checked.u8.001 cintc compared
+# Reference: anchors/sub.checked.u8.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation sub.checked.u8
+anchors/sub.checked.u8.002 cintc compared
+# Reference: anchors/sub.wrap.i64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation sub.wrap.i64
+anchors/sub.wrap.i64.001 cintc compared
+# Reference: anchors/sub.wrap.i64.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation sub.wrap.i64
+anchors/sub.wrap.i64.002 cintc compared
+# Reference: anchors/sub.wrap.u64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation sub.wrap.u64
+anchors/sub.wrap.u64.001 cintc compared
+# Reference: anchors/sub.wrap.u8.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation sub.wrap.u8
+anchors/sub.wrap.u8.001 cintc compared
+# Reference: anchors/sub.wrap.u8.002 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation sub.wrap.u8
+anchors/sub.wrap.u8.002 cintc compared
+# Reference: anchors/sum.checked.i64.i64.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sum.checked.i64.i64
+anchors/sum.checked.i64.i64.001 cintc not_applicable
+# Reference: anchors/sum.checked.i64.i64.002 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sum.checked.i64.i64
+anchors/sum.checked.i64.i64.002 cintc not_applicable
+# Reference: anchors/sum.checked.i8.i16.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sum.checked.i8.i16
+anchors/sum.checked.i8.i16.001 cintc not_applicable
+# Reference: anchors/sum.checked.i8.i8.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sum.checked.i8.i8
+anchors/sum.checked.i8.i8.001 cintc not_applicable
+# Reference: anchors/sum.checked.i8.i8.002 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sum.checked.i8.i8
+anchors/sum.checked.i8.i8.002 cintc not_applicable
+# Reference: anchors/sum_sat.sat.i8.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sum_sat.sat.i8
+anchors/sum_sat.sat.i8.001 cintc not_applicable
+# Reference: anchors/sum_sat.sat.i8.002 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sum_sat.sat.i8
+anchors/sum_sat.sat.i8.002 cintc not_applicable
+# Reference: anchors/sum_sat.sat.i8.003 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sum_sat.sat.i8
+anchors/sum_sat.sat.i8.003 cintc not_applicable
+# Reference: anchors/sum_sat.sat.i8.004 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sum_sat.sat.i8
+anchors/sum_sat.sat.i8.004 cintc not_applicable
+# Reference: anchors/sum_wrap.wrap.i8.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sum_wrap.wrap.i8
+anchors/sum_wrap.wrap.i8.001 cintc not_applicable
+# Reference: anchors/sum_wrap.wrap.i8.002 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; sum_wrap.wrap.i8
+anchors/sum_wrap.wrap.i8.002 cintc not_applicable
+# Reference: arith/bitwise_not cintc SPEC-09 CONF-14.1; SPEC-01 4.7
+arith/bitwise_not cintc compared
+# Reference: arith/const_mul_overflow cintc SPEC-09 CONF-14.1; SPEC-01 3.2 (fixture 97), 8.3, 8.4
+arith/const_mul_overflow cintc compared
+# Reference: arith/const_narrow_literal_2p3000 cintc SPEC-09 CONF-14.1; SPEC-04 LS-31, LS-53; SPEC-01 IM-26, IM-106, IM-108; owner decision 2026-10-03, slice 2 patch D-17
+arith/const_narrow_literal_2p3000 cintc compared
+# Reference: arith/const_narrow_literal_as cintc SPEC-09 CONF-14.1; SPEC-04 LS-53; SPEC-01 4.6, 9.2 (E_NARROW); SPEC-09 SEED-08
+arith/const_narrow_literal_as cintc compared
+# Reference: arith/const_narrow_literal_max cintc SPEC-09 CONF-14.1; SPEC-04 LS-25, LS-31, LS-53; SPEC-01 IM-26, IM-106, IM-108; owner decision 2026-10-03, slice 2 patch D-17
+arith/const_narrow_literal_max cintc compared
+# Reference: arith/const_narrow_typed_as cintc SPEC-09 CONF-14.1; SPEC-01 4.6, 9.2 (E_NARROW); SPEC-09 SEED-08
+arith/const_narrow_typed_as cintc compared
+# Reference: arith/const_nested_literal_out_of_range cintc SPEC-09 CONF-14.1; SPEC-01 3.2 (propagation of context type); SPEC-04 4.2 rule 1; plan Review Focus 4
+arith/const_nested_literal_out_of_range cintc compared
+# Reference: arith/const_shift_count cintc SPEC-09 CONF-14.1; SPEC-01 3.2 (fixture 98), 4.6, 8.4
+arith/const_shift_count cintc compared
+# Reference: arith/const_skipped_and cintc SPEC-09 CONF-14.1; SPEC-01 IM-23; SPEC-04 LS-264 (slice 2 decisions)
+arith/const_skipped_and cintc compared
+# Reference: arith/const_type_mismatch cintc SPEC-09 CONF-14.1; SPEC-01 3.2 (fixture 101); SPEC-04 4.2 rule 3
+arith/const_type_mismatch cintc compared
+# Reference: arith/div_zero_runtime cintc SPEC-09 CONF-14.1; SPEC-01 IM-39, IM-106
+arith/div_zero_runtime cintc compared
+# Reference: arith/eval_order_left_first cintc SPEC-09 CONF-14.1; SPEC-01 IM-92, IM-96 (fixture 92)
+arith/eval_order_left_first cintc compared
+# Reference: arith/floor_division_literals cintc SPEC-09 CONF-14.1; SPEC-01 4.4; SPEC-04 4.2 (negative literal), 7.5
+arith/floor_division_literals cintc compared
+# Reference: arith/floor_remainder_runtime cintc SPEC-09 CONF-14.1; SPEC-01 4.4
+arith/floor_remainder_runtime cintc compared
+# Reference: arith/literal_conversion_skipped_operand cintc SPEC-09 CONF-14.1; SPEC-01 IM-23, IM-26, IM-108; SPEC-04 LS-53; owner decision 2026-10-03, slice 2 patch D-17 (amending D-9)
+arith/literal_conversion_skipped_operand cintc compared
+# Reference: arith/literal_i32_hex cintc SPEC-09 CONF-14.1; SPEC-01 3.1, 3.2 (fixture 56)
+arith/literal_i32_hex cintc compared
+# Reference: arith/literal_i8_128 cintc SPEC-09 CONF-14.1; SPEC-01 3.2 (fixture 54); SPEC-04 3.5
+arith/literal_i8_128 cintc compared
+# Reference: arith/literal_i8_minus128 cintc SPEC-09 CONF-14.1; SPEC-01 3.2 (fixture 55); SPEC-04 3.5 rule 4
+arith/literal_i8_minus128 cintc compared
+# Reference: arith/literal_wrap_conversion cintc SPEC-09 CONF-14.1; SPEC-01 3.2 (conversion sources)
+arith/literal_wrap_conversion cintc compared
+# Reference: arith/min_div_minus_one cintc SPEC-09 CONF-14.1; SPEC-01 IM-39, IM-124; plan Review Focus 2
+arith/min_div_minus_one cintc compared
+# Reference: arith/min_rem_minus_one cintc SPEC-09 CONF-14.1; SPEC-01 4.4, 9.6; plan Review Focus 2
+arith/min_rem_minus_one cintc compared
+# Reference: arith/narrow_runtime cintc SPEC-09 CONF-14.1; SPEC-01 IM-50
+arith/narrow_runtime cintc compared
+# Reference: arith/narrow_wrap_runtime cintc SPEC-09 CONF-14.1; SPEC-01 4.9
+arith/narrow_wrap_runtime cintc compared
+# Reference: arith/paren_literal_as_narrow cintc SPEC-09 CONF-14.1; SPEC-01 IM-25, IM-26; SPEC-04 LS-28, LS-151 (slice 2 decisions)
+arith/paren_literal_as_narrow cintc compared
+# Reference: arith/paren_literal_as_u64 cintc SPEC-09 CONF-14.1; SPEC-01 IM-25, IM-26; SPEC-04 LS-28, LS-151 (slice 2 decisions)
+arith/paren_literal_as_u64 cintc compared
+# Reference: arith/runtime_and_constant_operand cintc SPEC-09 CONF-14.1; SPEC-01 IM-23; SPEC-04 LS-264 (slice 2 decisions)
+arith/runtime_and_constant_operand cintc compared
+# Reference: arith/runtime_mul_before_div cintc SPEC-09 CONF-14.1; SPEC-01 IM-101 (no wider intermediate)
+arith/runtime_mul_before_div cintc compared
+# Reference: arith/seed08_const_div_zero cintc SPEC-09 CONF-14.1; SPEC-09 SEED-08 row 6; SPEC-01 4.4, 8.4
+arith/seed08_const_div_zero cintc compared
+# Reference: arith/seed08_const_i64_overflow cintc SPEC-09 CONF-14.1; SPEC-09 SEED-08 row 3; SPEC-01 3.2, 8.4
+arith/seed08_const_i64_overflow cintc compared
+# Reference: arith/seed08_const_overflow cintc SPEC-09 CONF-14.1; SPEC-09 SEED-08 row 2; SPEC-01 3.2, 8.4
+arith/seed08_const_overflow cintc compared
+# Reference: arith/seed08_literal_out_of_range cintc SPEC-09 CONF-14.1; SPEC-09 SEED-08 row 1; SPEC-01 3.2 (fixture 96); SPEC-04 4.2 rule 1
+arith/seed08_literal_out_of_range cintc compared
+# Reference: arith/seed08_runtime_overflow cintc SPEC-09 CONF-14.1; SPEC-09 SEED-08 row 4; SPEC-01 IM-30, IM-106
+arith/seed08_runtime_overflow cintc compared
+# Reference: arith/seed08_wrap_i8 cintc SPEC-09 CONF-14.1; SPEC-09 SEED-08 row 5; SPEC-01 3.2 (fixture 99)
+arith/seed08_wrap_i8 cintc compared
+# Reference: arith/shift_left_operand_typing cintc SPEC-09 CONF-14.1; SPEC-01 3.2 (fixture 109), 4.6
+arith/shift_left_operand_typing cintc compared
+# Reference: arith/shl_count_equals_width cintc SPEC-09 CONF-14.1; SPEC-01 4.6, 9.1; plan Review Focus 3
+arith/shl_count_equals_width cintc compared
+# Reference: arith/shl_wrap_count_equals_width cintc SPEC-09 CONF-14.1; SPEC-01 4.6 (counts are never reduced modulo w); plan Review Focus 3
+arith/shl_wrap_count_equals_width cintc compared
+# Reference: arith/shr_count_above_63 cintc SPEC-09 CONF-14.1; SPEC-01 4.6; plan Review Focus 3
+arith/shr_count_above_63 cintc compared
+# Reference: arith/shr_negative_count cintc SPEC-09 CONF-14.1; SPEC-01 4.6; plan Review Focus 3
+arith/shr_negative_count cintc compared
+# Reference: boot/block_comment cintc SPEC-09 CONF-14.1; SPEC-09 BOOT-01 (BLOCK_COMMENT); SPEC-04 LS-13
+boot/block_comment cintc compared
+# Reference: boot/compound_assignment cintc SPEC-09 CONF-14.1; SPEC-09 BOOT-01 (assign_op); SPEC-04 LS-165, LS-166
+boot/compound_assignment cintc compared
+# Reference: boot/const_extent_composed cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-311; SPEC-09 BOOT-01, EMIT-30
+boot/const_extent_composed cintc compared
+# Reference: boot/const_extent_divide_zero cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-311; SPEC-09 BOOT-01, EMIT-30
+boot/const_extent_divide_zero cintc compared
+# Reference: boot/const_extent_hex cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-311; SPEC-09 BOOT-01, EMIT-30
+boot/const_extent_hex cintc compared
+# Reference: boot/const_extent_limit cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-311; SPEC-09 BOOT-01, EMIT-30
+boot/const_extent_limit cintc compared
+# Reference: boot/const_extent_local_named cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-311; SPEC-09 BOOT-01, EMIT-30
+boot/const_extent_local_named cintc compared
+# Reference: boot/const_extent_module_dependency cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-311; SPEC-09 BOOT-01, EMIT-30
+boot/const_extent_module_dependency cintc compared
+# Reference: boot/const_extent_nonconstant cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-311; SPEC-09 BOOT-01, EMIT-30
+boot/const_extent_nonconstant cintc compared
+# Reference: boot/const_extent_record cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-311; SPEC-09 BOOT-01, EMIT-30
+boot/const_extent_record cintc compared
+# Reference: boot/const_extent_unknown_type_order cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-311; SPEC-09 BOOT-01, EMIT-30
+boot/const_extent_unknown_type_order cintc compared
+# Reference: boot/const_extent_wrong_width cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-311; SPEC-09 BOOT-01, EMIT-30
+boot/const_extent_wrong_width cintc compared
+# Reference: boot/decl_extent_field_call_arity_before_type cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+boot/decl_extent_field_call_arity_before_type cintc compared
+# Reference: boot/decl_extent_field_dependency cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+boot/decl_extent_field_dependency cintc compared
+# Reference: boot/decl_extent_field_duplicate_before_fault cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+boot/decl_extent_field_duplicate_before_fault cintc compared
+# Reference: boot/decl_extent_field_early_call_width cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+boot/decl_extent_field_early_call_width cintc compared
+# Reference: boot/decl_extent_field_fault cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+boot/decl_extent_field_fault cintc compared
+# Reference: boot/decl_extent_field_fault_before_cycle cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+boot/decl_extent_field_fault_before_cycle cintc compared
+# Reference: boot/decl_extent_field_forward cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+boot/decl_extent_field_forward cintc compared
+# Reference: boot/decl_extent_view_named cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+boot/decl_extent_view_named cintc compared
+# Reference: boot/decl_extent_view_record cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+boot/decl_extent_view_record cintc compared
+# Reference: boot/decl_extent_view_unbound_size_before_result cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+boot/decl_extent_view_unbound_size_before_result cintc compared
+# Reference: boot/decl_extent_view_zero cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-67, LS-117, LS-311; SPEC-09 BOOT-01
+boot/decl_extent_view_zero cintc compared
+# Reference: boot/literal_octal_binary cintc SPEC-09 CONF-14.1; SPEC-09 BOOT-01 (OCT_INT, BIN_INT); SPEC-04 LS-24, LS-25, LS-26
+boot/literal_octal_binary cintc compared
+# Reference: boot/string_literal_view cintc SPEC-09 CONF-14.1; SPEC-09 BOOT-01 (STRING, escape), BOOT-02; SPEC-04 LS-40, LS-42, LS-44, LS-45
+boot/string_literal_view cintc compared
+# Reference: control/break_continue cintc SPEC-09 CONF-14.1; SPEC-04 8.6; SPEC-09 5.2
+control/break_continue cintc compared
+# Reference: control/call_order cintc SPEC-09 CONF-14.1; SPEC-01 8.1 (arguments left to right)
+control/call_order cintc compared
+# Reference: control/depth_limit_stack cintc SPEC-09 CONF-14.1; SPEC-01 IM-107, IM-119, IM-139; SPEC-09 CONF-11 (format 2, rule 5); owner decision 2026-10-03, slice 2 patch D-10
+control/depth_limit_stack cintc compared
+# Reference: control/else_if_1000 cintc SPEC-09 CONF-14.1; SPEC-04 LS-168, LS-311; SPEC-09 CINTC-02, CINTC-03 (slice 2 decisions)
+control/else_if_1000 cintc compared
+# Reference: control/else_if_1000_minimal cintc SPEC-09 CONF-14.1; SPEC-04 LS-168, LS-311; SPEC-09 CINTC-02, CINTC-03 (slice 2 decisions)
+control/else_if_1000_minimal cintc compared
+# Reference: control/else_if_126 cintc SPEC-09 CONF-14.1; SPEC-04 LS-168, LS-311; SPEC-09 CINTC-03
+control/else_if_126 cintc compared
+# Reference: control/else_if_chain cintc SPEC-09 CONF-14.1; SPEC-04 8.2
+control/else_if_chain cintc compared
+# Reference: control/for_c_form_i8_overflow cintc SPEC-09 CONF-14.1; SPEC-04 8.1, 8.4 (the I8 loop that faults instead of looping forever)
+control/for_c_form_i8_overflow cintc compared
+# Reference: control/for_range_half_open cintc SPEC-09 CONF-14.1; SPEC-04 8.4; SPEC-09 5.2 (for i in 0..n)
+control/for_range_half_open cintc compared
+# Reference: control/for_range_inclusive cintc SPEC-09 CONF-14.1; SPEC-04 8.4
+control/for_range_inclusive cintc compared
+# Reference: control/fuel_total_n3 cintc SPEC-09 CONF-14.3; I-2; an array argument to the entry; a case list has no form for it before T3 (OQ-133), and a scalar wrapper entry would add a call and change the fuel count
+control/fuel_total_n3 cintc held I-2
+# Reference: control/fuel_total_n3_enough cintc SPEC-09 CONF-14.3; I-2; an array argument to the entry; a case list has no form for it before T3 (OQ-133), and a scalar wrapper entry would add a call and change the fuel count
+control/fuel_total_n3_enough cintc held I-2
+# Reference: control/fuel_while_true cintc SPEC-09 CONF-14.1; SPEC-01 10.2, 10.3
+control/fuel_while_true cintc compared
+# Reference: control/nest_blocks_199 cintc SPEC-09 CONF-14.1; SPEC-09 SEED-11, CINTC-02; seed/OPEN.md SEED-OQ-16
+control/nest_blocks_199 cintc compared
+# Reference: control/nest_blocks_200 cintc SPEC-09 CONF-14.1; SPEC-09 SEED-11, CINTC-02; seed/OPEN.md SEED-OQ-16
+control/nest_blocks_200 cintc compared
+# Reference: control/nest_blocks_256 cintc SPEC-09 CONF-14.1; SPEC-09 CINTC-02, SEED-15; SPEC-04 LS-311 (slice 2 decisions)
+control/nest_blocks_256 cintc compared
+# Reference: control/nest_blocks_257 cintc SPEC-09 CONF-14.1; SPEC-09 CINTC-02, SEED-15; SPEC-04 LS-311 (slice 2 decisions)
+control/nest_blocks_257 cintc compared
+# Reference: control/nest_for_256 cintc SPEC-09 CONF-14.1; SPEC-09 CINTC-02, SEED-15; SPEC-04 LS-311 (slice 2 decisions)
+control/nest_for_256 cintc compared
+# Reference: control/nest_for_49 cintc SPEC-09 CONF-14.1; SPEC-04 8.4, LS-311; SPEC-09 SEED-15, CINTC-02
+control/nest_for_49 cintc compared
+# Reference: control/nest_for_c_49 cintc SPEC-09 CONF-14.1; SPEC-04 8.4, LS-311; SPEC-09 SEED-15, CINTC-02
+control/nest_for_c_49 cintc compared
+# Reference: control/nest_whiles_256 cintc SPEC-09 CONF-14.1; SPEC-09 CINTC-02, SEED-15; SPEC-04 LS-311 (slice 2 decisions)
+control/nest_whiles_256 cintc compared
+# Reference: control/nest_whiles_66 cintc SPEC-09 CONF-14.1; SPEC-09 SEED-11, CINTC-02; seed/OPEN.md SEED-OQ-16
+control/nest_whiles_66 cintc compared
+# Reference: control/nest_whiles_67 cintc SPEC-09 CONF-14.1; SPEC-09 SEED-11, CINTC-02; seed/OPEN.md SEED-OQ-16
+control/nest_whiles_67 cintc compared
+# Reference: control/short_circuit cintc SPEC-09 CONF-14.1; SPEC-01 8.1 (&& and || evaluate only the operands the result requires)
+control/short_circuit cintc compared
+# Reference: control/while_sum cintc SPEC-09 CONF-14.1; SPEC-04 8.3; SPEC-01 10.2
+control/while_sum cintc compared
+# Reference: determinism/fault_path_is_module_relative cintc SPEC-09 CONF-14.1; SPEC-01 IM-106 (position path is module-relative); SPEC-09 CONF-05
+determinism/fault_path_is_module_relative cintc compared
+# Reference: determinism/site_numbering cintc SPEC-09 CONF-14.1; SPEC-09 7.6, 9.5 (CONF-05), SEED-10
+determinism/site_numbering cintc compared
+# Reference: determinism/tab_columns cintc SPEC-09 CONF-14.1; SPEC-04 LS-10 (a tab counts as one column); SPEC-01 IM-106
+determinism/tab_columns cintc compared
+# Reference: diag/block_comment cintc SPEC-09 CONF-14.1; SPEC-04 LS-13, LS-14; SPEC-09 5.5 BLOCK_COMMENT
+diag/block_comment cintc compared
+# Reference: diag/c1002_byte_order_mark cintc SPEC-09 CONF-14.1; SPEC-04 3.1; SPEC-04 17.1, 17.2
+diag/c1002_byte_order_mark cintc compared
+# Reference: diag/c1003_bidi_control_in_comment cintc SPEC-09 CONF-14.1; SPEC-04 3.1 (CVE-2021-42574); SPEC-04 17.1, 17.2
+diag/c1003_bidi_control_in_comment cintc compared
+# Reference: diag/c1010_reserved_type_name cintc SPEC-09 CONF-14.1; SPEC-04 3.4; SPEC-04 17.1, 17.2
+diag/c1010_reserved_type_name cintc compared
+# Reference: diag/c1020_uppercase_hex_prefix cintc SPEC-09 CONF-14.1; SPEC-04 3.5 rule 1; SPEC-04 17.1, 17.2
+diag/c1020_uppercase_hex_prefix cintc compared
+# Reference: diag/c1021_doubled_separator cintc SPEC-09 CONF-14.1; SPEC-04 3.5 rule 2; SPEC-04 17.1, 17.2
+diag/c1021_doubled_separator cintc compared
+# Reference: diag/c1022_leading_zero cintc SPEC-09 CONF-14.1; SPEC-04 3.5 rule 3; SPEC-04 17.1, 17.2
+diag/c1022_leading_zero cintc compared
+# Reference: diag/c1023_literal_4097_bits cintc SPEC-09 CONF-14.1; SPEC-04 LS-31, LS-311; owner decision 2026-10-03, slice 2 patch D-17
+diag/c1023_literal_4097_bits cintc compared
+# Reference: diag/c1032_unknown_escape cintc SPEC-09 CONF-14.1; SPEC-04 3.8 (escapes), LS-278; seed/OPEN.md SEED-OQ-09
+diag/c1032_unknown_escape cintc compared
+# Reference: diag/c1040_empty_statement cintc SPEC-09 CONF-14.1; SPEC-04 8.1; SPEC-04 17.1, 17.2
+diag/c1040_empty_statement cintc compared
+# Reference: diag/c1041_assignment_in_condition cintc SPEC-09 CONF-14.1; SPEC-04 8.1; SPEC-04 17.1, 17.2
+diag/c1041_assignment_in_condition cintc compared
+# Reference: diag/c1042_increment_in_expression cintc SPEC-09 CONF-14.1; SPEC-04 8.1; SPEC-04 17.1, 17.2
+diag/c1042_increment_in_expression cintc compared
+# Reference: diag/c1043_if_without_braces cintc SPEC-09 CONF-14.1; SPEC-04 8.2; SPEC-04 17.1, 17.2
+diag/c1043_if_without_braces cintc compared
+# Reference: diag/c2001_implicit_widening cintc SPEC-09 CONF-14.1; SPEC-04 6.6; SPEC-01 4.1; SPEC-04 17.1, 17.2
+diag/c2001_implicit_widening cintc compared
+# Reference: diag/c2001_range_bound_i32 cintc SPEC-09 CONF-14.1; SPEC-01 2.2 (fixture 110); SPEC-04 17.1, 17.2
+diag/c2001_range_bound_i32 cintc compared
+# Reference: diag/c2001_shift_left_operand_rule4 cintc SPEC-09 CONF-14.1; SPEC-01 IM-23; SPEC-04 LS-264 (slice 2 decisions); SPEC-04 LS-57
+diag/c2001_shift_left_operand_rule4 cintc compared
+# Reference: diag/c2002_integer_condition cintc SPEC-09 CONF-14.1; SPEC-01 2.3; SPEC-04 6.6; SPEC-04 17.1, 17.2
+diag/c2002_integer_condition cintc compared
+# Reference: diag/c2003_comparison_literal cintc SPEC-09 CONF-14.1; SPEC-04 4.2 rule 7; SPEC-04 17.1, 17.2
+diag/c2003_comparison_literal cintc compared
+# Reference: diag/c2003_neg_paren_literal_i8 cintc SPEC-09 CONF-14.1; SPEC-01 IM-25, IM-26; SPEC-04 LS-28, LS-151 (slice 2 decisions); SPEC-04 LS-313 (C2003 position)
+diag/c2003_neg_paren_literal_i8 cintc compared
+# Reference: diag/c2003_paren_literal cintc SPEC-09 CONF-14.1; SPEC-04 LS-53, LS-278; ref/OPEN.md REF-OQ-25
+diag/c2003_paren_literal cintc compared
+# Reference: diag/c2003_skipped_and cintc SPEC-09 CONF-14.1; SPEC-01 3.2; SPEC-04 4.2 rules 1 and 7; SPEC-04 17.1, 17.2
+diag/c2003_skipped_and cintc compared
+# Reference: diag/c2003_skipped_or cintc SPEC-09 CONF-14.1; SPEC-01 3.2; SPEC-04 4.2 rules 1 and 7; SPEC-04 17.1, 17.2
+diag/c2003_skipped_or cintc compared
+# Reference: diag/c2003_unsigned_minus_one cintc SPEC-09 CONF-14.1; SPEC-01 3.2; SPEC-04 4.2; SPEC-04 17.1, 17.2
+diag/c2003_unsigned_minus_one cintc compared
+# Reference: diag/c2003_unsigned_minus_space cintc SPEC-09 CONF-14.1; SPEC-01 IM-25, IM-26; SPEC-04 LS-28, LS-151 (slice 2 decisions)
+diag/c2003_unsigned_minus_space cintc compared
+# Reference: diag/c2050_uninitialized_scalar cintc SPEC-09 CONF-14.1; SPEC-04 5.1; SPEC-04 17.1, 17.2
+diag/c2050_uninitialized_scalar cintc compared
+# Reference: diag/c2052_assign_loop_variable cintc SPEC-09 CONF-14.1; SPEC-04 8.4; SPEC-04 17.1, 17.2
+diag/c2052_assign_loop_variable cintc compared
+# Reference: diag/c2055_nested_direct cintc SPEC-09 CONF-14.1; SPEC-04 LS-73, LS-313
+diag/c2055_nested_direct cintc compared
+# Reference: diag/c2055_nested_indirect cintc SPEC-09 CONF-14.1; SPEC-04 LS-73, LS-313
+diag/c2055_nested_indirect cintc compared
+# Reference: diag/c2055_record_array_direct cintc SPEC-09 CONF-14.1; SPEC-04 LS-73, LS-313
+diag/c2055_record_array_direct cintc compared
+# Reference: diag/c2055_record_array_indirect cintc SPEC-09 CONF-14.1; SPEC-04 LS-73, LS-313
+diag/c2055_record_array_indirect cintc compared
+# Reference: diag/c2055_zero_array_direct cintc SPEC-09 CONF-14.1; SPEC-04 LS-68, LS-73, LS-313
+diag/c2055_zero_array_direct cintc compared
+# Reference: diag/c2055_zero_array_indirect cintc SPEC-09 CONF-14.1; SPEC-04 LS-68, LS-73, LS-313
+diag/c2055_zero_array_indirect cintc compared
+# Reference: diag/c2056_integer_as_bool cintc SPEC-09 CONF-14.1; SPEC-01 2.3; SPEC-04 6.6; SPEC-04 17.1, 17.2
+diag/c2056_integer_as_bool cintc compared
+# Reference: diag/c2101_mixed_logical cintc SPEC-09 CONF-14.1; SPEC-04 7.2; SPEC-04 17.1, 17.2
+diag/c2101_mixed_logical cintc compared
+# Reference: diag/c2101_neg_paren_as cintc SPEC-09 CONF-14.1; SPEC-01 IM-25, IM-26; SPEC-04 LS-28, LS-151 (slice 2 decisions)
+diag/c2101_neg_paren_as cintc compared
+# Reference: diag/c2101_shift_with_arithmetic cintc SPEC-09 CONF-14.1; SPEC-04 7.2; SPEC-04 17.1, 17.2
+diag/c2101_shift_with_arithmetic cintc compared
+# Reference: diag/c2102_chained_comparison cintc SPEC-09 CONF-14.1; SPEC-01 4.8; SPEC-04 7.3; SPEC-04 17.1, 17.2
+diag/c2102_chained_comparison cintc compared
+# Reference: diag/c3001_duplicate_name cintc SPEC-09 CONF-14.1; SPEC-04 5.3, 11; SPEC-04 17.1, 17.2
+diag/c3001_duplicate_name cintc compared
+# Reference: diag/c4001_missing_return cintc SPEC-09 CONF-14.1; SPEC-04 6.1; SPEC-04 17.1, 17.2
+diag/c4001_missing_return cintc compared
+# Reference: diag/c4012_expression_statement cintc SPEC-09 CONF-14.1; SPEC-04 8.1; SPEC-04 17.1, 17.2
+diag/c4012_expression_statement cintc compared
+# Reference: diag/c4012_keyword_as_name cintc SPEC-09 CONF-14.1; SPEC-04 LS-167; SPEC-09 BOOT-01 (core-1 static diagnostics apply in boot-1)
+diag/c4012_keyword_as_name cintc compared
+# Reference: diag/neg_literal_comment cintc SPEC-09 CONF-14.1; SPEC-01 IM-25, IM-26; SPEC-04 LS-28, LS-151 (slice 2 decisions)
+diag/neg_literal_comment cintc compared
+# Reference: diag/neg_literal_space cintc SPEC-09 CONF-14.1; SPEC-01 IM-25, IM-26; SPEC-04 LS-28, LS-151 (slice 2 decisions)
+diag/neg_literal_space cintc compared
+# Reference: module/alias_function_c3001 cintc SPEC-09 CONF-14.1; SPEC-04 LS-228 (a module-level declaration named like an alias: C3001); SPEC-09 CINTC-16
+module/alias_function_c3001 cintc compared
+# Reference: module/alias_loop_var_c3001 cintc SPEC-09 CONF-14.1; SPEC-04 LS-228 (a loop variable may not take a visible alias: C3001); SPEC-09 CINTC-16
+module/alias_loop_var_c3001 cintc compared
+# Reference: module/alias_param_c3001 cintc SPEC-09 CONF-14.1; SPEC-04 LS-228 (a parameter may not take a visible alias: C3001); SPEC-09 CINTC-16
+module/alias_param_c3001 cintc compared
+# Reference: module/alias_twice_c3001 cintc SPEC-09 CONF-14.1; SPEC-04 LS-228 (an alias is a module-level name; two imports with one alias: C3001); SPEC-09 CINTC-16
+module/alias_twice_c3001 cintc compared
+# Reference: module/c3009_case_mismatch cintc SPEC-09 CONF-14.1; SPEC-09 CINTC-12, CINTC-15 (a name is resolved byte for byte against the directory entry); SPEC-04 LS-225
+module/c3009_case_mismatch cintc compared
+# Reference: module/c3030_case_fold cintc SPEC-09 CONF-14.1; SPEC-09 CINTC-12 (the paths of one program are distinct under ASCII case folding); SPEC-04 LS-225, LS-278
+module/c3030_case_fold cintc compared
+# Reference: module/c3030_device_directory cintc SPEC-09 CONF-14.1; SPEC-09 CINTC-12 (no segment of a module path is a Windows device name, directories included, in any case); SPEC-04 LS-225
+module/c3030_device_directory cintc compared
+# Reference: module/c3030_device_name cintc SPEC-09 CONF-14.1; SPEC-09 CINTC-12 (no segment is a Windows device name); SPEC-04 LS-225, LS-278
+module/c3030_device_name cintc compared
+# Reference: module/c3030_fold_directory cintc SPEC-09 CONF-14.1; SPEC-09 CINTC-12 (the paths of one program are distinct under ASCII case folding, in every segment); SPEC-04 LS-225, LS-278
+module/c3030_fold_directory cintc compared
+# Reference: module/c3030_not-an-identifier cintc SPEC-09 CONF-14.1; SPEC-09 CINTC-12 (each segment of a module path is an identifier); SPEC-04 LS-225, LS-278
+module/c3030_not-an-identifier cintc compared
+# Reference: module/fold_after_dependency_c3009 cintc SPEC-09 CONF-14.1; SPEC-09 CINTC-12 (OQ-178: paths loaded so far, breadth first in import order); SPEC-04 LS-225; compiler/OPEN.md CINTC-OQ-50
+module/fold_after_dependency_c3009 cintc compared
+# Reference: module/import_cycle_c3003 cintc SPEC-09 CONF-14.1; SPEC-04 LS-230 (no import cycles: C3003); SPEC-09 CINTC-05
+module/import_cycle_c3003 cintc compared
+# Reference: module/import_plain cintc SPEC-09 CONF-14.1; SPEC-09 BOOT-01 (import_decl, module_path, qualified); SPEC-04 LS-225, LS-226, LS-227, LS-229
+module/import_plain cintc compared
+# Reference: module/import_private_c3008 cintc SPEC-09 CONF-14.1; SPEC-04 LS-227 (only exported declarations are visible to importers); SPEC-04 LS-313
+module/import_private_c3008 cintc compared
+# Reference: module/import_record_alias_c3006 cintc SPEC-09 CONF-14.1; SPEC-04 LS-226, LS-228; SPEC-09 CINTC-16 Lookup
+module/import_record_alias_c3006 cintc compared
+# Reference: module/import_record_in cintc SPEC-09 CONF-14.1; SPEC-04 LS-73, LS-119, LS-120; SPEC-09 BOOT-01, CINTC-16
+module/import_record_in cintc compared
+# Reference: module/import_record_kind_c3007 cintc SPEC-09 CONF-14.1; SPEC-04 LS-226, LS-228; SPEC-09 CINTC-16 Lookup
+module/import_record_kind_c3007 cintc compared
+# Reference: module/import_record_private_c3008 cintc SPEC-09 CONF-14.1; SPEC-04 LS-226; SPEC-09 CINTC-16 Lookup
+module/import_record_private_c3008 cintc compared
+# Reference: module/import_record_private_kind_c3008 cintc SPEC-09 CONF-14.1; SPEC-04 LS-226, LS-228; SPEC-09 CINTC-16 Lookup
+module/import_record_private_kind_c3008 cintc compared
+# Reference: module/import_record_size_name_c3001 cintc SPEC-09 CONF-14.1; SPEC-04 LS-117, LS-228; SPEC-09 CINTC-16 Lookup
+module/import_record_size_name_c3001 cintc compared
+# Reference: module/import_record_views cintc SPEC-09 CONF-14.1; SPEC-04 LS-73, LS-117, LS-119, LS-120, LS-226; SPEC-09 BOOT-01, CINTC-16
+module/import_record_views cintc compared
+# Reference: module/import_string_arg_count_c2022 cintc SPEC-09 CONF-14.1; SPEC-09 BOOT-02, CINTC-16; SPEC-04 LS-114, LS-119
+module/import_string_arg_count_c2022 cintc compared
+# Reference: module/import_string_fixed_c2012 cintc SPEC-09 CONF-14.1; SPEC-09 BOOT-02, CINTC-16; SPEC-04 LS-70, LS-117
+module/import_string_fixed_c2012 cintc compared
+# Reference: module/import_string_private_c3008 cintc SPEC-09 CONF-14.1; SPEC-09 BOOT-02, CINTC-16 Lookup; SPEC-04 LS-227
+module/import_string_private_c3008 cintc compared
+# Reference: module/import_string_size_c2012 cintc SPEC-09 CONF-14.1; SPEC-09 BOOT-02, CINTC-16; SPEC-04 LS-117
+module/import_string_size_c2012 cintc compared
+# Reference: module/import_string_view cintc SPEC-09 CONF-14.1; SPEC-09 BOOT-01, BOOT-02, CINTC-16; SPEC-04 LS-40, LS-42, LS-44, LS-45, LS-117, LS-119
+module/import_string_view cintc compared
+# Reference: module/import_twice_c3001 cintc SPEC-09 CONF-14.1; SPEC-04 LS-228 (one module imported twice binds its alias twice: C3001); SPEC-09 CINTC-16
+module/import_twice_c3001 cintc compared
+# Reference: module/imported_struct_inout cintc SPEC-09 CONF-14.1; SPEC-04 6.2, LS-119 (an `inout` struct parameter), across an import; SPEC-09 CINTC-16; owner decision 27 item 4 (imported structs); B1 at 3f10a4f: C9102, unsupported.txt CINTC-OQ-51
+module/imported_struct_inout cintc compared
+# Reference: module/imported_struct_returned cintc SPEC-09 CONF-14.1; SPEC-04 6.2 (a function may return a struct), across an import; SPEC-09 CINTC-16; owner decision 27 item 4 (imported structs); B1 at 3f10a4f: C9102, unsupported.txt CINTC-OQ-51
+module/imported_struct_returned cintc compared
+# Reference: module/imported_view_calls cintc SPEC-09 CONF-14.1; SPEC-04 LS-114, LS-117, LS-119, LS-121 (views and size parameters across an import); SPEC-09 CINTC-16 (parameter rows); owner decision 27 item 4 (imported views)
+module/imported_view_calls cintc compared
+# Reference: module/imported_view_overlap_c5010 cintc SPEC-09 CONF-14.1; SPEC-04 LS-121 (an `inout` argument that provably overlaps another argument: C5010), across an import; SPEC-09 CINTC-16
+module/imported_view_overlap_c5010 cintc compared
+# Reference: module/imported_view_shape_c2012 cintc SPEC-09 CONF-14.1; SPEC-04 LS-117 (two views bind one size parameter to different static extents: C2012), across an import; SPEC-09 CINTC-16
+module/imported_view_shape_c2012 cintc compared
+# Reference: module/intern_long_names cintc SPEC-09 CONF-14.1, CINTC-16 Lookup; SPEC-04 LS-15, LS-227, LS-228
+module/intern_long_names cintc compared
+# Reference: module/intern_missing_long cintc SPEC-09 CONF-14.1, CINTC-16 Lookup; SPEC-04 LS-15, LS-227, LS-228
+module/intern_missing_long cintc compared
+# Reference: module/intern_missing_short cintc SPEC-09 CONF-14.1, CINTC-16 Lookup; SPEC-04 LS-15, LS-227, LS-228
+module/intern_missing_short cintc compared
+# Reference: module/intern_private_wrong_kind cintc SPEC-09 CONF-14.1, CINTC-16 Lookup; SPEC-04 LS-15, LS-227, LS-228
+module/intern_private_wrong_kind cintc compared
+# Reference: module/intern_wrong_kind cintc SPEC-09 CONF-14.1, CINTC-16 Lookup; SPEC-04 LS-15, LS-227, LS-228
+module/intern_wrong_kind cintc compared
+# Reference: module/missing_beside_type_error_c3009 cintc SPEC-09 CONF-14.1; SPEC-04 LS-225, LS-226 (imports resolve before any module is checked); owner decision 27 item 3; SPEC-09 CINTC-05
+module/missing_beside_type_error_c3009 cintc compared
+# Reference: module/missing_import_order_c3009 cintc SPEC-09 CONF-14.1; SPEC-04 LS-225, LS-282; SPEC-09 CINTC-05; compiler/OPEN.md CINTC-OQ-50 (cint_ref loads breadth first from the root)
+module/missing_import_order_c3009 cintc compared
+# Reference: module/private_const_nested_c3008 cintc SPEC-09 CONF-14.1; SPEC-04 LS-227 (only exported declarations are visible to importers), LS-313; SPEC-09 CINTC-16
+module/private_const_nested_c3008 cintc compared
+# Reference: module/private_struct_c3008 cintc SPEC-09 CONF-14.1; SPEC-04 LS-227 (only exported declarations are visible to importers), LS-313; SPEC-09 CINTC-16
+module/private_struct_c3008 cintc compared
+# Reference: module/qualified_alias_c3001 cintc SPEC-09 CONF-14.1; SPEC-04 LS-228 (an alias is a module-level name); SPEC-09 CINTC-16
+module/qualified_alias_c3001 cintc compared
+# Reference: module/qualified_calls cintc SPEC-09 CONF-14.1; SPEC-09 BOOT-01 (import_decl, qualified); SPEC-04 LS-225, LS-227, LS-229; SPEC-09 CINTC-16
+module/qualified_calls cintc compared
+# Reference: module/qualified_local_c3001 cintc SPEC-09 CONF-14.1; SPEC-04 LS-228 (a local may not take a visible alias); SPEC-09 CINTC-16
+module/qualified_local_c3001 cintc compared
+# Reference: module/qualified_missing_c3005 cintc SPEC-09 CONF-14.1; SPEC-04 LS-225 (a qualified name names an exported declaration); SPEC-09 CINTC-16
+module/qualified_missing_c3005 cintc compared
+# Reference: module/qualified_private_c3008 cintc SPEC-09 CONF-14.1; SPEC-04 LS-227 (only exported declarations are visible to importers); SPEC-09 CINTC-16
+module/qualified_private_c3008 cintc compared
+# Reference: module/reuse_after_large_module cintc SPEC-09 CONF-14.1; SPEC-09 CINTC-16 (Lookup; a block survives the reuse of the per-module tables); SPEC-04 LS-225, LS-227, LS-229; owner decision 27 item 4
+module/reuse_after_large_module cintc compared
+# Reference: module/self_import_c3003 cintc SPEC-09 CONF-14.1; SPEC-04 LS-230 (a module that imports itself is a cycle: C3003); SPEC-09 CINTC-05
+module/self_import_c3003 cintc compared
+# Reference: module/stack_cross_module cintc SPEC-09 CONF-14.1; SPEC-09 CONF-11 (fault.stack, format 2); slice 2 decision patch D-10 (a stack through two modules); SPEC-04 LS-229
+module/stack_cross_module cintc compared
+# Reference: module/stack_three_modules cintc SPEC-09 CONF-14.1; SPEC-09 CONF-11 (fault.stack, format 2); slice 2 decision patch D-10 (a stack through three modules); SPEC-04 LS-229
+module/stack_three_modules cintc compared
+# Reference: module/struct_field_imported_struct cintc SPEC-09 CONF-14.1; SPEC-04 6.1, LS-73 (a field of struct type), LS-227; SPEC-09 CINTC-16; owner decision 27 item 4 (imported structs); B1 at 3f10a4f: C9102, unsupported.txt CINTC-OQ-51
+module/struct_field_imported_struct cintc compared
+# Reference: reduce/loop_dot_product_overflow cintc SPEC-09 CONF-14.1; SPEC-01 IM-87, IM-101, IM-102 (a hand-written dot product faults at the product, which has no wider intermediate; the twin of reduce/dot_exact_product)
+reduce/loop_dot_product_overflow cintc compared
+# Reference: reduce/loop_fold_forward_faults cintc SPEC-09 CONF-14.1; SPEC-01 IM-73, IM-74, IM-83 (a checked left fold depends on order: forward over 2000000000, 2000000000, -2000000000 faults at index 1)
+reduce/loop_fold_forward_faults cintc compared
+# Reference: reduce/loop_fold_overflow_at_element cintc SPEC-09 CONF-14.1; SPEC-01 IM-73, IM-83, IM-92; SPEC-02 R-6 (a left fold written by hand faults at the first out-of-range partial result; the twin of reduce/fold_checked_i64_overflow)
+reduce/loop_fold_overflow_at_element cintc compared
+# Reference: reduce/loop_fold_reverse_fits cintc SPEC-09 CONF-14.1; SPEC-01 IM-73, IM-75, IM-83 (the same checked fold in reverse order over 2000000000, 2000000000, -2000000000 fits; the twin of reduce/fold_checked_reversed_view)
+reduce/loop_fold_reverse_fits cintc compared
+# Reference: reduce/loop_sum_empty cintc SPEC-09 CONF-14.1; SPEC-01 IM-79, IM-139; SPEC-04 LS-68, LS-117 (a hand-written total over an empty view is 0, with no iteration charged)
+reduce/loop_sum_empty cintc compared
+# Reference: reduce/loop_sum_narrow_once cintc SPEC-09 CONF-14.1; SPEC-01 IM-78, IM-106, IM-134 (a hand-written exact total narrowed by `as` faults E_NARROW; the built-in twin reduce/sum_i32_overflow faults E_OVERFLOW)
+reduce/loop_sum_narrow_once cintc compared
+# Reference: reduce/loop_sum_wide_accumulator cintc SPEC-09 CONF-14.1; SPEC-01 IM-77, IM-80, IM-101 (an exact total in a wider accumulator, narrowed once; the twin of reduce/sum_i32_exact)
+reduce/loop_sum_wide_accumulator cintc compared
+# Reference: struct/array_of_structs cintc SPEC-09 CONF-14.1; SPEC-04 4.3, 4.4; SPEC-09 5.2 (arrays and views of structs)
+struct/array_of_structs cintc compared
+# Reference: struct/assignment_copies cintc SPEC-09 CONF-14.1; SPEC-04 4.4 (assignment copies the whole struct)
+struct/assignment_copies cintc compared
+# Reference: struct/by_value_parameter cintc SPEC-09 CONF-14.1; SPEC-04 6.2 (in is the default mode; structs are read-only)
+struct/by_value_parameter cintc compared
+# Reference: struct/construct_and_read cintc SPEC-09 CONF-14.1; SPEC-04 4.4 (constructor by position); SPEC-09 5.2
+struct/construct_and_read cintc compared
+# Reference: struct/construct_by_name cintc SPEC-09 CONF-14.1; SPEC-04 4.4 (constructor by name)
+struct/construct_by_name cintc compared
+# Reference: struct/constructor_shape_later_fault cintc SPEC-09 CONF-14.1; SPEC-04 LS-77, LS-137; SPEC-01 IM-92, IM-187
+struct/constructor_shape_later_fault cintc compared
+# Reference: struct/constructor_shape_order cintc SPEC-09 CONF-14.1; SPEC-04 LS-77, LS-137, LS-278; SPEC-01 IM-187
+struct/constructor_shape_order cintc compared
+# Reference: struct/constructor_shape_runtime cintc SPEC-09 CONF-14.1; SPEC-04 LS-77, LS-278; SPEC-01 IM-187
+struct/constructor_shape_runtime cintc compared
+# Reference: struct/constructor_shape_zero_elements cintc SPEC-09 CONF-14.1; SPEC-04 LS-68, LS-77, LS-278; SPEC-01 IM-187 logical element counts
+struct/constructor_shape_zero_elements cintc compared
+# Reference: struct/field_overflow cintc SPEC-09 CONF-14.1; SPEC-01 IM-30, IM-106, IM-99; SPEC-04 4.4
+struct/field_overflow cintc compared
+# Reference: struct/layout_static_assert cintc SPEC-09 CONF-14.3; I-2; a fixed-point field and bit fields in a program; outside cint_ref until T3 and later (D-15 rows 17 and 20)
+struct/layout_static_assert cintc held I-2
+# Reference: struct/missing_field_c2020 cintc SPEC-09 CONF-14.1; SPEC-04 4.4 (every field must be supplied)
+struct/missing_field_c2020 cintc compared
+# Reference: struct/nested_construct_copy cintc SPEC-09 CONF-14.1; SPEC-04 LS-73, LS-77, LS-139; SPEC-09 BOOT-01
+struct/nested_construct_copy cintc compared
+# Reference: struct/nested_constructor_alias cintc SPEC-09 CONF-14.1; SPEC-04 LS-77, LS-141
+struct/nested_constructor_alias cintc compared
+# Reference: struct/nested_diamond cintc SPEC-09 CONF-14.1; SPEC-04 LS-73, LS-77; SPEC-09 BOOT-01, CINTC-16
+struct/nested_diamond cintc compared
+# Reference: struct/nested_forward cintc SPEC-09 CONF-14.1; SPEC-04 LS-73; SPEC-09 BOOT-01, CINTC-16
+struct/nested_forward cintc compared
+# Reference: struct/zero_field_copy cintc SPEC-09 CONF-14.1; SPEC-04 LS-68, LS-73, LS-74, LS-78
+struct/zero_field_copy cintc compared
+# Reference: struct/zero_fill cintc SPEC-09 CONF-14.1; SPEC-04 5.1 (a struct without an initializer is zero-filled)
+struct/zero_fill cintc compared
+# Reference: switch/arms_1000 cintc SPEC-09 CONF-14.1; SPEC-04 LS-177, LS-311; SPEC-09 CINTC-02, CINTC-03 (slice 2 decisions)
+switch/arms_1000 cintc compared
+# Reference: switch/arms_1000_minimal cintc SPEC-09 CONF-14.1; SPEC-04 LS-177, LS-311; SPEC-09 CINTC-02, CINTC-03 (slice 2 decisions)
+switch/arms_1000_minimal cintc compared
+# Reference: switch/break_exits_switch cintc SPEC-09 CONF-14.1; SPEC-04 8.5, 8.6 (break inside a switch exits the switch)
+switch/break_exits_switch cintc compared
+# Reference: switch/classify_ranges cintc SPEC-09 CONF-14.1; SPEC-04 8.5; SPEC-09 5.2, 5.4 (example and its boundary)
+switch/classify_ranges cintc compared
+# Reference: switch/empty_case_c4023 cintc SPEC-09 CONF-14.1; SPEC-04 8.5
+switch/empty_case_c4023 cintc compared
+# Reference: switch/exhaustive_u8_without_default cintc SPEC-09 CONF-14.1; SPEC-04 8.5 (exhaustive by covering the full range of the type)
+switch/exhaustive_u8_without_default cintc compared
+# Reference: switch/full_range_single_case cintc SPEC-09 CONF-14.1; SPEC-04 8.5 (LS-177, LS-182, LS-183: a switch whose one case covers the full range of its type, a default alone, a full-range case beside a default); SPEC-09 EMIT-26
+switch/full_range_single_case cintc compared
+# Reference: switch/full_range_single_case_fault cintc SPEC-09 CONF-14.1; SPEC-04 8.5 (LS-182); SPEC-01 4.1, 9.2: the scrutinee is evaluated and checked when the switch's one case covers the full range of its type
+switch/full_range_single_case_fault cintc compared
+# Reference: switch/half_open_case_c4022 cintc SPEC-09 CONF-14.1; SPEC-04 8.5; SPEC-01 15 question 11 (closed)
+switch/half_open_case_c4022 cintc compared
+# Reference: switch/multi_items cintc SPEC-09 CONF-14.1; SPEC-04 8.5
+switch/multi_items cintc compared
+# Reference: switch/non_exhaustive_c4020 cintc SPEC-09 CONF-14.1; SPEC-04 8.5
+switch/non_exhaustive_c4020 cintc compared
+# Reference: switch/overlap_c4021 cintc SPEC-09 CONF-14.1; SPEC-04 8.5
+switch/overlap_c4021 cintc compared
+# Reference: tables/add_checked_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/add_checked_i64 cintc compared
+# Reference: tables/add_checked_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/add_checked_i8 cintc compared
+# Reference: tables/add_checked_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/add_checked_u8 cintc compared
+# Reference: tables/add_wrap_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/add_wrap_i64 cintc compared
+# Reference: tables/add_wrap_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/add_wrap_i8 cintc compared
+# Reference: tables/add_wrap_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/add_wrap_u8 cintc compared
+# Reference: tables/div_checked_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/div_checked_i64 cintc compared
+# Reference: tables/div_checked_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/div_checked_i8 cintc compared
+# Reference: tables/div_checked_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/div_checked_u8 cintc compared
+# Reference: tables/mul_checked_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/mul_checked_i64 cintc compared
+# Reference: tables/mul_checked_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/mul_checked_i8 cintc compared
+# Reference: tables/mul_checked_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/mul_checked_u8 cintc compared
+# Reference: tables/mul_wrap_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/mul_wrap_i64 cintc compared
+# Reference: tables/mul_wrap_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/mul_wrap_i8 cintc compared
+# Reference: tables/mul_wrap_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/mul_wrap_u8 cintc compared
+# Reference: tables/rem_checked_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/rem_checked_i64 cintc compared
+# Reference: tables/rem_checked_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/rem_checked_i8 cintc compared
+# Reference: tables/rem_checked_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/rem_checked_u8 cintc compared
+# Reference: tables/shl_checked_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/shl_checked_i64 cintc compared
+# Reference: tables/shl_checked_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/shl_checked_i8 cintc compared
+# Reference: tables/shl_checked_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/shl_checked_u8 cintc compared
+# Reference: tables/shl_wrap_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/shl_wrap_i64 cintc compared
+# Reference: tables/shl_wrap_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/shl_wrap_i8 cintc compared
+# Reference: tables/shl_wrap_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/shl_wrap_u8 cintc compared
+# Reference: tables/shr_checked_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/shr_checked_i64 cintc compared
+# Reference: tables/shr_checked_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/shr_checked_i8 cintc compared
+# Reference: tables/shr_checked_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/shr_checked_u8 cintc compared
+# Reference: tables/sub_checked_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/sub_checked_i64 cintc compared
+# Reference: tables/sub_checked_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/sub_checked_i8 cintc compared
+# Reference: tables/sub_checked_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/sub_checked_u8 cintc compared
+# Reference: tables/sub_wrap_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/sub_wrap_i64 cintc compared
+# Reference: tables/sub_wrap_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/sub_wrap_i8 cintc compared
+# Reference: tables/sub_wrap_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
+tables/sub_wrap_u8 cintc compared
+# Reference: view/constant_extent_parameter cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-119 (a view parameter with a constant extent)
+view/constant_extent_parameter cintc compared
+# Reference: view/copy_shape_assignment cintc SPEC-09 CONF-14.1; SPEC-04 LS-70, LS-278; SPEC-01 IM-187
+view/copy_shape_assignment cintc compared
+# Reference: view/copy_shape_empty_source cintc SPEC-09 CONF-14.1; SPEC-04 LS-68, LS-70, LS-278; SPEC-01 IM-187
+view/copy_shape_empty_source cintc compared
+# Reference: view/copy_shape_zero_elements cintc SPEC-09 CONF-14.1; SPEC-04 LS-68, LS-70, LS-278; SPEC-01 IM-187 logical element counts
+view/copy_shape_zero_elements cintc compared
+# Reference: view/extent_zero cintc SPEC-09 CONF-14.1; SPEC-04 LS-68 (`I64[0]` is valid; any index faults E_BOUNDS); SPEC-01 IM-186
+view/extent_zero cintc compared
+# Reference: view/index_checked_before_value cintc SPEC-09 CONF-14.1; SPEC-04 LS-139 (the place's index is evaluated and checked before the value)
+view/index_checked_before_value cintc compared
+# Reference: view/index_compound_place_first cintc SPEC-09 CONF-14.1; SPEC-01 IM-98, IM-186; SPEC-04 LS-139, LS-278 (a compound assignment checks its place before the value is evaluated)
+view/index_compound_place_first cintc compared
+# Reference: view/index_expression_overflow cintc SPEC-09 CONF-14.1; SPEC-01 IM-92, IM-113, IM-186; SPEC-04 LS-64 (the index expression is evaluated, with its faults, before the subscript check)
+view/index_expression_overflow cintc compared
+# Reference: view/index_i64_max cintc SPEC-09 CONF-14.1; SPEC-04 LS-64; SPEC-01 IM-186 (the largest I64 index is checked against the extent without overflow)
+view/index_i64_max cintc compared
+# Reference: view/index_i64_min cintc SPEC-09 CONF-14.1; SPEC-04 LS-64; SPEC-01 IM-186 (the least I64 index has the record of any negative index)
+view/index_i64_min cintc compared
+# Reference: view/index_in_callee cintc SPEC-09 CONF-14.1; SPEC-04 LS-64, LS-117; SPEC-01 IM-107, IM-186 (a fault in a callee through a view parameter)
+view/index_in_callee cintc compared
+# Reference: view/index_left_operand_first cintc SPEC-09 CONF-14.1; SPEC-01 IM-92, IM-96, IM-186 (of two out-of-range subscripts, the left operand faults first)
+view/index_left_operand_first cintc compared
+# Reference: view/index_negative cintc SPEC-09 CONF-14.1; SPEC-04 LS-64; SPEC-01 IM-186 (a negative index has the same record as one at or above the extent)
+view/index_negative cintc compared
+# Reference: view/index_off_by_one_loop cintc SPEC-09 CONF-14.1; SPEC-04 LS-64, LS-171; SPEC-01 IM-139, IM-186 (an inclusive range one past the extent faults on its last iteration)
+view/index_off_by_one_loop cintc compared
+# Reference: view/index_out_of_range cintc SPEC-09 CONF-14.1; SPEC-04 LS-64, LS-278; SPEC-01 IM-186 (E_BOUNDS, index.checked.i64, index operand, extent limit)
+view/index_out_of_range cintc compared
+# Reference: view/index_struct_out_of_range cintc SPEC-09 CONF-14.1; SPEC-04 LS-64; SPEC-01 IM-186 (`index.checked.struct` for a struct element)
+view/index_struct_out_of_range cintc compared
+# Reference: view/index_sum cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-64, LS-67, LS-117, LS-119 (a local array read through an `in` view)
+view/index_sum cintc compared
+# Reference: view/index_write_inout_in_callee cintc SPEC-09 CONF-14.1; SPEC-04 LS-64, LS-119; SPEC-01 IM-98, IM-107, IM-186 (a write place through an `inout` view is checked against the argument's extent)
+view/index_write_inout_in_callee cintc compared
+# Reference: view/index_zero_extent_parameter cintc SPEC-09 CONF-14.1; SPEC-04 LS-68, LS-117; SPEC-01 IM-186 (a size parameter bound to 0 from an empty argument; any index faults)
+view/index_zero_extent_parameter cintc compared
+# Reference: view/inout_overlap_c5010 cintc SPEC-09 CONF-14.1; SPEC-04 LS-121 (an `inout` argument that provably overlaps another argument: C5010)
+view/inout_overlap_c5010 cintc compared
+# Reference: view/inout_writes_visible cintc SPEC-09 CONF-14.1; SPEC-04 LS-119, LS-120 (an `inout` view writes the caller's array)
+view/inout_writes_visible cintc compared
+# Reference: view/nested_record cintc SPEC-09 CONF-14.1; SPEC-04 LS-73, LS-119, LS-139; SPEC-09 BOOT-01
+view/nested_record cintc compared
+# Reference: view/record_array_readonly_element cintc SPEC-09 CONF-14.1; SPEC-04 LS-119, LS-120, LS-313
+view/record_array_readonly_element cintc compared
+# Reference: view/record_array_readonly_field cintc SPEC-09 CONF-14.1; SPEC-04 LS-119, LS-120, LS-313
+view/record_array_readonly_field cintc compared
+# Reference: view/shape_mismatch_c2012 cintc SPEC-09 CONF-14.1; SPEC-04 LS-117 (two views bind one size parameter to different static extents: C2012)
+view/shape_mismatch_c2012 cintc compared
+# Reference: view/shape_mismatch_runtime cintc SPEC-09 CONF-14.1; SPEC-04 LS-117, LS-123, LS-141 (shape agreement is an entry check: E_SHAPE before the call is entered)
+view/shape_mismatch_runtime cintc compared
+# Reference: view/size_parameter_two_views cintc SPEC-09 CONF-14.1; SPEC-04 LS-117 (two views bound to one size parameter), LS-121 (`in` views may overlap)
+view/size_parameter_two_views cintc compared
+# Reference: view/struct_array_field cintc SPEC-09 CONF-14.1; SPEC-04 LS-67, LS-77; SPEC-09 BOOT-01 (struct_decl: a field of a fixed-length array)
+view/struct_array_field cintc compared
+# Reference: view/struct_view_inout cintc SPEC-09 CONF-14.1; SPEC-04 LS-119; SPEC-09 BOOT-01 (params: a view whose element type is a struct)
+view/struct_view_inout cintc compared

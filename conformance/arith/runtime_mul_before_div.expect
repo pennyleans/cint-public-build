@@ -1,0 +1,16 @@
+case arith/runtime_mul_before_div
+clause SPEC-01 IM-101 (no wider intermediate)
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_OVERFLOW
+fault.operation mul.checked.i32
+fault.operand I32 2000000000
+fault.operand I32 2
+fault.exact 4000000000
+fault.limit I32 2147483647
+fault.position arith/runtime_mul_before_div.ci:10:15
+fault.revision self
+fault.address none
+fault.stack-depth 0

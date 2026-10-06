@@ -1,0 +1,8 @@
+// Helper module of module/stack_cross_module (task 2.13 part (iii)): it calls into
+// module.lib.stack_leaf, so the fault stack passes through it.
+
+import module.lib.stack_leaf;
+
+export I64 relay(I64 x) {
+    return stack_leaf.boom(x) + 1;
+}

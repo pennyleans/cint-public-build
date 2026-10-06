@@ -1,0 +1,47 @@
+# The sources of the `ptx` suite (compiler/tests/ptx_suite.py), one per line: the path, the
+# outcome (`ptx`, `stopped`, or `unsupported <capability>`), and `golden` where the PTX
+# is compared with compiler/tests/golden/<name>.ptx. Every kernel case of
+# conformance/kernel/ and every source of compiler/tests/ptx/ is listed.
+conformance/kernel/advance_element_form.ci ptx
+conformance/kernel/alias_gcd_accepted.ci ptx
+conformance/kernel/alias_same_view_c5010.ci stopped
+conformance/kernel/alias_uncertain_columns.ci ptx
+conformance/kernel/body_print_c5020.ci stopped
+conformance/kernel/bounds_in_block.ci ptx
+conformance/kernel/coverage_c5031.ci stopped
+conformance/kernel/dispatch_number_second.ci ptx
+conformance/kernel/fuel_entry_charge.ci ptx
+conformance/kernel/fuel_in_body_located.ci ptx golden
+conformance/kernel/heat_e1_overflow.ci ptx
+conformance/kernel/heat_e2_narrowing.ci ptx
+conformance/kernel/heat_e9_div_zero.ci ptx
+conformance/kernel/heat_fold_i32_work_item.ci ptx
+conformance/kernel/heat_hot_spot.ci ptx golden
+conformance/kernel/heat_rounding_rf3.ci ptx
+conformance/kernel/heat_sum_i32_epilogue.ci ptx
+conformance/kernel/inout_copy_in_copy_out.ci ptx
+conformance/kernel/min_no_contributions.ci ptx
+conformance/kernel/scale_over_2d.ci ptx golden
+conformance/kernel/shape_two_pass.ci ptx
+conformance/kernel/total_checked_fold.ci ptx
+conformance/kernel/total_empty.ci ptx
+conformance/kernel/total_exact_epilogue_overflow.ci ptx
+conformance/kernel/total_exact_sum.ci ptx
+conformance/kernel/total_sat_orders.ci ptx golden
+conformance/kernel/unpublished_after_fault.ci ptx
+conformance/kernel/where_violation.ci ptx
+conformance/kernel/write_rule_c5031.ci stopped
+conformance/kernel/zero_work_items.ci ptx
+compiler/tests/ptx/ptx_forms.ci ptx golden
+compiler/tests/ptx/ptx_logic.ci ptx
+compiler/tests/ptx/refuse_as_wrap.ci unsupported as.wrap
+compiler/tests/ptx/refuse_array.ci unsupported array
+compiler/tests/ptx/refuse_bits.ci unsupported bits
+compiler/tests/ptx/refuse_builtin.ci unsupported builtin
+compiler/tests/ptx/refuse_div.ci unsupported div
+compiler/tests/ptx/refuse_neg.ci unsupported neg
+compiler/tests/ptx/refuse_params.ci unsupported params
+compiler/tests/ptx/refuse_sat.ci unsupported sat
+compiler/tests/ptx/refuse_shift.ci unsupported shift
+compiler/tests/ptx/refuse_store_narrow.ci unsupported store.narrow
+compiler/tests/ptx/refuse_switch.ci unsupported switch

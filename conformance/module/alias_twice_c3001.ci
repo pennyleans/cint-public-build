@@ -1,0 +1,12 @@
+// case: module/alias_twice_c3001
+// clause: SPEC-04 LS-228 (an alias is a module-level name; two imports with one alias: C3001); SPEC-09 CINTC-16
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C3001 at 8:23, the second alias `scalars`, the last name of module.lib.alt.scalars
+
+import module.lib.scalars;
+import module.lib.alt.scalars;
+
+export I64 run() {
+    return scalars.BASE;
+}

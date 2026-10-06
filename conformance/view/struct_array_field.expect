@@ -1,0 +1,7 @@
+case view/struct_array_field
+clause SPEC-04 LS-67, LS-77; SPEC-09 BOOT-01 (struct_decl: a field of a fixed-length array)
+source reference
+outcome value
+stdout-bytes 0
+return I64 905
+fuel-consumed 1

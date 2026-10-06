@@ -1,0 +1,14 @@
+// case: boot/literal_octal_binary
+// clause: SPEC-09 BOOT-01 (OCT_INT, BIN_INT); SPEC-04 LS-24, LS-25, LS-26
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 932 (493 + 165 + 255 + 7 + 12)
+
+export I64 run() {
+    I64 a = 0o755;
+    I64 b = 0b1010_0101;
+    U8 c = 0b1111_1111;
+    I64 d = 0o7;
+    I32 e = 0b1100 as I32;
+    return a + b + (c as I64) + d + (e as I64);
+}

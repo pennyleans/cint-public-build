@@ -1,0 +1,14 @@
+// case: diag/c2001_range_bound_i32
+// clause: SPEC-01 2.2 (fixture 110); SPEC-04 17.1, 17.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2001 at 10:17: the range bound has type I32, not I64; range bounds are I64 (SPEC-01 IM-7, SPEC-04 LS-172; ruling on OQ-128, slice 2 patch D-12)
+
+export I64 run() {
+    I32 n32 = 10;
+    I64 s = 0;
+    for i in 0..n32 {
+        s = s + i;
+    }
+    return s;
+}

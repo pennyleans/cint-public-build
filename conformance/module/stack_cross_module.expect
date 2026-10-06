@@ -1,0 +1,20 @@
+case module/stack_cross_module
+clause SPEC-09 CONF-11 (fault.stack, format 2); slice 2 decision patch D-10 (a stack through two modules); SPEC-04 LS-229
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 3
+fault.code E_DIV_ZERO
+fault.operation div.checked.i64
+fault.operand I64 3
+fault.operand I64 0
+fault.exact none
+fault.limit none
+fault.position module/lib/stack_leaf.ci:6:14
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 2
+fault.stack module/stack_cross_module.ci:10:22
+fault.stack module/lib/stack_mid.ci:7:23

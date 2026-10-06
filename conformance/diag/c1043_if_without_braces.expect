@@ -1,0 +1,6 @@
+case diag/c1043_if_without_braces
+clause SPEC-04 8.2; SPEC-04 17.1, 17.2
+source compile-error
+outcome compile-error
+diagnostic.code C1043
+diagnostic.position diag/c1043_if_without_braces.ci:9:17

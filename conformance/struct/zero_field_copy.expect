@@ -1,0 +1,8 @@
+case struct/zero_field_copy
+clause SPEC-04 LS-68, LS-73, LS-74, LS-78
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 12
+fuel-consumed 1

@@ -1,0 +1,13 @@
+// case: control/for_c_form_i8_overflow
+// clause: SPEC-04 8.1, 8.4 (the I8 loop that faults instead of looping forever)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 9:31 (the `++` token), operation add.checked.i8, operands I8 127 and I8 1, exact 128, limit I8 127. The position is the operator token (SPEC-04 LS-278; decision 2026-10-03 on OQ-149)
+
+export I64 run() {
+    I64 steps = 0;
+    for (I8 i = 0; i <= 127; i++) {
+        steps = steps + 1;
+    }
+    return steps;
+}

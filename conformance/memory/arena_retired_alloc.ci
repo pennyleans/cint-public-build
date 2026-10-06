@@ -1,0 +1,15 @@
+// case: memory/arena_retired_alloc
+// clause: SPEC-03 M-17, M-20; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arena, child arena, handles)
+// entry: run; args: none
+// spec outcome: fault E_STALE_HANDLE at 13:28 (the member name `alloc`), operation arena.alloc, operands U64 0, I64 4, U64 0, U32 2, U8 1 (the handle: slot, length, generation, container, kind), U64 0 (the current generation), U8 2 (retired), no exact, no limit; stack depth 0; fuel 1. A retired arena accepts no allocation; the handle operands are the arena's own (slot 0, length its capacity, its generation, its identifier, kind 1)
+
+Arena(I64, 8) scratch;
+
+export I64 run() {
+    Arena(I64) part = scratch.child(4);
+    Handle(I64[]) t = part.alloc(1);
+    scratch.reset();
+    Handle(I64[]) u = part.alloc(1);
+    return 0;
+}

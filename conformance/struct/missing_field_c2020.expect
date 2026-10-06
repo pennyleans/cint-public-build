@@ -1,0 +1,6 @@
+case struct/missing_field_c2020
+clause SPEC-04 4.4 (every field must be supplied)
+source compile-error
+outcome compile-error
+diagnostic.code C2020
+diagnostic.position struct/missing_field_c2020.ci:16:15

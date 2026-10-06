@@ -1,0 +1,42 @@
+struct R { I64[2] data; I64 tag; }
+struct E { I64 value; }
+struct Records { E[2] data; }
+struct Empty { I64[0] data; I64 value; }
+struct Outer { R inner; I64 tag; }
+I64 mutate(inout I64[_] a) { a[1] = 9; return 0; }
+I64 step(inout I64[1] i) { i[0] += 1; return i[0] - 1; }
+I64 take(in I64[2] a) { R r = R(a, 0); return r.data[1]; }
+export I64 scalar() {
+    I64[2] a; a[1] = 7;
+    R r = R(a, 0); a[1] = 9; return r.data[1];
+}
+export I64 named() {
+    I64[2] a; a[1] = 7;
+    R r = R(tag = 0, data = a); return r.data[1];
+}
+export I64 records() {
+    E[2] a; a[1].value = 7;
+    Records r = Records(a); a[1].value = 9; return r.data[1].value;
+}
+export I64 empty() {
+    I64[0] a; Empty r = Empty(a, 7); return r.value;
+}
+export I64 late_capture() {
+    I64[2] a; a[1] = 7;
+    R r = R(a, mutate(a)); return r.data[1];
+}
+export I64 snapshot() {
+    I64[2] a; a[1] = 7;
+    Outer r = Outer(R(a, 0), mutate(a)); return r.inner.data[1];
+}
+export I64 once() {
+    R[2] a; a[0].data[1] = 7; a[1].data[1] = 9;
+    I64[1] i; R r = R(a[step(i)].data, 0); return r.data[1] * 10 + i[0];
+}
+export I64 fixed_view() {
+    I64[2] a; a[1] = 7; return take(a);
+}
+export I64 indexed(I64 i) {
+    R[2] a; a[1].data[1] = 7;
+    R r = R(a[i].data, 0); return r.data[1];
+}

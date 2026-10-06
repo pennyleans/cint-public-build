@@ -1,0 +1,16 @@
+// case: kernel/total_empty
+// clause: SPEC-02 R-3, K-8, 8.5 (an empty dispatch: sum is 0)
+// subset: cint-core-1 (kernel)
+// entry: run; args: none
+// spec outcome: value I64 0; fuel 1 (N = 0)
+
+kernel total_exact[n](in I64[n] x, out I64 s) over [i: n] {
+    reduce s = sum(x[i]);
+}
+
+export I64 run() {
+    I64[0] x;
+    I64 s = 9;
+    total_exact(x, s);
+    return s;
+}

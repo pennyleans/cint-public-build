@@ -1,0 +1,7 @@
+case memory/c2067_reset_through_in_parameter
+clause SPEC-03 M-14a, M-20; SPEC-04 LS-119; ref/OPEN.md REF-OQ-45
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2067
+diagnostic.position memory/c2067_reset_through_in_parameter.ci:10:5

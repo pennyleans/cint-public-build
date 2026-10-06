@@ -1,0 +1,10 @@
+// case: arith/builtin_abs_overflow
+// clause: SPEC-01 4.3, 9.2, IM-134
+// subset: cint-core-1 (built-in functions are not in cint-boot-1, SPEC-09 5.2)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 9:12, operation abs.checked.i32, operand I32 -2147483648; exact 2147483648, limit I32 2147483647
+
+export I32 run() {
+    I32 a = I32.min;
+    return abs(a);
+}

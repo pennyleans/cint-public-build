@@ -1,0 +1,17 @@
+// case: memory/c2060_write_through_in_arena
+// clause: SPEC-03 M-14a, M-20; SPEC-04 LS-119, LS-120; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arena, arena parameters)
+// entry: run; args: none
+// spec outcome: compile error C2060 at 10:5, the target `a[h][0]`: an element reached through an `in` arena parameter is read-only
+
+Arena(I64, 8) scratch;
+
+void put(in Arena(I64) a, in Handle(I64[]) h) {
+    a[h][0] = 1;
+}
+
+export I64 run() {
+    Handle(I64[]) h = scratch.alloc(1);
+    put(scratch, h);
+    return scratch[h][0];
+}

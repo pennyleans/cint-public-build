@@ -1,0 +1,37 @@
+// case: kernel/heat_sum_i32_epilogue
+// clause: SPEC-02 15.5 (diffuse32: the sum of 64 maximal cells overflows I32 in the epilogue)
+// subset: cint-core-1 (kernel)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 23:20, phase epilogue, address dispatch 0, operation sum.checked.i32.i32, operand I64 64, exact 137438953408, limit I32 2147483647; stack depth 1, stack 35:5; fuel 137 (entry, 72 fill iterations, N = 64). Box 09 rulings R5, R7, R9
+
+kernel diffuse32[h, w](
+    in  I32[h, w] u,
+    in  I64       kn,
+    in  I64       kd,
+    out I32[h, w] v,
+    out I32       total
+) over [y: h, x: w] {
+    I64 c = u[y, x] as I64;
+    I32 r = u[y, x];
+    if (y > 0 && y < h - 1 && x > 0 && x < w - 1) {
+        I64 lap = (u[y - 1, x] as I64) + (u[y + 1, x] as I64)
+                + (u[y, x - 1] as I64) + (u[y, x + 1] as I64) - 4 * c;
+        I64 flux = div_round(kn * lap, kd, half_even);
+        r = (c + flux) as I32;
+    }
+    v[y, x] = r;
+    reduce total = sum(r);
+}
+
+export I32 run() {
+    I32[8, 8] a;
+    I32[8, 8] b;
+    for y in 0..8 {
+        for x in 0..8 {
+            a[y, x] = 2147483647;
+        }
+    }
+    I32 total = 0;
+    diffuse32(a, 1, 8, b, total);
+    return total;
+}

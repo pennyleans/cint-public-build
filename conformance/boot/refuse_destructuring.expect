@@ -1,0 +1,6 @@
+case boot/refuse_destructuring
+clause SPEC-09 BOOT-01 (var_decl, typed_bind, tuple_type), SEED-06; SPEC-04 LS-98, LS-99
+source compile-error
+outcome compile-error
+diagnostic.code C9100
+diagnostic.position boot/refuse_destructuring.ci:9:5

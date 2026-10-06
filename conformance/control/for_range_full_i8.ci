@@ -1,0 +1,13 @@
+// case: control/for_range_full_i8
+// clause: SPEC-01 IM-7; SPEC-04 LS-172, LS-175 (ruling on OQ-128, slice 2 patch D-12)
+// subset: cint-core-1 (I8.min and I8.max)
+// entry: run; args: none
+// spec outcome: compile error C2001 at 9:14: range bounds are I64, and I8.min is an I8; write `(I8.min as I64)..=(I8.max as I64)`
+
+export I64 run() {
+    I64 steps = 0;
+    for i in I8.min..=I8.max {
+        steps = steps + 1;
+    }
+    return steps;
+}

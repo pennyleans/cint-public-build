@@ -1,0 +1,12 @@
+case arith/seed08_const_i64_overflow
+clause SPEC-09 SEED-08 row 3; SPEC-01 3.2, 8.4
+source compile-error
+outcome compile-error
+diagnostic.code C6001
+diagnostic.position arith/seed08_const_i64_overflow.ci:8:33
+diagnostic.fault.code E_OVERFLOW
+diagnostic.fault.operation add.checked.i64
+diagnostic.fault.operand I64 9223372036854775807
+diagnostic.fault.operand I64 1
+diagnostic.fault.exact 9223372036854775808
+diagnostic.fault.limit I64 9223372036854775807

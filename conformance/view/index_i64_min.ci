@@ -1,0 +1,11 @@
+// case: view/index_i64_min
+// clause: SPEC-04 LS-64; SPEC-01 IM-186 (the least I64 index has the record of any negative index)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 10:13 (the `[`), operation index.checked.i64, operand I64 -9223372036854775808, limit I64 4
+
+export I64 run() {
+    I64[4] a;
+    I64 i = -9223372036854775808;
+    return a[i];
+}

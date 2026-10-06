@@ -1,0 +1,8 @@
+case arith/builtin_folded
+clause SPEC-01 2.4, 4.3 to 4.10, 8.3; SPEC-04 4.2 rule 4.7
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 25
+fuel-consumed 1

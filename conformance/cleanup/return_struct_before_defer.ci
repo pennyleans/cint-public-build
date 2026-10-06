@@ -1,0 +1,34 @@
+// case: cleanup/return_struct_before_defer
+// clause: SPEC-04 LS-185, LS-316; decision 2026-10-05, BX12-11
+// subset: cint-core-1 (struct, nested record, `defer`)
+// entry: run; args: none
+// spec outcome: value I64 347855: make(3) and make(7) return P(3, 4) and P(7, 8), and inner_of(5) returns P(5, 5), each taken before the deferred statement that writes the variable it came from, which cannot change the returned struct; fuel 4
+
+struct P {
+    I64 a;
+    I64 b;
+}
+
+struct Q {
+    P inner;
+    I64 c;
+}
+
+P make(I64 v) {
+    P p = P(v, v + 1);
+    defer p.a = 99;
+    return p;
+}
+
+P inner_of(I64 v) {
+    Q q = Q(P(v, v), 0);
+    defer q.inner.b = 0;
+    return q.inner;
+}
+
+export I64 run() {
+    P x = make(3);
+    P y = make(7);
+    P z = inner_of(5);
+    return x.a * 100000 + x.b * 10000 + y.a * 1000 + y.b * 100 + z.a * 10 + z.b;
+}

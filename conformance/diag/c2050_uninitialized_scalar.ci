@@ -1,0 +1,10 @@
+// case: diag/c2050_uninitialized_scalar
+// clause: SPEC-04 5.1; SPEC-04 17.1, 17.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2050 at 8:9 (the declared name): a scalar variable needs an initializer (position: SPEC-04 LS-313, decision 2026-10-03, slice 2 patch D-11)
+
+export I64 run() {
+    I64 x;
+    return 0;
+}

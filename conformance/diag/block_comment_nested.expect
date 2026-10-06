@@ -1,0 +1,7 @@
+case diag/block_comment_nested
+clause SPEC-04 LS-14 (Proposed: block comments nest); SPEC-09 5.5 BLOCK_COMMENT; ref/OPEN.md REF-OQ-26
+source reference
+outcome value
+stdout-bytes 0
+return I64 1
+fuel-consumed 1

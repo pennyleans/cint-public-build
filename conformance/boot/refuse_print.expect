@@ -1,0 +1,6 @@
+case boot/refuse_print
+clause SPEC-09 BOOT-01 (hole, print_stmt), SEED-06, SEED-14; SPEC-04 LS-193
+source compile-error
+outcome compile-error
+diagnostic.code C9100
+diagnostic.position boot/refuse_print.ci:10:5

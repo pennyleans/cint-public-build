@@ -1,0 +1,20 @@
+// case: reduce/loop_sum_narrow_once
+// clause: SPEC-01 IM-78, IM-106, IM-134 (a hand-written exact total narrowed by `as` faults E_NARROW; the built-in twin reduce/sum_i32_overflow faults E_OVERFLOW)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_NARROW at 12:16 in `total` (the `as`), operation as.checked.i64.i32, operand I64 2147483648, exact 2147483648, limit I32 2147483647; stack depth 1; fuel 4
+
+I32 total[n](in I32[n] xs) {
+    I64 acc = 0;
+    for i in 0..n {
+        acc = acc + (xs[i] as I64);
+    }
+    return acc as I32;
+}
+
+export I32 run() {
+    I32[2] a;
+    a[0] = 2147483647;
+    a[1] = 1;
+    return total(a);
+}

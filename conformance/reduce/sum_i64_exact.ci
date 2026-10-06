@@ -1,0 +1,10 @@
+// case: reduce/sum_i64_exact
+// clause: SPEC-01 IM-73, IM-80, IM-82; SPEC-02 8.5 (the total_exact row, sequentially: no intermediate fault)
+// subset: cint-core-1 (built-in sum)
+// entry: run; args: none
+// spec outcome: value I64 9223372036854775807; fuel 2
+
+export I64 run() {
+    I64[3] a = [9223372036854775807, 1, -1];
+    return sum(a);
+}

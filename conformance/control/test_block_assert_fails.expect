@@ -1,0 +1,17 @@
+case control/test_block_assert_fails
+clause SPEC-04 LS-191, LS-232, LS-235; SPEC-01 IM-104, IM-134; SPEC-09 CONF-01; decision OQ-17
+source reference
+outcome fault
+stdout-bytes 4
+stdout-sha256 c07966c16698f413d21aecfadb737e541b190e69809b919caae9264ccf58dd91
+fuel-consumed 1
+fault.code E_ASSERT
+fault.operation assert.checked.bool
+fault.operand I64 8
+fault.operand I64 9
+fault.exact none
+fault.limit none
+fault.position control/test_block_assert_fails.ci:9:12
+fault.revision self
+fault.address none
+fault.stack-depth 0

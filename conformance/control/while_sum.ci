@@ -1,0 +1,15 @@
+// case: control/while_sum
+// clause: SPEC-04 8.3; SPEC-01 10.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 5050; fuel consumed 101 (call 1, 100 iterations)
+
+export I64 run() {
+    I64 i = 1;
+    I64 s = 0;
+    while (i <= 100) {
+        s = s + i;
+        i = i + 1;
+    }
+    return s;
+}

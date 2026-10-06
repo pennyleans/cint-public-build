@@ -1,0 +1,11 @@
+// case: view/extent_zero
+// clause: SPEC-04 LS-68 (`I64[0]` is valid; any index faults E_BOUNDS); SPEC-01 IM-186
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 10:16, operand I64 0, limit I64 0
+
+export I64 run() {
+    I64[0] none;
+    I64 i = 0;
+    return none[i];
+}

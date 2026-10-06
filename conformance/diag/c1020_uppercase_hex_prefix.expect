@@ -1,0 +1,6 @@
+case diag/c1020_uppercase_hex_prefix
+clause SPEC-04 3.5 rule 1; SPEC-04 17.1, 17.2
+source compile-error
+outcome compile-error
+diagnostic.code C1020
+diagnostic.position diag/c1020_uppercase_hex_prefix.ci:8:13

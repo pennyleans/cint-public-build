@@ -1,0 +1,6 @@
+case switch/empty_case_c4023
+clause SPEC-04 8.5
+source compile-error
+outcome compile-error
+diagnostic.code C4023
+diagnostic.position switch/empty_case_c4023.ci:10:9

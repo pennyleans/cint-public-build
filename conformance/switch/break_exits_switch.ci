@@ -1,0 +1,19 @@
+// case: switch/break_exits_switch
+// clause: SPEC-04 8.5, 8.6 (break inside a switch exits the switch)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 10 (the loop runs all 10 iterations)
+
+export I64 run() {
+    I64 n = 0;
+    for i in 0..10 {
+        switch (i) {
+            case 3:
+                break;
+            default:
+                n = n + 0;
+        }
+        n = n + 1;
+    }
+    return n;
+}

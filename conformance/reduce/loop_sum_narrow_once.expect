@@ -1,0 +1,18 @@
+case reduce/loop_sum_narrow_once
+clause SPEC-01 IM-78, IM-106, IM-134 (a hand-written exact total narrowed by `as` faults E_NARROW; the built-in twin reduce/sum_i32_overflow faults E_OVERFLOW)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 4
+fault.code E_NARROW
+fault.operation as.checked.i64.i32
+fault.operand I64 2147483648
+fault.exact 2147483648
+fault.limit I32 2147483647
+fault.position reduce/loop_sum_narrow_once.ci:12:16
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 1
+fault.stack reduce/loop_sum_narrow_once.ci:19:12

@@ -1,0 +1,6 @@
+0: deposit    125000 -> 1250.00
+1: withdraw    40050 -> 849.50
+2: interest      450 -> 849.60
+3: withdraw   200000 rejected: overdraws
+4: deposit        99 -> 850.59
+final balance: 850.59

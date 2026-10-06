@@ -1,0 +1,510 @@
+// compiler/limits.ci: table capacities, hard limits, the bridge's table rows, and the
+// retained diagnostics of cintc (SPEC-09 CINTC-01, CINTC-02, CINTC-14; slice 2 task 2.9).
+//
+// Capacities. capacity(lim, n) is the CINTC-02 formula of table `lim` for a module of n
+// source bytes, capped by the table's hard limit (CINTC-01). A table that needs more than
+// its capacity is C9001 (C-LIMIT) naming the table, the limit, and the source position.
+// One exception (task 2.10a, compiler/OPEN.md CINTC-OQ-05): the explicit stack counts
+// frames, and parse.ci uses up to two per level of block and expression nesting, so its
+// formula is twice the CINTC-02 row (512 + tokens / 32, hard limit 131,072) and SPEC-04
+// LS-311's 256 levels always fit; running out of it is C9004 (nesting), not C9001.
+//
+// The table manifest (CINTC-14, decision patch D-3). plan writes one TablePlan row per
+// table in manifest order; plan_row fills one. The two row structs are records 0 and 1
+// of the `cm` record table of compiler/main.ci (rt/cint_bridge.h binds `plan` and `diag`
+// by those ids). The seed numbers structs root module first, then each module as first
+// imported, each in declaration order: TablePlan and CompilerDiag are declared first here,
+// and main.ci declares no struct and imports this module first (compiler/OPEN.md CINTC-OQ-02).
+//
+// Diagnostics (CINTC-14, D-11). `diag` holds a count row and up to 100 retained rows:
+// row 0 has code 0, detail[0] the number retained and detail[1] the number not retained;
+// rows 1 to detail[0] are in SPEC-04 LS-282 order, (module, line, column, code), with
+// equal keys in the order they were added. diag_add keeps the least 100 (fewer when the
+// view is shorter) and counts the rest. A C6001 or C6002 row owns one fault slot of
+// FAULT_RECORD_MAX bytes in `faults`: detail[2] is the slot's offset, and the caller
+// writes the record there and its length to detail[3]. Slots are reused when a row is
+// dropped, so 100 slots, FAULT_BYTES in all, always suffice.
+//
+// C9001 rows: detail[0] is the limit identifier (LIM_*), detail[1] the limit. The bridge
+// writes identifiers 1 to 4 for its phase budgets (CINTC-09, rt/cint_build.c), so table
+// identifiers start at 16.
+//
+// Bound (CINTC-13): diag_add is O(R) for R retained rows (R <= 100); the rest O(1).
+
+// ---------------------------------------------------------------- the bridge's rows
+
+export struct TablePlan {
+    I64 table;
+    I64 elem_bytes;
+    I64 elem_align;
+    I64 capacity;
+    I64 scope;
+    I64 reserved;
+    ElemType elem_type;
+}
+
+export struct CompilerDiag {
+    I64 code;
+    I64 module;
+    I64 line;
+    I64 column;
+    I64[4] detail;
+}
+
+export struct ElemType {
+    U16 code;
+    U8 storage;
+    U8 reserved0;
+    U16 frac_bits;
+    U16 reserved1;
+    U32 record_id;
+    U32 reserved2;
+}
+
+// One row of the declaration table, manifest row 16 (SPEC-09 CINTC-16, decision 27):
+// 64 bytes, record 3 of the cm record table. The clause gives every field's meaning by kind;
+// compiler/decl.ci writes and reads it, and plan gives it the CINTC-16 capacity.
+export struct Decl {
+    U8 kind;
+    U8 vis;
+    U8 mode;
+    U8 name_len;
+    U32 module;
+    U8 tag;
+    U8 rank;
+    U8 ext_kind;
+    U8 align;
+    U32 ref;
+    I64 a;
+    I64 b;
+    U8[32] name;
+}
+
+export const I64 DECL_BYTES = 64;
+export const I64 DECL_NAME_BYTES = 32;
+export const I64 T_DECL = 16;
+// Decl.kind.
+export const U8 DK_HEADER = 1;
+export const U8 DK_MODULE = 2;
+export const U8 DK_CONST = 3;
+export const U8 DK_FUNC = 4;
+export const U8 DK_STRUCT = 5;
+export const U8 DK_FIELD = 6;
+export const U8 DK_PARAM = 7;
+export const U8 DK_NAME = 8;
+// A module-level variable (G-C2 review COR-2; compiler/OPEN.md CINTC-OQ-51): its scalar
+// type, `rank` 0; `a` its index among the module's variables in declaration order, the
+// index of its entry in the module's cint_state table; `b` 0.
+export const U8 DK_VAR = 9;
+// Decl.ext_kind of a rank-1 type.
+export const U8 DX_LITERAL = 1;
+export const U8 DX_SIZE = 2;
+export const U8 DX_WILD = 3;
+
+// ---------------------------------------------------------------- hard limits (CINTC-02)
+
+export const I64 SOURCE_BYTES_MAX = 4194304;
+export const I64 PROGRAM_BYTES_MAX = 67108864;
+export const I64 MODULES_MAX = 4096;
+export const I64 SYMBOLS_MAX = 1048576;
+export const I64 DECLS_MAX = 1048576;
+export const I64 FUNCTIONS_MAX = 65536;
+export const I64 TYPES_MAX = 65536;
+export const I64 STACK_MAX = 131072;
+export const I64 NESTING_MAX = 256;
+export const I64 ARMS_MAX = 65536;
+export const I64 DIAG_RETAINED_MAX = 100;
+export const I64 DIAG_ROWS = 101;
+export const I64 LITERAL_BYTES_MAX = 513;
+export const I64 FOLD_LIMBS = 65;
+export const I64 OUTPUT_BYTES_MAX = 268435456;
+export const I64 FAULT_RECORD_MAX = 2372;
+export const I64 FAULT_BYTES = 237200;
+export const I64 TABLES = 17;
+export const I64 OUTPUTS = 2;
+
+// Manifest scopes (CINTC-14) and element type tags (SPEC-01 IM-146).
+export const I64 SCOPE_PROGRAM = 0;
+export const I64 SCOPE_MODULE = 1;
+export const U16 TAG_BOOL = 0x01;
+export const U16 TAG_I8 = 0x11;
+export const U16 TAG_I16 = 0x12;
+export const U16 TAG_I32 = 0x13;
+export const U16 TAG_I64 = 0x14;
+export const U16 TAG_U8 = 0x21;
+export const U16 TAG_U16 = 0x22;
+export const U16 TAG_U32 = 0x23;
+export const U16 TAG_U64 = 0x24;
+export const U16 TAG_RECORD = 0x71;
+
+// Diagnostic codes of SPEC-04 17.2 that the tables raise or carry.
+export const I64 C_CONST_FAULT = 6001;
+export const I64 C_CONST_FUEL = 6002;
+export const I64 C_LIMIT = 9001;
+export const I64 C_SYMBOL_LENGTH = 9002;
+export const I64 C_FRAME = 9003;
+export const I64 C_NESTING = 9004;
+
+// Limit identifiers: detail[0] of a C9001 row. 1 to 4 are the bridge's phases.
+export const I64 LIM_PHASE_PLAN = 1;
+export const I64 LIM_PHASE_COMPILE = 2;
+export const I64 LIM_PHASE_MEASURE = 3;
+export const I64 LIM_PHASE_EMIT = 4;
+export const I64 LIM_SOURCE = 16;
+export const I64 LIM_PROGRAM = 17;
+export const I64 LIM_MODULES = 18;
+export const I64 LIM_TOKENS = 19;
+export const I64 LIM_NODES = 20;
+export const I64 LIM_SYMBOLS = 21;
+export const I64 LIM_FUNCTIONS = 22;
+export const I64 LIM_TYPES = 23;
+export const I64 LIM_SIR = 24;
+export const I64 LIM_STACK = 25;
+export const I64 LIM_ARMS = 26;
+export const I64 LIM_LITERALS = 27;
+export const I64 LIM_OUTPUT = 28;
+export const I64 LIM_DECLS = 29;
+// Imported-index rows, excluding the ordinary prefix and module directory.
+export const I64 LIM_IMPORT_NAMES = 30;
+export const I64 IMPORT_NAMES_MAX = 2 * DECLS_MAX;
+export const I64 LIM_RECORD_BYTES = 31;
+export const I64 RECORD_BYTES_MAX = 4294967295;
+
+// Checked table-13 capacity. Zero declarations retain the standalone checker plan.
+export I64 name_capacity(I64 symbols, I64 declarations) {
+    if (symbols < 0 || symbols > SYMBOLS_MAX || declarations < 0 || declarations > DECLS_MAX) {
+        return -1;
+    }
+    if (declarations == 0) { return 2 * symbols; }
+    return 2 * symbols + MODULES_MAX + 2 * declarations;
+}
+
+I64 least(I64 a, I64 b) {
+    if (a < b) {
+        return a;
+    }
+    return b;
+}
+
+// The CINTC-02 formula of table `lim` for n source bytes (n tokens + 1), capped by the hard
+// limit; for LIM_SOURCE, LIM_PROGRAM, LIM_MODULES, and LIM_OUTPUT, n itself. -1 for an
+// identifier without a formula.
+export I64 capacity(I64 lim, I64 n) {
+    I64 tokens = n + 1;
+    switch (lim) {
+        case LIM_SOURCE: return least(n, SOURCE_BYTES_MAX);
+        case LIM_PROGRAM: return least(n, PROGRAM_BYTES_MAX);
+        case LIM_MODULES: return least(n, MODULES_MAX);
+        case LIM_OUTPUT: return least(n, OUTPUT_BYTES_MAX);
+        case LIM_TOKENS: return tokens;
+        case LIM_NODES: return 2 * tokens + 16;
+        case LIM_SYMBOLS: return least(tokens / 2 + 64, SYMBOLS_MAX);
+        case LIM_FUNCTIONS: return least(tokens / 4 + 1, FUNCTIONS_MAX);
+        case LIM_TYPES: return least(256 + tokens / 8, TYPES_MAX);
+        case LIM_SIR: return 4 * tokens + 16;
+        case LIM_STACK: return least(512 + tokens / 32, STACK_MAX);
+        case LIM_LITERALS: return (n + 1) / 2 + 64;
+        case LIM_ARMS: return ARMS_MAX;
+        case LIM_DECLS: return least(n / 4 + n / 32 + 1, DECLS_MAX);
+        default: return -1;
+    }
+}
+
+// The hard limit of table `lim`: the fixed limit, or the formula at SOURCE_BYTES_MAX for a
+// table whose limit is "per module". -1 for an identifier without one.
+export I64 hard_limit(I64 lim) {
+    switch (lim) {
+        case LIM_SOURCE: return SOURCE_BYTES_MAX;
+        case LIM_PROGRAM: return PROGRAM_BYTES_MAX;
+        case LIM_MODULES: return MODULES_MAX;
+        case LIM_OUTPUT: return OUTPUT_BYTES_MAX;
+        case LIM_ARMS: return ARMS_MAX;
+        case LIM_DECLS: return DECLS_MAX;
+        case LIM_IMPORT_NAMES: return IMPORT_NAMES_MAX;
+        case LIM_RECORD_BYTES: return RECORD_BYTES_MAX;
+        case LIM_TOKENS, LIM_NODES, LIM_SYMBOLS, LIM_FUNCTIONS, LIM_TYPES, LIM_SIR, LIM_STACK, LIM_LITERALS:
+            return capacity(lim, SOURCE_BYTES_MAX);
+        default: return -1;
+    }
+}
+
+// The alignment of an element of `bytes` bytes, as CINT_ELEM_ALIGN in rt/cint_rt.h.
+export I64 elem_align(I64 bytes) {
+    if (bytes % 8 == 0) {
+        return 8;
+    }
+    if (bytes % 4 == 0) {
+        return 4;
+    }
+    if (bytes % 2 == 0) {
+        return 2;
+    }
+    return 1;
+}
+
+// Manifest row k: table k, `cap` elements of `elem_bytes` bytes and type tag `code`
+// (`record` indexes the cm record table when code is TAG_RECORD).
+export void plan_row[t](inout TablePlan[t] rows, I64 k, I64 elem_bytes, U16 code, U32 record, I64 cap,
+        I64 scope) {
+    rows[k].table = k;
+    rows[k].elem_bytes = elem_bytes;
+    rows[k].elem_align = elem_align(elem_bytes);
+    rows[k].capacity = cap;
+    rows[k].scope = scope;
+    rows[k].reserved = 0;
+    rows[k].elem_type.code = code;
+    rows[k].elem_type.storage = 0;
+    rows[k].elem_type.reserved0 = 0;
+    rows[k].elem_type.frac_bits = 0;
+    rows[k].elem_type.reserved1 = 0;
+    rows[k].elem_type.record_id = record;
+    rows[k].elem_type.reserved2 = 0;
+}
+
+// ---------------------------------------------------------------- retained diagnostics
+
+void clear_row[r](inout CompilerDiag[r] diag, I64 i) {
+    diag[i].code = 0;
+    diag[i].module = 0;
+    diag[i].line = 0;
+    diag[i].column = 0;
+    for k in 0..4 {
+        diag[i].detail[k] = 0;
+    }
+}
+
+void copy_row[r](inout CompilerDiag[r] diag, I64 to, I64 from) {
+    diag[to].code = diag[from].code;
+    diag[to].module = diag[from].module;
+    diag[to].line = diag[from].line;
+    diag[to].column = diag[from].column;
+    for k in 0..4 {
+        diag[to].detail[k] = diag[from].detail[k];
+    }
+}
+
+// Empties the table: every row zero; no diagnostic retained or counted.
+export void diag_clear[r](inout CompilerDiag[r] diag) {
+    for i in 0..r {
+        clear_row(diag, i);
+    }
+}
+
+// Whether row i comes after the key (module, line, column, code) in LS-282 order.
+Bool after_key[r](in CompilerDiag[r] diag, I64 i, I64 module, I64 line, I64 column, I64 code) {
+    if (diag[i].module != module) {
+        return diag[i].module > module;
+    }
+    if (diag[i].line != line) {
+        return diag[i].line > line;
+    }
+    if (diag[i].column != column) {
+        return diag[i].column > column;
+    }
+    return diag[i].code > code;
+}
+
+Bool has_fault_slot(I64 code) {
+    return code == C_CONST_FAULT || code == C_CONST_FUEL;
+}
+
+// The first fault slot that no retained row uses.
+I64 free_slot[r](in CompilerDiag[r] diag) {
+    Bool[100] used;
+    for i in 1..=diag[0].detail[0] {
+        if (has_fault_slot(diag[i].code)) {
+            used[diag[i].detail[2] / FAULT_RECORD_MAX] = true;
+        }
+    }
+    I64 slot = 0;
+    while (used[slot]) {
+        slot += 1;
+    }
+    return slot;
+}
+
+// Adds a diagnostic. Returns its row, or 0 when it is not retained (it is counted in
+// detail[1] of row 0). detail[0] and detail[1] of the new row are d0 and d1; for a C6001
+// or C6002 row, detail[2] is its fault slot's offset and detail[3] is 0.
+export I64 diag_add[r](inout CompilerDiag[r] diag, I64 code, I64 module, I64 line, I64 column, I64 d0, I64 d1) {
+    I64 keep = least(DIAG_RETAINED_MAX, r - 1);
+    I64 held = diag[0].detail[0];
+    if (held == keep) {
+        if (held == 0 || !after_key(diag, held, module, line, column, code)) {
+            diag[0].detail[1] += 1;
+            return 0;
+        }
+        clear_row(diag, held);
+        held -= 1;
+        diag[0].detail[0] = held;
+        diag[0].detail[1] += 1;
+    }
+    I64 slot = 0;
+    if (has_fault_slot(code)) {
+        slot = free_slot(diag);
+    }
+    I64 at = held + 1;
+    while (at > 1 && after_key(diag, at - 1, module, line, column, code)) {
+        copy_row(diag, at, at - 1);
+        at -= 1;
+    }
+    clear_row(diag, at);
+    diag[at].code = code;
+    diag[at].module = module;
+    diag[at].line = line;
+    diag[at].column = column;
+    diag[at].detail[0] = d0;
+    diag[at].detail[1] = d1;
+    if (has_fault_slot(code)) {
+        diag[at].detail[2] = slot * FAULT_RECORD_MAX;
+    }
+    diag[0].detail[0] = held + 1;
+    return at;
+}
+
+// C9001 at module:line:column for limit identifier `lim` and its limit.
+export I64 limit_diag[r](inout CompilerDiag[r] diag, I64 module, I64 line, I64 column, I64 lim, I64 limit) {
+    return diag_add(diag, C_LIMIT, module, line, column, lim, limit);
+}
+
+// Whether a table of `cap` elements that already holds `held` is full; if so, C9001
+// at the position, naming the table and its capacity.
+export Bool table_full[r](inout CompilerDiag[r] diag, I64 module, I64 line, I64 column, I64 lim, I64 held,
+        I64 cap) {
+    if (held < cap) {
+        return false;
+    }
+    _ = limit_diag(diag, module, line, column, lim, cap);
+    return true;
+}
+
+// The source of one module: C9001 at <path>:1:1 above SOURCE_BYTES_MAX. True when it fits.
+export Bool check_source[r](inout CompilerDiag[r] diag, I64 module, I64 bytes) {
+    if (bytes <= SOURCE_BYTES_MAX) {
+        return true;
+    }
+    _ = limit_diag(diag, module, 1, 1, LIM_SOURCE, SOURCE_BYTES_MAX);
+    return false;
+}
+
+// The module count: C9001 at the first module beyond MODULES_MAX. True when it fits.
+export Bool check_modules[r](inout CompilerDiag[r] diag, I64 modules) {
+    if (modules <= MODULES_MAX) {
+        return true;
+    }
+    _ = limit_diag(diag, MODULES_MAX, 1, 1, LIM_MODULES, MODULES_MAX);
+    return false;
+}
+
+// The build's inputs (plan, CINTC-05): the module count, each module's bytes, and the
+// program's bytes, C9001 at the first module that passes PROGRAM_BYTES_MAX. True when all fit.
+export Bool check_program[m, r](in I64[m] module_bytes, inout CompilerDiag[r] diag) {
+    Bool fits = check_modules(diag, m);
+    I64 total = 0;
+    Bool past = false;
+    for i in 0..m {
+        if (!check_source(diag, i, module_bytes[i])) {
+            fits = false;
+        }
+        total += module_bytes[i];
+        if (!past && total > PROGRAM_BYTES_MAX) {
+            _ = limit_diag(diag, i, 1, 1, LIM_PROGRAM, PROGRAM_BYTES_MAX);
+            past = true;
+            fits = false;
+        }
+    }
+    return fits;
+}
+
+// ---------------------------------------------------------------- test entries
+
+// The hard limits and sizes above, by index, for compiler/tests/run.py.
+export I64 limits_const(I64 k) {
+    switch (k) {
+        case 0: return SOURCE_BYTES_MAX;
+        case 1: return PROGRAM_BYTES_MAX;
+        case 2: return MODULES_MAX;
+        case 3: return SYMBOLS_MAX;
+        case 4: return FUNCTIONS_MAX;
+        case 5: return TYPES_MAX;
+        case 6: return STACK_MAX;
+        case 7: return NESTING_MAX;
+        case 8: return ARMS_MAX;
+        case 9: return DIAG_RETAINED_MAX;
+        case 10: return DIAG_ROWS;
+        case 11: return LITERAL_BYTES_MAX;
+        case 12: return FOLD_LIMBS;
+        case 13: return OUTPUT_BYTES_MAX;
+        case 14: return FAULT_RECORD_MAX;
+        case 15: return FAULT_BYTES;
+        case 16: return TABLES;
+        case 17: return OUTPUTS;
+        case 18: return DIAG_RETAINED_MAX * FAULT_RECORD_MAX;
+        case 19: return DECLS_MAX;
+        default: return -1;
+    }
+}
+
+// Field f of row i after scenario `scenario` on a table of 41 rows (40 retained): f 0 to
+// 3 are code, module, line, column; 4 to 7 are detail[0] to detail[3]. Scenarios:
+// 0, three diagnostics added out of order; 1, 60 diagnostics, 20 dropped; 2, as 1 with
+// every third a C6001 that takes a fault slot; 3, the source and program checks;
+// 4, table_full below and at capacity; 5, the manifest row 1 of a TablePlan[2] (row i:
+// f 0 to 5 are table to reserved, 6 the type code, 7 the record id).
+export I64 diag_test(I64 scenario, I64 i, I64 f) {
+    CompilerDiag[41] diag;
+    diag_clear(diag);
+    if (scenario == 0) {
+        _ = diag_add(diag, 2001, 0, 5, 3, 11, 12);
+        _ = diag_add(diag, 3004, 0, 2, 7, 21, 22);
+        _ = diag_add(diag, 1050, 0, 5, 3, 31, 32);
+        _ = diag_add(diag, 2001, 0, 5, 3, 41, 42);
+    } else if (scenario == 1 || scenario == 2) {
+        for k in 0..60 {
+            I64 code = 2001;
+            if (scenario == 2 && k % 3 == 0) {
+                code = C_CONST_FAULT;
+            }
+            _ = diag_add(diag, code, k % 2, (k * 37) % 61 + 1, k % 5 + 1, k, 0);
+        }
+    } else if (scenario == 3) {
+        I64[20] bytes;
+        for k in 0..20 {
+            bytes[k] = 4000000;
+        }
+        bytes[3] = SOURCE_BYTES_MAX + 1;
+        _ = check_source(diag, 7, SOURCE_BYTES_MAX);
+        _ = check_modules(diag, MODULES_MAX);
+        _ = check_modules(diag, MODULES_MAX + 1);
+        if (check_program(bytes, diag)) {
+            return -2;
+        }
+    } else if (scenario == 4) {
+        if (table_full(diag, 2, 9, 4, LIM_TOKENS, 10, 11)) {
+            return -2;
+        }
+        if (!table_full(diag, 2, 9, 5, LIM_TOKENS, 11, 11)) {
+            return -3;
+        }
+    } else if (scenario == 5) {
+        TablePlan[2] rows;
+        plan_row(rows, 1, 16, TAG_RECORD, 3, capacity(LIM_TOKENS, 100), SCOPE_MODULE);
+        switch (f) {
+            case 0: return rows[i].table;
+            case 1: return rows[i].elem_bytes;
+            case 2: return rows[i].elem_align;
+            case 3: return rows[i].capacity;
+            case 4: return rows[i].scope;
+            case 5: return rows[i].reserved;
+            case 6: return rows[i].elem_type.code as I64;
+            default: return rows[i].elem_type.record_id as I64;
+        }
+    }
+    switch (f) {
+        case 0: return diag[i].code;
+        case 1: return diag[i].module;
+        case 2: return diag[i].line;
+        case 3: return diag[i].column;
+        default: return diag[i].detail[f - 4];
+    }
+}

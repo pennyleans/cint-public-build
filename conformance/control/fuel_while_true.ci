@@ -1,0 +1,13 @@
+// case: control/fuel_while_true
+// clause: SPEC-01 10.2, 10.3
+// subset: cint-boot-1
+// entry: run; args: none; fuel 10
+// spec outcome: fault E_FUEL, limit 10; fuel consumed 10 (call 1, nine iterations). Position 9:5, the `while` keyword (SPEC-01 IM-141; decision 2026-10-03 on OQ-127)
+
+export I64 run() {
+    I64 n = 0;
+    while (true) {
+        n = n + 1;
+    }
+    return n;
+}

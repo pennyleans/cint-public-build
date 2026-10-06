@@ -1,0 +1,15 @@
+// case: view/index_write_inout_in_callee
+// clause: SPEC-04 LS-64, LS-119; SPEC-01 IM-98, IM-107, IM-186 (a write place through an `inout` view is checked against the argument's extent)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 8:7 in `put`, operand I64 3, limit I64 3; stack depth 1 (the call at 13:5)
+
+void put[n](inout I64[n] xs, I64 i, I64 v) {
+    xs[i] = v;
+}
+
+export I64 run() {
+    I64[3] a;
+    put(a, 3, 7);
+    return a[0];
+}

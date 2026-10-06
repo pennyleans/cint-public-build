@@ -1,0 +1,8 @@
+case reduce/sum_sat_rank2_transposed
+clause SPEC-01 IM-75, IM-76 (the IM-75 table: sum_sat in column-major order is -73)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I8 -73
+fuel-consumed 2

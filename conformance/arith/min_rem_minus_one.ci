@@ -1,0 +1,11 @@
+// case: arith/min_rem_minus_one
+// clause: SPEC-01 4.4, 9.6; plan Review Focus 2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 0 (MIN % -1 is 0 and does not fault)
+
+export I64 run() {
+    I64 a = -9223372036854775808;
+    I64 b = -1;
+    return a % b;
+}

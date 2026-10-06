@@ -1,0 +1,17 @@
+case view/index_left_operand_first
+clause SPEC-01 IM-92, IM-96, IM-186 (of two out-of-range subscripts, the left operand faults first)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_BOUNDS
+fault.operation index.checked.i64
+fault.operand I64 5
+fault.exact none
+fault.limit I64 4
+fault.position view/index_left_operand_first.ci:11:13
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

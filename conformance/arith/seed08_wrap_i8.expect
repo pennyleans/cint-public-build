@@ -1,0 +1,7 @@
+case arith/seed08_wrap_i8
+clause SPEC-09 SEED-08 row 5; SPEC-01 3.2 (fixture 99)
+source reference
+outcome value
+stdout-bytes 0
+return I8 -56
+fuel-consumed 1

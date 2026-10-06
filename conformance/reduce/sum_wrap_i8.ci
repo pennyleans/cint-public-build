@@ -1,0 +1,10 @@
+// case: reduce/sum_wrap_i8
+// clause: SPEC-01 IM-77, IM-82 (the IM-79 listing)
+// subset: cint-core-1 (built-in sum_wrap)
+// entry: run; args: none
+// spec outcome: value I8 120; fuel 2
+
+export I8 run() {
+    I8[3] v = [120, 120, -120];
+    return sum_wrap(v);
+}

@@ -1,0 +1,10 @@
+// case: reduce/fold_rank2_row_major
+// clause: SPEC-01 IM-74, IM-75 (row-major logical order of shape [2, 2]: 100, -100, 100, -100)
+// subset: cint-core-1 (rank 2, built-in fold_checked)
+// entry: run; args: none
+// spec outcome: value I8 0; fuel 2
+
+export I8 run() {
+    I8[2, 2] a = [[100, -100], [100, -100]];
+    return fold_checked(add, 0, a);
+}

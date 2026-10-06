@@ -1,0 +1,19 @@
+// case: view/call_slices_runtime_alias
+// clause: SPEC-04 LS-121, LS-123; ref/OPEN.md REF-OQ-32 (overlapping slices bound to `inout` and `in` at run time)
+// subset: cint-core-1 (array slices)
+// entry: run; args: none
+// spec outcome: fault E_ALIAS at 12:5 (callee `put`), operation bind.alias, operands I64 0 and I64 1, no exact, no limit; stack depth 1, stack 17:5; fuel 2 (entry, call to `pair`; `put` is not entered). Record: REF-OQ-32 form, box 09 ruling R8
+
+void put[n](inout I64[n] d, in I64[n] s) {
+    d[0] = s[0];
+}
+
+void pair[m](inout I64[m] x, I64 j, I64 k) {
+    put(x[0..k], x[j..j + k]);
+}
+
+export I64 run() {
+    I64[8] x;
+    pair(x, 2, 4);
+    return x[0];
+}

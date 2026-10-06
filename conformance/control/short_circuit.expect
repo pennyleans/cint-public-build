@@ -1,0 +1,7 @@
+case control/short_circuit
+clause SPEC-01 8.1 (&& and || evaluate only the operands the result requires)
+source reference
+outcome value
+stdout-bytes 0
+return I64 1
+fuel-consumed 1

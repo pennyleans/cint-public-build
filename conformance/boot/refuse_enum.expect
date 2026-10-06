@@ -1,0 +1,6 @@
+case boot/refuse_enum
+clause SPEC-09 BOOT-01 (enum_decl, enumerator), SEED-06; SPEC-04 LS-87, LS-88, LS-89
+source compile-error
+outcome compile-error
+diagnostic.code C9100
+diagnostic.position boot/refuse_enum.ci:8:1

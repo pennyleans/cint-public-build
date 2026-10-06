@@ -1,0 +1,12 @@
+// case: view/rank3_index_value
+// clause: SPEC-04 LS-62, LS-63, LS-64 (rank 3)
+// subset: cint-core-1 (rank 3)
+// entry: run; args: none
+// spec outcome: value I32 9; fuel 1
+
+export I32 run() {
+    I32[2, 3, 4] p;
+    p[1, 2, 3] = 9;
+    p[0, 2, 3] = 4;
+    return p[1, 2, 3];
+}

@@ -1,0 +1,7 @@
+case struct/zero_fill
+clause SPEC-04 5.1 (a struct without an initializer is zero-filled)
+source reference
+outcome value
+stdout-bytes 0
+return I32 0
+fuel-consumed 1

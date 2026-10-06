@@ -1,0 +1,12 @@
+// case: arith/const_narrow_typed_as
+// clause: SPEC-01 4.6, 9.2 (E_NARROW); SPEC-09 SEED-08
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C6001 at 10:14 (the `as`): the constant A of type I64 converted to I8 faults E_NARROW; operation as.checked.i64.i8, operand I64 300, exact 300, limit I8 127
+
+const I64 A = 300;
+
+export I8 run() {
+    I8 x = A as I8;
+    return x;
+}

@@ -1,0 +1,1369 @@
+// compiler/back_ptx.ci: the device code of the `gpu-cuda` backend, PTX text for the
+// work-item bodies of a module's kernels (SPEC-09 BACK-16; SPEC-02 B-16 to B-16c; box 11
+// unit 3, docs/design/notes/2026-10-05-box11-cuda-backend.md sections 4.3, 4.4, 6.1 to 6.3).
+//
+// A `gpu-cuda` build is the `cpu-c17` build plus this text: the host runs everything of a
+// kernel but its work-item bodies, which run on the device. write_ptx writes one module,
+// `.version 6.0`, `.target sm_52`, `.address_size 64` (BX11-06, OQ-30), with one
+// `.visible .entry <prefix><name>` per kernel the module defines. Each entry runs the body
+// of one work-item, the nodes after the kernel's lowering.SO_KITEM node up to its item
+// loop's `next`, for work-item i = base + ctaid.x * ntid.x + tid.x (B-16a, K-9).
+//
+// Parameters, in order (rt/cint_cuda.h; kernel_input decides the last group):
+//   p_base, p_end, p_fault   .u64: the launch's first item, one past the dispatch's last,
+//                            and the device address of the U64 fault word (B-16b, F-9);
+//   p_fuel, p_allow          .u64, when the body charges fuel: the device address of one
+//                            I64 per work-item, where each item writes its total charge
+//                            C(i), and the allowance F left after the dispatch charge (B-16c);
+//   p_r<j>, p_m<j>           .u64, for the j-th `reduce` target in slot order: the device
+//                            addresses of one I64 contribution and one U32 presence mark per
+//                            work-item (B-16c, R-1); the host zeroes the marks;
+//   a<j>, l<j>               each value the body reads and does not define, in slot order:
+//                            parameter j, or local j, of the kernel function. A view
+//                            (lowering.SK_NVIEW: an array parameter, or the staging view of
+//                            an `out` or `inout` array) is `.param .align 8 .b8 [88]`, the
+//                            cint_vdesc of rt/cint_rt.h with the device address as its base;
+//                            a scalar is `.param .u64`, sign-extended for a signed type,
+//                            zero-extended for an unsigned one, 0 or 1 for Bool.
+//
+// An item above the fault word when it starts exits (F-10). A failed check branches to
+// FAULT, which performs atom.global.min.u64 on the word with i and exits, so the host
+// re-executes the lowest faulting item on `cpu-c17` for the record (B-16b); no fault code
+// is kept on the device. An item whose charges exceed F writes them and stops (STOP). The
+// outputs of an item that faults or stops lie in staging, which the host discards.
+//
+// Registers. Every value is a .b64 register, sign-extended for a signed type,
+// zero-extended for an unsigned one, 0 or 1 for Bool: %t<k> temporary k, %s<j> slot
+// pslot0 + j, %x scratch, %p predicates, %ki the item index, %kf the fault word's address,
+// %kc, %ka and %ks the item's charge, the allowance and the charge's address. A checked
+// operation of 8, 16 or 32 bits computes its exact result in 64 bits and tests that it
+// fits its type; one of 64 bits tests the operands' and result's signs (add, sub) or the
+// high half of the product (mul.hi), so every check is an explicit test of results the
+// PTX specification defines (BX11-02).
+//
+// Capability table (BACK-04; box 11 default BX11-07). The entries are those of the T3
+// kernels' node families (section 4.1); every other entry is unsupported, with the
+// capability cap_of names (cap_name spells it):
+//   family                                forms                types              entry
+//   const, load.local, store.local,       -                    Bool, I8 to U64    native
+//     local, dispatch.step
+//   add, sub, mul                         checked, wrap        I8 to U64          native
+//   add, sub, mul                         sat, result          I8 to U64          unsupported (sat, result)
+//   div, rem; shl, shr; and, or, xor,     every                I8 to U64          unsupported (div, shift,
+//     not, !; neg                                                                   bits, neg)
+//   cmp.eq to cmp.ge                      -                    Bool, I8 to U64    native
+//   as                                    checked              Bool, I8 to U64    native
+//   as                                    as%, as?             I8 to U64          unsupported (as.wrap)
+//   div_round                             every rounding mode  I8 to U64          native
+//   other built-ins                       every                every              unsupported (builtin)
+//   if, arm, then, else, loop, while,     -                    -                  native
+//     next, break, continue
+//   switch                                every                every              unsupported (switch)
+//   fuel.charge                           -                    -                  native
+//   index.checked, view.offset,           -                    Bool, I8 to U64    native
+//     index.load of a view
+//   index.store into a view               -                    I32, U32, I64, U64 native
+//   index.store into a view               -                    Bool, 8, 16 bits   unsupported (store.narrow,
+//                                                                                   CR-11)
+//   reduce.add                            every reduction      Bool, I8 to U64    native
+//   local arrays, structs, view           every                every              unsupported (array, struct,
+//     construction, reduction of a view,                                            view.make, reduce.view,
+//     call, print, assert, module state                                             call, print, assert, state)
+// A body that writes a value it does not define is refused (outer.write), as is an entry
+// past PTX's 4,096 bytes of parameters or rt/cint_cuda.h's 61 parameters (params).
+//
+// Bound (CINTC-13): check_ptx and write_ptx are O(nodes) per kernel, plus O(slots x
+// nodes) for kernel_input over the kernel function's slots.
+
+import emit;
+import fold;
+import lowering;
+import scan;
+
+// An entry's parameter space in bytes (PTX for sm_52), and the parameters an entry may
+// take after p_base, p_end and p_fault (rt/cint_cuda.h CINT_CUDA_MAX_PARAMS).
+export const I64 PARAM_BYTES = 4096;
+export const I64 MAX_PARAMS = 61;
+// sizeof(cint_vdesc) (rt/cint_rt.h section 14): base, origin, rank, shape[4], stride[4].
+export const I64 VDESC_BYTES = 88;
+const I64 VD_ORIGIN = 8;
+const I64 VD_SHAPE = 24;
+const I64 VD_STRIDE = 56;
+
+// Capabilities: why check_ptx refuses a node (CAP_NATIVE: it does not).
+export const I64 CAP_NATIVE = 0;
+export const I64 CAP_CALL = 1;
+export const I64 CAP_PRINT = 2;
+export const I64 CAP_ASSERT = 3;
+export const I64 CAP_STRUCT = 4;
+export const I64 CAP_ARRAY = 5;
+export const I64 CAP_VIEW = 6;
+export const I64 CAP_REDUCE = 7;
+export const I64 CAP_BUILTIN = 8;
+export const I64 CAP_DIV = 9;
+export const I64 CAP_SHIFT = 10;
+export const I64 CAP_BITS = 11;
+export const I64 CAP_NEG = 12;
+export const I64 CAP_SAT = 13;
+export const I64 CAP_RESULT = 14;
+export const I64 CAP_AS = 15;
+export const I64 CAP_SWITCH = 16;
+export const I64 CAP_NARROW = 17;
+export const I64 CAP_STATE = 18;
+export const I64 CAP_OUTER = 19;
+export const I64 CAP_PARAMS = 20;
+export const I64 CAP_NODE = 21;
+
+// The rows of `why` that check_ptx fills when it refuses: the capability, the node, its
+// site (lowering.KSITE when none), the kernel function, and the line and column of the
+// node's token (0 when none).
+export const I64 WHY_ROWS = 6;
+
+void w_str[b, n](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] s) {
+    emit.w_text(w, dst, s);
+}
+
+void nl[b](inout emit.Writer[_] w, inout U8[b] dst) {
+    emit.w_nl(w, dst);
+}
+
+// The name of capability cap.
+export void cap_name[b](inout emit.Writer[_] w, inout U8[b] dst, I64 cap) {
+    switch (cap) {
+        case CAP_CALL: w_str(w, dst, "call");
+        case CAP_PRINT: w_str(w, dst, "print");
+        case CAP_ASSERT: w_str(w, dst, "assert");
+        case CAP_STRUCT: w_str(w, dst, "struct");
+        case CAP_ARRAY: w_str(w, dst, "array");
+        case CAP_VIEW: w_str(w, dst, "view.make");
+        case CAP_REDUCE: w_str(w, dst, "reduce.view");
+        case CAP_BUILTIN: w_str(w, dst, "builtin");
+        case CAP_DIV: w_str(w, dst, "div");
+        case CAP_SHIFT: w_str(w, dst, "shift");
+        case CAP_BITS: w_str(w, dst, "bits");
+        case CAP_NEG: w_str(w, dst, "neg");
+        case CAP_SAT: w_str(w, dst, "sat");
+        case CAP_RESULT: w_str(w, dst, "result");
+        case CAP_AS: w_str(w, dst, "as.wrap");
+        case CAP_SWITCH: w_str(w, dst, "switch");
+        case CAP_NARROW: w_str(w, dst, "store.narrow");
+        case CAP_STATE: w_str(w, dst, "state");
+        case CAP_OUTER: w_str(w, dst, "outer.write");
+        case CAP_PARAMS: w_str(w, dst, "params");
+        default: w_str(w, dst, "node");
+    }
+}
+
+// ---------------------------------------------------------------- the work-item body
+
+// Whether function fn has device code here: a kernel this module defines.
+export Bool device_kernel(in lowering.SirFunc[_] funcs, I64 fn) {
+    return (funcs[fn].flags & lowering.FN_KERNEL) != 0 && (funcs[fn].flags & lowering.FN_IMPORT) == 0;
+}
+
+// The SO_KITEM node of kernel fn, where its work-item body starts; -1 when it has none.
+export I64 body_first(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, I64 fn) {
+    for i in funcs[fn].first as I64..funcs[fn].last as I64 {
+        if ((sir[i].op & lowering.OP_MASK) == lowering.SO_KITEM) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// The `next` node of the item loop around SO_KITEM node ki, where the body ends: the loop
+// is the nearest SO_LOOP before ki (lowering emits only the loop test between them).
+export I64 body_end(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, I64 fn, I64 ki) {
+    I64 head = ki;
+    while (head > (funcs[fn].first as I64) && (sir[head].op & lowering.OP_MASK) != lowering.SO_LOOP) {
+        head -= 1;
+    }
+    for i in ki + 1..funcs[fn].last as I64 {
+        if ((sir[i].op & lowering.OP_MASK) == lowering.SO_NEXT && sir[i].a as I64 == head) {
+            return i;
+        }
+    }
+    return funcs[fn].last as I64;
+}
+
+Bool live(in lowering.Sir[_] sir, I64 i) {
+    return (sir[i].op & lowering.FL_LIVE) != 0;
+}
+
+// The value operands of node i: an operand v >= 0 is node v's result, v < 0 parameter -v - 1.
+I64 noperands(in lowering.Sir[_] sir, I64 i) {
+    switch (sir[i].op & lowering.OP_MASK) {
+        case lowering.SO_BIN, lowering.SO_CMP, lowering.SO_ESTORE: return 2;
+        case lowering.SO_UN, lowering.SO_AS, lowering.SO_THEN, lowering.SO_TEST, lowering.SO_KRED,
+                lowering.SO_DISCARD, lowering.SO_STORE, lowering.SO_ICHECK, lowering.SO_ELOAD,
+                lowering.SO_EOFF:
+            return 1;
+        case lowering.SO_BUILTIN: return lowering.builtin_arity(sir, i);
+        default: return 0;
+    }
+}
+
+I64 operand(in lowering.Sir[_] sir, I64 i, I64 j) {
+    I32 k = sir[i].op & lowering.OP_MASK;
+    if (k == lowering.SO_STORE || k == lowering.SO_ICHECK || k == lowering.SO_ELOAD || k == lowering.SO_EOFF ||
+            k == lowering.SO_ESTORE) {
+        if (j == 0) {
+            return sir[i].b as I64;
+        }
+        return sir[i].c as I64;
+    }
+    if (j == 0) {
+        return sir[i].a as I64;
+    }
+    if (j == 1) {
+        return sir[i].b as I64;
+    }
+    return sir[i].c as I64;
+}
+
+// The slot node i names in its `a`, or -1.
+I64 slot_ref(in lowering.Sir[_] sir, I64 i) {
+    switch (sir[i].op & lowering.OP_MASK) {
+        case lowering.SO_LOAD, lowering.SO_STORE, lowering.SO_LOCAL, lowering.SO_ICHECK, lowering.SO_ELOAD,
+                lowering.SO_ESTORE, lowering.SO_EOFF:
+            return sir[i].a as I64;
+        default: return -1;
+    }
+}
+
+// Whether the body from SO_KITEM node ki to `next` node ke defines slot k: an `over`
+// variable of the item, or a local declared in the body.
+Bool defined_in(in lowering.Sir[_] sir, I64 ki, I64 ke, I64 k) {
+    I64 b = sir[ki].b as I64;
+    if (k >= b && k < b + (sir[ki].f as I64)) {
+        return true;
+    }
+    for i in ki + 1..ke {
+        if ((sir[i].op & lowering.OP_MASK) == lowering.SO_LOCAL && sir[i].a as I64 == k) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Whether the body names slot k: an extent of the item's `over` variables, the slot of a
+// live node, or a parameter operand.
+Bool named_in(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, I64 fn, I64 ki, I64 ke, I64 k) {
+    I64 c = sir[ki].c as I64;
+    if (k >= c && k < c + (sir[ki].f as I64)) {
+        return true;
+    }
+    I64 p0 = funcs[fn].pslot0 as I64;
+    for i in ki + 1..ke {
+        if (!live(sir, i)) {
+            continue;
+        }
+        if (slot_ref(sir, i) == k) {
+            return true;
+        }
+        for j in 0..noperands(sir, i) {
+            I64 v = operand(sir, i, j);
+            if (v < 0 && p0 - v - 1 == k) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// Whether slot k of kernel fn is a parameter of its entry, a<j> or l<j>: the body reads it
+// and does not define it. A scalar `out` is published through its reduction instead.
+export Bool kernel_input(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots,
+        I64 fn, I64 ki, I64 ke, I64 k) {
+    if (slots[k].kind == lowering.SK_KOUT) {
+        return false;
+    }
+    return named_in(sir, funcs, fn, ki, ke, k) && !defined_in(sir, ki, ke, k);
+}
+
+// Whether the body charges fuel (p_fuel and p_allow), and its count of reductions whose
+// target's slot is below `below`: the j of p_r<j> and p_m<j> (compiler/back_c.ci replays them).
+export Bool charges(in lowering.Sir[_] sir, I64 ki, I64 ke) {
+    for i in ki + 1..ke {
+        if ((sir[i].op & lowering.OP_MASK) == lowering.SO_FUEL && live(sir, i)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+export I64 reductions(in lowering.Sir[_] sir, I64 ki, I64 ke, I64 below) {
+    I64 n = 0;
+    for i in ki + 1..ke {
+        if ((sir[i].op & lowering.OP_MASK) == lowering.SO_KRED && live(sir, i) && sir[i].b as I64 < below) {
+            n += 1;
+        }
+    }
+    return n;
+}
+
+Bool scalar_type(I32 ty) {
+    return ty == lowering.T_BOOL || lowering.is_int(ty);
+}
+
+// A slot whose value lives in a register: a parameter, a local, or a hidden Bool.
+Bool scalar_slot(in lowering.SirSlot[_] slots, I64 k) {
+    I32 kind = slots[k].kind;
+    return (kind == lowering.SK_PARAM || kind == lowering.SK_LOCAL || kind == lowering.SK_HIDDEN) &&
+        scalar_type(slots[k].ty);
+}
+
+// The width in bits of integer type ty (Bool: 8).
+I64 width(I32 ty) {
+    switch (ty & 15) {
+        case 1: return 8;
+        case 2: return 16;
+        case 3: return 32;
+        default: return 64;
+    }
+}
+
+// A view of scalar elements, and its element type.
+Bool scalar_view(in lowering.SirSlot[_] slots, I64 k) {
+    return slots[k].kind == lowering.SK_NVIEW && scalar_type(lowering.array_elem(slots[k].ty));
+}
+
+// The capability node i of the body ki..ke of kernel fn needs, or CAP_NATIVE.
+I64 cap_of(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I64 ki,
+        I64 ke, I64 i) {
+    for j in 0..noperands(sir, i) {
+        I64 v = operand(sir, i, j);
+        if (v >= 0 && (v <= ki || v >= ke)) {
+            return CAP_NODE;
+        }
+    }
+    I64 a = sir[i].a as I64;
+    switch (sir[i].op & lowering.OP_MASK) {
+        case lowering.SO_CONST:
+            if (scalar_type(sir[i].ty)) { return CAP_NATIVE; }
+            return CAP_NODE;
+        case lowering.SO_LOAD, lowering.SO_STORE, lowering.SO_LOCAL:
+            I32 kind = slots[a].kind;
+            if (kind == lowering.SK_GLOBAL || kind == lowering.SK_IGLOBAL) { return CAP_STATE; }
+            if (kind == lowering.SK_ARRAY) { return CAP_ARRAY; }
+            if (kind == lowering.SK_NVIEW) { return CAP_VIEW; }
+            if (kind == lowering.SK_STRUCT || kind == lowering.SK_SPLACE) { return CAP_STRUCT; }
+            if (!scalar_slot(slots, a)) { return CAP_NODE; }
+            if ((sir[i].op & lowering.OP_MASK) == lowering.SO_STORE && !defined_in(sir, ki, ke, a)) {
+                return CAP_OUTER;
+            }
+            return CAP_NATIVE;
+        case lowering.SO_BIN:
+            I32 op = sir[i].c;
+            if (op == lowering.B_DIV || op == lowering.B_REM) { return CAP_DIV; }
+            if (op == lowering.B_SHL || op == lowering.B_SHR) { return CAP_SHIFT; }
+            if (op >= lowering.B_AND) { return CAP_BITS; }
+            if (sir[i].f == 2) { return CAP_SAT; }
+            if (sir[i].f == 3) { return CAP_RESULT; }
+            if (!lowering.is_int(sir[i].ty)) { return CAP_NODE; }
+            return CAP_NATIVE;
+        case lowering.SO_UN:
+            if (sir[i].c == lowering.U_NEG) { return CAP_NEG; }
+            if (sir[i].c == lowering.U_LNOT && sir[i].ty == lowering.T_BOOL) { return CAP_NATIVE; }
+            return CAP_BITS;
+        case lowering.SO_CMP:
+            if (scalar_type(lowering.value_type(sir, funcs, slots, fn, a))) { return CAP_NATIVE; }
+            return CAP_NODE;
+        case lowering.SO_AS:
+            if (sir[i].c != 0) { return CAP_AS; }
+            if (lowering.is_int(sir[i].ty) && scalar_type(sir[i].f)) { return CAP_NATIVE; }
+            return CAP_NODE;
+        case lowering.SO_BUILTIN:
+            if (sir[i].f as I64 != fold.BI_DIV_ROUND) { return CAP_BUILTIN; }
+            I64 mode = sir[i].val & 255;
+            if (mode < 1 || mode > 9 || !lowering.is_int(sir[i].ty)) { return CAP_NODE; }
+            return CAP_NATIVE;
+        case lowering.SO_IF, lowering.SO_ARM, lowering.SO_THEN, lowering.SO_ARM_END, lowering.SO_ELSE,
+                lowering.SO_LOOP, lowering.SO_TEST, lowering.SO_NEXT, lowering.SO_BREAK, lowering.SO_CONTINUE,
+                lowering.SO_END, lowering.SO_FUEL, lowering.SO_KSTEP:
+            return CAP_NATIVE;
+        case lowering.SO_KRED:
+            if (scalar_type(lowering.value_type(sir, funcs, slots, fn, a))) { return CAP_NATIVE; }
+            return CAP_NODE;
+        case lowering.SO_ICHECK, lowering.SO_ELOAD, lowering.SO_EOFF:
+            if (slots[a].kind != lowering.SK_NVIEW) { return CAP_ARRAY; }
+            if (!scalar_view(slots, a)) { return CAP_STRUCT; }
+            I64 c = sir[i].c as I64;
+            if ((sir[i].op & lowering.OP_MASK) == lowering.SO_EOFF && c >= 0 && (c <= ki || c >= ke)) {
+                return CAP_NODE;
+            }
+            return CAP_NATIVE;
+        case lowering.SO_ESTORE:
+            if (slots[a].kind != lowering.SK_NVIEW) { return CAP_ARRAY; }
+            if (!scalar_view(slots, a)) { return CAP_STRUCT; }
+            I32 e = lowering.array_elem(slots[a].ty);
+            if (e == lowering.T_BOOL || width(e) < 32) { return CAP_NARROW; }
+            return CAP_NATIVE;
+        case lowering.SO_SWITCH, lowering.SO_CASE, lowering.SO_DEFAULT, lowering.SO_ITEM, lowering.SO_HI,
+                lowering.SO_BODY, lowering.SO_CASE_END:
+            return CAP_SWITCH;
+        case lowering.SO_CALL, lowering.SO_ARG, lowering.SO_KCALL:
+            return CAP_CALL;
+        case lowering.SO_PRINT_BEGIN, lowering.SO_PRINT_BYTES, lowering.SO_PRINT_VALUE, lowering.SO_PRINT_END:
+            return CAP_PRINT;
+        case lowering.SO_ASSERT:
+            return CAP_ASSERT;
+        case lowering.SO_FLOAD, lowering.SO_FSTORE, lowering.SO_SCOPY, lowering.SO_EFLOAD, lowering.SO_EFSTORE,
+                lowering.SO_FELOAD, lowering.SO_FESTORE, lowering.SO_FSCOPY, lowering.SO_FSLOAD, lowering.SO_FREF,
+                lowering.SO_EREF, lowering.SO_AFREF, lowering.SO_FACOPY:
+            return CAP_STRUCT;
+        case lowering.SO_SDATA, lowering.SO_SHAPE, lowering.SO_COPY_SHAPE, lowering.SO_ACOPY:
+            return CAP_ARRAY;
+        case lowering.SO_VBEGIN, lowering.SO_VPICK, lowering.SO_VSLICE, lowering.SO_VEND, lowering.SO_VTRANS,
+                lowering.SO_VREV, lowering.SO_VCOPY, lowering.SO_VEXT, lowering.SO_CALIAS, lowering.SO_VDIM,
+                lowering.SO_VALLOC, lowering.SO_AINIT:
+            return CAP_VIEW;
+        case lowering.SO_REDUCE:
+            return CAP_REDUCE;
+        case lowering.SO_ETAG, lowering.SO_ERROR:
+            return CAP_RESULT;
+        default:
+            return CAP_NODE;
+    }
+}
+
+// Fills why for a refusal of capability cap at node i of kernel fn; returns cap.
+I64 refuse(in lowering.Sir[_] sir, in scan.Token[_] toks, I64 fn, I64 i, I64 cap, inout I64[_] why) {
+    why[0] = cap;
+    why[1] = i;
+    why[2] = sir[i].site as I64;
+    why[3] = fn;
+    why[4] = 0;
+    why[5] = 0;
+    I64 tk = sir[i].tok as I64;
+    if (tk >= 0) {
+        why[4] = toks[tk].line as I64;
+        why[5] = toks[tk].col as I64;
+    }
+    return cap;
+}
+
+// The capability the first refused node of kernel fn needs, or CAP_NATIVE when the
+// capability table admits the whole body and the entry's parameters fit.
+I64 check_kernel(in scan.Token[_] toks, in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs,
+        in lowering.SirSlot[_] slots, I64 fn, inout I64[_] why) {
+    I64 ki = body_first(sir, funcs, fn);
+    if (ki < 0) {
+        return refuse(sir, toks, fn, funcs[fn].first as I64, CAP_NODE, why);
+    }
+    I64 ke = body_end(sir, funcs, fn, ki);
+    for i in ki + 1..ke {
+        if (live(sir, i)) {
+            I64 cap = cap_of(sir, funcs, slots, fn, ki, ke, i);
+            if (cap != CAP_NATIVE) {
+                return refuse(sir, toks, fn, i, cap, why);
+            }
+        }
+    }
+    I64 n = 2 * reductions(sir, ki, ke, funcs[fn].lslot_end as I64);
+    if (charges(sir, ki, ke)) {
+        n += 2;
+    }
+    I64 bytes = 8 * (3 + n);
+    for k in funcs[fn].pslot0 as I64..funcs[fn].lslot_end as I64 {
+        if (kernel_input(sir, funcs, slots, fn, ki, ke, k)) {
+            if (slots[k].kind == lowering.SK_NVIEW) {
+                bytes += VDESC_BYTES;
+            } else if (scalar_slot(slots, k)) {
+                bytes += 8;
+            } else {
+                return refuse(sir, toks, fn, ki, CAP_NODE, why);
+            }
+            n += 1;
+        }
+    }
+    if (n > MAX_PARAMS || bytes > PARAM_BYTES) {
+        return refuse(sir, toks, fn, ki, CAP_PARAMS, why);
+    }
+    return CAP_NATIVE;
+}
+
+// The capability the first refused node of the module's kernels needs, in function order,
+// with why filled (WHY_ROWS rows); CAP_NATIVE when write_ptx can write every kernel.
+export I64 check_ptx(in scan.Token[_] toks, in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs,
+        in lowering.SirSlot[_] slots, in lowering.LState[_] ls, inout I64[_] why) {
+    for fn in 0..ls[0].nfunc {
+        if (device_kernel(funcs, fn)) {
+            I64 cap = check_kernel(toks, sir, funcs, slots, fn, why);
+            if (cap != CAP_NATIVE) {
+                return cap;
+            }
+        }
+    }
+    return CAP_NATIVE;
+}
+
+// ---------------------------------------------------------------- PTX text
+
+void w_num[b](inout emit.Writer[_] w, inout U8[b] dst, I64 v) {
+    emit.w_i64(w, dst, v);
+}
+
+// Operand v: %t<k> for node v's temporary, %s<j> for parameter j.
+void w_op[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, I64 v) {
+    if (v >= 0) {
+        w_str(w, dst, "%t");
+        w_num(w, dst, sir[v].dst as I64);
+    } else {
+        w_str(w, dst, "%s");
+        w_num(w, dst, -v - 1);
+    }
+}
+
+// The temporary node i defines.
+void w_def[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, I64 i) {
+    w_str(w, dst, "%t");
+    w_num(w, dst, sir[i].dst as I64);
+}
+
+void w_slot[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.SirFunc[_] funcs, I64 fn, I64 k) {
+    w_str(w, dst, "%s");
+    w_num(w, dst, k - (funcs[fn].pslot0 as I64));
+}
+
+// The entry parameter of slot k: a<j> for parameter j, l<j> for local j.
+void w_param[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.SirFunc[_] funcs, I64 fn, I64 k) {
+    I64 p0 = funcs[fn].pslot0 as I64;
+    if (k < p0 + (funcs[fn].nparam as I64)) {
+        emit.w_byte(w, dst, 'a');
+        w_num(w, dst, k - p0);
+    } else {
+        emit.w_byte(w, dst, 'l');
+        w_num(w, dst, k - (funcs[fn].lslot0 as I64));
+    }
+}
+
+// `[<param>+<offset>]` of view slot k's descriptor.
+void w_vfield[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.SirFunc[_] funcs, I64 fn, I64 k, I64 off) {
+    emit.w_byte(w, dst, '[');
+    w_param(w, dst, funcs, fn, k);
+    if (off > 0) {
+        emit.w_byte(w, dst, '+');
+        w_num(w, dst, off);
+    }
+    emit.w_byte(w, dst, ']');
+}
+
+// The type suffix of a load, store or conversion of ty: s8 to s64, u8 to u64 (Bool u8).
+void w_mem[b](inout emit.Writer[_] w, inout U8[b] dst, I32 ty) {
+    if (lowering.is_signed(ty)) {
+        emit.w_byte(w, dst, 's');
+    } else {
+        emit.w_byte(w, dst, 'u');
+    }
+    w_num(w, dst, width(ty));
+}
+
+// `s64` or `u64`: the comparison of values of type ty.
+void w_cmp_ty[b](inout emit.Writer[_] w, inout U8[b] dst, I32 ty) {
+    if (lowering.is_signed(ty)) {
+        w_str(w, dst, "s64");
+    } else {
+        w_str(w, dst, "u64");
+    }
+}
+
+void w_fault[b](inout emit.Writer[_] w, inout U8[b] dst) {
+    w_str(w, dst, "    @%p0 bra FAULT;");
+    nl(w, dst);
+}
+
+void w_label[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.SirFunc[_] funcs, I64 fn, I64 i, U8 suffix) {
+    emit.w_byte(w, dst, 'L');
+    w_num(w, dst, i - (funcs[fn].first as I64));
+    emit.w_byte(w, dst, '_');
+    emit.w_byte(w, dst, suffix);
+}
+
+void w_label_line[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.SirFunc[_] funcs, I64 fn, I64 i,
+        U8 suffix) {
+    w_label(w, dst, funcs, fn, i, suffix);
+    emit.w_byte(w, dst, ':');
+    nl(w, dst);
+}
+
+void w_bra[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.SirFunc[_] funcs, I64 fn, I64 i, U8 suffix) {
+    w_str(w, dst, "    bra ");
+    w_label(w, dst, funcs, fn, i, suffix);
+    emit.w_byte(w, dst, ';');
+    nl(w, dst);
+}
+
+// FAULT unless the 64-bit value of temporary t lies in type ty (8 to 32 bits): it is
+// unchanged by a conversion from ty's width.
+void w_fits[b](inout emit.Writer[_] w, inout U8[b] dst, I64 t, I32 ty) {
+    if (width(ty) == 64) {
+        return;
+    }
+    w_str(w, dst, "    cvt.");
+    w_cmp_ty(w, dst, ty);
+    emit.w_byte(w, dst, '.');
+    w_mem(w, dst, ty);
+    w_str(w, dst, " %x1, %t");
+    w_num(w, dst, t);
+    w_str(w, dst, ";");
+    nl(w, dst);
+    w_str(w, dst, "    setp.ne.");
+    w_cmp_ty(w, dst, ty);
+    w_str(w, dst, " %p0, %x1, %t");
+    w_num(w, dst, t);
+    w_str(w, dst, ";");
+    nl(w, dst);
+    w_fault(w, dst);
+}
+
+// Temporary t brought to the canonical form of ty (8 to 32 bits): the wrapped value.
+void w_norm[b](inout emit.Writer[_] w, inout U8[b] dst, I64 t, I32 ty) {
+    if (width(ty) == 64) {
+        return;
+    }
+    w_str(w, dst, "    cvt.");
+    w_cmp_ty(w, dst, ty);
+    emit.w_byte(w, dst, '.');
+    w_mem(w, dst, ty);
+    w_str(w, dst, " %t");
+    w_num(w, dst, t);
+    w_str(w, dst, ", %t");
+    w_num(w, dst, t);
+    w_str(w, dst, ";");
+    nl(w, dst);
+}
+
+// `    <op> <d>, <a>, <b>;` over node i's temporary and its operands a and b.
+void w_three[b, n](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, I64 i, in U8[n] op) {
+    w_str(w, dst, "    ");
+    w_str(w, dst, op);
+    emit.w_byte(w, dst, ' ');
+    w_def(w, dst, sir, i);
+    w_str(w, dst, ", ");
+    w_op(w, dst, sir, sir[i].a as I64);
+    w_str(w, dst, ", ");
+    w_op(w, dst, sir, sir[i].b as I64);
+    emit.w_byte(w, dst, ';');
+    nl(w, dst);
+}
+
+// `    <op> <x>, <a>, <b>;` with x a scratch or a temporary given as text, a and b operands.
+void w_xab[b, n, m](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, in U8[n] op, in U8[m] x,
+        I64 va, I64 vb) {
+    w_str(w, dst, "    ");
+    w_str(w, dst, op);
+    emit.w_byte(w, dst, ' ');
+    w_str(w, dst, x);
+    w_str(w, dst, ", ");
+    w_op(w, dst, sir, va);
+    w_str(w, dst, ", ");
+    w_op(w, dst, sir, vb);
+    emit.w_byte(w, dst, ';');
+    nl(w, dst);
+}
+
+// add, sub, mul: checked (form 0) or wrapping (form 1).
+void ptx_bin[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, I64 i) {
+    I32 ty = sir[i].ty;
+    I32 op = sir[i].c;
+    I64 t = sir[i].dst as I64;
+    I64 va = sir[i].a as I64;
+    I64 vb = sir[i].b as I64;
+    Bool sg = lowering.is_signed(ty);
+    if (sir[i].f == 1 || width(ty) < 64) {
+        // The exact result of 8 to 32 bits in 64, or the wrapped one: the low 64 bits.
+        if (op == lowering.B_ADD) {
+            w_three(w, dst, sir, i, "add.s64");
+        } else if (op == lowering.B_SUB) {
+            w_three(w, dst, sir, i, "sub.s64");
+        } else {
+            w_three(w, dst, sir, i, "mul.lo.s64");
+        }
+        if (sir[i].f == 1) {
+            w_norm(w, dst, t, ty);
+        } else {
+            w_fits(w, dst, t, ty);
+        }
+        return;
+    }
+    if (op == lowering.B_MUL) {
+        // The high half of the exact product is the sign of the low half (I64) or 0 (U64).
+        if (sg) {
+            w_xab(w, dst, sir, "mul.hi.s64", "%x0", va, vb);
+            w_three(w, dst, sir, i, "mul.lo.s64");
+            w_str(w, dst, "    shr.s64 %x1, %t");
+            w_num(w, dst, t);
+            w_str(w, dst, ", 63;");
+            nl(w, dst);
+            w_str(w, dst, "    setp.ne.s64 %p0, %x0, %x1;");
+        } else {
+            w_xab(w, dst, sir, "mul.hi.u64", "%x0", va, vb);
+            w_three(w, dst, sir, i, "mul.lo.u64");
+            w_str(w, dst, "    setp.ne.u64 %p0, %x0, 0;");
+        }
+        nl(w, dst);
+        w_fault(w, dst);
+        return;
+    }
+    if (!sg) {
+        // U64: a carry out of add, or a borrow out of sub.
+        if (op == lowering.B_ADD) {
+            w_three(w, dst, sir, i, "add.u64");
+            w_str(w, dst, "    setp.lt.u64 %p0, %t");
+            w_num(w, dst, t);
+            w_str(w, dst, ", ");
+            w_op(w, dst, sir, va);
+        } else {
+            w_three(w, dst, sir, i, "sub.u64");
+            w_str(w, dst, "    setp.lt.u64 %p0, ");
+            w_op(w, dst, sir, va);
+            w_str(w, dst, ", ");
+            w_op(w, dst, sir, vb);
+        }
+        emit.w_byte(w, dst, ';');
+        nl(w, dst);
+        w_fault(w, dst);
+        return;
+    }
+    // I64: the result's sign differs from both operands' (add), or from a's when b's does (sub).
+    if (op == lowering.B_ADD) {
+        w_three(w, dst, sir, i, "add.s64");
+        w_str(w, dst, "    xor.b64 %x0, ");
+        w_op(w, dst, sir, va);
+        w_str(w, dst, ", %t");
+        w_num(w, dst, t);
+        emit.w_byte(w, dst, ';');
+        nl(w, dst);
+        w_str(w, dst, "    xor.b64 %x1, ");
+        w_op(w, dst, sir, vb);
+    } else {
+        w_three(w, dst, sir, i, "sub.s64");
+        w_xab(w, dst, sir, "xor.b64", "%x0", va, vb);
+        w_str(w, dst, "    xor.b64 %x1, ");
+        w_op(w, dst, sir, va);
+    }
+    w_str(w, dst, ", %t");
+    w_num(w, dst, t);
+    emit.w_byte(w, dst, ';');
+    nl(w, dst);
+    w_str(w, dst, "    and.b64 %x0, %x0, %x1;");
+    nl(w, dst);
+    w_str(w, dst, "    setp.lt.s64 %p0, %x0, 0;");
+    nl(w, dst);
+    w_fault(w, dst);
+}
+
+// Whether every value of type from lies in type to.
+Bool fits_all(I32 from, I32 to) {
+    if (lowering.is_signed(to)) {
+        if (lowering.is_signed(from)) {
+            return width(from) <= width(to);
+        }
+        return width(from) < width(to);
+    }
+    return !lowering.is_signed(from) && width(from) <= width(to);
+}
+
+// as.checked: the value unchanged when it lies in the target type, else FAULT.
+void ptx_as[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, I64 i) {
+    I32 from = sir[i].f;
+    I32 to = sir[i].ty;
+    I64 va = sir[i].a as I64;
+    if (from != lowering.T_BOOL) {
+        // A negative value for an unsigned target, or a U64 value of 2^63 or more for a
+        // signed one.
+        if ((lowering.is_signed(to) && from == lowering.T_U64) || (!lowering.is_signed(to) && lowering.is_signed(from))) {
+            w_str(w, dst, "    setp.lt.s64 %p0, ");
+            w_op(w, dst, sir, va);
+            w_str(w, dst, ", 0;");
+            nl(w, dst);
+            w_fault(w, dst);
+        }
+        Bool sure = lowering.is_signed(from) && !lowering.is_signed(to) && width(from) <= width(to);
+        if (!fits_all(from, to) && !sure && width(to) < 64) {
+            w_str(w, dst, "    mov.b64 %t");
+            w_num(w, dst, sir[i].dst as I64);
+            w_str(w, dst, ", ");
+            w_op(w, dst, sir, va);
+            emit.w_byte(w, dst, ';');
+            nl(w, dst);
+            w_fits(w, dst, sir[i].dst as I64, to);
+            return;
+        }
+    }
+    w_str(w, dst, "    mov.b64 ");
+    w_def(w, dst, sir, i);
+    w_str(w, dst, ", ");
+    w_op(w, dst, sir, va);
+    emit.w_byte(w, dst, ';');
+    nl(w, dst);
+}
+
+// div_round(a, b, mode) (SPEC-01 4.5; rt/cint_rt.c round_quotient): the quotient of the
+// magnitudes, rounded up by the mode from the remainder r of the divisor's magnitude d,
+// then signed, and FAULT for a zero divisor or a result outside the type.
+void ptx_div_round[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, I64 i) {
+    I64 va = sir[i].a as I64;
+    I64 vb = sir[i].b as I64;
+    I64 mode = sir[i].val & 255;
+    Bool sg = lowering.is_signed(lowering.builtin_opty(sir, i));
+    w_str(w, dst, "    setp.eq.u64 %p0, ");
+    w_op(w, dst, sir, vb);
+    w_str(w, dst, ", 0;");
+    nl(w, dst);
+    w_fault(w, dst);
+    // %x0 = |a|, %x1 = d = |b|, %x2 = q, %x3 = r; %p1: the exact quotient is negative.
+    if (sg) {
+        w_str(w, dst, "    abs.s64 %x0, ");
+    } else {
+        w_str(w, dst, "    mov.b64 %x0, ");
+    }
+    w_op(w, dst, sir, va);
+    emit.w_byte(w, dst, ';');
+    nl(w, dst);
+    if (sg) {
+        w_str(w, dst, "    abs.s64 %x1, ");
+    } else {
+        w_str(w, dst, "    mov.b64 %x1, ");
+    }
+    w_op(w, dst, sir, vb);
+    emit.w_byte(w, dst, ';');
+    nl(w, dst);
+    w_str(w, dst, "    div.u64 %x2, %x0, %x1;");
+    nl(w, dst);
+    w_str(w, dst, "    rem.u64 %x3, %x0, %x1;");
+    nl(w, dst);
+    if (sg) {
+        w_xab(w, dst, sir, "xor.b64", "%x0", va, vb);
+        w_str(w, dst, "    setp.lt.s64 %p1, %x0, 0;");
+        nl(w, dst);
+    }
+    // up: %p2 for the modes that decide, from the sign and from 2r against d.
+    Bool always = mode == 4 || (mode == 2 && !sg);
+    Bool never = mode == 3 || (mode == 1 && !sg);
+    if (mode == 1 && sg) {
+        w_str(w, dst, "    mov.pred %p2, %p1;");
+        nl(w, dst);
+    } else if (mode == 2 && sg) {
+        w_str(w, dst, "    not.pred %p2, %p1;");
+        nl(w, dst);
+    } else if (mode >= 5) {
+        // Above half: r > d - r. At half: by the mode; half_trunc and half_down (unsigned)
+        // never round a half up.
+        w_str(w, dst, "    sub.u64 %x0, %x1, %x3;");
+        nl(w, dst);
+        w_str(w, dst, "    setp.gt.u64 %p2, %x3, %x0;");
+        nl(w, dst);
+        if (mode != 7 && !(mode == 9 && !sg)) {
+            w_str(w, dst, "    setp.eq.u64 %p3, %x3, %x0;");
+            nl(w, dst);
+        }
+        if (mode == 5) {
+            // half_even: up when q is odd.
+            w_str(w, dst, "    and.b64 %x0, %x2, 1;");
+            nl(w, dst);
+            w_str(w, dst, "    setp.ne.u64 %p0, %x0, 0;");
+            nl(w, dst);
+            w_str(w, dst, "    and.pred %p3, %p3, %p0;");
+            nl(w, dst);
+        } else if (mode == 8 && sg) {
+            // half_up: up when the quotient is positive.
+            w_str(w, dst, "    not.pred %p0, %p1;");
+            nl(w, dst);
+            w_str(w, dst, "    and.pred %p3, %p3, %p0;");
+            nl(w, dst);
+        } else if (mode == 9 && sg) {
+            // half_down: up when it is negative.
+            w_str(w, dst, "    and.pred %p3, %p3, %p1;");
+            nl(w, dst);
+        }
+        // Up above half, or at half where the mode rounds a half up.
+        if (mode != 7 && !(mode == 9 && !sg)) {
+            w_str(w, dst, "    or.pred %p2, %p2, %p3;");
+            nl(w, dst);
+        }
+    }
+    if (!never) {
+        w_str(w, dst, "    setp.ne.u64 %p0, %x3, 0;");
+        nl(w, dst);
+        if (!always) {
+            w_str(w, dst, "    and.pred %p0, %p0, %p2;");
+            nl(w, dst);
+        }
+        w_str(w, dst, "    @%p0 add.u64 %x2, %x2, 1;");
+        nl(w, dst);
+    }
+    if (!sg) {
+        // The quotient of magnitudes never exceeds a.
+        w_str(w, dst, "    mov.b64 ");
+        w_def(w, dst, sir, i);
+        w_str(w, dst, ", %x2;");
+        nl(w, dst);
+        return;
+    }
+    // A negative result fits when q <= 2^(w-1), a positive one when q < 2^(w-1).
+    I64 wd = width(sir[i].ty);
+    w_str(w, dst, "    selp.u64 %x0, ");
+    if (wd == 64) {
+        w_str(w, dst, "0x8000000000000000, 0x7fffffffffffffff");
+    } else {
+        I64 half = (1 as I64) << (wd - 1);
+        w_num(w, dst, half);
+        w_str(w, dst, ", ");
+        w_num(w, dst, half - 1);
+    }
+    w_str(w, dst, ", %p1;");
+    nl(w, dst);
+    w_str(w, dst, "    setp.gt.u64 %p0, %x2, %x0;");
+    nl(w, dst);
+    w_fault(w, dst);
+    w_str(w, dst, "    neg.s64 %x0, %x2;");
+    nl(w, dst);
+    w_str(w, dst, "    selp.b64 ");
+    w_def(w, dst, sir, i);
+    w_str(w, dst, ", %x0, %x2, %p1;");
+    nl(w, dst);
+}
+
+// The address of element <offset> of view slot k into %x0.
+void w_elem_addr[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs,
+        in lowering.SirSlot[_] slots, I64 fn, I64 k, I64 off) {
+    w_str(w, dst, "    ld.param.u64 %x0, ");
+    w_vfield(w, dst, funcs, fn, k, 0);
+    emit.w_byte(w, dst, ';');
+    nl(w, dst);
+    w_str(w, dst, "    cvta.to.global.u64 %x0, %x0;");
+    nl(w, dst);
+    w_str(w, dst, "    mad.lo.s64 %x0, ");
+    w_op(w, dst, sir, off);
+    w_str(w, dst, ", ");
+    w_num(w, dst, width(lowering.array_elem(slots[k].ty)) / 8);
+    w_str(w, dst, ", %x0;");
+    nl(w, dst);
+}
+
+// The scratch element of work-item %ki in the array at parameter `name`, of `bytes` bytes,
+// into %x0.
+void w_scratch[b, n](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] name, I64 j, I64 bytes) {
+    w_str(w, dst, "    ld.param.u64 %x0, [");
+    w_str(w, dst, name);
+    w_num(w, dst, j);
+    w_str(w, dst, "];");
+    nl(w, dst);
+    w_str(w, dst, "    cvta.to.global.u64 %x0, %x0;");
+    nl(w, dst);
+    w_str(w, dst, "    mad.lo.s64 %x0, %ki, ");
+    w_num(w, dst, bytes);
+    w_str(w, dst, ", %x0;");
+    nl(w, dst);
+}
+
+// The instructions of live node i of the body ki..ke of kernel fn (check_ptx admitted it).
+void ptx_node[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs,
+        in lowering.SirSlot[_] slots, I64 fn, I64 ki, I64 ke, I64 i) {
+    I32 k = sir[i].op & lowering.OP_MASK;
+    I64 a = sir[i].a as I64;
+    I64 bb = sir[i].b as I64;
+    switch (k) {
+        case lowering.SO_CONST:
+            w_str(w, dst, "    mov.b64 ");
+            w_def(w, dst, sir, i);
+            w_str(w, dst, ", ");
+            if (sir[i].val < 0 && !lowering.is_signed(sir[i].ty)) {
+                // A U64 value of 2^63 or more.
+                w_str(w, dst, "0x");
+                emit.w_hex(w, dst, sir[i].val as% U64, 16);
+            } else {
+                w_num(w, dst, sir[i].val);
+            }
+            emit.w_byte(w, dst, ';');
+            nl(w, dst);
+        case lowering.SO_LOAD:
+            w_str(w, dst, "    mov.b64 ");
+            w_def(w, dst, sir, i);
+            w_str(w, dst, ", ");
+            w_slot(w, dst, funcs, fn, a);
+            emit.w_byte(w, dst, ';');
+            nl(w, dst);
+        case lowering.SO_STORE:
+            w_str(w, dst, "    mov.b64 ");
+            w_slot(w, dst, funcs, fn, a);
+            w_str(w, dst, ", ");
+            w_op(w, dst, sir, bb);
+            emit.w_byte(w, dst, ';');
+            nl(w, dst);
+        case lowering.SO_BIN:
+            ptx_bin(w, dst, sir, i);
+        case lowering.SO_UN:
+            // The logical not of a Bool, held as 0 or 1: the one unary node cap_of admits.
+            w_str(w, dst, "    xor.b64 ");
+            w_def(w, dst, sir, i);
+            w_str(w, dst, ", ");
+            w_op(w, dst, sir, a);
+            w_str(w, dst, ", 1;");
+            nl(w, dst);
+        case lowering.SO_CMP:
+            w_str(w, dst, "    setp.");
+            switch (sir[i].c) {
+                case lowering.CMP_EQ: w_str(w, dst, "eq.");
+                case lowering.CMP_NE: w_str(w, dst, "ne.");
+                case lowering.CMP_LT: w_str(w, dst, "lt.");
+                case lowering.CMP_LE: w_str(w, dst, "le.");
+                case lowering.CMP_GT: w_str(w, dst, "gt.");
+                default: w_str(w, dst, "ge.");
+            }
+            w_cmp_ty(w, dst, lowering.value_type(sir, funcs, slots, fn, a));
+            w_str(w, dst, " %p0, ");
+            w_op(w, dst, sir, a);
+            w_str(w, dst, ", ");
+            w_op(w, dst, sir, bb);
+            emit.w_byte(w, dst, ';');
+            nl(w, dst);
+            w_str(w, dst, "    selp.u64 ");
+            w_def(w, dst, sir, i);
+            w_str(w, dst, ", 1, 0, %p0;");
+            nl(w, dst);
+        case lowering.SO_AS:
+            ptx_as(w, dst, sir, i);
+        case lowering.SO_BUILTIN:
+            ptx_div_round(w, dst, sir, i);
+        case lowering.SO_THEN, lowering.SO_TEST:
+            w_str(w, dst, "    setp.eq.u64 %p0, ");
+            w_op(w, dst, sir, a);
+            w_str(w, dst, ", 0;");
+            nl(w, dst);
+            w_str(w, dst, "    @%p0 bra ");
+            if (k == lowering.SO_THEN) {
+                w_label(w, dst, funcs, fn, i, 'f');
+            } else {
+                w_label(w, dst, funcs, fn, bb, 'e');
+            }
+            emit.w_byte(w, dst, ';');
+            nl(w, dst);
+        case lowering.SO_BREAK:
+            w_bra(w, dst, funcs, fn, a, 'e');
+        case lowering.SO_CONTINUE:
+            w_bra(w, dst, funcs, fn, a, 'n');
+        case lowering.SO_FUEL:
+            // The item's charge, against the allowance (B-16c).
+            w_str(w, dst, "    add.u64 %kc, %kc, ");
+            w_num(w, dst, sir[i].val);
+            emit.w_byte(w, dst, ';');
+            nl(w, dst);
+            w_str(w, dst, "    setp.gt.u64 %p0, %kc, %ka;");
+            nl(w, dst);
+            w_str(w, dst, "    @%p0 bra STOP;");
+            nl(w, dst);
+        case lowering.SO_ICHECK:
+            // 0 <= index < shape[f], one unsigned comparison.
+            w_str(w, dst, "    ld.param.u64 %x0, ");
+            w_vfield(w, dst, funcs, fn, a, VD_SHAPE + 8 * (sir[i].f as I64));
+            emit.w_byte(w, dst, ';');
+            nl(w, dst);
+            w_str(w, dst, "    setp.ge.u64 %p0, ");
+            w_op(w, dst, sir, bb);
+            w_str(w, dst, ", %x0;");
+            nl(w, dst);
+            w_fault(w, dst);
+        case lowering.SO_EOFF:
+            // origin, or the offset so far, plus index times stride[f]: the view was admitted,
+            // so the sum lies in the buffer (V-6).
+            I64 c = sir[i].c as I64;
+            if (c < 0) {
+                w_str(w, dst, "    ld.param.u64 %x0, ");
+                w_vfield(w, dst, funcs, fn, a, VD_ORIGIN);
+                emit.w_byte(w, dst, ';');
+                nl(w, dst);
+            }
+            w_str(w, dst, "    ld.param.u64 %x1, ");
+            w_vfield(w, dst, funcs, fn, a, VD_STRIDE + 8 * (sir[i].f as I64));
+            emit.w_byte(w, dst, ';');
+            nl(w, dst);
+            w_str(w, dst, "    mad.lo.s64 ");
+            w_def(w, dst, sir, i);
+            w_str(w, dst, ", ");
+            w_op(w, dst, sir, bb);
+            w_str(w, dst, ", %x1, ");
+            if (c < 0) {
+                w_str(w, dst, "%x0");
+            } else {
+                w_op(w, dst, sir, c);
+            }
+            emit.w_byte(w, dst, ';');
+            nl(w, dst);
+        case lowering.SO_ELOAD:
+            w_elem_addr(w, dst, sir, funcs, slots, fn, a, bb);
+            w_str(w, dst, "    ld.global.");
+            w_mem(w, dst, lowering.array_elem(slots[a].ty));
+            emit.w_byte(w, dst, ' ');
+            w_def(w, dst, sir, i);
+            w_str(w, dst, ", [%x0];");
+            nl(w, dst);
+        case lowering.SO_ESTORE:
+            w_elem_addr(w, dst, sir, funcs, slots, fn, a, bb);
+            w_str(w, dst, "    st.global.");
+            w_mem(w, dst, lowering.array_elem(slots[a].ty));
+            w_str(w, dst, " [%x0], ");
+            w_op(w, dst, sir, sir[i].c as I64);
+            emit.w_byte(w, dst, ';');
+            nl(w, dst);
+        case lowering.SO_KRED:
+            // The contribution and its presence mark, at the item's index (B-16c, R-1).
+            I64 j = reductions(sir, ki, ke, bb);
+            w_scratch(w, dst, "p_r", j, 8);
+            w_str(w, dst, "    st.global.u64 [%x0], ");
+            w_op(w, dst, sir, a);
+            emit.w_byte(w, dst, ';');
+            nl(w, dst);
+            w_scratch(w, dst, "p_m", j, 4);
+            w_str(w, dst, "    mov.b64 %x1, 1;");
+            nl(w, dst);
+            w_str(w, dst, "    st.global.u32 [%x0], %x1;");
+            nl(w, dst);
+        default:
+            // SO_LOCAL, SO_IF, SO_ARM, SO_ELSE, SO_KSTEP: no instruction of their own; the
+            // labels and jumps of the structure nodes are written by ptx_kernel.
+            k = k;
+    }
+}
+
+void w_tok[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in scan.Token[t] toks, I64 tk) {
+    emit.w_bytes(w, dst, text, lowering.name_at(toks, tk), lowering.name_len(toks, tk));
+}
+
+// `,` and a new line between two parameters.
+void w_next_param[b](inout emit.Writer[_] w, inout U8[b] dst) {
+    emit.w_byte(w, dst, ',');
+    nl(w, dst);
+}
+
+// The entry of kernel fn (check_ptx admitted it).
+void ptx_kernel[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in scan.Token[t] toks,
+        in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, in U8[_] prefix, I64 fn) {
+    I64 ki = body_first(sir, funcs, fn);
+    I64 ke = body_end(sir, funcs, fn, ki);
+    Bool fuel = charges(sir, ki, ke);
+    I64 p0 = funcs[fn].pslot0 as I64;
+    I64 end = funcs[fn].lslot_end as I64;
+    nl(w, dst);
+    w_str(w, dst, ".visible .entry ");
+    w_str(w, dst, prefix);
+    w_tok(w, dst, text, toks, funcs[fn].name as I64);
+    emit.w_byte(w, dst, '(');
+    nl(w, dst);
+    w_str(w, dst, "    .param .u64 p_base,");
+    nl(w, dst);
+    w_str(w, dst, "    .param .u64 p_end,");
+    nl(w, dst);
+    w_str(w, dst, "    .param .u64 p_fault");
+    if (fuel) {
+        w_next_param(w, dst);
+        w_str(w, dst, "    .param .u64 p_fuel,");
+        nl(w, dst);
+        w_str(w, dst, "    .param .u64 p_allow");
+    }
+    for j in 0..reductions(sir, ki, ke, end) {
+        w_next_param(w, dst);
+        w_str(w, dst, "    .param .u64 p_r");
+        w_num(w, dst, j);
+        w_next_param(w, dst);
+        w_str(w, dst, "    .param .u64 p_m");
+        w_num(w, dst, j);
+    }
+    for k in p0..end {
+        if (kernel_input(sir, funcs, slots, fn, ki, ke, k)) {
+            w_next_param(w, dst);
+            if (slots[k].kind == lowering.SK_NVIEW) {
+                w_str(w, dst, "    .param .align 8 .b8 ");
+                w_param(w, dst, funcs, fn, k);
+                w_str(w, dst, "[88]");
+            } else {
+                w_str(w, dst, "    .param .u64 ");
+                w_param(w, dst, funcs, fn, k);
+            }
+        }
+    }
+    emit.w_byte(w, dst, ')');
+    nl(w, dst);
+    w_str(w, dst, "{{");
+    nl(w, dst);
+    w_str(w, dst, "    .reg .pred %p<4>;");
+    nl(w, dst);
+    w_str(w, dst, "    .reg .b32 %kr<3>;");
+    nl(w, dst);
+    w_str(w, dst, "    .reg .b64 %x<4>;");
+    nl(w, dst);
+    if (funcs[fn].ntemp > 0) {
+        w_str(w, dst, "    .reg .b64 %t<");
+        w_num(w, dst, funcs[fn].ntemp as I64);
+        w_str(w, dst, ">;");
+        nl(w, dst);
+    }
+    if (end > p0) {
+        w_str(w, dst, "    .reg .b64 %s<");
+        w_num(w, dst, end - p0);
+        w_str(w, dst, ">;");
+        nl(w, dst);
+    }
+    w_str(w, dst, "    .reg .b64 %ki, %kf;");
+    nl(w, dst);
+    if (fuel) {
+        w_str(w, dst, "    .reg .b64 %kc, %ka, %ks;");
+        nl(w, dst);
+    }
+    // i = base + ctaid.x * ntid.x + tid.x; nothing past the dispatch's last item, and nothing
+    // above a fault already recorded (F-10).
+    w_str(w, dst, "    ld.param.u64 %ki, [p_base];");
+    nl(w, dst);
+    w_str(w, dst, "    mov.u32 %kr0, %ctaid.x;");
+    nl(w, dst);
+    w_str(w, dst, "    mov.u32 %kr1, %ntid.x;");
+    nl(w, dst);
+    w_str(w, dst, "    mov.u32 %kr2, %tid.x;");
+    nl(w, dst);
+    w_str(w, dst, "    mul.wide.u32 %x0, %kr0, %kr1;");
+    nl(w, dst);
+    w_str(w, dst, "    cvt.u64.u32 %x1, %kr2;");
+    nl(w, dst);
+    w_str(w, dst, "    add.u64 %x0, %x0, %x1;");
+    nl(w, dst);
+    w_str(w, dst, "    add.u64 %ki, %ki, %x0;");
+    nl(w, dst);
+    w_str(w, dst, "    ld.param.u64 %x0, [p_end];");
+    nl(w, dst);
+    w_str(w, dst, "    setp.ge.u64 %p0, %ki, %x0;");
+    nl(w, dst);
+    w_str(w, dst, "    @%p0 bra DONE;");
+    nl(w, dst);
+    w_str(w, dst, "    ld.param.u64 %kf, [p_fault];");
+    nl(w, dst);
+    w_str(w, dst, "    cvta.to.global.u64 %kf, %kf;");
+    nl(w, dst);
+    w_str(w, dst, "    ld.volatile.global.u64 %x0, [%kf];");
+    nl(w, dst);
+    w_str(w, dst, "    setp.gt.u64 %p0, %ki, %x0;");
+    nl(w, dst);
+    w_str(w, dst, "    @%p0 bra DONE;");
+    nl(w, dst);
+    if (fuel) {
+        w_str(w, dst, "    ld.param.u64 %ks, [p_fuel];");
+        nl(w, dst);
+        w_str(w, dst, "    cvta.to.global.u64 %ks, %ks;");
+        nl(w, dst);
+        w_str(w, dst, "    mad.lo.s64 %ks, %ki, 8, %ks;");
+        nl(w, dst);
+        w_str(w, dst, "    ld.param.u64 %ka, [p_allow];");
+        nl(w, dst);
+        w_str(w, dst, "    mov.u64 %kc, 0;");
+        nl(w, dst);
+    }
+    for k in p0..end {
+        if (slots[k].kind != lowering.SK_NVIEW && kernel_input(sir, funcs, slots, fn, ki, ke, k)) {
+            w_str(w, dst, "    ld.param.u64 ");
+            w_slot(w, dst, funcs, fn, k);
+            w_str(w, dst, ", [");
+            w_param(w, dst, funcs, fn, k);
+            w_str(w, dst, "];");
+            nl(w, dst);
+        }
+    }
+    // The `over` variables from i, row-major: the last varies fastest (X-6).
+    I64 ov = sir[ki].b as I64;
+    I64 ext = sir[ki].c as I64;
+    I64 q = (sir[ki].f as I64) - 1;
+    w_str(w, dst, "    mov.b64 %x0, %ki;");
+    nl(w, dst);
+    while (q > 0) {
+        w_str(w, dst, "    rem.u64 ");
+        w_slot(w, dst, funcs, fn, ov + q);
+        w_str(w, dst, ", %x0, ");
+        w_slot(w, dst, funcs, fn, ext + q);
+        emit.w_byte(w, dst, ';');
+        nl(w, dst);
+        w_str(w, dst, "    div.u64 %x0, %x0, ");
+        w_slot(w, dst, funcs, fn, ext + q);
+        emit.w_byte(w, dst, ';');
+        nl(w, dst);
+        q -= 1;
+    }
+    if (q == 0) {
+        w_str(w, dst, "    mov.b64 ");
+        w_slot(w, dst, funcs, fn, ov);
+        w_str(w, dst, ", %x0;");
+        nl(w, dst);
+    }
+    // The body, with the labels and jumps of back_c.c_func for its structure nodes.
+    for i in ki + 1..ke {
+        I32 k = sir[i].op & lowering.OP_MASK;
+        I64 a = sir[i].a as I64;
+        if (k == lowering.SO_LOOP && (sir[i].op & lowering.FL_HEAD) != 0) {
+            w_label_line(w, dst, funcs, fn, i, 'h');
+        } else if (k == lowering.SO_ARM_END) {
+            if (live(sir, i)) {
+                w_bra(w, dst, funcs, fn, sir[i].b as I64, 'e');
+            }
+            if ((sir[a].op & lowering.FL_FALSE) != 0) {
+                w_label_line(w, dst, funcs, fn, a, 'f');
+            }
+        } else if (k == lowering.SO_NEXT) {
+            if ((sir[a].op & lowering.FL_NEXT) != 0) {
+                w_label_line(w, dst, funcs, fn, a, 'n');
+            }
+        } else if (k == lowering.SO_END) {
+            if (live(sir, i) && (sir[a].op & lowering.OP_MASK) == lowering.SO_LOOP) {
+                w_bra(w, dst, funcs, fn, a, 'h');
+            }
+            if ((sir[a].op & lowering.FL_END) != 0) {
+                w_label_line(w, dst, funcs, fn, a, 'e');
+            }
+        } else if (live(sir, i)) {
+            ptx_node(w, dst, sir, funcs, slots, fn, ki, ke, i);
+        }
+    }
+    if (fuel) {
+        w_str(w, dst, "    st.global.u64 [%ks], %kc;");
+        nl(w, dst);
+    }
+    w_str(w, dst, "    ret;");
+    nl(w, dst);
+    w_str(w, dst, "FAULT:");
+    nl(w, dst);
+    w_str(w, dst, "    atom.global.min.u64 %x0, [%kf], %ki;");
+    nl(w, dst);
+    w_str(w, dst, "DONE:");
+    nl(w, dst);
+    w_str(w, dst, "    ret;");
+    nl(w, dst);
+    if (fuel) {
+        // The charges past F, kept an I64 value.
+        w_str(w, dst, "STOP:");
+        nl(w, dst);
+        w_str(w, dst, "    min.u64 %kc, %kc, 0x7fffffffffffffff;");
+        nl(w, dst);
+        w_str(w, dst, "    st.global.u64 [%ks], %kc;");
+        nl(w, dst);
+        w_str(w, dst, "    ret;");
+        nl(w, dst);
+    }
+    w_str(w, dst, "}}");
+    nl(w, dst);
+}
+
+// The PTX module of the module's kernels, each entry named <prefix><name>; check_ptx
+// must have returned CAP_NATIVE. A module without kernels is the three directives alone.
+export void write_ptx[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in scan.Token[t] toks,
+        in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots,
+        in lowering.LState[_] ls, in U8[_] prefix) {
+    w_str(w, dst, ".version 6.0");
+    nl(w, dst);
+    w_str(w, dst, ".target sm_52");
+    nl(w, dst);
+    w_str(w, dst, ".address_size 64");
+    nl(w, dst);
+    for fn in 0..ls[0].nfunc {
+        if (device_kernel(funcs, fn)) {
+            ptx_kernel(w, dst, text, toks, sir, funcs, slots, prefix, fn);
+        }
+    }
+}

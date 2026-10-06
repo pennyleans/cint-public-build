@@ -1,0 +1,19 @@
+case reduce/fold_checked_i8_overflow
+clause SPEC-01 IM-77, IM-83 (the IM-79 listing: the left fold leaves I8 at index 1)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 2
+fault.code E_OVERFLOW
+fault.operation fold_checked.add.i8
+fault.operand I64 1
+fault.operand I8 120
+fault.operand I8 120
+fault.exact 240
+fault.limit I8 127
+fault.position reduce/fold_checked_i8_overflow.ci:9:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

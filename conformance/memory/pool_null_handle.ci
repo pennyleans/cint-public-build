@@ -1,0 +1,15 @@
+// case: memory/pool_null_handle
+// clause: SPEC-03 M-12, M-17; SPEC-04 LS-104; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (pool, handles, struct elements)
+// entry: run; args: none
+// spec outcome: fault E_STALE_HANDLE at 14:18 (the `[` of `bodies[h]`), operation pool.deref, operands U64 0, I64 0, U64 0, U32 0, U8 0 (the handle: slot, length, generation, container, kind), U64 0 (the current generation), U8 1 (null), no exact, no limit; stack depth 0; fuel 1. A handle declared without an initializer is the null handle, all fields 0
+
+struct Body { I64 mass; I64 vel; }
+
+Pool(Body, 2) bodies;
+
+export I64 run() {
+    Handle(Body) h;
+    _ = bodies.insert(Body(mass = 1, vel = 0));
+    return bodies[h].mass;
+}

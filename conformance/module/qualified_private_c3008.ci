@@ -1,0 +1,11 @@
+// case: module/qualified_private_c3008
+// clause: SPEC-04 LS-227 (only exported declarations are visible to importers); SPEC-09 CINTC-16
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C3008 at 10:20, the private constant `SECRET` of module.lib.scalars
+
+import module.lib.scalars;
+
+export I64 run() {
+    return scalars.SECRET;
+}

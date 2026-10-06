@@ -1,0 +1,10 @@
+// case: view/nested_array_field_order
+// clause: SPEC-04 LS-67, LS-139, LS-141; SPEC-09 BOOT-01
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: value I64 77
+
+struct O { I64[1] bits; }
+I64 seen = 0;
+I64 tick(I64 v) { seen = seen * 10 + v; return v; }
+export I64 run() { O[1] a; a[tick(0)].bits[tick(0)] = tick(7); return seen * 10 + a[0].bits[0]; }

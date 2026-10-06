@@ -1,0 +1,881 @@
+// compiler/main.ci: the four calls of the bridge and the digest of the M1 receipt
+// (SPEC-09 CINTC-04, CINTC-05, CINTC-14; slice 2 decision patch D-2, D-3, D-13, D-19;
+// task 2.11).
+//
+// rt/cint_bridge.c calls these exports through their cint-abi-1 wrappers
+// (cx_4_main_4_plan, cx_4_main_7_compile, cx_4_main_7_measure, cx_4_main_4_emit), one view
+// per table in manifest order (OQ-157). The bridge first calls compile once per module in
+// dependency order, the discovery pass: each module's path is recorded and its imports
+// resolved before any module is checked (decision 27, item 3). Then, for each module
+// in the same order, it calls compile, measure, and emit before it reuses the per-module
+// tables (D-13). After the last module, emit with module_index equal to the module count
+// takes every module's output 1 back in byte order of path (output index 2 + m, the
+// revision identity), and measure and emit write the program-level outputs. Each returns
+// 0 when it completed and 1 when it retained a
+// diagnostic (CINTC-14). A fault inside the compiler returns CINT_FAULT to the bridge, an
+// internal compiler error (CINTC-10); so does a verifier failure (SIR-10) and an emit pass
+// that wrote fewer bytes than measured (CINTC-04): `internal` faults E_BOUNDS on purpose,
+// with the failing SIR node or byte count, plus one, as the index operand of the record
+// (compiler/OPEN.md CINTC-OQ-33, which answers CINTC-OQ-04).
+//
+// The table manifest (CINTC-14, D-3). plan writes the rows below, all from the module sizes:
+//   0  PMod        program  modules + 1     the module table (back_c.PMod, 80 bytes; row 0 the header)
+//   1  U8          program  1,024 per module  module paths, then the revision state (back_c.REV_BYTES)
+//   2  U8          module   2 n + 64          the source copy, then decoded print text
+//   3  Token       module   CINTC-02 tokens   scan.ci
+//   4  Node        module   CINTC-02 nodes    parse.ci
+//   5  U8          module   0                 unused: the parse stack is in row 14 (KR-03)
+//   6  Sir         module   CINTC-02 SIR      lowering.ci
+//   7  SirFunc     module   functions + 1     lowering.ci (the script's entry)
+//   8  SirSlot     module   CINTC-02 symbols  lowering.ci
+//   9  U8          module   0                 unused: the lowering stack is in row 14 (KR-03)
+//   10 LState      module   1                 lowering.ci's state, read by measure and emit
+//   11 Sem         module   CINTC-02 nodes    check.ci's checked output, one row per node
+//   12 Sym         module   CINTC-02 symbols  resolve.ci's symbol table
+//   13 Name        module   2 * symbols + 4096 + 2 * declarations (resolve.ci)
+//   14 Frame       module   the frame region  max(LIM_STACK, nodes + 16): the stacks of
+//                                             parse.ci, check.ci (interval scratch and work
+//                                             stack), and lowering.ci and verify.ci
+//   15 U8          module   CINTC-02 literals the literal-value table
+//   16 Decl        program  CINTC-16          the declaration table (limits.Decl, compiler/decl.ci)
+// Rows 11 to 15 are check.plan_check's (compiler/OPEN.md CINTC-OQ-16). The frame region
+// (KR-03 of the K reduction note) is one table because the three stacks are live in
+// different passes of compile, one after another: front parses with it, then
+// check.check_module, then lowering.lower_module and verify.verify; measure and emit use
+// none. Each pass keeps its own limit inside the region: the parser LIM_STACK, the checker
+// nodes + 16, and lowering and the verifier the node table's extent.
+// n is the largest module's byte count. Records: this module declares no struct and
+// imports limits first, so the seed numbers TablePlan 0, CompilerDiag 1 and Decl 3, as the
+// bridge requires (compiler/OPEN.md CINTC-OQ-02); the R_* ids below are the seed's
+// numbering, which the golden suite checks against the emitted cg_records table.
+//
+// Outputs (rt/cint_bridge.h): output 0 of a module is its C file, output 1 (named
+// `<P>.sites` by the bridge) its canonical SIR text, which holds its site table
+// (compiler/OPEN.md CINTC-OQ-37); the program-level outputs are the program C file and a
+// site map with one `module <index> <path>` line per module. emit keeps the SHA-256 of each
+// module's output 1 in its module row; at program level, outputs 2 + m are inputs: the
+// bridge passes module m's output 1 back, in byte order of path, and emit hashes its SIR-17
+// encoding into the revision identity (SPEC-09 SIR-17; back_c.revision_add), which the
+// program file carries (compiler/OPEN.md CINTC-OQ-40).
+//
+// compile's full pass runs scan, parse, check (compiler/check.ci with compiler/resolve.ci),
+// lower and verify; its discovery pass runs scan and parse and resolves imports. A checker diagnostic stops the module, the checker's C9102 for a construct
+// outside its subset included, so no module is lowered unchecked (compiler/OPEN.md
+// CINTC-OQ-30, CINTC-OQ-45). Lowering binds and types names itself and refuses what it
+// does not cover with its own C9102.
+
+import limits;
+import scan;
+import parse;
+import sha256;
+import lowering;
+import verify;
+import back_c;
+import fold;
+import resolve;
+import check;
+import decl;
+
+// Record ids of the cm record table of this program (the seed's numbering).
+const U32 R_DECL = 3;
+const U32 R_TOKEN = 4;
+const U32 R_NODE = 6;
+const U32 R_FRAME = 7;
+const U32 R_PMOD = 14;
+const U32 R_SIR = 10;
+const U32 R_FUNC = 11;
+const U32 R_SLOT = 12;
+const U32 R_LSTATE = 13;
+const U32 R_SEM = 18;
+const U32 R_SYM = 19;
+const U32 R_NAME = 20;
+
+const I64 PATH_BYTES = 1024;
+const I64 T_TEXT = 2;
+
+// An internal compiler error (CINTC-10): E_BOUNDS at index what + 1 of a one-element array.
+void internal(I64 what) {
+    I64[1] trap;
+    trap[what + 1] = 0;
+}
+
+// The manifest (above) for modules of module_bytes; diagnostics as limits.check_program.
+export I64 plan[m, t](in I64[m] module_bytes, inout limits.TablePlan[t] rows, inout limits.CompilerDiag[101] diag) {
+    limits.diag_clear(diag);
+    if (!limits.check_program(module_bytes, diag)) {
+        return 1;
+    }
+    I64 most = 0;
+    for i in 0..m {
+        if (module_bytes[i] > most) {
+            most = module_bytes[i];
+        }
+    }
+    for k in 0..t {
+        limits.plan_row(rows, k, 1, limits.TAG_U8, 0, 0, limits.SCOPE_MODULE);
+    }
+    limits.plan_row(rows, 0, back_c.PMOD_BYTES, limits.TAG_RECORD, R_PMOD, m + 1, limits.SCOPE_PROGRAM);
+    limits.plan_row(rows, 1, 1, limits.TAG_U8, 0, m * PATH_BYTES + back_c.REV_BYTES, limits.SCOPE_PROGRAM);
+    limits.plan_row(rows, T_TEXT, 1, limits.TAG_U8, 0, 2 * most + 64, limits.SCOPE_MODULE);
+    parse.plan_front(rows, 3, most, R_TOKEN, R_NODE);
+    lowering.plan_lower(rows, 6, most, R_SIR, R_FUNC, R_SLOT);
+    limits.plan_row(rows, 10, lowering.LSTATE_BYTES, limits.TAG_RECORD, R_LSTATE, 1, limits.SCOPE_MODULE);
+    // CINTC-16: the header, then floor(n / 4) + floor(n / 32) + 1 rows per module of n bytes.
+    I64 ndecl = 1;
+    for i in 0..m {
+        if (ndecl < limits.DECLS_MAX) {
+            ndecl += limits.capacity(limits.LIM_DECLS, module_bytes[i]);
+        }
+    }
+    if (ndecl > limits.DECLS_MAX) {
+        ndecl = limits.DECLS_MAX;
+    }
+    check.plan_check(rows, 11, most, R_SEM, R_SYM, R_NAME, R_FRAME, ndecl);
+    limits.plan_row(rows, limits.T_DECL, limits.DECL_BYTES, limits.TAG_RECORD, R_DECL, ndecl, limits.SCOPE_PROGRAM);
+    return 0;
+}
+
+// C9002 (EMIT-22) for a symbol of the module longer than 247 bytes: one at 1:1 for the
+// path (including record tables and state helpers), one at each function name.
+Bool symbols_fit[n, t](in U8[_] pbytes, I64 at, I64 nbytes, in U8[n] text, in scan.Token[t] toks,
+        in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, in limits.Decl[_] decls, Bool root,
+        inout limits.CompilerDiag[101] diag, in lowering.LState[_] ls) {
+    Bool fit = true;
+    I64 p = back_c.enc_bytes(pbytes, at, back_c.stem_bytes(pbytes, at, nbytes));
+    I64 digits = 1;
+    I64 remaining = p;
+    while (remaining >= 10) { digits += 1; remaining = remaining / 10; }
+    I64 suffix = 7;
+    if (root && back_c.catalog_count(decls) > 0) {
+        suffix = 8;
+        for row in 1..decls[0].a {
+            if (decls[row].kind != limits.DK_STRUCT) { continue; }
+            I64 width = 1;
+            I64 value = row;
+            while (value >= 10) { width += 1; value = value / 10; }
+            if (width + 3 > suffix) { suffix = width + 3; }
+        }
+    }
+    if (back_c.has_state(slots, ls)) { suffix = 11; }
+    I64 longest = 2 + 2 + p + digits + suffix;
+    if (longest > back_c.SYMBOL_MAX) {
+        _ = limits.diag_add(diag, limits.C_SYMBOL_LENGTH, ls[0].module, 1, 1, longest, 0);
+        fit = false;
+    }
+    U8 c = pbytes[at];
+    if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))) {
+        _ = limits.diag_add(diag, 5051, ls[0].module, 1, 1, 0, 0);
+        fit = false;
+    }
+    for k in 0..ls[0].nfunc {
+        I64 tk = funcs[k].name as I64;
+        if (tk >= 0 && (funcs[k].flags & lowering.FN_IMPORT) == 0) {
+            I64 b = back_c.symbol_bytes(pbytes, at, nbytes, text, toks, tk);
+            if (b > back_c.SYMBOL_MAX) {
+                _ = limits.diag_add(diag, limits.C_SYMBOL_LENGTH, ls[0].module, toks[tk].line as I64,
+                    toks[tk].col as I64, b, 0);
+                fit = false;
+            }
+            c = text[toks[tk].start as I64];
+            if (root && (funcs[k].flags & lowering.FN_EXPORT) != 0 &&
+                    !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))) {
+                _ = limits.diag_add(diag, 5051, ls[0].module, toks[tk].line as I64,
+                    toks[tk].col as I64, 0, 0);
+                fit = false;
+            }
+        }
+    }
+    return fit;
+}
+
+// ---------------------------------------------------------------- imports (task 2.13c)
+//
+// The bridge gives the modules of a build in dependency order (D-13), so every module an
+// import names comes before the importer, and its path is in the program-level path table
+// when the discovery pass reaches the importer. An import that names no module of the
+// build is cint_ref's C3009 at the first name of its path (`check_program`; SPEC-04 LS-225,
+// SPEC-09 CINTC-15), unless the path breaks a CINTC-12 rule: cint_ref then reports C3030 at
+// `<path>:1:1`. The diagnostic keeps the importing module index and points to the
+// candidate bytes in table 1 for the bridge's filename callback. Both are found in discovery,
+// before any module is checked, as cint_ref resolves every import before it checks any
+// module. The full pass parses the module again and gives each import node, in its `e`,
+// the index of the module it names (import_target, with no diagnostic: discovery found
+// it), and check.check_module binds the alias to that module's block of the declaration
+// table (task 2.13 part (iii), CINTC-16).
+
+// C3030 detail[0] values, shared with cint_bridge.h.
+const I64 PATH_IDENTIFIER = 1;
+const I64 PATH_DEVICE = 2;
+const I64 PATH_COLLISION = 3;
+const I64 C_NO_MODULE = 3009;
+
+// Byte b in ASCII lower case when fc is true.
+U8 folded(U8 b, Bool fc) {
+    if (fc && b >= 65 && b <= 90) {
+        return b + 32;
+    }
+    return b;
+}
+
+// Whether pbytes[at, at + plen) is the path of import node x: the names of its path (tokens
+// c, c + 2, ..., d of toks over src) joined by '/', then ".ci"; with fc, the two compared
+// under ASCII case folding (CINTC-12).
+Bool import_is[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, I64 x, in U8[_] pbytes, I64 at,
+        I64 plen, Bool fc) {
+    I64 j = 0;
+    I64 tk = nodes[x].c as I64;
+    I64 last = nodes[x].d as I64;
+    while (true) {
+        I64 s = toks[tk].start as I64;
+        I64 l = toks[tk].len as I64;
+        if (j + l > plen) {
+            return false;
+        }
+        for i in 0..l {
+            if (folded(src[s + i], fc) != folded(pbytes[at + j + i], fc)) {
+                return false;
+            }
+        }
+        j += l;
+        if (tk >= last) {
+            break;
+        }
+        if (j >= plen || pbytes[at + j] != 47) {
+            return false;
+        }
+        j += 1;
+        tk += 2;
+    }
+    return j + 3 == plen && pbytes[at + j] == 46 && folded(pbytes[at + j + 1], fc) == 99 &&
+        folded(pbytes[at + j + 2], fc) == 105;
+}
+
+// The CINTC-12 rule broken by token tk, or zero. Tokenization already checks identifier syntax.
+I64 segment_rule[n](in U8[n] src, in scan.Token[_] toks, I64 tk) {
+    I64 s = toks[tk].start as I64;
+    I64 l = toks[tk].len as I64;
+    if (l > 255) {
+        return PATH_IDENTIFIER;
+    }
+    if (l != 3 && l != 4) {
+        return 0;
+    }
+    I64 w = (folded(src[s], true) as I64) * 65536 + (folded(src[s + 1], true) as I64) * 256 +
+        (folded(src[s + 2], true) as I64);
+    if (l == 3) {
+        if (w == 6516590 || w == 7369326 || w == 6387064 || w == 7239020) {
+            return PATH_DEVICE;
+        }
+        return 0;
+    }
+    Bool digit = src[s + 3] >= 49 && src[s + 3] <= 57;
+    if (digit && (w == 6516589 || w == 7106676)) {
+        return PATH_DEVICE;
+    }
+    return 0;
+}
+
+// The module of the build that import node x names, among modules 0 to upto - 1: its
+// module index, or -1. The import lookup of the checker (task 2.13, part iii) finds the
+// declaration-table block of an import through this index (CINTC-16 `decl.block_of`).
+I64 import_target[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, I64 x,
+        in back_c.PMod[_] pm, in U8[_] pbytes, I64 upto) {
+    for k in 0..upto {
+        if (import_is(src, toks, nodes, x, pbytes, pm[k + 1].path_at, pm[k + 1].path_len, false)) {
+            return k;
+        }
+    }
+    return -1;
+}
+
+// ---------------------------------------------------------------- import records (G-C1)
+//
+// The discovery pass keeps one record per import of every module, at the top of the path
+// table's free bytes (below the revision state), so the imports are resolved against the
+// paths of the whole build only after the last module is discovered (G-C1 findings COR-3,
+// COR-8, FX-1, FX-3, FX-4; compiler/OPEN.md CINTC-OQ-50). A record is the import's path
+// (its names joined by "/", then ".ci") under a 20-byte header at its top: the line and
+// column of the path's first name, the index of the module it names plus one (0 until it
+// is resolved), a byte naming the broken CINTC-12 rule (0 when valid), and the path's
+// length. pm[0].entry counts the record bytes; pm[k + 1].nobs counts module k's records
+// and pm[k + 1].entry is the record bytes before its first. resolve_imports then reports,
+// as cint_ref's check_program does, C3009 (or C3030) for the first import
+// that names no module, breadth first from the root (the last module) in import order;
+// then C3003 at the import that closes a cycle, depth first from the root (SPEC-04
+// LS-230); then C9102 U_IMPORT_ORDER for an import of a module listed after its importer,
+// which B1 cannot compile because the bridge compiles the modules in the given order. It
+// clears the records and the fields it used, so the full pass sees the tables as before.
+
+const I64 IREC = 20;
+const I64 C_IMPORT_CYCLE = 3003;
+// detail[0] of C9102 for an import of a module listed after its importer.
+const I64 U_IMPORT_ORDER = 20;
+
+void put_u32(inout U8[_] b, I64 at, I64 v) {
+    I64 w = v;
+    for i in 0..4 {
+        b[at + i] = (w % 256) as U8;
+        w = w / 256;
+    }
+}
+
+I64 get_u32(in U8[_] b, I64 at) {
+    I64 v = 0;
+    for i in 0..4 {
+        v = v * 256 + (b[at + 3 - i] as I64);
+    }
+    return v;
+}
+
+// The top of the record of import j of module k (base: the bottom of the revision state).
+I64 rec_top(in U8[_] pbytes, I64 base, in back_c.PMod[_] pm, I64 k, I64 j) {
+    I64 top = base - pm[k + 1].entry;
+    for i in 0..j {
+        top = top - IREC - get_u32(pbytes, top - 4);
+    }
+    return top;
+}
+
+// Records the imports of module mi (nodes from the items of root). False, with C9001
+// LIM_SOURCE as for a path that does not fit, when the records do not fit the table.
+Bool record_imports[n, a1, r](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, I64 root,
+        inout back_c.PMod[_] pm, inout U8[a1] pbytes, I64 mi, I64 a2, inout limits.CompilerDiag[r] diag) {
+    I64 base = a1 - back_c.REV_BYTES;
+    pm[mi + 1].entry = pm[0].entry;
+    I64 x = nodes[root].a as I64;
+    while (x >= 0) {
+        if (nodes[x].kind == parse.N_IMPORT) {
+            I64 tk = nodes[x].c as I64;
+            I64 last = nodes[x].d as I64;
+            I64 rlen = 3;
+            I64 rule = 0;
+            I64 seg = tk;
+            while (seg <= last) {
+                rlen += toks[seg].len as I64;
+                if (seg > tk) {
+                    rlen += 1;
+                }
+                if (rule == 0) {
+                    rule = segment_rule(src, toks, seg);
+                }
+                seg += 2;
+            }
+            I64 top = base - pm[0].entry;
+            if (top - IREC - rlen < pm[0].path_len) {
+                _ = limits.limit_diag(diag, mi, 1, 1, limits.LIM_SOURCE, a1);
+                return false;
+            }
+            I64 j = top - IREC - rlen;
+            seg = tk;
+            while (seg <= last) {
+                if (seg > tk) {
+                    pbytes[j] = 47;
+                    j += 1;
+                }
+                I64 s = toks[seg].start as I64;
+                I64 l = toks[seg].len as I64;
+                for i in 0..l {
+                    pbytes[j + i] = src[s + i];
+                }
+                j += l;
+                seg += 2;
+            }
+            pbytes[j] = 46;
+            pbytes[j + 1] = 99;
+            pbytes[j + 2] = 105;
+            put_u32(pbytes, top - 20, toks[tk].line as I64);
+            put_u32(pbytes, top - 16, toks[tk].col as I64);
+            put_u32(pbytes, top - 12, 0);
+            pbytes[top - 8] = rule as U8;
+            put_u32(pbytes, top - 4, rlen);
+            pm[0].entry = pm[0].entry + IREC + rlen;
+            pm[mi + 1].nobs = pm[mi + 1].nobs + 1;
+        }
+        x = nodes[x].next as I64;
+    }
+    return true;
+}
+
+// Whether the path of the record at top equals the path of module q, under ASCII case
+// folding when fc is true.
+Bool rec_names(in U8[_] pbytes, I64 top, in back_c.PMod[_] pm, I64 q, Bool fc) {
+    I64 rlen = get_u32(pbytes, top - 4);
+    if (rlen != pm[q + 1].path_len) {
+        return false;
+    }
+    I64 s = top - IREC - rlen;
+    I64 at = pm[q + 1].path_at;
+    for i in 0..rlen {
+        if (folded(pbytes[s + i], fc) != folded(pbytes[at + i], fc)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// The diagnostic of the record at top, of module k. A C3030 keeps its candidate path in
+// table 1 until the bridge copies it; detail[0] is the rule, detail[2..3] its offset and length.
+void no_module(in U8[_] pbytes, in back_c.PMod[_] pm, I64 m, I64 top, I64 k, Bool loaded_only,
+        inout limits.CompilerDiag[101] diag) {
+    I64 code = C_NO_MODULE;
+    I64 d0 = 0;
+    I64 rule = pbytes[top - 8] as I64;
+    for q in 0..m {
+        if (rule == 0 && (!loaded_only || pm[q + 1].nsites != 0)) {
+            if (rec_names(pbytes, top, pm, q, true)) {
+                rule = PATH_COLLISION;
+            }
+        }
+    }
+    if (rule != 0) {
+        I64 row = limits.diag_add(diag, 3030, k, 1, 1, rule, 0);
+        if (row > 0) {
+            I64 plen = get_u32(pbytes, top - 4);
+            diag[row].detail[2] = top - IREC - plen;
+            diag[row].detail[3] = plen;
+        }
+        return;
+    }
+    _ = limits.diag_add(diag, code, k, get_u32(pbytes, top - 20), get_u32(pbytes, top - 16), d0, 0);
+}
+
+// Resolves and checks every import record of the m modules of the build (above). Returns
+// whether no diagnostic was added.
+Bool check_imports(inout U8[_] pbytes, I64 base, inout back_c.PMod[_] pm, I64 m,
+        inout limits.CompilerDiag[101] diag) {
+    for k in 0..m {
+        for j in 0..pm[k + 1].nobs {
+            I64 top = rec_top(pbytes, base, pm, k, j);
+            for q in 0..m {
+                if (get_u32(pbytes, top - 12) == 0 && rec_names(pbytes, top, pm, q, false)) {
+                    put_u32(pbytes, top - 12, q + 1);
+                }
+            }
+        }
+    }
+    // Breadth first from the root: nsites marks a module reached, flags links the queue.
+    I64 r = m - 1;
+    pm[r + 1].nsites = 1;
+    I64 cur = r;
+    I64 tail = r;
+    while (cur >= 0) {
+        for j in 0..pm[cur + 1].nobs {
+            I64 top = rec_top(pbytes, base, pm, cur, j);
+            I64 t = get_u32(pbytes, top - 12) - 1;
+            if (t < 0) {
+                no_module(pbytes, pm, m, top, cur, true, diag);
+                return false;
+            }
+            if (pm[t + 1].nsites == 0) {
+                pm[t + 1].nsites = 1;
+                pm[tail + 1].flags = t + 1;
+                tail = t;
+            }
+        }
+        cur = pm[cur + 1].flags - 1;
+    }
+    for k in 0..m {
+        if (pm[k + 1].nsites == 0) {
+            // Explicit inputs outside the root's import graph retain manifest validation.
+            for j in 0..pm[k + 1].nobs {
+                I64 top = rec_top(pbytes, base, pm, k, j);
+                if (get_u32(pbytes, top - 12) == 0) {
+                    no_module(pbytes, pm, m, top, k, false, diag);
+                    return false;
+                }
+            }
+        }
+    }
+    // Depth first from the root: nsites is the next import, flags the color (1 on the
+    // path, 2 done) plus 4 times the parent plus one.
+    for k in 0..m {
+        pm[k + 1].nsites = 0;
+        pm[k + 1].flags = 0;
+    }
+    pm[r + 1].flags = 1;
+    I64 v = r;
+    while (v >= 0) {
+        I64 k = pm[v + 1].nsites;
+        if (k < pm[v + 1].nobs) {
+            pm[v + 1].nsites = k + 1;
+            I64 top = rec_top(pbytes, base, pm, v, k);
+            I64 t = get_u32(pbytes, top - 12) - 1;
+            I64 c = pm[t + 1].flags % 4;
+            if (c == 1) {
+                _ = limits.diag_add(diag, C_IMPORT_CYCLE, v, get_u32(pbytes, top - 20), get_u32(pbytes, top - 16),
+                    0, 0);
+                return false;
+            }
+            if (c == 0) {
+                pm[t + 1].flags = 1 + 4 * (v + 1);
+                v = t;
+            }
+        } else {
+            I64 parent = pm[v + 1].flags / 4 - 1;
+            pm[v + 1].flags = 2 + 4 * (parent + 1);
+            v = parent;
+        }
+    }
+    for k in 0..m {
+        for j in 0..pm[k + 1].nobs {
+            I64 top = rec_top(pbytes, base, pm, k, j);
+            I64 t = get_u32(pbytes, top - 12) - 1;
+            if (t >= k) {
+                I64 code = lowering.C_UNSUPPORTED;
+                I64 d0 = U_IMPORT_ORDER;
+                if (t == k) {
+                    code = C_IMPORT_CYCLE;
+                    d0 = 0;
+                }
+                _ = limits.diag_add(diag, code, k, get_u32(pbytes, top - 20), get_u32(pbytes, top - 16), d0, 0);
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+// Retains the seed's breadth-first module order in flags above the state bit.
+// At most MODULES_MAX modules give flags <= 2 * MODULES_MAX + 1.
+void keep_record_order(in U8[_] pbytes, I64 base, inout back_c.PMod[_] pm, I64 m) {
+    if (m < 1 || m > limits.MODULES_MAX) { internal(m); return; }
+    for k in 0..m { pm[k + 1].flags = 0; }
+    pm[m].flags = 2;
+    I64 nrecord = 1;
+    for order in 0..m {
+        I64 k = 0;
+        while (k < m && pm[k + 1].flags != 2 * (order + 1)) { k += 1; }
+        if (k == m) {
+            k = 0;
+            while (pm[k + 1].flags != 0) { k += 1; }
+            pm[k + 1].flags = 2 * (order + 1);
+            nrecord += 1;
+        }
+        for j in 0..pm[k + 1].nobs {
+            I64 top = rec_top(pbytes, base, pm, k, j);
+            I64 t = get_u32(pbytes, top - 12) - 1;
+            if (pm[t + 1].flags == 0) {
+                nrecord += 1;
+                pm[t + 1].flags = 2 * nrecord;
+            }
+        }
+    }
+}
+
+// check_imports, retain catalog order, then clear the discovery records.
+Bool resolve_imports[a1](inout U8[a1] pbytes, inout back_c.PMod[_] pm, I64 m, inout limits.CompilerDiag[101] diag) {
+    I64 base = a1 - back_c.REV_BYTES;
+    Bool ok = check_imports(pbytes, base, pm, m, diag);
+    if (!ok) {
+        // A failed discovery keeps candidate bytes alive for diagnostic reporting.
+        return false;
+    }
+    keep_record_order(pbytes, base, pm, m);
+    for i in 0..pm[0].entry {
+        pbytes[base - 1 - i] = 0;
+    }
+    pm[0].entry = 0;
+    for k in 0..m {
+        pm[k + 1].nobs = 0;
+        pm[k + 1].entry = 0;
+        pm[k + 1].nsites = 0;
+    }
+    return ok;
+}
+
+// Scans and parses module mi (source, a copy of its text in `text`): the root node, or -1
+// with a diagnostic.
+I64 front[n, a2](in U8[n] source, inout U8[a2] text, inout scan.Token[_] toks, inout parse.Node[_] nodes,
+        inout parse.Frame[_] st, inout parse.PState[_] ps, inout limits.CompilerDiag[101] diag, I64 mi) {
+    if (n + 64 > a2) {
+        _ = limits.limit_diag(diag, mi, 1, 1, limits.LIM_SOURCE, a2);
+        return -1;
+    }
+    for i in 0..n {
+        text[i] = source[i];
+    }
+    if (scan.check_text(source, diag, mi) != 0) {
+        return -1;
+    }
+    I64 ntok = scan.scan(source, toks, diag, mi);
+    if (ntok < 0) {
+        return -1;
+    }
+    return parse.parse(source, toks, ntok, nodes, st, diag, ps, mi);
+}
+
+// The discovery pass of module mi (decision 27, item 3): records its path in the
+// program-level tables, scans and parses it, and records its imports; after the last
+// module it resolves every import (C3009, C3030, C3003, C9102
+// U_IMPORT_ORDER), so every import of the build is resolved before any module is checked,
+// as cint_ref's check_program does. pm[0].nobs counts the modules discovered.
+I64 discover[n, p, a1, a2](I64 mi, in U8[n] source, in U8[p] path, inout back_c.PMod[_] pm, inout U8[a1] pbytes,
+        inout U8[a2] text, inout scan.Token[_] toks, inout parse.Node[_] nodes, inout parse.Frame[_] st,
+        inout limits.CompilerDiag[101] diag) {
+    if (mi == 0) {
+        pm[0].path_len = 0;
+        pm[0].entry = 0;
+        pm[0].flags = 0;
+    }
+    I64 at = pm[0].path_len;
+    if (at + p > a1 - back_c.REV_BYTES - pm[0].entry) {
+        _ = limits.limit_diag(diag, mi, 1, 1, limits.LIM_SOURCE, a1);
+        return 1;
+    }
+    for i in 0..p {
+        pbytes[at + i] = path[i];
+    }
+    pm[0].path_len = at + p;
+    pm[mi + 1].path_at = at;
+    pm[mi + 1].path_len = p;
+    pm[mi + 1].nobs = 0;
+    pm[mi + 1].entry = 0;
+    pm[mi + 1].nsites = 0;
+    pm[mi + 1].flags = 0;
+    parse.PState[1] ps;
+    I64 root = front(source, text, toks, nodes, st, ps, diag, mi);
+    if (root < 0) {
+        return 1;
+    }
+    if (!record_imports(source, toks, nodes, root, pm, pbytes, mi, a2, diag)) {
+        return 1;
+    }
+    // After the last module, every import is resolved against every path (above).
+    if (mi == pm[0].path_at - 1 && !resolve_imports(pbytes, pm, mi + 1, diag)) {
+        return 1;
+    }
+    pm[0].nobs = mi + 1;
+    return 0;
+}
+
+// Compiles module module_index (source, at path) into the tables. The bridge calls it twice
+// per module, both times in dependency order: while fewer modules than the build's have been
+// discovered (pm[0].nobs), the call is the discovery pass of the next module (discover);
+// then the full pass: scan, parse, check, lower, verify, and the module's row of the
+// program-level tables.
+export I64 compile[n, p, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, f](I64 module_index,
+        in U8[n] source, in U8[p] path, inout back_c.PMod[a0] pm, inout U8[a1] pbytes, inout U8[a2] text,
+        inout scan.Token[a3] toks, inout parse.Node[a4] nodes, inout U8[a5] unused5,
+        inout lowering.Sir[a6] sir, inout lowering.SirFunc[a7] funcs, inout lowering.SirSlot[a8] slots,
+        inout U8[a9] unused9, inout lowering.LState[a10] ls, inout resolve.Sem[a11] sem,
+        inout resolve.Sym[a12] syms, inout resolve.Name[a13] names, inout parse.Frame[a14] frames, inout U8[a15] lits,
+        inout limits.Decl[a16] decls, inout limits.CompilerDiag[101] diag, inout U8[f] faults) {
+    I64 mi = module_index;
+    limits.diag_clear(diag);
+    pm[0].path_at = a0 - 1;
+    if (pm[0].nobs < a0 - 1) {
+        if (mi != pm[0].nobs) {
+            internal(mi);
+        }
+        return discover(mi, source, path, pm, pbytes, text, toks, nodes, frames, diag);
+    }
+    I64 at = pm[mi + 1].path_at;
+    if (p != pm[mi + 1].path_len) {
+        internal(mi);
+    }
+    if (mi == 0) {
+        // The first full pass writes the declaration table's header row (CINTC-16
+        // "Header"): the discovery pass checks nothing and writes no row.
+        if (!decl.header(decls)) {
+            _ = limits.limit_diag(diag, mi, 1, 1, limits.LIM_DECLS, a16);
+            return 1;
+        }
+    }
+    parse.PState[1] ps;
+    I64 root = front(source, text, toks, nodes, frames, ps, diag, mi);
+    if (root < 0) {
+        return 1;
+    }
+    // Every import of the build names a module of the build (discover). Each import node
+    // gets the index of the module it names in its `e`, which check.check_module binds to
+    // that module's block of the declaration table (CINTC-16 "Lookup").
+    I64 x = nodes[root].a as I64;
+    while (x >= 0) {
+        if (nodes[x].kind == parse.N_IMPORT) {
+            nodes[x].e = import_target(source, toks, nodes, x, pm, pbytes, mi + 1) as I32;
+        }
+        x = nodes[x].next as I64;
+    }
+    fold.Folded[1] fres;
+    fold.Work[1] z;
+    resolve.RState[1] rs;
+    check.CState[1] cs;
+    I64 err = check.check_module(source, toks, nodes, ps[0].nn, root, sem, syms, names, frames, lits, diag, faults, fres,
+        z, path, rs, cs, mi, decls);
+    if (err != 0) {
+        // A checker diagnostic, C9102 for a construct outside the checker's subset
+        // included, stops the module before lowering (D-11; CINTC-OQ-45).
+        return 1;
+    }
+    // The module's exports, for the modules that import it (CINTC-16 invariant 4), struct
+    // rows with their LS-73 layout (check.record_layout).
+    if (!check.record_layout(toks, nodes, sem, syms, diag, rs, root)) { return 1; }
+    if (!decl.write_block(source, toks, nodes, sem, syms, root, mi, decls, diag)) {
+        return 1;
+    }
+    // The root module is the last of the build (back_c.ci, CINTC-OQ-39).
+    if (lowering.lower_module(text, toks, nodes, sem, root, n, sir, funcs, slots, frames, diag, ls, mi, ps[0].nn,
+            decls, mi == a0 - 2) != 0) {
+        return 1;
+    }
+    // An imported function's row names its module's path for back_c.ci (lowering.FN_IMPORT).
+    for k in 0..ls[0].nfunc {
+        if ((funcs[k].flags & lowering.FN_IMPORT) != 0) {
+            I64 im = funcs[k].node as I64;
+            funcs[k].lslot0 = pm[im + 1].path_at as I32;
+            funcs[k].lslot_end = pm[im + 1].path_len as I32;
+        }
+    }
+    if (!symbols_fit(pbytes, at, p, text, toks, funcs, slots, decls, mi == a0 - 2, diag, ls)) {
+        return 1;
+    }
+    // Every module's observer entries are counted; the program-level file lists those of
+    // the last module that has any, the root module when it has scalar exports
+    // (compiler/OPEN.md CINTC-OQ-38, interim rule of task 2.13 part (iii)).
+    I64 nobs = back_c.observer_count(funcs, ls);
+    // Which functions charge their local arrays to the frame arena (SPEC-04 LS-110).
+    lowering.frame_proof(sir, funcs, frames, ls, mi == a0 - 2);
+    I64 bad = verify.verify(sir, funcs, slots, frames, ls);
+    if (bad >= 0) {
+        internal(bad);
+    }
+    // Effect classes, for the reflection table and the modules that import this one.
+    bad = back_c.mark_effects(text, toks, sir, funcs, ls, decls, mi);
+    if (bad >= 0) {
+        internal(bad);
+    }
+    pm[mi + 1].nobs = nobs;
+    if (ls[0].entry >= 0) {
+        pm[mi + 1].entry = 1;
+    }
+    pm[mi + 1].nsites = ls[0].sites;
+    if (back_c.has_state(slots, ls)) {
+        pm[mi + 1].flags = pm[mi + 1].flags | 1;
+    }
+    return 0;
+}
+
+// The byte count of each output of module module_index (or of the program).
+export I64 measure[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, k, f](I64 module_index,
+        inout back_c.PMod[a0] pm, inout U8[a1] pbytes, inout U8[a2] text, inout scan.Token[a3] toks,
+        inout parse.Node[a4] nodes, inout U8[a5] unused5, inout lowering.Sir[a6] sir,
+        inout lowering.SirFunc[a7] funcs, inout lowering.SirSlot[a8] slots, inout U8[a9] unused9,
+        inout lowering.LState[a10] ls, inout resolve.Sem[a11] sem, inout resolve.Sym[a12] syms,
+        inout resolve.Name[a13] names, inout parse.Frame[a14] frames, inout U8[a15] lits, inout limits.Decl[a16] decls,
+        inout I64[k] output_bytes,
+        inout limits.CompilerDiag[101] diag, inout U8[f] faults) {
+    I64 nmod = a0 - 1;
+    limits.diag_clear(diag);
+    if (module_index == nmod && !back_c.revision_ready(pm)) {
+        internal(nmod);
+    }
+    for j in 0..k {
+        output_bytes[j] = 0;
+        if (j < limits.OUTPUTS) {
+            I64 bytes = back_c.measure_output(module_index, j, pm, pbytes, text, toks, nodes, sir, funcs, slots, ls, decls, nmod);
+            if (bytes < 0) {
+                _ = limits.limit_diag(diag, module_index, 1, 1, limits.LIM_OUTPUT, limits.OUTPUT_BYTES_MAX);
+                return 1;
+            }
+            output_bytes[j] = bytes;
+        }
+    }
+    return 0;
+}
+
+// Writes output output_index of module module_index (or of the program) into `output`,
+// which has exactly the measured extent. At program level, output_index 2 + m is an input
+// instead: `output` holds module m's output 1, which goes into the revision identity
+// (back_c.revision_add); the bridge passes the modules in byte order of path, before it
+// measures the program-level outputs.
+export I64 emit[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, b, f](I64 module_index,
+        I64 output_index, inout back_c.PMod[a0] pm, inout U8[a1] pbytes, inout U8[a2] text, inout scan.Token[a3] toks,
+        inout parse.Node[a4] nodes, inout U8[a5] unused5, inout lowering.Sir[a6] sir,
+        inout lowering.SirFunc[a7] funcs, inout lowering.SirSlot[a8] slots, inout U8[a9] unused9,
+        inout lowering.LState[a10] ls, inout resolve.Sem[a11] sem, inout resolve.Sym[a12] syms,
+        inout resolve.Name[a13] names, inout parse.Frame[a14] frames, inout U8[a15] lits, inout limits.Decl[a16] decls,
+        inout U8[b] output,
+        inout limits.CompilerDiag[101] diag, inout U8[f] faults) {
+    limits.diag_clear(diag);
+    if (module_index == a0 - 1 && output_index >= limits.OUTPUTS) {
+        // An input: the output 1 of module output_index - 2, in byte order of path.
+        if (!back_c.revision_add(output_index - limits.OUTPUTS, a0 - 1, output, pm, pbytes)) {
+            internal(output_index);
+        }
+        return 0;
+    }
+    I64 wrote = back_c.emit_output(module_index, output_index, output, pm, pbytes, text, toks, nodes, sir, funcs, slots, ls, decls,
+        a0 - 1);
+    if (wrote >= 0) {
+        internal(wrote);
+    }
+    if (output_index == 1 && module_index < a0 - 1) {
+        back_c.keep_sir_digest(module_index, output, pm);
+    }
+    return 0;
+}
+
+// The SHA-256 digest of `data` (FIPS 180-4, compiler/sha256.ci) in hash[0..32): the
+// source, generated-source, and runtime digests of the M1 run receipt. Returns 0.
+export I64 digest[n, d](in U8[n] data, inout U8[d] hash) {
+    sha256.sha_digest(data, 0, n, hash);
+    return 0;
+}
+
+// The import-record writer with a real parsed import and deliberately short path views.
+// The text view has a different extent, so detail[1] identifies the path table.
+export I64 path_capacity_test(I64 scenario, I64 field) {
+    back_c.PMod[2] pm;
+    scan.Token[16] toks;
+    parse.Node[32] nodes;
+    parse.Frame[32] frames;
+    parse.PState[1] ps;
+    limits.CompilerDiag[2] diag;
+    pm[0].path_len = 4;
+    pm[0].entry = 0;
+    pm[0].nobs = 0;
+    pm[1].entry = 0;
+    pm[1].nobs = 0;
+    limits.diag_clear(diag);
+    I64 nt = scan.scan("import a;\n", toks, diag, 0);
+    I64 root = parse.parse("import a;\n", toks, nt, nodes, frames, diag, ps, 0);
+    I64 result = -1;
+    if (scenario == 0) {
+        U8[171] paths;
+        paths[0] = 98;
+        paths[1] = 46;
+        paths[2] = 99;
+        paths[3] = 105;
+        if (root >= 0 && record_imports("import a;\n", toks, nodes, root, pm, paths, 0, 96, diag)) {
+            result = 0;
+        }
+    } else {
+        U8[172] paths;
+        paths[0] = 98;
+        paths[1] = 46;
+        paths[2] = 99;
+        paths[3] = 105;
+        if (root >= 0 && record_imports("import a;\n", toks, nodes, root, pm, paths, 0, 96, diag)) {
+            result = 0;
+        }
+    }
+    if (result < 0 && root >= 0) {
+        result = 1;
+    }
+    switch (field) {
+        case 0: return result;
+        case 1: return diag[0].detail[0];
+        case 2: return diag[0].detail[1];
+        case 3: return diag[1].code;
+        case 4: return diag[1].module;
+        case 5: return diag[1].line;
+        case 6: return diag[1].column;
+        case 7: return diag[1].detail[0];
+        case 8: return diag[1].detail[1];
+        case 9: return diag[1].detail[2];
+        case 10: return diag[1].detail[3];
+        case 11: return pm[0].path_len;
+        case 12: return pm[0].entry;
+        default: return pm[0].nobs;
+    }
+}

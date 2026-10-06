@@ -1,0 +1,20 @@
+// case: cleanup/c4030_try_in_deferred_statement
+// clause: SPEC-04 LS-187, LS-320; decision 2026-10-05, BX12-11
+// subset: cint-core-1 (error sets, `try`, `defer`)
+// entry: run; args: none
+// spec outcome: compile error C4030 at 18:15, the `try` of the deferred statement (position: first character of the offending construct)
+
+error ParseError { empty, bad_digit, too_large }
+
+ParseError!I64 digit(U8 c) {
+    if (c < '0' || c > '9') {
+        return .bad_digit;
+    }
+    return (c - '0') as I64;
+}
+
+export ParseError!I64 run() {
+    I64 n = 0;
+    defer n = try digit('1');
+    return n;
+}

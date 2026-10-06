@@ -1,0 +1,9 @@
+// The D-24 probe: a store and a print, then a fault (SPEC-03 A-7, A-7b).
+I64 balance = 5;
+export void deposit_then_fault(I64 top) {
+    balance = balance + 1;
+    "partial\n";
+    I64 next = top + 1;
+}
+export I64 read_balance() { return balance; }
+export void reset() { balance = 5; }

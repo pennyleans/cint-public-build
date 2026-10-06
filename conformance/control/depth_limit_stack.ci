@@ -1,0 +1,25 @@
+// case: control/depth_limit_stack
+// clause: SPEC-01 IM-107, IM-119, IM-139; SPEC-09 CONF-11 (format 2, rule 5); decision 2026-10-03, slice 2 patch D-10
+// subset: cint-boot-1
+// entry: f; args: I64 0; depth 4
+// spec outcome: fault E_DEPTH at 19:12 (the call of m in k, which would be the fifth active call), operation call.enter, limit I64 4; stack 8:12, 12:12, 16:12 (the calls of g, h and k, outermost first); fuel consumed 4
+
+export I64 f(I64 n) {
+    return g(n + 1);
+}
+
+I64 g(I64 n) {
+    return h(n + 1);
+}
+
+I64 h(I64 n) {
+    return k(n + 1);
+}
+
+I64 k(I64 n) {
+    return m(n + 1);
+}
+
+I64 m(I64 n) {
+    return n;
+}

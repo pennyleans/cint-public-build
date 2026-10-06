@@ -1,0 +1,604 @@
+// compiler/decl.ci: the declaration table, manifest row 16 (SPEC-09 CINTC-16, decision
+// 27; slice 2 task 2.13, part (iii)).
+//
+// What an importer needs from a module it imports lives in one program-scoped table of
+// 64-byte limits.Decl rows that the per-module tables never touch. Row 0 is the header
+// (`a` the rows written, the header included; `b` the module blocks written). Module m's
+// block is a module row (`a` its rows, `b` its top-level records), then its constants,
+// module-level variables, functions and structs in declaration order, a function followed
+// by its parameter rows and a struct by its field rows, every record by its own name
+// continuation rows.
+//
+// Writer. compile's first full pass writes the header when it starts module 0 (header; the
+// discovery pass writes nothing), and write_block
+// writes module m's block after check.check_module succeeds and before lowering: every row
+// is written above the header's `a`, and the header's two counters are updated last, so a
+// block that does not fit (C9001 at the declaration's name, detail[0] LIM_DECLS, detail[1]
+// the capacity) leaves the table as it was (CINTC-16 invariants 3 and 4). Struct and field
+// rows take their LS-73 layout from check.record_layout (part (ii)), which compiler/main.ci
+// runs before write_block and which leaves it in the Sem rows of the struct's nodes, since
+// compiler/check.ci imports this module and not the reverse. After lowering, compile writes
+// the effect class of each exported function into its row's `mode` (back_c.mark_effects;
+// compiler/OPEN.md CINTC-OQ-58), which a module that imports it reads.
+//
+// Lookup (CINTC-16). block_of walks at most MODULES_MAX module headers. During alias
+// binding resolve.import_bind reads one block once and indexes its top-level names in
+// table 13. Qualified references use resolve.import_find, returning canonical rows in
+// O(name length), including continuation bytes and misses. name_equals and next_member
+// still serve struct field/parameter access; find remains a linear test oracle.
+// The writer costs O(rows written). No importer mutates this declaration table.
+
+import limits;
+import scan;
+import parse;
+import resolve;
+
+// Empties row r.
+void clear_row(inout limits.Decl[_] d, I64 r) {
+    d[r].kind = 0;
+    d[r].vis = 0;
+    d[r].mode = 0;
+    d[r].name_len = 0;
+    d[r].module = 0;
+    d[r].tag = 0;
+    d[r].rank = 0;
+    d[r].ext_kind = 0;
+    d[r].align = 0;
+    d[r].ref = 0;
+    d[r].a = 0;
+    d[r].b = 0;
+    for i in 0..32 {
+        d[r].name[i] = 0;
+    }
+}
+
+// The rows a record with a name of nb bytes takes: itself and ceil(nb / 32) - 1
+// continuation rows.
+export I64 record_rows(I64 nb) {
+    if (nb <= 32) {
+        return 1;
+    }
+    return (nb + 31) / 32;
+}
+
+// The header row (kind 1, a 1, b 0), written when module 0 starts. Returns false when the
+// table has no row.
+export Bool header[k](inout limits.Decl[k] d) {
+    if (k == 0) {
+        return false;
+    }
+    clear_row(d, 0);
+    d[0].kind = limits.DK_HEADER;
+    d[0].a = 1;
+    return true;
+}
+
+// Writes one record at row `at` (fields as CINTC-16 gives them by kind) with the name
+// src[s, s + nb), its continuation rows after it. Returns the row after them, or -1 when
+// they do not fit in the k rows of the table.
+export I64 put[n, k](inout limits.Decl[k] d, I64 at, U8 kind, U8 vis, U8 mode, I64 module, U8 tag, U8 rank,
+        U8 ext, I64 a, I64 b, in U8[n] src, I64 s, I64 nb) {
+    I64 rows = record_rows(nb);
+    if (at < 1 || at + rows > k || nb < 1 || nb > 255) {
+        return -1;
+    }
+    for r in at..at + rows {
+        clear_row(d, r);
+    }
+    d[at].kind = kind;
+    d[at].vis = vis;
+    d[at].mode = mode;
+    d[at].name_len = nb as U8;
+    d[at].module = module as U32;
+    d[at].tag = tag;
+    d[at].rank = rank;
+    d[at].ext_kind = ext;
+    d[at].a = a;
+    d[at].b = b;
+    for i in 0..nb {
+        I64 r = at + i / 32;
+        if (i >= 32 && i % 32 == 0) {
+            d[r].kind = limits.DK_NAME;
+            d[r].module = module as U32;
+            d[r].vis = vis;
+            I64 left = nb - i;
+            if (left > 32) {
+                left = 32;
+            }
+            d[r].name_len = left as U8;
+        }
+        d[r].name[i % 32] = src[s + i];
+    }
+    return at + rows;
+}
+
+// Whether the name of the record at row r is src[s, s + nb).
+export Bool name_equals[n, k](in limits.Decl[k] d, I64 r, in U8[n] src, I64 s, I64 nb) {
+    if ((d[r].name_len as I64) != nb || r + record_rows(nb) > k) {
+        return false;
+    }
+    for i in 0..nb {
+        if (d[r + i / 32].name[i % 32] != src[s + i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// The module row of module m's block, or -1 when the table holds none.
+export I64 block_of[k](in limits.Decl[k] d, I64 m) {
+    if (k == 0 || d[0].kind != limits.DK_HEADER) {
+        return -1;
+    }
+    I64 end = d[0].a;
+    I64 r = 1;
+    while (r < end && r < k) {
+        if (d[r].kind != limits.DK_MODULE || d[r].a < 1) {
+            return -1;
+        }
+        if ((d[r].module as I64) == m) {
+            return r;
+        }
+        r += d[r].a;
+    }
+    return -1;
+}
+
+// The top-level record (constant, variable, function or struct) named src[s, s + nb) in
+// the block whose module row is b, or -1.
+export I64 find[n, k](in limits.Decl[k] d, I64 b, in U8[n] src, I64 s, I64 nb) {
+    I64 end = b + d[b].a;
+    I64 r = b + 1;
+    while (r < end && r < k) {
+        U8 kd = d[r].kind;
+        if ((kd == limits.DK_CONST || kd == limits.DK_VAR || kd == limits.DK_FUNC || kd == limits.DK_STRUCT) &&
+                name_equals(d, r, src, s, nb)) {
+            return r;
+        }
+        r += 1;
+    }
+    return -1;
+}
+
+// The row after the record at row r and its name continuation rows: the next field or
+// parameter of a struct or function record.
+export I64 next_member[k](in limits.Decl[k] d, I64 r) {
+    I64 q = r + 1;
+    while (q < k && d[q].kind == limits.DK_NAME) {
+        q += 1;
+    }
+    return q;
+}
+
+// The CINTC-16 type fields of checker type ty: t[0] tag, t[1] rank, t[2] ext_kind, t[3]
+// the extent field (`b` of a field or parameter row), t[4] ref; compiler/check.ci, which
+// imports this module, reverses it with check.import_type. A struct of this module is tag
+// 0x71 with ref the row write_block gave it, kept in Sem.lit_at of its N_STRUCT node; a
+// struct of an imported module (a symbol with no node, check.import_struct_ty) keeps the
+// row it was bound to; a view whose extent is a size parameter is DX_SIZE with the
+// parameter's position. An error set is tag 0x72, an error union 0x73, and (box 12) an
+// arena, a pool or a handle 0x74, which no importer types yet (check.import_type gives 0,
+// so a use is C9102; box 12, compiler/OPEN.md).
+void persist[n](in parse.Node[_] nodes, in resolve.Sem[_] sem, in resolve.Sym[_] syms, I64 ty,
+        inout I64[n] t) {
+    t[0] = ty;
+    t[1] = 0;
+    t[2] = 0;
+    t[3] = 0;
+    t[4] = 0;
+    if (ty == resolve.TY_VOID) {
+        t[0] = 0x02;
+    } else if (resolve.is_errset(ty)) {
+        t[0] = ERRSET_TAG;
+    } else if (resolve.is_errunion(ty)) {
+        t[0] = ERRUNION_TAG;
+    } else if (resolve.is_mem(ty)) {
+        t[0] = MEM_TAG;
+    } else if (resolve.is_struct(ty)) {
+        t[0] = 0x71;
+        t[4] = struct_row(nodes, sem, syms, ty);
+    } else if (resolve.is_array(ty)) {
+        t[0] = resolve.array_elem(ty);
+        if (resolve.is_struct(t[0])) {
+            // A view of struct elements (task 2.14).
+            t[4] = struct_row(nodes, sem, syms, t[0]);
+            t[0] = 0x71;
+        } else if (resolve.is_errset(t[0])) {
+            t[0] = ERRSET_TAG;
+        }
+        t[1] = 1;
+        I64 j = resolve.array_size(ty);
+        I64 e = resolve.array_extent(ty);
+        if (j >= 0) {
+            t[2] = limits.DX_SIZE as I64;
+            t[3] = j;
+        } else if (e >= 0) {
+            t[2] = limits.DX_LITERAL as I64;
+            t[3] = e;
+        } else {
+            t[2] = limits.DX_WILD as I64;
+        }
+    }
+}
+
+// The tags of an error set and of an error union in a row's type fields (persist), and (box
+// 12) of an arena, a pool or a handle, which no importer types yet either.
+export const I64 ERRSET_TAG = 0x72;
+export const I64 ERRUNION_TAG = 0x73;
+export const I64 MEM_TAG = 0x74;
+
+// The checker type of the type fields of row r (the reverse of persist), or 0 for a type
+// this checker does not have yet (a struct, an error set or union, or an extent of a size
+// parameter).
+export I64 type_of_row[k](in limits.Decl[k] d, I64 r) {
+    I64 tag = d[r].tag as I64;
+    if (tag == ERRSET_TAG || tag == ERRUNION_TAG || tag == MEM_TAG) {
+        return 0;
+    }
+    if (d[r].rank == 0) {
+        if (tag == 0x71) {
+            return 0;
+        }
+        return tag;
+    }
+    if (d[r].ext_kind == limits.DX_LITERAL) {
+        return resolve.TY_ARRAY + (d[r].b + 1) * 65536 + tag;
+    }
+    if (d[r].ext_kind == limits.DX_WILD) {
+        return resolve.TY_ARRAY + tag;
+    }
+    return 0;
+}
+
+// The parameter mode of an N_PARAM node: 0 by value, 1 `in`, 2 `inout`.
+U8 mode_of(in parse.Node[_] nodes, I64 p) {
+    if (nodes[p].op == scan.KW_IN) {
+        return 1;
+    }
+    if (nodes[p].op == scan.KW_INOUT) {
+        return 2;
+    }
+    return 0;
+}
+
+U8 vis_of(in parse.Node[_] nodes, I64 x) {
+    if ((nodes[x].flags & parse.F_EXPORT) != 0) {
+        return 1;
+    }
+    return 0;
+}
+
+// The row of the struct record of struct type ty (CINTC-16 `ref`): for a struct of this
+// module, the row write_block assigned it, kept in Sem.lit_at of its N_STRUCT node; for a
+// struct of an imported module, whose symbol has no node, the row its symbol was bound to
+// (Sym.value; compiler/check.ci import_struct_ty).
+I64 struct_row(in parse.Node[_] nodes, in resolve.Sem[_] sem, in resolve.Sym[_] syms, I64 ty) {
+    I64 sx = resolve.struct_node(syms, ty);
+    if (sx < 0) {
+        return syms[ty - resolve.TY_STRUCT].value as% I64;
+    }
+    return sem[sx].lit_at;
+}
+
+// Whether top-level node x is a module-level variable of a module (not a script local).
+Bool module_var(in parse.Node[_] nodes, in resolve.Sem[_] sem, in resolve.Sym[_] syms, I64 x) {
+    return nodes[x].kind == parse.N_VAR && (nodes[x].flags & parse.F_CONST) == 0 && sem[x].sym >= 0 &&
+        syms[sem[x].sym].kind == resolve.SK_MODVAR;
+}
+
+// The rows of top-level record x (an N_VAR constant or module-level variable, N_FUNC or
+// N_STRUCT node) with its parameter or field rows, every name with its continuation rows;
+// 0 for any other node.
+I64 item_rows(in scan.Token[_] toks, in parse.Node[_] nodes, in resolve.Sem[_] sem, in resolve.Sym[_] syms,
+        I64 x) {
+    I32 kind = nodes[x].kind;
+    I64 rows = record_rows(toks[nodes[x].tok as I64].len as I64);
+    I64 p = -1;
+    if (kind == parse.N_FUNC) {
+        p = nodes[x].b as I64;
+    } else if (kind == parse.N_STRUCT) {
+        p = nodes[x].a as I64;
+    } else if (kind != parse.N_VAR || ((nodes[x].flags & parse.F_CONST) == 0 && !module_var(nodes, sem, syms, x))) {
+        return 0;
+    }
+    while (p >= 0) {
+        rows += record_rows(toks[nodes[p].tok as I64].len as I64);
+        p = nodes[p].next as I64;
+    }
+    return rows;
+}
+
+// Writes module m's block after its check: the module whose N_MODULE node is root, with
+// the checked Sem and Sym rows of compiler/check.ci and the LS-73 layout check.record_layout
+// left in the Sem rows of its structs (N_STRUCT: opty the alignment, lit_len the size;
+// N_FIELD_DECL: lit_at the offset). A first walk gives each struct its row (Sem.lit_at of its
+// N_STRUCT node), so a type that names a struct declared later refers to its row (CINTC-16
+// "Block order"). Returns true, or false after C9001 (LIM_DECLS) at the name of the first
+// declaration that does not fit, with the table as it was.
+export Bool write_block[n, k, r](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes,
+        inout resolve.Sem[_] sem, in resolve.Sym[_] syms, I64 root, I64 m, inout limits.Decl[k] d,
+        inout limits.CompilerDiag[r] diag) {
+    if (k == 0 || d[0].kind != limits.DK_HEADER) {
+        _ = limits.limit_diag(diag, m, 1, 1, limits.LIM_DECLS, k);
+        return false;
+    }
+    I64 mrow = d[0].a;
+    if (mrow >= k) {
+        _ = limits.limit_diag(diag, m, 1, 1, limits.LIM_DECLS, k);
+        return false;
+    }
+    // Checks every record and continuation row before changing the table or Sem.
+    I64 need = mrow + 1;
+    I64 x = nodes[root].a as I64;
+    while (x >= 0) {
+        I32 kind = nodes[x].kind;
+        if ((kind == parse.N_VAR && (nodes[x].flags & parse.F_CONST) != 0 && sem[x].sym >= 0) ||
+                module_var(nodes, sem, syms, x) || kind == parse.N_FUNC || kind == parse.N_STRUCT) {
+            I64 tk = nodes[x].tok as I64;
+            I64 nb = toks[tk].len as I64;
+            I64 rows = record_rows(nb);
+            if (nb < 1 || nb > 255 || need + rows > k) {
+                _ = limits.limit_diag(diag, m, toks[tk].line as I64, toks[tk].col as I64,
+                    limits.LIM_DECLS, k);
+                return false;
+            }
+            need += rows;
+            I64 p = -1;
+            if (kind == parse.N_FUNC) {
+                p = nodes[x].b as I64;
+            } else if (kind == parse.N_STRUCT) {
+                p = nodes[x].a as I64;
+            }
+            while (p >= 0) {
+                tk = nodes[p].tok as I64;
+                nb = toks[tk].len as I64;
+                rows = record_rows(nb);
+                if (nb < 1 || nb > 255 || need + rows > k) {
+                    _ = limits.limit_diag(diag, m, toks[tk].line as I64, toks[tk].col as I64,
+                        limits.LIM_DECLS, k);
+                    return false;
+                }
+                need += rows;
+                p = nodes[p].next as I64;
+            }
+        }
+        x = nodes[x].next as I64;
+    }
+    I64 at = mrow + 1;
+    x = nodes[root].a as I64;
+    while (x >= 0) {
+        if (nodes[x].kind == parse.N_STRUCT) {
+            sem[x].lit_at = at;
+        }
+        at += item_rows(toks, nodes, sem, syms, x);
+        x = nodes[x].next as I64;
+    }
+    at = mrow + 1;
+    I64 nrec = 0;
+    I64 nvar = 0;
+    I64[5] t;
+    x = nodes[root].a as I64;
+    while (x >= 0) {
+        I32 kind = nodes[x].kind;
+        I64 tk = nodes[x].tok as I64;
+        I64 s = toks[tk].start as I64;
+        I64 l = toks[tk].len as I64;
+        I64 next = at;
+        if (kind == parse.N_VAR && (nodes[x].flags & parse.F_CONST) != 0 && sem[x].sym >= 0) {
+            I64 sy = sem[x].sym;
+            persist(nodes, sem, syms, syms[sy].ty, t);
+            next = put(d, at, limits.DK_CONST, vis_of(nodes, x), 0, m, t[0] as U8, 0, 0,
+                syms[sy].value as% I64, 0, src, s, l);
+            nrec += 1;
+        } else if (module_var(nodes, sem, syms, x)) {
+            // Its index in the module's state, the order of lowering.declare_globals.
+            persist(nodes, sem, syms, syms[sem[x].sym].ty, t);
+            next = put(d, at, limits.DK_VAR, vis_of(nodes, x), 0, m, t[0] as U8, 0, 0, nvar, 0,
+                src, s, l);
+            nrec += 1;
+        } else if (kind == parse.N_FUNC || kind == parse.N_STRUCT) {
+            I64 np = 0;
+            I64 p = nodes[x].b as I64;
+            if (kind == parse.N_STRUCT) {
+                p = nodes[x].a as I64;
+            }
+            I64 p0 = p;
+            while (p >= 0) {
+                np += 1;
+                p = nodes[p].next as I64;
+            }
+            U8 vis = vis_of(nodes, x);
+            if (kind == parse.N_FUNC) {
+                I64 nz = 0;
+                I64 z = nodes[x].d as I64;
+                while (z >= 0) {
+                    nz += 1;
+                    z = nodes[z].next as I64;
+                }
+                persist(nodes, sem, syms, sem[x].ty, t);
+                next = put(d, at, limits.DK_FUNC, vis, 0, m, t[0] as U8, 0, 0, np, nz, src, s, l);
+                if (next >= 0) {
+                    d[at].ref = t[4] as U32;
+                }
+            } else {
+                next = put(d, at, limits.DK_STRUCT, vis, 0, m, 0x71, 0, 0, np, sem[x].lit_len, src, s, l);
+                if (next >= 0) {
+                    d[at].ref = at as U32;
+                    d[at].align = sem[x].opty as U8;
+                }
+            }
+            nrec += 1;
+            p = p0;
+            I64 pos = 0;
+            while (p >= 0 && next >= 0) {
+                persist(nodes, sem, syms, sem[p].ty, t);
+                I64 ptk = nodes[p].tok as I64;
+                I64 row = next;
+                if (kind == parse.N_FUNC) {
+                    next = put(d, row, limits.DK_PARAM, vis, mode_of(nodes, p), m, t[0] as U8, t[1] as U8,
+                        t[2] as U8, pos, t[3], src, toks[ptk].start as I64, toks[ptk].len as I64);
+                } else {
+                    next = put(d, row, limits.DK_FIELD, vis, 0, m, t[0] as U8, t[1] as U8, t[2] as U8,
+                        sem[p].lit_at, t[3], src, toks[ptk].start as I64, toks[ptk].len as I64);
+                }
+                if (next < 0) {
+                    tk = ptk;
+                } else {
+                    d[row].ref = t[4] as U32;
+                }
+                pos += 1;
+                p = nodes[p].next as I64;
+            }
+        }
+        if (next < 0) {
+            _ = limits.limit_diag(diag, m, toks[tk].line as I64, toks[tk].col as I64, limits.LIM_DECLS, k);
+            return false;
+        }
+        if (nodes[x].kind == parse.N_VAR && (nodes[x].flags & parse.F_CONST) == 0) {
+            nvar += 1;
+        }
+        at = next;
+        x = nodes[x].next as I64;
+    }
+    clear_row(d, mrow);
+    d[mrow].kind = limits.DK_MODULE;
+    d[mrow].module = m as U32;
+    d[mrow].a = at - mrow;
+    d[mrow].b = nrec;
+    d[0].a = at;
+    d[0].b += 1;
+    return true;
+}
+
+// ---------------------------------------------------------------- test entry
+
+// Field f of a probe after scenario `scenario` on a table of `rows` rows (at most 64),
+// for compiler/tests/run.py (suite foundations): the writer, the lookup and C9001 without a
+// module. Scenario 0 writes module 3's block (a constant `SCALE` = -5, a function `add3` of
+// three parameters, and a constant with a 40-byte name) and module 7's (a function `f`);
+// then i selects a probe: 0, block_of(3); 1, block_of(7); 2, block_of(5); 3, find `add3`
+// in module 3; 4, find `f` in module 3; 5, find the long name; 6, next_member after
+// `add3`; 7, name_equals of the long name against its first 39 bytes; 8 to 15, row i - 8's
+// kind, name_len, module, tag, rank, a, b, and name byte f (f selects the field when below
+// 7; else the name byte f - 7). Scenario 1 is scenario 0 on `rows` rows: the result is the
+// header's a and b after each put that fits (i 0 and 1) and the row where the first put
+// failed (i 2), or -1.
+export I64 decl_test(I64 scenario, I64 rows, I64 i, I64 f) {
+    limits.Decl[64] d;
+    U8[48] text;
+    for j in 0..48 {
+        text[j] = (0x61 + j % 26) as U8;
+    }
+    text[0] = 0x53;
+    text[1] = 0x43;
+    text[2] = 0x41;
+    text[3] = 0x4C;
+    text[4] = 0x45;
+    I64 k = rows;
+    if (k > 64) {
+        k = 64;
+    }
+    for r in 0..64 {
+        clear_row(d, r);
+    }
+    _ = header(d);
+    I64 failed = -1;
+    I64 at = 1;
+    I64 nrec = 0;
+    for blk in 0..2 {
+        I64 mrow = at;
+        at = mrow + 1;
+        I64 m = 3;
+        if (blk == 1) {
+            m = 7;
+        }
+        if (mrow >= k) {
+            failed = mrow;
+            at = -1;
+        }
+        nrec = 0;
+        if (blk == 0 && at > 0) {
+            at = put(d, at, limits.DK_CONST, 1, 0, m, 0x14, 0, 0, -5, 0, text, 0, 5);
+            nrec += 1;
+            if (at > 0 && at <= k) {
+                at = put(d, at, limits.DK_FUNC, 1, 0, m, 0x14, 0, 0, 3, 0, "add3", 0, 4);
+                nrec += 1;
+            }
+            for p in 0..3 {
+                if (at > 0 && at <= k) {
+                    at = put(d, at, limits.DK_PARAM, 1, 0, m, 0x14, 0, 0, p, 0, text, 5 + p, 1);
+                }
+            }
+            if (at > 0 && at <= k) {
+                at = put(d, at, limits.DK_CONST, 0, 0, m, 0x24, 0, 0, 1, 0, text, 0, 40);
+                nrec += 1;
+            }
+        } else if (at > 0) {
+            at = put(d, at, limits.DK_FUNC, 1, 0, m, 0x02, 0, 0, 0, 0, "f", 0, 1);
+            nrec += 1;
+        }
+        if (at < 0 || at > k) {
+            if (failed < 0) {
+                failed = mrow;
+            }
+            at = -1;
+        }
+        if (at < 0) {
+            break;
+        }
+        d[mrow].kind = limits.DK_MODULE;
+        d[mrow].module = m as U32;
+        d[mrow].a = at - mrow;
+        d[mrow].b = nrec;
+        d[0].a = at;
+        d[0].b += 1;
+    }
+    if (scenario == 1) {
+        if (i == 0) {
+            return d[0].a;
+        }
+        if (i == 1) {
+            return d[0].b;
+        }
+        return failed;
+    }
+    I64 b3 = block_of(d, 3);
+    if (i == 0) {
+        return b3;
+    }
+    if (i == 1) {
+        return block_of(d, 7);
+    }
+    if (i == 2) {
+        return block_of(d, 5);
+    }
+    if (i == 3) {
+        return find(d, b3, "add3", 0, 4);
+    }
+    if (i == 4) {
+        return find(d, b3, "f", 0, 1);
+    }
+    if (i == 5) {
+        return find(d, b3, text, 0, 40);
+    }
+    if (i == 6) {
+        return next_member(d, find(d, b3, "add3", 0, 4));
+    }
+    if (i == 7) {
+        if (name_equals(d, find(d, b3, text, 0, 40), text, 0, 39)) {
+            return 1;
+        }
+        return 0;
+    }
+    I64 r = i - 8;
+    switch (f) {
+        case 0: return d[r].kind as I64;
+        case 1: return d[r].name_len as I64;
+        case 2: return d[r].module as I64;
+        case 3: return d[r].tag as I64;
+        case 4: return d[r].rank as I64;
+        case 5: return d[r].a;
+        case 6: return d[r].b;
+        default: return d[r].name[f - 7] as I64;
+    }
+}

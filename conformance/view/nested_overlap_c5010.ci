@@ -1,0 +1,10 @@
+// case: view/nested_overlap_c5010
+// clause: SPEC-04 LS-121
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: compile-error C5010 at the later argument
+
+struct O { I item; }
+struct I { I64 v; }
+void set(inout I a, I b) { a.v = b.v; }
+export I64 run() { O o; set(o.item, o.item); return 0; }

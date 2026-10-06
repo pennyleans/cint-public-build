@@ -1,0 +1,18 @@
+case view/slice_hi_above_extent
+clause SPEC-04 LS-161 (hi above the extent faults E_BOUNDS when the slice is formed)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_BOUNDS
+fault.operation slice.checked.i64
+fault.operand I64 2
+fault.operand I64 11
+fault.exact none
+fault.limit I64 10
+fault.position view/slice_hi_above_extent.ci:18:19
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

@@ -1,0 +1,17 @@
+// case: memory/arena_struct_elements
+// clause: SPEC-03 M-12, M-19; decision 2026-10-05, BX12-06; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arena, handles, struct elements)
+// entry: run; args: none
+// spec outcome: value I64 114 (11 * 10 + 4 + 0): three `Body` elements fill an arena of capacity 3, counted in elements; fuel 1
+
+struct Body { I64 mass; I64 vel; }
+
+Arena(Body, 3) scratch;
+
+export I64 run() {
+    Handle(Body[]) two = scratch.alloc(2);
+    Handle(Body[]) one = scratch.alloc(1);
+    scratch[two][1].mass = 11;
+    scratch[one][0].vel = 4;
+    return scratch[two][1].mass * 10 + scratch[one][0].vel + scratch[two][0].mass;
+}

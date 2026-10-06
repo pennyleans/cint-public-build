@@ -1,0 +1,10 @@
+// case: reduce/sum_sat_i8_reordered
+// clause: SPEC-01 IM-73, IM-84 (sum_sat depends on order)
+// subset: cint-core-1 (built-in sum_sat)
+// entry: run; args: none
+// spec outcome: value I8 120; fuel 2
+
+export I8 run() {
+    I8[3] v = [120, -120, 120];
+    return sum_sat(v);
+}

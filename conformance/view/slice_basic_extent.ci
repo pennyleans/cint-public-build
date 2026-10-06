@@ -1,0 +1,21 @@
+// case: view/slice_basic_extent
+// clause: SPEC-04 LS-161, LS-162 (a[lo..hi] views lo up to hi; its extent binds the size parameter)
+// subset: cint-core-1 (array slices)
+// entry: run; args: none
+// spec outcome: value I64 20 (2 + 3 + 4 + 5 + 6); fuel 17 (entry, 10 fill iterations, call, 5 iterations)
+
+I64 total[n](in I64[n] xs) {
+    I64 s = 0;
+    for i in 0..n {
+        s = s + xs[i];
+    }
+    return s;
+}
+
+export I64 run() {
+    I64[10] a;
+    for i in 0..10 {
+        a[i] = i;
+    }
+    return total(a[2..7]);
+}

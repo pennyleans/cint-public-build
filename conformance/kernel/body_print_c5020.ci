@@ -1,0 +1,17 @@
+// case: kernel/body_print_c5020
+// clause: SPEC-02 K-11; SPEC-04 LS-283 (a print statement in a kernel body)
+// subset: cint-core-1 (kernel)
+// entry: run; args: none
+// spec outcome: compile error C5020 at 8:5, the print statement
+
+kernel noisy[n](in I64[n] a, out I64[n] b) over [i: n] {
+    "i={i}\n";
+    b[i] = a[i];
+}
+
+export I64 run() {
+    I64[3] a;
+    I64[3] b;
+    noisy(a, b);
+    return b[0];
+}

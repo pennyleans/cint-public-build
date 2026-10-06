@@ -1,0 +1,19 @@
+case reduce/loop_dot_product_overflow
+clause SPEC-01 IM-87, IM-101, IM-102 (a hand-written dot product faults at the product, which has no wider intermediate; the twin of reduce/dot_exact_product)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 3
+fault.code E_OVERFLOW
+fault.operation mul.checked.i64
+fault.operand I64 3037000500
+fault.operand I64 3037000500
+fault.exact 9223372037000250000
+fault.limit I64 9223372036854775807
+fault.position reduce/loop_dot_product_overflow.ci:10:22
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 1
+fault.stack reduce/loop_dot_product_overflow.ci:20:12

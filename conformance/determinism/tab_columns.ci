@@ -1,0 +1,11 @@
+// case: determinism/tab_columns
+// clause: SPEC-04 LS-10 (a tab counts as one column); SPEC-01 IM-106
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 9:13: the line has two leading tabs and one tab before the operator, each one column
+
+export I64 run() {
+		I64 a = 9223372036854775807;
+		I64 b = a	+ 1;
+		return b;
+}

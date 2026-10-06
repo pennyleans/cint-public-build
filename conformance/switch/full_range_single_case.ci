@@ -1,0 +1,49 @@
+// case: switch/full_range_single_case
+// clause: SPEC-04 8.5 (LS-177, LS-182, LS-183: a switch whose one case covers the full range of its type, a default alone, a full-range case beside a default); SPEC-09 EMIT-26
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 54321 (every switch takes its only reachable clause)
+
+I64 local_i8() {
+    I8 x = -128;
+    switch (x) {
+        case -128..=127:
+            return 1;
+    }
+}
+
+I64 local_u64() {
+    U64 x = 18446744073709551615;
+    switch (x) {
+        case 0..=18446744073709551615:
+            return 20;
+    }
+}
+
+I64 param_i16(I16 x) {
+    switch (x) {
+        case -32768..=32767:
+            return 300;
+    }
+}
+
+I64 beside_default(I32 x) {
+    switch (x) {
+        case -2147483648..=2147483647:
+            return 4000;
+        default:
+            return 9;
+    }
+}
+
+I64 default_alone(U8 x) {
+    U8 y = x;
+    switch (y) {
+        default:
+            return 50000;
+    }
+}
+
+export I64 run() {
+    return local_i8() + local_u64() + param_i16(-32768) + beside_default(7) + default_alone(255);
+}

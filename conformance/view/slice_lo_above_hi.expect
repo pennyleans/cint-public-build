@@ -1,0 +1,18 @@
+case view/slice_lo_above_hi
+clause SPEC-04 LS-161 (lo above hi faults E_BOUNDS)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_BOUNDS
+fault.operation slice.checked.i64
+fault.operand I64 5
+fault.operand I64 3
+fault.exact none
+fault.limit I64 10
+fault.position view/slice_lo_above_hi.ci:19:19
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

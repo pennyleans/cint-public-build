@@ -1,0 +1,17 @@
+// case: module/struct_field_imported_struct
+// clause: SPEC-04 6.1, LS-73 (a field of struct type), LS-227; SPEC-09 CINTC-16; decision 27 item 4 (imported structs)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 37 (sum_pair of the inner Pair 3 + 4, plus k 30)
+
+import module.lib.plain_math;
+
+struct Box {
+    plain_math.Pair inner;
+    I64 k;
+}
+
+export I64 run() {
+    Box b = Box(plain_math.Pair(3, 4), 30);
+    return plain_math.sum_pair(b.inner) + b.k;
+}

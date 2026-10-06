@@ -1,0 +1,14 @@
+// case: memory/arena_alloc_negative
+// clause: SPEC-03 M-19; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arena, handles)
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 12:31 (the member name `alloc`), operation arena.alloc, operands I64 -1, I64 3, I64 8 (requested, used, capacity), no exact, no limit; stack depth 0; fuel 1. A negative request faults as an exhausted one does
+
+Arena(I64, 8) scratch;
+
+export I64 run() {
+    Handle(I64[]) a = scratch.alloc(3);
+    I64 n = -1;
+    Handle(I64[]) b = scratch.alloc(n);
+    return 0;
+}

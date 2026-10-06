@@ -1,0 +1,13 @@
+// case: control/cond_selected_arm_faults
+// clause: SPEC-04 LS-154; SPEC-01 4.4
+// subset: cint-core-1 (?: is not listed in SPEC-09 5.2)
+// entry: run; args: I64 2
+// spec outcome: fault E_DIV_ZERO at 11:33 (the selected operand); the operand at 9:42 is skipped
+
+export I64 run(I64 x) {
+    I64 zero = x - x;
+    I64 v = x > 0 ? 10 / (zero + 1) : 10 / zero;
+    I64 u = x < 0 ? 10 / (zero + 1) : 10 / (zero + 2);
+    I64 w = x < 0 ? v + u : 100 / zero;
+    return v + w;
+}

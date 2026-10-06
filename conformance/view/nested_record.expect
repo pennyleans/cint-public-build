@@ -1,0 +1,8 @@
+case view/nested_record
+clause SPEC-04 LS-73, LS-119, LS-139; SPEC-09 BOOT-01
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 11
+fuel-consumed 2

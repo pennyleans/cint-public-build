@@ -1,0 +1,23 @@
+case memory/pool_other_container
+clause SPEC-03 M-15, M-17; SPEC-02 V-14; ref/OPEN.md REF-OQ-45
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_STALE_HANDLE
+fault.operation pool.deref
+fault.operand U64 0
+fault.operand I64 1
+fault.operand U64 0
+fault.operand U32 2
+fault.operand U8 2
+fault.operand U64 0
+fault.operand U8 6
+fault.exact none
+fault.limit none
+fault.position memory/pool_other_container.ci:15:18
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

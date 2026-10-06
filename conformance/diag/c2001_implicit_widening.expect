@@ -1,0 +1,6 @@
+case diag/c2001_implicit_widening
+clause SPEC-04 6.6; SPEC-01 4.1; SPEC-04 17.1, 17.2
+source compile-error
+outcome compile-error
+diagnostic.code C2001
+diagnostic.position diag/c2001_implicit_widening.ci:10:24

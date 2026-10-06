@@ -1,0 +1,21 @@
+// case: reduce/loop_fold_overflow_at_element
+// clause: SPEC-01 IM-73, IM-83, IM-92; SPEC-02 R-6 (a left fold written by hand faults at the first out-of-range partial result; the twin of reduce/fold_checked_i64_overflow)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 10:19 in `fold_add` (the `+`), operation add.checked.i64, operands I64 9223372036854775807 and I64 1, exact 9223372036854775808; stack depth 1; fuel 4 (two calls, two iterations)
+
+I64 fold_add[n](in I64[n] xs) {
+    I64 acc = 0;
+    for i in 0..n {
+        acc = acc + xs[i];
+    }
+    return acc;
+}
+
+export I64 run() {
+    I64[3] a;
+    a[0] = 9223372036854775807;
+    a[1] = 1;
+    a[2] = -1;
+    return fold_add(a);
+}

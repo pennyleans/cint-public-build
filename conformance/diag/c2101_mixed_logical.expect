@@ -1,0 +1,6 @@
+case diag/c2101_mixed_logical
+clause SPEC-04 7.2; SPEC-04 17.1, 17.2
+source compile-error
+outcome compile-error
+diagnostic.code C2101
+diagnostic.position diag/c2101_mixed_logical.ci:11:9

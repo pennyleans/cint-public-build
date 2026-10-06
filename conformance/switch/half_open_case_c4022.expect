@@ -1,0 +1,6 @@
+case switch/half_open_case_c4022
+clause SPEC-04 8.5; SPEC-01 15 question 11 (closed)
+source compile-error
+outcome compile-error
+diagnostic.code C4022
+diagnostic.position switch/half_open_case_c4022.ci:10:14

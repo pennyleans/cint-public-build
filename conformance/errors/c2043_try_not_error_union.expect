@@ -1,0 +1,7 @@
+case errors/c2043_try_not_error_union
+clause SPEC-04 LS-129
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2043
+diagnostic.position errors/c2043_try_not_error_union.ci:14:13

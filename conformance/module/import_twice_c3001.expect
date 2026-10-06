@@ -1,0 +1,7 @@
+case module/import_twice_c3001
+clause SPEC-04 LS-228 (one module imported twice binds its alias twice: C3001); SPEC-09 CINTC-16
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C3001
+diagnostic.position module/import_twice_c3001.ci:8:19

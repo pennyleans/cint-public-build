@@ -1,0 +1,23 @@
+// case: cleanup/c4031_errdefer_inside_deferred_statement
+// clause: SPEC-04 LS-187, LS-322; decision 2026-10-05, BX12-25
+// subset: cint-core-1 (error sets, `try`, `defer`, `errdefer`)
+// entry: run; args: none
+// spec outcome: compile error C4031 at 19:9, an `errdefer` inside a deferred statement, which no error can leave
+
+error ParseError { empty, bad_digit, too_large }
+
+ParseError!I64 digit(U8 c) {
+    if (c < '0' || c > '9') {
+        return .bad_digit;
+    }
+    return (c - '0') as I64;
+}
+
+export ParseError!I64 run() {
+    I64 n = 0;
+    defer {
+        errdefer n = 2;
+    }
+    n = try digit('5');
+    return n;
+}

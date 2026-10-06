@@ -1,0 +1,66 @@
+module public_records
+sites public_records.ci 1:14:12:fuel.charge 2:15:6:index.checked.struct 3:15:16:add.checked.i32 4:16:13:index.checked.struct 5:16:23:as.checked.i32.i64 6:19:15:fuel.charge 7:20:31:add.checked.i64 8:23:15:fuel.charge 9:25:22:div.checked.i64 10:28:12:fuel.charge 11:31:20:as.checked.u8.i64 12:31:38:as.checked.u8.i64 13:31:28:add.checked.i64 14:31:59:call.enter 15:31:46:add.checked.i64
+struct Packet(marker: U8, value: I32, flag: Bool, bits: Bool[2], nested: record_lib.Flag)
+struct Simple(value: I64, flag: Bool)
+export func @public_records.touch(%a: Packet[_]) -> I64 {
+  fuel.charge 1                                  #1 @public_records.ci:14:12
+  %t0 = const I64 0
+  index.checked.struct %a, %t0                   #2 @public_records.ci:15:6
+  %t1 = element.load %a, %t0, value
+  %t2 = const I32 1
+  %t3 = add.checked.i32 %t1, %t2                 #3 @public_records.ci:15:16
+  element.store %a, %t0, value, %t3
+  %t4 = const I64 0
+  index.checked.struct %a, %t4                   #4 @public_records.ci:16:13
+  %t5 = element.load %a, %t4, value
+  %t6 = as.checked.i32.i64 %t5                   #5 @public_records.ci:16:23
+  return %t6
+}
+export func @public_records.copied(%input: Simple) -> Simple {
+  fuel.charge 1                                  #6 @public_records.ci:19:15
+  local $sc.0: Simple
+  %t0 = field.load %input, value
+  %t1 = const I64 1
+  %t2 = add.checked.i64 %t0, %t1                 #7 @public_records.ci:20:31
+  %t3 = field.load %input, flag
+  field.store $sc.0, value, %t2
+  field.store $sc.0, flag, %t3
+  return $sc.0
+}
+export func @public_records.both(%a: inout Simple, %b: Simple, %divisor: I64) -> Simple {
+  fuel.charge 1                                  #8 @public_records.ci:23:15
+  %t0 = const I64 42
+  field.store %a, value, %t0
+  local $sc.0: Simple
+  %t1 = const I64 10
+  %t2 = div.checked.i64 %t1, %divisor            #9 @public_records.ci:25:22
+  %t3 = field.load %b, flag
+  field.store $sc.0, value, %t2
+  field.store $sc.0, flag, %t3
+  return $sc.0
+}
+export func @public_records.aliases() -> I64 {
+  fuel.charge 1                                  #10 @public_records.ci:28:12
+  local $sc.0: record_lib.Flag
+  %t0 = const Bool true
+  %t1 = const U8 3
+  field.store $sc.0, enabled, %t0
+  field.store $sc.0, code, %t1
+  local $a.1: record_lib.Flag
+  struct.copy $a.1, $sc.0
+  local $sc.2: record_lib.Flag
+  %t2 = const Bool false
+  %t3 = const U8 4
+  field.store $sc.2, enabled, %t2
+  field.store $sc.2, code, %t3
+  local $b.3: record_lib.Flag
+  struct.copy $b.3, $sc.2
+  %t4 = field.load $a.1, code
+  %t5 = as.checked.u8.i64 %t4                    #11 @public_records.ci:31:20
+  %t6 = field.load $b.3, code
+  %t7 = as.checked.u8.i64 %t6                    #12 @public_records.ci:31:38
+  %t8 = add.checked.i64 %t5, %t7                 #13 @public_records.ci:31:28
+  %t9 = call @record_mid.observed()              #14 @public_records.ci:31:59
+  %t10 = add.checked.i64 %t8, %t9                #15 @public_records.ci:31:46
+  return %t10
+}

@@ -1,0 +1,11 @@
+// case: view/index_expression_overflow
+// clause: SPEC-01 IM-92, IM-113, IM-186; SPEC-04 LS-64 (the index expression is evaluated, with its faults, before the subscript check)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 10:16 (the `+`), operation add.checked.i64, operands I64 9223372036854775807 and I64 1, exact 9223372036854775808; no E_BOUNDS
+
+export I64 run() {
+    I64[4] a;
+    I64 i = 9223372036854775807;
+    return a[i + 1];
+}

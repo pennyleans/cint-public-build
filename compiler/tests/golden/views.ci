@@ -1,0 +1,57 @@
+// compiler/tests/golden/views.ci: rank-1 view parameters of scalar elements, `in` and
+// `inout`, with a literal extent, `_`, and size parameters, and string literals passed to
+// an `in U8` view (SPEC-04 LS-117, LS-119; SPEC-03 5.2; BOOT-02), compared with cint_ref
+// by the golden suite (slice 2 task 2.13 part (ii)).
+
+I64 total[n](in I64[n] xs) {
+    I64 s = 0;
+    for i in 0..n {
+        s = s + xs[i];
+    }
+    return s;
+}
+
+void ramp[n](inout I64[n] xs, I64 v) {
+    for i in 0..n {
+        xs[i] = v + i;
+    }
+}
+
+I64 pick(in I64[_] xs, I64 i) {
+    return xs[i];
+}
+
+void bump(inout U8[3] b, I64 i) {
+    b[i] +%= 200;
+}
+
+I64 mac[n](in I64[n] a, in I64[n] b) {
+    I64 s = 0;
+    for i in 0..n {
+        s = s + a[i] * b[i];
+    }
+    return s;
+}
+
+I64 weigh[n](in U8[n] s) {
+    I64 t = 0;
+    for i in 0..n {
+        t = t + (i + 1) * (s[i] as I64);
+    }
+    return t;
+}
+
+I64 relay[n](in I64[n] xs, I64 i) {
+    return pick(xs, i) + total(xs);
+}
+
+export I64 views(I64 v, I64 i) {
+    I64[4] a;
+    I64[4] c;
+    ramp(a, v);
+    ramp(c, 1);
+    U8[3] b;
+    bump(b, 1);
+    bump(b, 1);
+    return total(a) + mac(a, c) + relay(a, i) + (b[1] as I64) + weigh("a\tb{{" "\x7F") + weigh("");
+}

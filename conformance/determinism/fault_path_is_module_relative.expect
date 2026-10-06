@@ -1,0 +1,16 @@
+case determinism/fault_path_is_module_relative
+clause SPEC-01 IM-106 (position path is module-relative); SPEC-09 CONF-05
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_DIV_ZERO
+fault.operation div.checked.i64
+fault.operand I64 1
+fault.operand I64 0
+fault.exact none
+fault.limit none
+fault.position determinism/fault_path_is_module_relative.ci:9:14
+fault.revision self
+fault.address none
+fault.stack-depth 0

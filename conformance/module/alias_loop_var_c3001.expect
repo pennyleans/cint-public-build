@@ -1,0 +1,7 @@
+case module/alias_loop_var_c3001
+clause SPEC-04 LS-228 (a loop variable may not take a visible alias: C3001); SPEC-09 CINTC-16
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C3001
+diagnostic.position module/alias_loop_var_c3001.ci:11:9

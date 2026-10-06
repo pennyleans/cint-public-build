@@ -1,0 +1,8 @@
+case module/imported_view_calls
+clause SPEC-04 LS-114, LS-117, LS-119, LS-121 (views and size parameters across an import); SPEC-09 CINTC-16 (parameter rows); decision 27 item 4 (imported views)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 34
+fuel-consumed 21

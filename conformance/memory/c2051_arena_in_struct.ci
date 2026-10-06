@@ -1,0 +1,11 @@
+// case: memory/c2051_arena_in_struct
+// clause: SPEC-03 M-21; SPEC-04 LS-106; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arena, struct)
+// entry: run; args: none
+// spec outcome: compile error C2051 at 7:17, the field type `Arena(I64)`: an arena value is a local or a parameter only, as a view is
+
+struct Holder { Arena(I64) a; I64 n; }
+
+export I64 run() {
+    return 0;
+}

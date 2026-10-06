@@ -1,0 +1,6 @@
+case boot/refuse_attribute
+clause SPEC-09 BOOT-01 (attribute), SEED-06; SPEC-04 LS-241
+source compile-error
+outcome compile-error
+diagnostic.code C9100
+diagnostic.position boot/refuse_attribute.ci:8:1

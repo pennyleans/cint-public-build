@@ -1,0 +1,10 @@
+// case: diag/c2101_neg_paren_as
+// clause: SPEC-01 IM-25, IM-26; SPEC-04 LS-28, LS-151 (decision 2026-10-03, slice 2 patch D-21 option 1)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C2101 at 8:12: `-(128)` is a negation, not a negative literal, directly followed by a conversion
+
+export I64 run() {
+    I8 x = -(128) as I8;
+    return x as I64;
+}

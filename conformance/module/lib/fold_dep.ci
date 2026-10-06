@@ -1,0 +1,8 @@
+// Helper module of module/fold_after_dependency_c3009 (G-C1 fixture, not a case): it
+// imports module.lib.plain_math, which the root names again with other case.
+
+import module.lib.plain_math;
+
+export I64 scale() {
+    return plain_math.SCALE;
+}

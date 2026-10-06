@@ -1,0 +1,12 @@
+// case: module/imported_struct_returned
+// clause: SPEC-04 6.2 (a function may return a struct), across an import; SPEC-09 CINTC-16; decision 27 item 4 (imported structs)
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: value I64 11 (make(5, 6), then norm1)
+
+import module.lib.shapes_make;
+
+export I64 run() {
+    shapes_make.Pt p = shapes_make.make(5, 6);
+    return shapes_make.norm1(p);
+}

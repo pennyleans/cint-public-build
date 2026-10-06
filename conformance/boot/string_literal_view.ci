@@ -1,0 +1,21 @@
+// case: boot/string_literal_view
+// clause: SPEC-09 BOOT-01 (STRING, escape), BOOT-02; SPEC-04 LS-40, LS-42, LS-44, LS-45
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I64 8098090 (weighted byte sum 8098 of the 14 bytes, then 90 for `Z`)
+
+I64 weigh[n](in U8[n] s) {
+    I64 t = 0;
+    for i in 0..n {
+        t = t + (i + 1) * (s[i] as I64);
+    }
+    return t;
+}
+
+I64 first(in U8[_] s) {
+    return s[0] as I64;
+}
+
+export I64 run() {
+    return weigh("a\\\"\'\n\r\t\0\x41\x7F{{}}" "bc") * 1000 + first("Z");
+}

@@ -1,0 +1,7 @@
+case control/for_range_inclusive
+clause SPEC-04 8.4
+source reference
+outcome value
+stdout-bytes 0
+return I64 55
+fuel-consumed 11

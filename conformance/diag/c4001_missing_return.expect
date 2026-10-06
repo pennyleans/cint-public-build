@@ -1,0 +1,6 @@
+case diag/c4001_missing_return
+clause SPEC-04 6.1; SPEC-04 17.1, 17.2
+source compile-error
+outcome compile-error
+diagnostic.code C4001
+diagnostic.position diag/c4001_missing_return.ci:7:12

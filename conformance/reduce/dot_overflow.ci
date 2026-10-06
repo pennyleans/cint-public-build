@@ -1,0 +1,11 @@
+// case: reduce/dot_overflow
+// clause: SPEC-01 IM-87 (one final range check; the twin of reduce/loop_dot_product_overflow)
+// subset: cint-core-1 (built-in dot)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 10:12 (callee `dot`), operation dot.checked.i64.i64, operand I64 1 (n), exact 9223372037000250000, limit I64 9223372036854775807; stack depth 0; fuel 2. Box 09 ruling R6
+
+export I64 run() {
+    I64[1] a = [3037000500];
+    I64[1] b = [3037000500];
+    return dot(I64, a, b);
+}

@@ -1,0 +1,7 @@
+case module/import_cycle_c3003
+clause SPEC-04 LS-230 (no import cycles: C3003); SPEC-09 CINTC-05
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C3003
+diagnostic.position module/lib/cycle_b.ci:4:8

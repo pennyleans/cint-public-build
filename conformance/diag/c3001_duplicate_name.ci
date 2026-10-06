@@ -1,0 +1,11 @@
+// case: diag/c3001_duplicate_name
+// clause: SPEC-04 5.3, 11; SPEC-04 17.1, 17.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C3001 at 9:9: x is already declared in this scope (position: SPEC-04 LS-313, decision 2026-10-03, slice 2 patch D-11)
+
+export I64 run() {
+    I64 x = 1;
+    I64 x = 2;
+    return x;
+}

@@ -1,0 +1,8 @@
+case cleanup/defer_runs_at_block_exit
+clause SPEC-04 LS-185
+format 2
+source reference
+outcome value
+stdout-bytes 6
+stdout-sha256 b78a1987bcbdc0903ba6ba29ee3e1f4e7cc1ca868a60889beb141e26e06cb005
+fuel-consumed 1

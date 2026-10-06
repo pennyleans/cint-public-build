@@ -1,0 +1,10 @@
+// case: arith/literal_i8_minus128
+// clause: SPEC-01 3.2 (fixture 55); SPEC-04 3.5 rule 4
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: value I8 -128 (a negative literal, not the negation of I8 128)
+
+export I8 run() {
+    I8 a = -128;
+    return a;
+}

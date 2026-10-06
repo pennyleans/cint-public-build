@@ -1,0 +1,12 @@
+// case: cleanup/c4031_errdefer_without_error_union
+// clause: SPEC-04 LS-185, LS-322; decision 2026-10-05, BX12-25
+// subset: cint-core-1 (`defer`, `errdefer`)
+// entry: run; args: none
+// spec outcome: compile error C4031 at 10:5, an `errdefer` in a function whose result is not an error union; the `defer` before it is valid
+
+export I64 run() {
+    I64 n = 0;
+    defer n = 2;
+    errdefer { n = 1; }
+    return n;
+}

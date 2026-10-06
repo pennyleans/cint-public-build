@@ -1,0 +1,10 @@
+// case: diag/c1010_reserved_type_name
+// clause: SPEC-04 3.4; SPEC-04 17.1, 17.2
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C1010 at 8:9: `Q32` matches [IUQT][0-9]+ and is reserved (position: first character of the offending construct, SPEC-04 17.1; see ref/OPEN.md O-13)
+
+export I64 run() {
+    I64 Q32 = 1;
+    return Q32;
+}

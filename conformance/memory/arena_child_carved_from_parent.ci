@@ -1,0 +1,22 @@
+// case: memory/arena_child_carved_from_parent
+// clause: SPEC-03 M-14, M-20; decision 2026-10-05, BX12-05, BX12-14; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arena, child arena, handles)
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 20:31 (the member name `alloc`), operation arena.alloc, operands I64 3, I64 6, I64 8 (requested, used, capacity), no exact, no limit; stack depth 0; fuel 1. The child's 3 elements are charged to `scratch` between `a` and `b` (used 2 + 3 + 1); the child's own `reset` does not return them
+
+Arena(I64, 8) scratch;
+
+export I64 run() {
+    Handle(I64[]) a = scratch.alloc(2);
+    scratch[a][1] = 5;
+    Arena(I64) part = scratch.child(3);
+    Handle(I64[]) b = scratch.alloc(1);
+    scratch[b][0] = 7;
+    Handle(I64[]) x = part.alloc(3);
+    part[x][2] = 9;
+    part.reset();
+    Handle(I64[]) y = part.alloc(1);
+    I64 r = scratch[a][1] * 100 + scratch[b][0] * 10 + part[y][0];
+    Handle(I64[]) c = scratch.alloc(3);
+    return r;
+}

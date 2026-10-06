@@ -1,0 +1,7 @@
+case boot/string_literal_view
+clause SPEC-09 BOOT-01 (STRING, escape), BOOT-02; SPEC-04 LS-40, LS-42, LS-44, LS-45
+source reference
+outcome value
+stdout-bytes 0
+return I64 8098090
+fuel-consumed 17

@@ -1,0 +1,854 @@
+// compiler/tests/front.ci: test entries for the front end of cintc (slice 2 task 2.10a),
+// called by compiler/tests/front_host.c through their cint-abi-1 wrappers, because the
+// tables are views (the harness passes scalars only).
+//
+// front_parse scans and parses one module and writes a canonical text of its syntax tree
+// into `out` (a measure pass, then an emit pass when it fits, CINTC-04), which
+// compiler/tests/run.py compares with the same text made from `cint_ref`'s tree. The text
+// is an s-expression per node: `(kind attributes children)`, with `-` for an absent child,
+// `[ ... ]` around a list, positions as `@line:col` (`^line:col` for an expression's
+// start), and string bytes in hexadecimal after decoding.
+//
+// stats: [0] 1 when check_text added a diagnostic, 2 when the scanner did, 3 when the
+// parser did, 4 when the parse succeeded; [1] tokens of the module; [2] tokens with holes;
+// [3] nodes; [4] most frames on the parse stack at once; [5] bytes of the tree text;
+// [6] parser steps.
+
+import emit;
+import limits;
+import parse;
+import scan;
+
+// ---------------------------------------------------------------- text helpers
+
+void pos[t, o](inout emit.Writer[_] w, inout U8[o] dst, in scan.Token[t] toks, I64 tk) {
+    emit.w_byte(w, dst, '@');
+    emit.w_i64(w, dst, toks[tk].line as I64);
+    emit.w_byte(w, dst, ':');
+    emit.w_i64(w, dst, toks[tk].col as I64);
+}
+
+void start_pos[t, o](inout emit.Writer[_] w, inout U8[o] dst, in scan.Token[t] toks, I64 tk) {
+    emit.w_byte(w, dst, '^');
+    emit.w_i64(w, dst, toks[tk].line as I64);
+    emit.w_byte(w, dst, ':');
+    emit.w_i64(w, dst, toks[tk].col as I64);
+}
+
+void tok_text[n, t, o](inout emit.Writer[_] w, inout U8[o] dst, in U8[n] src, in scan.Token[t] toks, I64 tk) {
+    emit.w_bytes(w, dst, src, toks[tk].start as I64, toks[tk].len as I64);
+}
+
+void hex_byte[o](inout emit.Writer[_] w, inout U8[o] dst, I64 v) {
+    emit.w_hex(w, dst, v as U64, 2);
+}
+
+// The bytes of the raw string text src[a..b), escapes and doubled braces decoded, in
+// hexadecimal (UTF-8 for a \u{...} escape).
+void raw_hex[n, o](inout emit.Writer[_] w, inout U8[o] dst, in U8[n] src, I64 a, I64 b) {
+    I64 k = a;
+    I64[2] esc;
+    while (k < b) {
+        I64 c = src[k] as I64;
+        if (c == 92) {
+            I64 v = scan.escape_at(src, k, b, false, esc);
+            k = esc[0];
+            if (v < 0x80) {
+                hex_byte(w, dst, v);
+            } else if (v < 0x800) {
+                hex_byte(w, dst, 0xC0 | (v >> 6));
+                hex_byte(w, dst, 0x80 | (v & 0x3F));
+            } else if (v < 0x10000) {
+                hex_byte(w, dst, 0xE0 | (v >> 12));
+                hex_byte(w, dst, 0x80 | ((v >> 6) & 0x3F));
+                hex_byte(w, dst, 0x80 | (v & 0x3F));
+            } else {
+                hex_byte(w, dst, 0xF0 | (v >> 18));
+                hex_byte(w, dst, 0x80 | ((v >> 12) & 0x3F));
+                hex_byte(w, dst, 0x80 | ((v >> 6) & 0x3F));
+                hex_byte(w, dst, 0x80 | (v & 0x3F));
+            }
+        } else if ((c == '{' || c == '}') && k + 1 < b && (src[k + 1] as I64) == c) {
+            hex_byte(w, dst, c);
+            k += 2;
+        } else {
+            hex_byte(w, dst, c);
+            k += 1;
+        }
+    }
+}
+
+// The decoded bytes of `ntoken` adjacent string literal tokens from tk, in hexadecimal.
+void string_hex[n, t, o](inout emit.Writer[_] w, inout U8[o] dst, in U8[n] src, in scan.Token[t] toks, I64 tk,
+        I64 ntoken) {
+    emit.w_byte(w, dst, 'x');
+    for j in tk..tk + ntoken {
+        I64 s = toks[j].start as I64;
+        raw_hex(w, dst, src, s + 1, s + (toks[j].len as I64) - 1);
+    }
+}
+
+void op_text[o](inout emit.Writer[_] w, inout U8[o] dst, I32 op) {
+    switch (op) {
+        case scan.OP_ADD: emit.w_text(w, dst, "+");
+        case scan.OP_SUB: emit.w_text(w, dst, "-");
+        case scan.OP_MUL: emit.w_text(w, dst, "*");
+        case scan.OP_DIV: emit.w_text(w, dst, "/");
+        case scan.OP_REM: emit.w_text(w, dst, "%");
+        case scan.OP_LT: emit.w_text(w, dst, "<");
+        case scan.OP_GT: emit.w_text(w, dst, ">");
+        case scan.OP_BAND: emit.w_text(w, dst, "&");
+        case scan.OP_BOR: emit.w_text(w, dst, "|");
+        case scan.OP_BXOR: emit.w_text(w, dst, "^");
+        case scan.OP_TILDE: emit.w_text(w, dst, "~");
+        case scan.OP_BANG: emit.w_text(w, dst, "!");
+        case scan.OP_ASSIGN: emit.w_text(w, dst, "=");
+        case scan.OP_SHL: emit.w_text(w, dst, "<<");
+        case scan.OP_SHR: emit.w_text(w, dst, ">>");
+        case scan.OP_ADD_WRAP: emit.w_text(w, dst, "+%");
+        case scan.OP_SUB_WRAP: emit.w_text(w, dst, "-%");
+        case scan.OP_MUL_WRAP: emit.w_text(w, dst, "*%");
+        case scan.OP_ADD_SAT: emit.w_text(w, dst, "+|");
+        case scan.OP_SUB_SAT: emit.w_text(w, dst, "-|");
+        case scan.OP_MUL_SAT: emit.w_text(w, dst, "*|");
+        case scan.OP_EQ: emit.w_text(w, dst, "==");
+        case scan.OP_NE: emit.w_text(w, dst, "!=");
+        case scan.OP_LE: emit.w_text(w, dst, "<=");
+        case scan.OP_GE: emit.w_text(w, dst, ">=");
+        case scan.OP_AND: emit.w_text(w, dst, "&&");
+        case scan.OP_OR: emit.w_text(w, dst, "||");
+        case scan.OP_INC: emit.w_text(w, dst, "++");
+        case scan.OP_DEC: emit.w_text(w, dst, "--");
+        case scan.OP_ADD_ASSIGN: emit.w_text(w, dst, "+=");
+        case scan.OP_SUB_ASSIGN: emit.w_text(w, dst, "-=");
+        case scan.OP_MUL_ASSIGN: emit.w_text(w, dst, "*=");
+        case scan.OP_DIV_ASSIGN: emit.w_text(w, dst, "/=");
+        case scan.OP_REM_ASSIGN: emit.w_text(w, dst, "%=");
+        case scan.OP_BAND_ASSIGN: emit.w_text(w, dst, "&=");
+        case scan.OP_BOR_ASSIGN: emit.w_text(w, dst, "|=");
+        case scan.OP_BXOR_ASSIGN: emit.w_text(w, dst, "^=");
+        case scan.OP_RANGE: emit.w_text(w, dst, "..");
+        case scan.OP_SHL_ASSIGN: emit.w_text(w, dst, "<<=");
+        case scan.OP_SHR_ASSIGN: emit.w_text(w, dst, ">>=");
+        case scan.OP_ADD_WRAP_ASSIGN: emit.w_text(w, dst, "+%=");
+        case scan.OP_SUB_WRAP_ASSIGN: emit.w_text(w, dst, "-%=");
+        case scan.OP_MUL_WRAP_ASSIGN: emit.w_text(w, dst, "*%=");
+        case scan.OP_ADD_SAT_ASSIGN: emit.w_text(w, dst, "+|=");
+        case scan.OP_SUB_SAT_ASSIGN: emit.w_text(w, dst, "-|=");
+        case scan.OP_MUL_SAT_ASSIGN: emit.w_text(w, dst, "*|=");
+        case scan.OP_RANGE_INCL: emit.w_text(w, dst, "..=");
+        case scan.OP_SHL_WRAP: emit.w_text(w, dst, "<<%");
+        case scan.OP_SHL_WRAP_ASSIGN: emit.w_text(w, dst, "<<%=");
+        case scan.OP_AS_WRAP: emit.w_text(w, dst, "as%");
+        case scan.OP_AS_SAT: emit.w_text(w, dst, "as|");
+        case scan.OP_AS_TRY: emit.w_text(w, dst, "as?");
+        case parse.CONV_AS: emit.w_text(w, dst, "as");
+        case parse.UNARY_TRY: emit.w_text(w, dst, "try");
+        default: emit.w_text(w, dst, "?");
+    }
+}
+
+// An expression's position, start, and parenthesis flag.
+void expr_pos[t, o](inout emit.Writer[_] w, inout U8[o] dst, in scan.Token[t] toks, in parse.Node[_] nodes,
+        I64 x) {
+    pos(w, dst, toks, nodes[x].tok as I64);
+    start_pos(w, dst, toks, nodes[x].start as I64);
+    if ((nodes[x].flags & parse.F_PAREN) != 0) {
+        emit.w_text(w, dst, " p");
+    }
+}
+
+// The name of the literal kind of token tk.
+void lit_kind[t, o](inout emit.Writer[_] w, inout U8[o] dst, in scan.Token[t] toks, I64 tk) {
+    if (toks[tk].kind == scan.TK_CHAR) {
+        emit.w_text(w, dst, "char");
+    } else if (toks[tk].kind == scan.TK_FRAC) {
+        emit.w_text(w, dst, "frac");
+    } else {
+        emit.w_text(w, dst, "int");
+    }
+}
+
+// Writes `(kind attributes` of node x; its children follow, then `)`.
+void header[n, t, o](inout emit.Writer[_] w, inout U8[o] dst, in U8[n] src, in scan.Token[t] toks,
+        in parse.Node[_] nodes, I64 x) {
+    I32 kind = nodes[x].kind;
+    I64 tk = nodes[x].tok as I64;
+    emit.w_byte(w, dst, '(');
+    switch (kind) {
+        case parse.N_MODULE: emit.w_text(w, dst, "module");
+        case parse.N_PROFILE:
+            emit.w_text(w, dst, "profile ");
+            I64 s = nodes[x].a as I64;
+            string_hex(w, dst, src, toks, nodes[s].tok as I64, nodes[s].op as I64);
+        case parse.N_IMPORT:
+            emit.w_text(w, dst, "import ");
+            pos(w, dst, toks, tk);
+            emit.w_text(w, dst, " path:");
+            I64 j = nodes[x].c as I64;
+            while (j <= (nodes[x].d as I64)) {
+                tok_text(w, dst, src, toks, j);
+                if (j < (nodes[x].d as I64)) {
+                    emit.w_byte(w, dst, '.');
+                }
+                j += 2;
+            }
+            pos(w, dst, toks, nodes[x].c as I64);
+            if (nodes[x].b >= 0) {
+                emit.w_text(w, dst, " alias:");
+                tok_text(w, dst, src, toks, nodes[x].b as I64);
+                pos(w, dst, toks, nodes[x].b as I64);
+            }
+        case parse.N_FUNC, parse.N_KERNEL:
+            if (kind == parse.N_FUNC) {
+                emit.w_text(w, dst, "func ");
+            } else {
+                emit.w_text(w, dst, "kernel ");
+            }
+            tok_text(w, dst, src, toks, tk);
+            pos(w, dst, toks, tk);
+            if ((nodes[x].flags & parse.F_EXPORT) != 0) {
+                emit.w_text(w, dst, " export");
+            }
+            if (nodes[x].op == scan.KW_IN) {
+                emit.w_text(w, dst, " view:in");
+            } else if (nodes[x].op == scan.KW_INOUT) {
+                emit.w_text(w, dst, " view:inout");
+            }
+        case parse.N_PARAM:
+            emit.w_text(w, dst, "param ");
+            if (nodes[x].op == scan.KW_INOUT) {
+                emit.w_text(w, dst, "inout ");
+            } else if (nodes[x].op == scan.KW_OUT) {
+                emit.w_text(w, dst, "out ");
+            } else {
+                emit.w_text(w, dst, "in ");
+            }
+            tok_text(w, dst, src, toks, tk);
+            pos(w, dst, toks, tk);
+        case parse.N_SIZE, parse.N_ENUMERATOR, parse.N_DIRECTIVE, parse.N_OVER:
+            switch (kind) {
+                case parse.N_SIZE: emit.w_text(w, dst, "size ");
+                case parse.N_ENUMERATOR: emit.w_text(w, dst, "enumerator ");
+                case parse.N_DIRECTIVE: emit.w_text(w, dst, "directive ");
+                default: emit.w_text(w, dst, "over ");
+            }
+            tok_text(w, dst, src, toks, tk);
+            pos(w, dst, toks, tk);
+        case parse.N_STRUCT, parse.N_ENUM, parse.N_ERROR_DECL, parse.N_TYPE_DECL, parse.N_SCHEDULE:
+            switch (kind) {
+                case parse.N_STRUCT: emit.w_text(w, dst, "struct ");
+                case parse.N_ENUM: emit.w_text(w, dst, "enum ");
+                case parse.N_ERROR_DECL: emit.w_text(w, dst, "error ");
+                case parse.N_TYPE_DECL: emit.w_text(w, dst, "typedecl ");
+                default: emit.w_text(w, dst, "schedule ");
+            }
+            tok_text(w, dst, src, toks, tk);
+            pos(w, dst, toks, tk);
+            if ((nodes[x].flags & parse.F_EXPORT) != 0) {
+                emit.w_text(w, dst, " export");
+            }
+            if ((nodes[x].flags & parse.F_DISTINCT) != 0) {
+                emit.w_text(w, dst, " distinct");
+            }
+            if (nodes[x].c >= 0) {
+                emit.w_byte(w, dst, ' ');
+                tok_text(w, dst, src, toks, nodes[x].c as I64);
+            }
+            if (kind == parse.N_ERROR_DECL && nodes[x].op == 1) {
+                emit.w_text(w, dst, " =");
+            }
+        case parse.N_FIELD_DECL:
+            emit.w_text(w, dst, "field ");
+            tok_text(w, dst, src, toks, tk);
+            pos(w, dst, toks, tk);
+        case parse.N_TEST:
+            emit.w_text(w, dst, "test ");
+            I64 s = nodes[x].a as I64;
+            string_hex(w, dst, src, toks, nodes[s].tok as I64, nodes[s].op as I64);
+            pos(w, dst, toks, tk);
+            if (nodes[x].c >= 0) {
+                emit.w_text(w, dst, " fault:");
+                tok_text(w, dst, src, toks, nodes[x].c as I64);
+            }
+            if (nodes[x].d >= 0) {
+                emit.w_text(w, dst, " at:");
+                I64 lt = nodes[x].d as I64;
+                for k in toks[lt].start as I64..(toks[lt].start as I64) + (toks[lt].len as I64) {
+                    if (src[k] != '_') {
+                        emit.w_byte(w, dst, src[k]);
+                    }
+                }
+            }
+        case parse.N_STATIC_ASSERT:
+            emit.w_text(w, dst, "static_assert ");
+            pos(w, dst, toks, tk);
+        case parse.N_ATTR:
+            emit.w_text(w, dst, "attr ");
+            tok_text(w, dst, src, toks, tk);
+            pos(w, dst, toks, tk);
+        case parse.N_VAR:
+            emit.w_text(w, dst, "var ");
+            tok_text(w, dst, src, toks, tk);
+            pos(w, dst, toks, tk);
+            emit.w_byte(w, dst, ' ');
+            pos(w, dst, toks, nodes[x].start as I64);
+            if ((nodes[x].flags & parse.F_CONST) != 0) {
+                emit.w_text(w, dst, " const");
+            }
+            if ((nodes[x].flags & parse.F_EXPORT) != 0) {
+                emit.w_text(w, dst, " export");
+            }
+            if (nodes[x].op == scan.KW_IN) {
+                emit.w_text(w, dst, " view:in");
+            } else if (nodes[x].op == scan.KW_INOUT) {
+                emit.w_text(w, dst, " view:inout");
+            } else if (nodes[x].op == scan.KW_VAR) {
+                emit.w_text(w, dst, " var");
+            }
+        case parse.N_DESTRUCT:
+            emit.w_text(w, dst, "destruct ");
+            pos(w, dst, toks, tk);
+        case parse.N_BIND:
+            emit.w_text(w, dst, "bind ");
+            tok_text(w, dst, src, toks, tk);
+            pos(w, dst, toks, tk);
+        case parse.N_BLOCK:
+            emit.w_text(w, dst, "block ");
+            pos(w, dst, toks, tk);
+        case parse.N_ASSIGN, parse.N_INCDEC:
+            if (kind == parse.N_ASSIGN) {
+                emit.w_text(w, dst, "assign ");
+            } else {
+                emit.w_text(w, dst, "incdec ");
+            }
+            op_text(w, dst, nodes[x].op);
+            pos(w, dst, toks, tk);
+        case parse.N_EXPR_STMT:
+            emit.w_text(w, dst, "exprstmt ");
+            pos(w, dst, toks, tk);
+        case parse.N_DISCARD:
+            emit.w_text(w, dst, "discard ");
+            pos(w, dst, toks, tk);
+        case parse.N_IF: emit.w_text(w, dst, "if");
+        case parse.N_ARM:
+            emit.w_text(w, dst, "arm ");
+            pos(w, dst, toks, tk);
+        case parse.N_WHILE, parse.N_DO, parse.N_FOR, parse.N_FOR_RANGE:
+            switch (kind) {
+                case parse.N_WHILE: emit.w_text(w, dst, "while ");
+                case parse.N_DO: emit.w_text(w, dst, "do ");
+                case parse.N_FOR: emit.w_text(w, dst, "for ");
+                default: emit.w_text(w, dst, "forr ");
+            }
+            pos(w, dst, toks, tk);
+            if (nodes[x].start != nodes[x].tok) {
+                emit.w_text(w, dst, " label:");
+                tok_text(w, dst, src, toks, nodes[x].start as I64);
+            }
+            if (kind == parse.N_FOR_RANGE) {
+                if (nodes[x].op == scan.OP_RANGE_INCL) {
+                    emit.w_text(w, dst, " ..=");
+                } else if (nodes[x].op == scan.OP_RANGE) {
+                    emit.w_text(w, dst, " ..");
+                } else {
+                    emit.w_text(w, dst, " over");
+                }
+            }
+        case parse.N_SWITCH:
+            emit.w_text(w, dst, "switch ");
+            pos(w, dst, toks, tk);
+        case parse.N_CASE:
+            if ((nodes[x].flags & parse.F_DEFAULT) != 0) {
+                emit.w_text(w, dst, "default ");
+            } else {
+                emit.w_text(w, dst, "case ");
+            }
+            pos(w, dst, toks, tk);
+        case parse.N_BREAK, parse.N_CONTINUE:
+            if (kind == parse.N_BREAK) {
+                emit.w_text(w, dst, "break ");
+            } else {
+                emit.w_text(w, dst, "continue ");
+            }
+            pos(w, dst, toks, tk);
+            if (nodes[x].c >= 0) {
+                emit.w_text(w, dst, " label:");
+                tok_text(w, dst, src, toks, nodes[x].c as I64);
+            }
+        case parse.N_RETURN:
+            emit.w_text(w, dst, "return ");
+            pos(w, dst, toks, tk);
+        case parse.N_FALLTHROUGH:
+            emit.w_text(w, dst, "fallthrough ");
+            pos(w, dst, toks, tk);
+        case parse.N_DEFER:
+            if (nodes[x].op == 1) {
+                emit.w_text(w, dst, "errdefer ");
+            } else {
+                emit.w_text(w, dst, "defer ");
+            }
+            pos(w, dst, toks, tk);
+        case parse.N_ASSERT:
+            emit.w_text(w, dst, "assert ");
+            pos(w, dst, toks, tk);
+        case parse.N_MESSAGE: emit.w_text(w, dst, "message");
+        case parse.N_REDUCE:
+            emit.w_text(w, dst, "reduce ");
+            pos(w, dst, toks, tk);
+            emit.w_byte(w, dst, ' ');
+            tok_text(w, dst, src, toks, nodes[x].c as I64);
+            pos(w, dst, toks, nodes[x].c as I64);
+        case parse.N_IN_PLACE:
+            emit.w_text(w, dst, "in_place ");
+            pos(w, dst, toks, tk);
+        case parse.N_PRINT:
+            emit.w_text(w, dst, "print ");
+            pos(w, dst, toks, tk);
+        case parse.N_TEXT:
+            emit.w_text(w, dst, "text x");
+            raw_hex(w, dst, src, nodes[x].c as I64, nodes[x].d as I64);
+        case parse.N_HOLE:
+            emit.w_text(w, dst, "hole @");
+            emit.w_i64(w, dst, nodes[x].e as I64);
+            emit.w_byte(w, dst, ':');
+            emit.w_i64(w, dst, nodes[x].f as I64);
+            if (nodes[x].b >= 0) {
+                I64 nm = nodes[x].b as I64;
+                emit.w_text(w, dst, " name:x");
+                for k in nodes[nm].c as I64..nodes[nm].d as I64 {
+                    hex_byte(w, dst, src[k] as I64);
+                }
+            }
+            I32 conv = nodes[x].op % 256;
+            if (conv == parse.HOLE_BITS) {
+                emit.w_text(w, dst, " conv:bits");
+            } else if (conv == parse.HOLE_RAW) {
+                emit.w_text(w, dst, " conv:raw");
+            } else if (conv == parse.HOLE_RATIO) {
+                emit.w_text(w, dst, " conv:ratio");
+            } else if (conv == parse.HOLE_LANES) {
+                emit.w_text(w, dst, " conv:lanes:");
+                emit.w_i64(w, dst, (nodes[x].op / 256) as I64);
+            }
+            if (nodes[x].c >= 0) {
+                emit.w_text(w, dst, " spec:x");
+                for k in nodes[x].c as I64..nodes[x].d as I64 {
+                    hex_byte(w, dst, src[k] as I64);
+                }
+            }
+        case parse.N_LIT:
+            emit.w_text(w, dst, "lit ");
+            lit_kind(w, dst, toks, tk);
+            expr_pos(w, dst, toks, nodes, x);
+        case parse.N_NEGLIT:
+            emit.w_text(w, dst, "neg ");
+            lit_kind(w, dst, toks, nodes[x].c as I64);
+            expr_pos(w, dst, toks, nodes, x);
+        case parse.N_BOOL:
+            if (nodes[x].op == 1) {
+                emit.w_text(w, dst, "bool true");
+            } else {
+                emit.w_text(w, dst, "bool false");
+            }
+            expr_pos(w, dst, toks, nodes, x);
+        case parse.N_STRING:
+            emit.w_text(w, dst, "str ");
+            string_hex(w, dst, src, toks, tk, nodes[x].op as I64);
+            expr_pos(w, dst, toks, nodes, x);
+        case parse.N_BYTES:
+            emit.w_text(w, dst, "bytes");
+            expr_pos(w, dst, toks, nodes, x);
+        case parse.N_NAME, parse.N_TYPENAME, parse.N_DOTNAME:
+            switch (kind) {
+                case parse.N_NAME: emit.w_text(w, dst, "name ");
+                case parse.N_TYPENAME: emit.w_text(w, dst, "typearg ");
+                default: emit.w_text(w, dst, "dotname ");
+            }
+            tok_text(w, dst, src, toks, tk);
+            expr_pos(w, dst, toks, nodes, x);
+        case parse.N_TYPEPROP:
+            emit.w_text(w, dst, "typeprop ");
+            tok_text(w, dst, src, toks, tk);
+            emit.w_byte(w, dst, '.');
+            tok_text(w, dst, src, toks, nodes[x].c as I64);
+            expr_pos(w, dst, toks, nodes, x);
+        case parse.N_UNARY, parse.N_BINARY, parse.N_COMPARE, parse.N_LOGICAL, parse.N_CONVERT:
+            switch (kind) {
+                case parse.N_UNARY: emit.w_text(w, dst, "unary ");
+                case parse.N_BINARY: emit.w_text(w, dst, "bin ");
+                case parse.N_COMPARE: emit.w_text(w, dst, "cmp ");
+                case parse.N_LOGICAL: emit.w_text(w, dst, "logic ");
+                default: emit.w_text(w, dst, "conv ");
+            }
+            op_text(w, dst, nodes[x].op);
+            expr_pos(w, dst, toks, nodes, x);
+            if (kind == parse.N_CONVERT && nodes[x].c >= 0) {
+                emit.w_text(w, dst, " round:");
+                tok_text(w, dst, src, toks, nodes[x].c as I64);
+            }
+        case parse.N_COND:
+            emit.w_text(w, dst, "cond ");
+            expr_pos(w, dst, toks, nodes, x);
+        case parse.N_CALL:
+            emit.w_text(w, dst, "call ");
+            I64 callee = nodes[x].a as I64;
+            if (nodes[callee].kind == parse.N_NAME && (nodes[callee].flags & parse.F_PAREN) == 0) {
+                tok_text(w, dst, src, toks, nodes[callee].tok as I64);
+            } else if (nodes[callee].kind == parse.N_FIELD && (nodes[callee].flags & parse.F_PAREN) == 0 &&
+                    nodes[nodes[callee].a as I64].kind == parse.N_NAME &&
+                    (nodes[nodes[callee].a as I64].flags & parse.F_PAREN) == 0) {
+                tok_text(w, dst, src, toks, nodes[callee].tok as I64);
+                emit.w_text(w, dst, " qual:");
+                tok_text(w, dst, src, toks, nodes[nodes[callee].a as I64].tok as I64);
+            } else {
+                emit.w_text(w, dst, "?");
+            }
+            expr_pos(w, dst, toks, nodes, x);
+        case parse.N_NAMEDARG:
+            emit.w_text(w, dst, "arg ");
+            tok_text(w, dst, src, toks, tk);
+            pos(w, dst, toks, tk);
+        case parse.N_INDEX:
+            emit.w_text(w, dst, "index");
+            expr_pos(w, dst, toks, nodes, x);
+        case parse.N_SLICE, parse.N_RANGE:
+            if (kind == parse.N_SLICE) {
+                emit.w_text(w, dst, "slice ");
+            } else {
+                emit.w_text(w, dst, "range ");
+            }
+            op_text(w, dst, nodes[x].op);
+            pos(w, dst, toks, tk);
+        case parse.N_FIELD:
+            emit.w_text(w, dst, "field ");
+            tok_text(w, dst, src, toks, tk);
+            expr_pos(w, dst, toks, nodes, x);
+        case parse.N_TUPLE:
+            emit.w_text(w, dst, "tuple");
+            expr_pos(w, dst, toks, nodes, x);
+        case parse.N_ARRAY:
+            emit.w_text(w, dst, "array");
+            expr_pos(w, dst, toks, nodes, x);
+        case parse.N_CATCH:
+            emit.w_text(w, dst, "catch");
+            expr_pos(w, dst, toks, nodes, x);
+            if (nodes[x].c >= 0) {
+                emit.w_text(w, dst, " name:");
+                tok_text(w, dst, src, toks, nodes[x].c as I64);
+            }
+        case parse.N_TYPE:
+            emit.w_text(w, dst, "type ");
+            tok_text(w, dst, src, toks, tk);
+            pos(w, dst, toks, tk);
+            if (nodes[x].op > 1) {
+                emit.w_text(w, dst, " mod:");
+                I64 j = nodes[x].start as I64;
+                while (j < tk) {
+                    tok_text(w, dst, src, toks, j);
+                    j += 1;
+                }
+            }
+        case parse.N_SHAPE: emit.w_text(w, dst, "shape");
+        case parse.N_WILD: emit.w_text(w, dst, "_");
+        case parse.N_TUPLE_TYPE:
+            emit.w_text(w, dst, "tupletype ");
+            pos(w, dst, toks, tk);
+        case parse.N_ERRUNION:
+            emit.w_text(w, dst, "errunion ");
+            pos(w, dst, toks, tk);
+        default:
+            emit.w_text(w, dst, "unknown");
+    }
+}
+
+// Child slot i of node x: a node (or -1 for an absent one) as 4 * (node + 1), a list head
+// as 4 * (head + 1) + 1, 2 when x has no slot i, or 3 for `_` (the shape `[]` or `[_]` of a
+// type; a shape of one extent is that extent).
+I64 child(in parse.Node[_] nodes, I64 x, I64 i) {
+    I32 kind = nodes[x].kind;
+    I64 one = 0;
+    I64 list = 1;
+    I64 v = -1;
+    I64 how = one;
+    I64 slots = 0;
+    switch (kind) {
+        case parse.N_MODULE: slots = 1; how = list; v = nodes[x].a as I64;
+        case parse.N_IMPORT: slots = 1; how = list; v = nodes[x].a as I64;
+        case parse.N_FUNC, parse.N_KERNEL:
+            slots = 7;
+            switch (i) {
+                case 0: v = nodes[x].a as I64;
+                case 1: how = list; v = nodes[x].d as I64;
+                case 2: how = list; v = nodes[x].b as I64;
+                case 3: how = list; v = nodes[x].a as I64; if (kind == parse.N_FUNC) { v = -1; }
+                case 4: how = list; v = nodes[x].e as I64; if (kind == parse.N_FUNC) { how = one; }
+                case 5: how = list; v = nodes[x].f as I64;
+                default: v = nodes[x].c as I64;
+            }
+            if (kind == parse.N_KERNEL && i == 0) {
+                v = -1;
+            }
+        case parse.N_PARAM: slots = 2; if (i == 0) { v = nodes[x].a as I64; } else { v = nodes[x].b as I64; }
+        case parse.N_STRUCT: slots = 2; how = list; if (i == 0) { v = nodes[x].a as I64; } else { v = nodes[x].f as I64; }
+        case parse.N_FIELD_DECL:
+            slots = 4;
+            switch (i) {
+                case 0: v = nodes[x].a as I64;
+                case 1: v = nodes[x].b as I64;
+                case 2: v = nodes[x].c as I64;
+                default: how = list; v = nodes[x].f as I64;
+            }
+        case parse.N_ENUM, parse.N_ERROR_DECL, parse.N_SCHEDULE, parse.N_MESSAGE, parse.N_PRINT, parse.N_BLOCK,
+                parse.N_SHAPE, parse.N_TUPLE_TYPE, parse.N_DESTRUCT, parse.N_TUPLE, parse.N_ARRAY:
+            slots = 1;
+            how = list;
+            v = nodes[x].a as I64;
+            if (kind == parse.N_DESTRUCT) {
+                slots = 2;
+                if (i == 1) {
+                    how = one;
+                    v = nodes[x].b as I64;
+                }
+            }
+        case parse.N_ENUMERATOR, parse.N_OVER, parse.N_TYPE_DECL, parse.N_EXPR_STMT, parse.N_DISCARD,
+                parse.N_RETURN, parse.N_DEFER, parse.N_IN_PLACE, parse.N_UNARY, parse.N_NAMEDARG,
+                parse.N_REDUCE, parse.N_BIND:
+            slots = 1;
+            v = nodes[x].a as I64;
+        case parse.N_DIRECTIVE, parse.N_ATTR: slots = 1; how = list; v = nodes[x].b as I64;
+        case parse.N_TEST: slots = 1; v = nodes[x].b as I64;
+        case parse.N_STATIC_ASSERT, parse.N_ASSIGN, parse.N_BINARY, parse.N_COMPARE, parse.N_LOGICAL,
+                parse.N_ARM, parse.N_RANGE, parse.N_ERRUNION, parse.N_ASSERT, parse.N_WHILE:
+            slots = 2;
+            if (i == 0) { v = nodes[x].a as I64; } else { v = nodes[x].b as I64; }
+        case parse.N_DO:
+            slots = 2;
+            if (i == 0) { v = nodes[x].b as I64; } else { v = nodes[x].a as I64; }
+        case parse.N_VAR:
+            slots = 3;
+            switch (i) {
+                case 0: v = nodes[x].a as I64;
+                case 1: v = nodes[x].b as I64;
+                default: how = list; v = nodes[x].f as I64;
+            }
+        case parse.N_INCDEC, parse.N_FIELD: slots = 1; v = nodes[x].a as I64;
+        case parse.N_IF:
+            slots = 2;
+            if (i == 0) { how = list; v = nodes[x].a as I64; } else { v = nodes[x].b as I64; }
+        case parse.N_FOR:
+            slots = 4;
+            switch (i) {
+                case 0: v = nodes[x].a as I64;
+                case 1: v = nodes[x].b as I64;
+                case 2: v = nodes[x].c as I64;
+                default: v = nodes[x].d as I64;
+            }
+        case parse.N_FOR_RANGE:
+            slots = 6;
+            switch (i) {
+                case 0: v = nodes[x].a as I64;
+                case 1: v = nodes[x].b as I64;
+                case 2: v = nodes[x].c as I64;
+                case 3: v = nodes[x].d as I64;
+                case 4: v = nodes[x].e as I64;
+                default: v = nodes[x].f as I64;
+            }
+        case parse.N_SWITCH:
+            slots = 2;
+            if (i == 0) { v = nodes[x].a as I64; } else { how = list; v = nodes[x].b as I64; }
+        case parse.N_CASE:
+            slots = 2;
+            how = list;
+            if (i == 0) { v = nodes[x].a as I64; } else { v = nodes[x].b as I64; }
+        case parse.N_HOLE: slots = 1; v = nodes[x].a as I64;
+        case parse.N_COND, parse.N_SLICE:
+            slots = 3;
+            switch (i) {
+                case 0: v = nodes[x].a as I64;
+                case 1: v = nodes[x].b as I64;
+                default: v = nodes[x].c as I64;
+            }
+        case parse.N_CONVERT: slots = 2; if (i == 0) { v = nodes[x].a as I64; } else { v = nodes[x].b as I64; }
+        case parse.N_CALL, parse.N_INDEX:
+            slots = 1;
+            how = list;
+            v = nodes[x].b as I64;
+            if (kind == parse.N_INDEX) {
+                slots = 2;
+                if (i == 0) {
+                    how = one;
+                    v = nodes[x].a as I64;
+                }
+            }
+        case parse.N_CATCH: slots = 2; if (i == 0) { v = nodes[x].a as I64; } else { v = nodes[x].b as I64; }
+        case parse.N_TYPE:
+            slots = 2;
+            if (nodes[x].c >= 0) {
+                // The capacity of `Arena(T, capacity)` or `Pool(T, capacity)` (box 12).
+                slots = 3;
+            }
+            if (i == 0) {
+                v = nodes[x].a as I64;
+                if (v >= 0) {
+                    I64 first = nodes[v].a as I64;
+                    if (first < 0 || (nodes[first].next < 0 && nodes[first].kind == parse.N_WILD)) {
+                        return 3;
+                    }
+                    if (nodes[first].next < 0) {
+                        v = first;
+                    }
+                }
+            } else if (i == 1) {
+                v = nodes[x].b as I64;
+            } else {
+                v = nodes[x].c as I64;
+            }
+        default: slots = 0;
+    }
+    if (i >= slots) {
+        return 2;
+    }
+    if (kind == parse.N_INDEX && i == 1) {
+        return 4 * (v + 1) + list;
+    }
+    return 4 * (v + 1) + how;
+}
+
+// The tree text of node `root`, depth first, with the frame stack st as the work list.
+void dump[n, t, s, o](inout emit.Writer[_] w, inout U8[o] dst, in U8[n] src, in scan.Token[t] toks,
+        in parse.Node[_] nodes, inout parse.Frame[s] st, I64 root) {
+    I64 sp = 0;
+    header(w, dst, src, toks, nodes, root);
+    st[0].state = 0;
+    st[0].node = root as I32;
+    st[0].a = 0;
+    sp = 1;
+    while (sp > 0) {
+        I64 f = sp - 1;
+        I64 x = st[f].node as I64;
+        if (st[f].state == 0) {
+            I64 c = child(nodes, x, st[f].a as I64);
+            st[f].a += 1;
+            if (c == 2) {
+                emit.w_byte(w, dst, ')');
+                sp -= 1;
+                continue;
+            }
+            I64 y = c / 4 - 1;
+            emit.w_byte(w, dst, ' ');
+            if (c == 3) {
+                emit.w_byte(w, dst, '_');
+                continue;
+            }
+            if (c % 4 == 1) {
+                emit.w_byte(w, dst, '[');
+                st[sp].state = 1;
+                st[sp].node = y as I32;
+                st[sp].a = 0;
+                sp += 1;
+                continue;
+            }
+            if (y < 0) {
+                emit.w_byte(w, dst, '-');
+                continue;
+            }
+            header(w, dst, src, toks, nodes, y);
+            st[sp].state = 0;
+            st[sp].node = y as I32;
+            st[sp].a = 0;
+            sp += 1;
+            continue;
+        }
+        if (x < 0) {
+            emit.w_byte(w, dst, ']');
+            sp -= 1;
+            continue;
+        }
+        if (st[f].a != 0) {
+            emit.w_byte(w, dst, ' ');
+        }
+        st[f].a = 1;
+        if (nodes[x].kind == parse.N_TEXT) {
+            emit.w_text(w, dst, "(text x");
+            I64 y = x;
+            while (y >= 0 && nodes[y].kind == parse.N_TEXT) {
+                raw_hex(w, dst, src, nodes[y].c as I64, nodes[y].d as I64);
+                y = nodes[y].next as I64;
+            }
+            emit.w_byte(w, dst, ')');
+            st[f].node = y as I32;
+            continue;
+        }
+        st[f].node = nodes[x].next;
+        header(w, dst, src, toks, nodes, x);
+        st[sp].state = 0;
+        st[sp].node = x as I32;
+        st[sp].a = 0;
+        sp += 1;
+    }
+    emit.w_byte(w, dst, 10);
+}
+
+// ---------------------------------------------------------------- the entry
+
+// Scans and parses module 0 (src) into the tables and writes its tree text into `out`, with
+// `work` (at least twice the tree's depth) as the dump's work list.
+// Returns 0 when the parse succeeded, 1 when a diagnostic was added, 2 when the text did not
+// fit `out` (stats[5] is then the bytes needed).
+export I64 front_parse[n, t, m, s, r, o](in U8[n] src, inout scan.Token[t] toks, inout parse.Node[m] nodes,
+        inout parse.Frame[s] st, inout limits.CompilerDiag[r] diag, inout U8[o] dst, inout I64[_] stats,
+        inout parse.Frame[_] work) {
+    limits.diag_clear(diag);
+    for k in 0..8 {
+        stats[k] = 0;
+    }
+    stats[0] = 1;
+    if (scan.check_text(src, diag, 0) != 0) {
+        return 1;
+    }
+    stats[0] = 2;
+    I64 ntok = scan.scan(src, toks, diag, 0);
+    if (ntok < 0) {
+        return 1;
+    }
+    stats[0] = 3;
+    stats[1] = ntok;
+    parse.PState[1] ps;
+    I64 root = parse.parse(src, toks, ntok, nodes, st, diag, ps, 0);
+    stats[2] = ps[0].ntok;
+    stats[3] = ps[0].nn;
+    stats[4] = ps[0].max_sp;
+    stats[6] = ps[0].steps;
+    if (root < 0) {
+        return 1;
+    }
+    stats[0] = 4;
+    emit.Writer[1] w;
+    emit.w_measure(w);
+    dump(w, dst, src, toks, nodes, work, root);
+    stats[5] = w[0].pos;
+    if (w[0].pos > o) {
+        return 2;
+    }
+    emit.w_emit(w, w[0].pos);
+    dump(w, dst, src, toks, nodes, work, root);
+    return 0;
+}
+
+// Field f of manifest row `row` after parse.plan_front(rows, 0, n, 7, 4) on a TablePlan[2]:
+// f 0 to 5 are table to reserved, 6 the type code, 7 the record id.
+export I64 front_plan_test(I64 n, I64 row, I64 f) {
+    limits.TablePlan[2] rows;
+    parse.plan_front(rows, 0, n, 7, 4);
+    switch (f) {
+        case 0: return rows[row].table;
+        case 1: return rows[row].elem_bytes;
+        case 2: return rows[row].elem_align;
+        case 3: return rows[row].capacity;
+        case 4: return rows[row].scope;
+        case 5: return rows[row].reserved;
+        case 6: return rows[row].elem_type.code as I64;
+        default: return rows[row].elem_type.record_id as I64;
+    }
+}

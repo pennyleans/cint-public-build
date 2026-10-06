@@ -1,0 +1,16 @@
+// case: memory/c2103_handle_compare
+// clause: SPEC-03 M-12; SPEC-04 LS-79, C2103 row; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (pool, handles)
+// entry: run; args: none
+// spec outcome: compile error C2103 at 12:9, the left operand of `==`: handles are not compared, as structs are not
+
+Pool(I64, 2) counts;
+
+export I64 run() {
+    Handle(I64) a = counts.insert(1);
+    Handle(I64) b = a;
+    if (a == b) {
+        return 1;
+    }
+    return 0;
+}

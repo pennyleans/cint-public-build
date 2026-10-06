@@ -1,0 +1,30 @@
+// case: errors/widen_in_assignment_and_compare
+// clause: SPEC-04 LS-97, LS-314; decision 2026-10-05, BX12-09, BX12-28
+// subset: cint-core-1 (error sets, combined sets, error-set values)
+// entry: run; args: none
+// spec outcome: value I64 51: ParseError and IoError values widen to IoOrParse in an initializer, an assignment, an argument, and as the other operand of `==` and `!=`; weight gives 40, then the two tests add 10 and 1; fuel 2
+
+error IoError { closed, full }
+error ParseError { empty, bad_digit, too_large }
+error IoOrParse = IoError | ParseError;
+
+I64 weight(IoOrParse e) {
+    if (e == ParseError.bad_digit) {
+        return 40;
+    }
+    return 1;
+}
+
+export I64 run() {
+    ParseError p = .bad_digit;
+    IoOrParse w = IoError.closed;
+    w = p;
+    I64 n = weight(p);
+    if (w == p) {
+        n += 10;
+    }
+    if (w != IoError.full) {
+        n += 1;
+    }
+    return n;
+}

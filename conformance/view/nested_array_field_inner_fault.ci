@@ -1,0 +1,10 @@
+// case: view/nested_array_field_inner_fault
+// clause: SPEC-04 LS-64, LS-139, LS-278; SPEC-01 IM-186
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at the inner index before the assigned value
+
+struct O { I64[1] bits; }
+I64 seen = 0;
+I64 tick(I64 v) { seen = seen * 10 + v; return v; }
+export I64 run() { O[1] a; a[tick(0)].bits[tick(1)] = tick(7); return 0; }

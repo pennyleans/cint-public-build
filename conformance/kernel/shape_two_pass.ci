@@ -1,0 +1,20 @@
+// case: kernel/shape_two_pass
+// clause: SPEC-02 K-6 (the two-pass example: n binds to 3 from b, then a fails with expected 4, actual 5)
+// subset: cint-core-1 (kernel)
+// entry: run; args: none
+// spec outcome: fault E_SHAPE at 12:5 (the dispatch site), phase entry, address dispatch 0, operation bind.shape, operands I64 0 (parameter a), I64 0 (dimension), I64 5 (actual), no exact, limit I64 4 (expected); stack depth 1, stack 18:5; fuel 2. Operand form: ref/OPEN.md REF-OQ-32; encoding box 09 ruling R9
+
+kernel k[n](in I64[n + 1] a, out I64[n] b) over [i: n] {
+    b[i] = a[i];
+}
+
+void go(in I64[_] a, inout I64[_] b) {
+    k(a, b);
+}
+
+export I64 run() {
+    I64[5] a;
+    I64[3] b;
+    go(a, b);
+    return b[0];
+}

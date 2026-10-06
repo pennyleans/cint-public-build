@@ -1,0 +1,8 @@
+case reduce/fold_checked_reversed_view
+clause SPEC-01 IM-73, IM-83; SPEC-04 LS-161 (fold over a reversed view; the twin of reduce/loop_fold_reverse_fits)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I32 2000000000
+fuel-consumed 2

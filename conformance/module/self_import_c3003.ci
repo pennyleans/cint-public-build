@@ -1,0 +1,11 @@
+// case: module/self_import_c3003
+// clause: SPEC-04 LS-230 (a module that imports itself is a cycle: C3003); SPEC-09 CINTC-05
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: compile error C3003 at 7:8, the module's import of itself
+
+import module.self_import_c3003;
+
+export I64 run() {
+    return 1;
+}

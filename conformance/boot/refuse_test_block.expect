@@ -1,0 +1,6 @@
+case boot/refuse_test_block
+clause SPEC-09 BOOT-01 (test_decl), SEED-06; SPEC-04 LS-232, LS-235
+source compile-error
+outcome compile-error
+diagnostic.code C9100
+diagnostic.position boot/refuse_test_block.ci:8:1

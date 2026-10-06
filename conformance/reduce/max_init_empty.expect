@@ -1,0 +1,8 @@
+case reduce/max_init_empty
+clause SPEC-01 IM-77; SPEC-04 LS-145 (max(init, xs) includes init, so an empty input is valid)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 -5
+fuel-consumed 1

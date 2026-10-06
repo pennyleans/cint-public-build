@@ -1,0 +1,13 @@
+case boot/const_extent_divide_zero
+clause SPEC-04 LS-62, LS-311; SPEC-09 BOOT-01, EMIT-30
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C6001
+diagnostic.position boot/const_extent_divide_zero.ci:7:26
+diagnostic.fault.code E_DIV_ZERO
+diagnostic.fault.operation div.checked.i64
+diagnostic.fault.operand I64 1
+diagnostic.fault.operand I64 0
+diagnostic.fault.exact none
+diagnostic.fault.limit none

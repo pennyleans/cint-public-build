@@ -1,0 +1,14 @@
+case control/assert_bool_fails
+clause SPEC-04 LS-191; SPEC-01 IM-104, IM-134 (decision 2026-10-03: OQ-13)
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_ASSERT
+fault.operation assert.checked.bool
+fault.exact none
+fault.limit none
+fault.position control/assert_bool_fails.ci:10:12
+fault.revision self
+fault.address none
+fault.stack-depth 0

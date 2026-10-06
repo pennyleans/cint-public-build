@@ -1,0 +1,33 @@
+// case: kernel/heat_e1_overflow
+// clause: SPEC-02 15.4 E-1, F-3, F-6 (the least faulting work-item is 20; kn * lap is step 22)
+// subset: cint-core-1 (kernel)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 19:33, phase work-item, address dispatch 0, work-item 20, step 22, operation mul.checked.i64, operands I64 2305843009213693952 and I64 1000, exact 2305843009213693952000, limit I64 9223372036854775807; stack depth 1, stack 31:5; fuel 65. Box 09 rulings R7 and R9
+
+export kernel diffuse[h, w](
+    in  I32[h, w] u,
+    in  I64       kn,
+    in  I64       kd,
+    out I32[h, w] v,
+    out I64       total
+) over [y: h, x: w] {
+    I64 c = u[y, x] as I64;
+    I32 r = u[y, x];
+    if (y > 0 && y < h - 1 && x > 0 && x < w - 1) {
+        I64 lap = (u[y - 1, x] as I64) + (u[y + 1, x] as I64)
+                + (u[y, x - 1] as I64) + (u[y, x + 1] as I64) - 4 * c;
+        I64 flux = div_round(kn * lap, kd, half_even);
+        r = (c + flux) as I32;
+    }
+    v[y, x] = r;
+    reduce total = sum(r);
+}
+
+export I64 run() {
+    I32[8, 8] a;
+    I32[8, 8] b;
+    a[3, 4] = 1000;
+    I64 total = 0;
+    diffuse(a, 2305843009213693952, 9223372036854775807, b, total);
+    return total;
+}

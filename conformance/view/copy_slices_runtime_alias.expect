@@ -1,0 +1,17 @@
+case view/copy_slices_runtime_alias
+clause SPEC-04 LS-70; SPEC-01 IM-187; SPEC-02 A-5 (overlap known only at run time: E_ALIAS after the shape check, before any write)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 10
+fault.code E_ALIAS
+fault.operation copy.alias
+fault.exact none
+fault.limit none
+fault.position view/copy_slices_runtime_alias.ci:8:5
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 1
+fault.stack view/copy_slices_runtime_alias.ci:16:5

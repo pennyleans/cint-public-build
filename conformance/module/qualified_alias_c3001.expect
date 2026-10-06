@@ -1,0 +1,6 @@
+case module/qualified_alias_c3001
+clause SPEC-04 LS-228 (an alias is a module-level name); SPEC-09 CINTC-16
+source compile-error
+outcome compile-error
+diagnostic.code C3001
+diagnostic.position module/qualified_alias_c3001.ci:9:11

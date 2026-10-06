@@ -1,0 +1,17 @@
+// case: diag/c3020_duplicate_test_name
+// clause: SPEC-04 LS-233, 17.2 (C3020)
+// subset: cint-core-1 (test block)
+// entry: run; args: none
+// spec outcome: compile error C3020 at 11:1, the `test` of the second test named "same" (the escape spells the same bytes)
+
+test "same" {
+    assert(true);
+}
+
+test "s\x61me" {
+    assert(true);
+}
+
+export I64 run() {
+    return 1;
+}

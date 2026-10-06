@@ -1,0 +1,11 @@
+// case: module/stack_cross_module
+// clause: SPEC-09 CONF-11 (fault.stack, format 2); slice 2 decision patch D-10 (a stack through two modules); SPEC-04 LS-229
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_DIV_ZERO in module.lib.stack_leaf.boom, called from module.lib.stack_mid.relay, called from run
+
+import module.lib.stack_mid;
+
+export I64 run() {
+    return stack_mid.relay(3);
+}

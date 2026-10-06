@@ -1,0 +1,14 @@
+// case: view/index_in_callee
+// clause: SPEC-04 LS-64, LS-117; SPEC-01 IM-107, IM-186 (a fault in a callee through a view parameter)
+// subset: cint-boot-1
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 8:14 in `get`, operand I64 2, limit I64 2; stack depth 1 (the call at 13:12)
+
+I64 get[n](in I64[n] xs, I64 i) {
+    return xs[i];
+}
+
+export I64 run() {
+    I64[2] a;
+    return get(a, 2);
+}

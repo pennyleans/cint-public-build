@@ -1,0 +1,6 @@
+case arith/const_type_mismatch
+clause SPEC-01 3.2 (fixture 101); SPEC-04 4.2 rule 3
+source compile-error
+outcome compile-error
+diagnostic.code C2001
+diagnostic.position arith/const_type_mismatch.ci:10:13

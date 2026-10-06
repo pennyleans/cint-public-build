@@ -1,0 +1,8 @@
+case memory/arena_alloc_zero_filled
+clause SPEC-03 M-14, M-19; ref/OPEN.md REF-OQ-45
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 0
+fuel-consumed 5

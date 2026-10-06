@@ -1,0 +1,16 @@
+// case: memory/pool_other_container
+// clause: SPEC-03 M-15, M-17; SPEC-02 V-14; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (pool, handles, struct elements)
+// entry: run; args: none
+// spec outcome: fault E_STALE_HANDLE at 15:18 (the `[` of `bodies[theirs]`), operation pool.deref, operands U64 0, I64 1, U64 0, U32 2, U8 2 (the handle: slot, length, generation, container, kind), U64 0 (the current generation), U8 6 (container), no exact, no limit; stack depth 0; fuel 1. The handle's slot and generation match a live slot of `bodies`, but its container is `others` (pool 2), so the dereference faults and reads nothing (SPEC-02 V-14); reason 6 is the new reason the freeze card asks for
+
+struct Body { I64 mass; I64 vel; }
+
+Pool(Body, 2) bodies;
+Pool(Body, 2) others;
+
+export I64 run() {
+    Handle(Body) mine = bodies.insert(Body(mass = 1, vel = 0));
+    Handle(Body) theirs = others.insert(Body(mass = 2, vel = 0));
+    return bodies[theirs].mass;
+}

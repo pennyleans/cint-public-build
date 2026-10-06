@@ -1,0 +1,20 @@
+// case: switch/fallthrough
+// clause: SPEC-04 8.5 (fallthrough)
+// subset: cint-core-1 (fallthrough is not listed in SPEC-09 5.2)
+// entry: run; args: none
+// spec outcome: value I64 11
+
+export I64 run() {
+    I64 code = 6;
+    I64 r = 0;
+    switch (code) {
+        case 5..=8:
+            r = r + 1;
+            fallthrough;
+        case 10:
+            r = r + 10;
+        default:
+            r = r + 100;
+    }
+    return r;
+}

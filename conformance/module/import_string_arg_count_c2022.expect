@@ -1,0 +1,7 @@
+case module/import_string_arg_count_c2022
+clause SPEC-09 BOOT-02, CINTC-16; SPEC-04 LS-114, LS-119
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2022
+diagnostic.position module/import_string_arg_count_c2022.ci:8:27

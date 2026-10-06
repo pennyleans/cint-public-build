@@ -1,0 +1,30 @@
+# Status: Approved 2026-10-05 (docs/cint/OPEN-QUESTIONS.md OQ-209; t27 scoping note
+# docs/design/notes/2026-10-05-t27-ternary-tests-scoping.md section 7.2, TT-04).
+# Approval covers these rows; a later change to a row needs a new approval. Set
+# acceptance still needs the 24 B1 receipts of one tree (unit 4).
+# Required case list of set t27-1 (SPEC-09 CONF-15; slice 2 decision patch D-14).
+# One line per case and compiler: <case> <compiler> <category> [<detail>], where
+# the detail is the limit identifier of an unsupported case or the Open item of a
+# held case; the categories are those of CONF-14. Written by tools/cint_check.py
+# --write-required from a run of the set on each compiler, then merged and reviewed;
+# sorted by case bytes.
+# t27 set 1: the 8 conformance/ternary/ cases of the scoping note's section 5.2, selected
+# by `tools/cint_check.py --set t27-1`. Measured at 6ac8b43 on the clang leg (scratch
+# runs, no receipt): B1 compares all 8; the seed has them outside_subset, as the cases
+# print and print statements are outside cint-boot-1 (SEED-14).
+ternary/planes_add27 cint-seed outside_subset
+ternary/planes_add27 cintc compared
+ternary/planes_adders cint-seed outside_subset
+ternary/planes_adders cintc compared
+ternary/planes_digits cint-seed outside_subset
+ternary/planes_digits cintc compared
+ternary/planes_rescale3 cint-seed outside_subset
+ternary/planes_rescale3 cintc compared
+ternary/pt4_planes cint-seed outside_subset
+ternary/pt4_planes cintc compared
+ternary/pt5_table cint-seed outside_subset
+ternary/pt5_table cintc compared
+ternary/tdot_i8_lanes cint-seed outside_subset
+ternary/tdot_i8_lanes cintc compared
+ternary/tdot_planes cint-seed outside_subset
+ternary/tdot_planes cintc compared

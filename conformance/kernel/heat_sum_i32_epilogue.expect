@@ -1,0 +1,20 @@
+case kernel/heat_sum_i32_epilogue
+clause SPEC-02 15.5 (diffuse32: the sum of 64 maximal cells overflows I32 in the epilogue)
+format 4
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 137
+fault.code E_OVERFLOW
+fault.operation sum.checked.i32.i32
+fault.operand I64 64
+fault.exact 137438953408
+fault.limit I32 2147483647
+fault.position kernel/heat_sum_i32_epilogue.ci:23:20
+fault.revision self
+fault.source-map self
+fault.phase epilogue
+fault.kernel kernel.heat_sum_i32_epilogue.diffuse32
+fault.address 0 none none
+fault.stack-depth 1
+fault.stack kernel/heat_sum_i32_epilogue.ci:35:5
