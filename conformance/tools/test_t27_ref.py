@@ -282,6 +282,7 @@ class FixturesAndOracle(unittest.TestCase):
     def test_spec_values(self):
         self.assertEqual(t.fixture_failures(), [])
 
+    @unittest.skipUnless(os.path.exists(t.ORACLE_PATH), "the legacy oracle is not in this tree")
     def test_legacy_oracle(self):
         self.assertEqual(t.oracle_failures(), [])
 

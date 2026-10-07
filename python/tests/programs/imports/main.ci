@@ -1,0 +1,8 @@
+// The build cache test of python/tests/test_calls.py copies this program and
+// edits lib/helper.ci, which main imports.
+
+import lib.helper;
+
+export I64 value() {
+    return helper.base() + 1;
+}

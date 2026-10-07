@@ -52,7 +52,7 @@ typedef struct cli_module {
 typedef struct toolchain {
     char *leg, *cc, *cc_version, *include, *runtime_object, *cache, *host, *compiler_sources, *executable_sha256;
     char *runtime_library_object;   /* the runtime compiled with CINT_RT_LIBRARY, for `build --lib` */
-    char *flags[64], *rt_sources[8];
+    char *flags[64], *rt_sources[64];
     size_t nflags, nrt;
 } toolchain;
 

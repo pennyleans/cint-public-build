@@ -1,0 +1,56 @@
+// Kernels and arrays of rank 2 to 4 called from Python (python/tests/test_kernels.py):
+// the host-issued dispatch of SPEC-02 K-15 and SPEC-03 section 9.
+
+// Cases 13, 17a, 19 and 20: one scaled copy.
+export kernel scale[n](in I64[n] x, in I64 k, out I64[n] y) over [i: n] {
+    y[i] = x[i] * k;
+}
+
+// Case 21: each work-item squares its element, so a large element faults there.
+export kernel square[n](in I64[n] x, out I64[n] y, out I64 total) over [i: n] {
+    I64 v = x[i] * x[i];
+    y[i] = v;
+    reduce total = sum(v);
+}
+
+// Case 12a: an output of rank 2.
+export kernel ramp[h, w](in I64 base, out I64[h, w] y) over [r: h, c: w] {
+    y[r, c] = base + r * w + c;
+}
+
+// An inout of rank 2 and an input whose extent is a shape symbol plus 1.
+export kernel shift[h, w](in I64[h, w + 1] x, inout I64[h, w] y) over [r: h, c: w] {
+    y[r, c] = y[r, c] + x[r, c + 1];
+}
+
+// Case 20a: one entry, two dispatches; the second faults when b holds an element
+// other than 0 (2 * 2^62 is beyond I64).
+export void twice[n](inout I64[n] a, inout I64[n] b) {
+    scale(a, 2, b);
+    scale(b, 4611686018427387904, a);
+}
+
+// Functions of rank 2 to 4.
+export I64 trace[n](in I64[n, n] m) {
+    I64 s = 0;
+    for i in 0..n {
+        s += m[i, i];
+    }
+    return s;
+}
+
+export void paint[r, c](inout I32[r, c] m, in I32[c] row) {
+    for i in 0..r {
+        for j in 0..c {
+            m[i, j] = row[j];
+        }
+    }
+}
+
+export I64 corner(in I64[2, 3, _] t) {
+    return t[1, 2, 0];
+}
+
+export I64 last4(in I8[_, _, _, 2] t) {
+    return t[1, 1, 1, 1] as I64;
+}

@@ -1,0 +1,135 @@
+// The exports the call tests of python/tests/test_calls.py use.
+
+struct Pair { I64 a; Bool b; }
+
+I64 total = 0;
+
+export I64 add(I64 a, I64 b) {
+    return a + b;
+}
+
+export I64 quotient(I64 a, I64 b) {
+    return a / b;
+}
+
+export Bool flip(Bool b) {
+    return !b;
+}
+
+export U8 low(U64 x) {
+    return x as U8;
+}
+
+export I8 neg8(I8 a) {
+    return -a;
+}
+
+export U16 twice16(U16 a) {
+    return a * 2;
+}
+
+export U32 next32(U32 a) {
+    return a + 1;
+}
+
+export I16 prev16(I16 a) {
+    return a - 1;
+}
+
+export I32 diff32(I32 a, I32 b) {
+    return a - b;
+}
+
+export void deposit(I64 amount) {
+    total = total + amount;
+}
+
+export I64 balance() {
+    return total;
+}
+
+export I64 spin(I64 n) {
+    I64 i = 0;
+    while (i < n) {
+        i += 1;
+    }
+    return i;
+}
+
+export I64 total_of[n](in I64[n] a) {
+    I64 s = 0;
+    for i in 0..n {
+        s = s + a[i];
+    }
+    return s;
+}
+
+export void scale[n](inout I64[n] a, I64 k) {
+    for i in 0..n {
+        a[i] = a[i] * k;
+    }
+}
+
+export I64 inner[n](in I64[n] a, in I64[n] b) {
+    I64 s = 0;
+    for i in 0..n {
+        s = s + a[i] * b[i];
+    }
+    return s;
+}
+
+export I64 axpy[n](inout I64[n] y, in I64[n] x, I64 k) {
+    for i in 0..n {
+        y[i] = y[i] + k * x[i];
+    }
+    return n;
+}
+
+export I64 trues[n](in Bool[n] b) {
+    I64 t = 0;
+    for i in 0..n {
+        if (b[i]) {
+            t += 1;
+        }
+    }
+    return t;
+}
+
+export I64 bytes_sum[n](in U8[n] s) {
+    I64 t = 0;
+    for i in 0..n {
+        t = t + (s[i] as I64);
+    }
+    return t;
+}
+
+export I64 four(in I32[4] a) {
+    return (a[0] as I64) + (a[3] as I64);
+}
+
+export I64 head(in I64[_] a) {
+    return a[0];
+}
+
+export I64 nest(I64 n) {
+    if (n == 0) {
+        return 0;
+    }
+    return nest(n - 1) + 1;
+}
+
+export void say(I64 x) {
+    "x={x}\n";
+}
+
+export Pair make(I64 a, Bool b) {
+    return Pair(a, b);
+}
+
+export I64 first(Pair p) {
+    return p.a;
+}
+
+export void mix[n, m](inout I64[n] a, in U8[m] b) {
+    a[0] = b[0] as I64;
+}

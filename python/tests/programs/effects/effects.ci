@@ -1,0 +1,18 @@
+// The effect classes of python/tests/test_calls.py (SPEC-03 A-19): loud
+// prints, relay prints only through the imported printer.shout, and quiet
+// prints nothing.
+
+import lib.printer;
+
+export void loud(I64 x) {
+    "loud {x}\n";
+}
+
+export I64 relay(I64 x) {
+    printer.shout(x);
+    return x;
+}
+
+export I64 quiet(I64 x) {
+    return x + 1;
+}

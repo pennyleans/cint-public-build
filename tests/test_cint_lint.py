@@ -230,6 +230,14 @@ class CintLint(unittest.TestCase):
         self.assertRefused("harness/split.h", "\n" * 401,
                            "FAIL size cint-harness (harness/*.c, harness/*.h): 1,001 lines")
 
+    def test_optional_component_may_be_absent(self):
+        import shutil
+        for d in ("interp", "workbench"):
+            shutil.rmtree(self.root / d, ignore_errors=True)
+        code, out = self.run_lint()
+        self.assertEqual(code, 0, out)
+        self.assertIn("not in this tree", out)
+
     def test_missing_component_fails(self):
         (self.root / "rt/cint_bridge.c").unlink()
         code, out = self.run_lint()

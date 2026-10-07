@@ -1,0 +1,5 @@
+// Imported by effects.ci: a function that prints.
+
+export void shout(I64 x) {
+    "shout {x}\n";
+}

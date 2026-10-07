@@ -1,0 +1,5 @@
+// Imported by main.ci.
+
+export I64 base() {
+    return 10;
+}

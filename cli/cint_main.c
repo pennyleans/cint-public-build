@@ -193,10 +193,10 @@ static int load_toolchain(const char *path)
         }
         *sp = '\0';
         val = sp + 1;
-        if (strcmp(line, "flag") == 0 && t->nflags < 64u) {
-            t->flags[t->nflags++] = val;
-        } else if (strcmp(line, "runtime_source") == 0 && t->nrt < 8u) {
-            t->rt_sources[t->nrt++] = val;
+        if (strcmp(line, "flag") == 0 && t->nflags++ < 64u) { /* a count past 64 refuses the file below */
+            t->flags[t->nflags - 1u] = val;
+        } else if (strcmp(line, "runtime_source") == 0 && t->nrt++ < 64u) {
+            t->rt_sources[t->nrt - 1u] = val;
         } else if (strcmp(line, "env") == 0 && strchr(val, '=') != NULL) {
             char *eq = strchr(val, '=');
             *eq = '\0';
@@ -218,7 +218,7 @@ static int load_toolchain(const char *path)
     qsort(t->rt_sources, t->nrt, sizeof t->rt_sources[0], by_basename);
     return t->leg != NULL && t->cc != NULL && t->include != NULL && t->runtime_object != NULL && t->cache != NULL &&
                    t->compiler_sources != NULL && t->executable_sha256 != NULL &&
-                   strlen(t->executable_sha256) == 64u && t->nrt > 0u && t->nflags > 0u
+                   strlen(t->executable_sha256) == 64u && t->nrt - 1u < 64u && t->nflags - 1u < 64u
                ? 0
                : -1;
 }

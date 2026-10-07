@@ -1,5 +1,3 @@
-<img src="../../assets/brand/cint-logo.svg" alt="CINT" width="96">
-
 # Tutorial 02: an exact ledger
 
 Status: tutorial, milestone M2 of slice 2, 2026-10-05. Written for a Python developer who has read tutorial 01. Every output below is pasted from a run on Linux (Ubuntu 24.04) with the GCC and Clang legs; where a run has a receipt, the receipt is named. The MSVC leg on Windows has not run this program yet. Updated the same day for roadmap box 07: `daily_interest` calls `muldiv`, and section 4 runs the tests with `cint test`. Updated again when `cint run` gained format specifications: `print_dollars` prints with `{cents:/100}` and `print_entry` with `{e.cents:>8}`.

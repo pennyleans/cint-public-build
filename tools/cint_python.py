@@ -56,6 +56,7 @@ CASES = ("12a", "13", "16", "16a", "16b", "17", "17a", "19", "20", "20a", "21", 
 OPTIONAL = {
     "tests.test_borrow.Case16b.test_torch_cpu_int64": "PyTorch, where it is installed (case 16b)",
     "tests.test_borrow.Arguments.test_flags_seen_by_the_exporter": "CPython 3.12 or later",
+    "tests.test_examples.NewcomerTask3P.test_answers": "the newcomer check's script, where it is in the tree",
 }
 DEMO = ("examples/matmul_i8.ci", "examples/matmul_i8.py", "examples/matmul_i8.stdout",
         "docs/tutorials/newcomer/p1_copies.py")
@@ -261,7 +262,7 @@ def identity_of() -> dict:
             "conformance_tree_sha256": suite, "conformance_tree_files": suite_files,
             "tree_method": "sha256 over the lines '<sha256>  <path>\\n' of the tracked files, paths "
                            "relative to the tree, sorted by bytes",
-            "demonstration": records(DEMO), "required_cases": list(CASES)}
+            "demonstration": records(p for p in DEMO if (ROOT / p).exists()), "required_cases": list(CASES)}
 
 
 def outcome_of(suite: dict, demo: dict) -> tuple:

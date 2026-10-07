@@ -1,5 +1,3 @@
-<img src="../../assets/brand/cint-logo.svg" alt="CINT" width="96">
-
 # Tutorial 03: hunting an overflow
 
 Status: tutorial, milestone M2 of slice 2, 2026-10-05. Written for a developer who has read tutorial 01 and knows C, C#, or Python. Every output below is pasted from a run on Linux (Ubuntu 24.04) with the GCC and Clang legs; where a run has a receipt, the receipt is named. The MSVC leg on Windows has not run these programs yet.

@@ -1,0 +1,55 @@
+// The error union exports of python/tests/test_calls.py: each cx wrapper writes a struct of
+// the tag, in the set's underlying type, and then the value (SPEC-03 A-13, A-18; box 10
+// default BX10-26).
+
+error IoError { closed, full }
+error ParseError { empty, bad_digit, too_large }
+error IoOrParse = IoError | ParseError;
+error Level : U8 { low, high }
+error Wide : U64 { overflowed }
+
+export ParseError!I64 digit(I64 c) {
+    if (c < 48) {
+        return .empty;
+    }
+    if (c > 57) {
+        return .bad_digit;
+    }
+    return c - 48;
+}
+
+export IoOrParse!I64 read_digit(Bool open, I64 c) {
+    if (!open) {
+        return .closed;
+    }
+    I64 d = try digit(c);
+    return d;
+}
+
+export IoError!void stop(Bool open) {
+    if (!open) {
+        return .full;
+    }
+}
+
+export Level!Bool above(I64 v) {
+    if (v < 0) {
+        return .low;
+    }
+    if (v > 100) {
+        return .high;
+    }
+    return v > 50;
+}
+
+export Wide!U16 narrow(I64 v) {
+    U16 n = v as? U16 catch (e) {
+        return .overflowed;
+    };
+    return n;
+}
+
+export ArithError!I64 twice(I64 v) {
+    I64 d = try mul_result(v, 2);
+    return d;
+}

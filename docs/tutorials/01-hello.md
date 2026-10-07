@@ -1,5 +1,3 @@
-<img src="../../assets/brand/cint-logo.svg" alt="CINT" width="96">
-
 # Tutorial 01: hello, and your first overflow
 
 Status: tutorial, milestone M1 of slice 2, 2026-10-03. Written for a Python developer meeting CINT for the first time. Every output below is pasted from a run on Windows with the MSVC leg; where a run has a receipt, the receipt is named.

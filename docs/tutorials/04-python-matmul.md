@@ -1,5 +1,3 @@
-<img src="../../assets/brand/cint-logo.svg" alt="CINT" width="96">
-
 # Tutorial 04: an I8 matrix product from Python
 
 Status: tutorial, box 10 (roadmap column 02), 2026-10-06. Written for a Python and NumPy developer who has read tutorial 01. Every output below is pasted from a run on Linux (Ubuntu 24.04) with the GCC leg (GCC 13.3), CPython 3.11.15, and NumPy 2.4.6. The MSVC leg on Windows and the Apple Clang leg on macOS have not run this script yet.

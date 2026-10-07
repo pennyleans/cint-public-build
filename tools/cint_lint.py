@@ -156,6 +156,11 @@ def cr_findings(root):
     return found, len(paths)
 
 
+# Components a tree may leave out, as the public release does: a row whose directory is
+# absent prints INFO. Any other component with no files fails.
+OPTIONAL_COMPONENTS = ("interp", "workbench")
+
+
 def size_rows(root):
     rows = []
     for name, patterns, target, ceiling in SIZE_ROWS:
@@ -163,6 +168,9 @@ def size_rows(root):
         files = sorted(files - {p for pattern in patterns if pattern.startswith("!") for p in root.glob(pattern[1:])})
         lines = sum(p.read_bytes().count(b"\n") for p in files)
         status = "over-ceiling" if lines > ceiling else "over-target" if lines > target else "ok"
+        top = patterns[0].split("/")[0]
+        if not files and top in OPTIONAL_COMPONENTS and not (root / top).exists():
+            status = "absent"
         rows.append((name, len(files), lines, target, ceiling, status))
     return rows
 
@@ -176,9 +184,12 @@ def run(root):
         print("FAIL " + line)
     failed = bool(floats or crs)
     for name, nfiles, lines, target, ceiling, status in sizes:
-        tag = {"ok": "PASS", "over-target": "WARN", "over-ceiling": "FAIL"}[status]
+        tag = {"ok": "PASS", "over-target": "WARN", "over-ceiling": "FAIL", "absent": "INFO"}[status]
         failed |= status == "over-ceiling"
-        if nfiles == 0:
+        if nfiles == 0 and status == "absent":
+            tag = "INFO"
+            status = "not in this tree"
+        elif nfiles == 0:
             tag, failed = "FAIL", True
             status = "no files"
         print(f"{tag} size {name}: {lines:,} lines (target {target:,}, ceiling {ceiling:,}) {status}")
