@@ -1,0 +1,9 @@
+case fixed/struct_field_q
+clause SPEC-04 3.6, LS-213; SPEC-01 IM-54 (fixed-point struct fields of two formats)
+format 5
+source reference
+outcome value
+stdout-bytes 10
+stdout-sha256 92f5b82673b8b4ca196bc51f60cc7eb2d900ce33b7998ebd3d1f4fbdcd35245d
+return I64 196608
+fuel-consumed 1

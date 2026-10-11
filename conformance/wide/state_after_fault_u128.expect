@@ -1,0 +1,19 @@
+case wide/state_after_fault_u128
+clause SPEC-01 IM-106; SPEC-04 LS-213; SPEC-09 CONF-11 rules 10 and 14 (the store before a U128 fault stands in the module state)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_OVERFLOW
+fault.operation add.checked.u128
+fault.operand U128 340282366920938463463374607431768211455
+fault.operand U128 1
+fault.exact 340282366920938463463374607431768211456
+fault.limit U128 340282366920938463463374607431768211455
+fault.position wide/state_after_fault_u128.ci:11:11
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0
+state.global wide.state_after_fault_u128 s U128 340282366920938463463374607431768211455

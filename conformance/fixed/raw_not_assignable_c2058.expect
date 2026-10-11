@@ -1,0 +1,7 @@
+case fixed/raw_not_assignable_c2058
+clause SPEC-01 IM-57; SPEC-04 17.2 (`.raw` reads the storage integer and is not a place)
+format 5
+source compile-error
+outcome compile-error
+diagnostic.code C2058
+diagnostic.position fixed/raw_not_assignable_c2058.ci:9:5

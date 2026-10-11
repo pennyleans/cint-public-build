@@ -255,9 +255,9 @@ class Scalars(unittest.TestCase):
         mod = calls()
         self.assertEqual(mod.exports["make"].declaration, "calls.Pair make(I64 a, Bool b)")
         self.assertEqual(mod.exports["first"].declaration, "I64 first(calls.Pair p)")
-        with self.assertRaisesRegex(NotImplementedError, r"result is struct calls\.Pair.*BX10-27"):
+        with self.assertRaisesRegex(NotImplementedError, r"result is struct calls\.Pair.*no Python form yet"):
             self.ctx.make(1, True)
-        with self.assertRaisesRegex(NotImplementedError, r"parameter p is struct calls\.Pair.*BX10-27"):
+        with self.assertRaisesRegex(NotImplementedError, r"parameter p is struct calls\.Pair.*no Python form yet"):
             self.ctx.first(None)
 
     def test_table(self):

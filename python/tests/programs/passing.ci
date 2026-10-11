@@ -1,0 +1,32 @@
+// Exported functions that pass arrays to dispatches (python/tests/test_device.py; SPEC-03 M-28,
+// SPEC-02 F-5 check 4; decision 2026-10-06 on OQ-217). cintc marks each view parameter that a
+// function passes only, whole, to dispatches: on a context with a device, the entry takes a
+// device array for it, and a host array for any parameter. A dispatch issued from `.ci` there
+// takes device arrays only, or storage the context owns only.
+
+export kernel scale[n](in I64[n] x, in I64 k, out I64[n] y) over [i: n] {
+    y[i] = x[i] * k;
+}
+
+// x and y are marked.
+export void triple[n](in I64[n] x, inout I64[n] y) {
+    scale(x, 3, y);
+}
+
+// x is indexed, so only y is marked.
+export I64 head[n](in I64[n] x, inout I64[n] y) {
+    scale(x, 2, y);
+    return x[0];
+}
+
+// x is marked; the dispatch's output is the frame's own array.
+export I64 own[n](in I64[n] x) {
+    I64[3] t;
+    scale(x, 5, t);
+    return t[0] + t[1] + t[2];
+}
+
+// x and y go to another function, so neither is marked.
+export void forward[n](in I64[n] x, inout I64[n] y) {
+    triple(x, y);
+}

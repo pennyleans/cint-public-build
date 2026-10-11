@@ -1,0 +1,47 @@
+// case: probes/memory_parameters
+// clause: box 13 unit 8b-2 probe: a pool and a child arena passed as parameters; handles as parameters, results and fields of pooled elements; alloc_result that succeeds
+// entry: run; args: none
+
+struct Node { I64 value; Handle(Node) next; }
+
+Pool(Node, 4) nodes;
+Arena(I64, 8) scratch;
+
+Handle(Node) push(inout Pool(Node) p, Handle(Node) next, I64 v) {
+    return p.insert(Node(value = v, next = next));
+}
+
+I64 total(in Pool(Node) p, Handle(Node) head, I64 n) {
+    I64 t = 0;
+    Handle(Node) at = head;
+    for i in 0..n {
+        t = t * 10 + p[at].value;
+        at = p[at].next;
+    }
+    return t;
+}
+
+I64 count_up(inout Arena(I64) a, I64 n) {
+    Handle(I64[]) h = a.alloc(n);
+    for i in 0..n {
+        a[h][i] = i + 1;
+    }
+    return sum(a[h]);
+}
+
+AllocError!I64 more(I64 n) {
+    Handle(I64[]) h = try scratch.alloc_result(n);
+    scratch[h][n - 1] = 40;
+    return scratch[h][n - 1];
+}
+
+export I64 run() {
+    Handle(Node) none;
+    Handle(Node) a = push(nodes, none, 3);
+    Handle(Node) b = push(nodes, a, 2);
+    Handle(Node) c = push(nodes, b, 1);
+    Arena(I64) part = scratch.child(4);
+    I64 f = count_up(part, 3);
+    I64 m = more(2) catch -1;
+    return total(nodes, c, 3) * 10000 + f * 100 + m;
+}

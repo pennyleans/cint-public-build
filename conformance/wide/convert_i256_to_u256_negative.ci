@@ -1,0 +1,10 @@
+// case: wide/convert_i256_to_u256_negative
+// clause: SPEC-01 IM-6, IM-50, IM-106; SPEC-09 CONF-11 rule 14 (a checked conversion of -1 from I256 to U256)
+// subset: cint-core-1 (unsigned wide integers)
+// entry: run; args: none
+// spec outcome: fault E_NARROW at 9:14 (the `as`), operation as.checked.i256.u256, operand I256 -1, exact -1, limit U256 0; stack depth 0; fuel 1. Box 15, unit 1
+
+export Bool run() {
+    I256 n = -1;
+    return n as U256 != 0;
+}

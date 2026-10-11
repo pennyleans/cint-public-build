@@ -1,0 +1,36 @@
+// Arenas and pools in a checkpoint on cpu-c17 (box 13 unit 8a; interp/tests/state_host.c).
+// Each `run` counts its call, fills two elements of `scratch` when they fit and returns the
+// mass of the second (-1 when they do not), and inserts into `ids`, removing the slot again
+// at an even call. The first call also carves a child of one element and fills it. A run
+// after a restore returns what the run after the checkpoint returned only when the used
+// extent of `scratch` came back.
+
+struct Body { U8 tag; I64 mass; }
+
+Arena(Body, 6) scratch;
+Pool(I32, 3) ids;
+I64 calls = 0;
+
+AllocError!I64 stock(I64 n) {
+    Handle(Body[]) h = try scratch.alloc_result(n);
+    for i in 0..n {
+        scratch[h][i].tag = 7;
+        scratch[h][i].mass = calls * 10 + i;
+    }
+    return scratch[h][n - 1].mass;
+}
+
+export I64 run() {
+    calls += 1;
+    if (calls == 1) {
+        Arena(Body) part = scratch.child(1);
+        Handle(Body[]) p = part.alloc(1);
+        part[p][0].mass = 99;
+    }
+    I64 got = stock(2) catch -1;
+    Handle(I32) k = ids.insert(calls as I32);
+    if (calls % 2 == 0) {
+        ids.remove(k);
+    }
+    return got;
+}

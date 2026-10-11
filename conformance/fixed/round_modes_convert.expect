@@ -1,0 +1,9 @@
+case fixed/round_modes_convert
+clause SPEC-01 4.5, IM-68, IM-69 (each rounding mode converting -2.5, -1.25 and 2.5 to I32)
+format 5
+source reference
+outcome value
+stdout-bytes 40
+stdout-sha256 aee44b2ddec97e6b2d160de517173843efac9fdac8abab00405e5375667458e3
+return I64 0
+fuel-consumed 1

@@ -1,0 +1,9 @@
+case fixed/raw_and_constructor
+clause SPEC-01 IM-57; SPEC-04 LS-38 (`.raw` is the storage integer and `Q.raw(n)` constructs from it, both exact)
+format 5
+source reference
+outcome value
+stdout-bytes 10
+stdout-sha256 0c3faada6446628c493ce0963656e9173c2c3e410aa6c051fd28e069ddcba89a
+return I64 114688
+fuel-consumed 1

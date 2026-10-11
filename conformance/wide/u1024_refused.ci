@@ -1,0 +1,10 @@
+// case: wide/u1024_refused
+// clause: SPEC-01 IM-6; SPEC-04 17.2 (U1024 stays Proposed under BX15-02, so it is an unknown type)
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: compile-error C3006 at 8:5 (the type name). Box 15, unit 1
+
+export I64 run() {
+    U1024 x = 1;
+    return 0;
+}

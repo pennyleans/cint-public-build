@@ -1,0 +1,25 @@
+module arith.const_skipped_cond_arm
+sites arith/const_skipped_cond_arm.ci 1:7:12:fuel.charge 2:8:26:div.checked.i64
+export func @arith.const_skipped_cond_arm.run() -> I64 {
+  fuel.charge 1                                  #1 @arith/const_skipped_cond_arm.ci:7:12
+  %t0 = const Bool true
+  local $sc.0: I64
+  if {
+    arm {
+    } then %t0 {
+      %t1 = const I64 1
+      store.local $sc.0, %t1
+    }
+    else {
+      %t2 = const I64 1
+      %t3 = const I64 0
+      %t4 = div.checked.i64 %t2, %t3             #2 @arith/const_skipped_cond_arm.ci:8:26
+      store.local $sc.0, %t4
+    }
+  }
+  %t5 = load.local $sc.0
+  local $v.1: I64
+  store.local $v.1, %t5
+  %t6 = load.local $v.1
+  return %t6
+}

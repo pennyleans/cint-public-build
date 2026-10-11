@@ -1,0 +1,11 @@
+// case: wide/return_u128_max
+// clause: SPEC-01 IM-6, IM-146; SPEC-09 CONF-11 rule 14 (the largest U128 as a return value, written in format 5)
+// subset: cint-core-1 (unsigned wide integers)
+// entry: run; args: none
+// spec outcome: value I64 -1, its low 64 bits (as%); prints the U128 value 2^128 - 1 and a line feed; fuel 1 (the entry). Box 15, unit 1
+
+export I64 run() {
+    U128 observed = U128.max;
+    "{observed}\n";
+    return observed as% I64;
+}

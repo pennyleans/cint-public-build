@@ -1,0 +1,9 @@
+case wide/sum_i1024_exact_accumulator
+clause SPEC-01 IM-77, IM-80; SPEC-02 R-5 (the partial total passes I1024.max only inside the exact accumulator, and the final total fits)
+format 2
+source reference
+outcome value
+stdout-bytes 309
+stdout-sha256 f454a9b89122c2e3ac90ec0f966c487f976dc259b2bffbf56689b9a8160e2712
+return I64 -2
+fuel-consumed 2

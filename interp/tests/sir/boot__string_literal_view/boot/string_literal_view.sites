@@ -1,0 +1,52 @@
+module boot.string_literal_view
+sites boot/string_literal_view.ci 1:9:5:fuel.charge 2:10:20:add.checked.i64 3:10:29:index.checked.u8 4:10:33:as.checked.u8.i64 5:10:25:mul.checked.i64 6:10:15:add.checked.i64 7:16:13:index.checked.u8 8:16:17:as.checked.u8.i64 9:19:12:fuel.charge 10:20:12:call.enter 11:20:54:mul.checked.i64 12:20:63:call.enter 13:20:61:add.checked.i64
+func @boot.string_literal_view.weigh(%n: I64, %s: U8[%n]) -> I64 {
+  %t0 = const I64 0
+  local $t.0: I64
+  store.local $t.0, %t0
+  %t1 = const I64 0
+  local $i.1: I64
+  store.local $i.1, %t1
+  loop L6 {
+    %t2 = load.local $i.1
+    %t3 = cmp.lt.i64 %t2, %n
+    while %t3
+    fuel.charge 1                                #1 @boot/string_literal_view.ci:9:5
+    %t4 = load.local $t.0
+    %t5 = load.local $i.1
+    %t6 = const I64 1
+    %t7 = add.checked.i64 %t5, %t6               #2 @boot/string_literal_view.ci:10:20
+    %t8 = load.local $i.1
+    index.checked.u8 %s, %t8                     #3 @boot/string_literal_view.ci:10:29
+    %t9 = index.load %s, %t8
+    %t10 = as.checked.u8.i64 %t9                 #4 @boot/string_literal_view.ci:10:33
+    %t11 = mul.checked.i64 %t7, %t10             #5 @boot/string_literal_view.ci:10:25
+    %t12 = add.checked.i64 %t4, %t11             #6 @boot/string_literal_view.ci:10:15
+    store.local $t.0, %t12
+    next
+    %t13 = load.local $i.1
+    %t14 = const I64 1
+    %t15 = add.wrap.i64 %t13, %t14
+    store.local $i.1, %t15
+  }
+  %t16 = load.local $t.0
+  return %t16
+}
+func @boot.string_literal_view.first(%s: U8[_]) -> I64 {
+  %t0 = const I64 0
+  index.checked.u8 %s, %t0                       #7 @boot/string_literal_view.ci:16:13
+  %t1 = index.load %s, %t0
+  %t2 = as.checked.u8.i64 %t1                    #8 @boot/string_literal_view.ci:16:17
+  return %t2
+}
+export func @boot.string_literal_view.run() -> I64 {
+  fuel.charge 1                                  #9 @boot/string_literal_view.ci:19:12
+  %s36 = data U8[14] 97, 92, 34, 39, 10, 13, 9, 0, 65, 127, 123, 125, 98, 99
+  %t0 = call @boot.string_literal_view.weigh(extent %s36, %s36) #10 @boot/string_literal_view.ci:20:12
+  %t1 = const I64 1000
+  %t2 = mul.checked.i64 %t0, %t1                 #11 @boot/string_literal_view.ci:20:54
+  %s42 = data U8[1] 90
+  %t3 = call @boot.string_literal_view.first(%s42) #12 @boot/string_literal_view.ci:20:63
+  %t4 = add.checked.i64 %t2, %t3                 #13 @boot/string_literal_view.ci:20:61
+  return %t4
+}

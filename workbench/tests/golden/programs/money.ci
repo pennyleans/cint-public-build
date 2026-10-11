@@ -1,0 +1,31 @@
+// money.ci: session A's integer cents as a module (SPEC-06 16.1 without its Q32.32 part; box 14
+// ruling BX14-06 A). Money is counted in whole cents, summed exactly, and rounded once, with the
+// rule named in the source.
+
+export I64 total_with_tax[n](in I64[n] c, I64 rate_bp) {
+    I64 s = sum(c);
+    return s + div_round(s * rate_bp, 10000, half_even);
+}
+
+export I64 tax(I64 subtotal, I64 rate_bp) {
+    return div_round(subtotal * rate_bp, 10000, half_even);
+}
+
+export I64 add_cents(I64 a, I64 b) {
+    return a + b;
+}
+
+export I64 priced() {
+    I64[3] cents = [1999, 425, 10];
+    return total_with_tax(cents, 825);
+}
+
+// The sum is outside I64: E_OVERFLOW in add_cents, called from here.
+export I64 overflow() {
+    I64 big = 9223372036854775800;
+    return add_cents(big, 12);
+}
+
+test "the tie at 16.5 cents rounds to even" {
+    assert(tax(200, 825) == 16);
+}

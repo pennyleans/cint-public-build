@@ -1,0 +1,127 @@
+module control.labelled_jumps
+sites control/labelled_jumps.ci 1:7:12:fuel.charge 2:9:11:fuel.charge 3:10:15:fuel.charge 4:20:37:mul.checked.i64 5:20:42:add.checked.i64 6:20:32:add.checked.i64 7:25:12:fuel.charge 8:26:11:add.checked.i64 9:28:9:fuel.charge 10:29:15:add.checked.i64 11:38:18:mul.checked.i64 12:38:24:add.checked.i64
+export func @control.labelled_jumps.run() -> I64 {
+  fuel.charge 1                                  #1 @control/labelled_jumps.ci:7:12
+  %t0 = const I64 0
+  local $total.0: I64
+  store.local $total.0, %t0
+  %t1 = const I64 0
+  %t2 = const I64 5
+  local $i.1: I64
+  store.local $i.1, %t1
+  loop L8 {
+    %t3 = load.local $i.1
+    %t4 = cmp.lt.i64 %t3, %t2
+    while %t4
+    fuel.charge 1                                #2 @control/labelled_jumps.ci:9:11
+    %t5 = const I64 0
+    %t6 = const I64 5
+    local $j.2: I64
+    store.local $j.2, %t5
+    loop L17 {
+      %t7 = load.local $j.2
+      %t8 = cmp.lt.i64 %t7, %t6
+      while %t8
+      fuel.charge 1                              #3 @control/labelled_jumps.ci:10:15
+      if {
+        arm {
+          %t9 = load.local $j.2
+          %t10 = load.local $i.1
+          %t11 = cmp.gt.i64 %t9, %t10
+        } then %t11 {
+          continue L8
+        }
+      }
+      if {
+        arm {
+          %t12 = load.local $i.1
+          %t13 = const I64 4
+          %t14 = cmp.eq.i64 %t12, %t13
+        } then %t14 {
+          break L8
+        }
+      }
+      %t15 = load.local $j.2
+      switch L41 %t15 {
+        case 2 {
+          continue L17
+        }
+        case 3 {
+          break L17
+        }
+        default {
+          %t16 = load.local $total.0
+          %t17 = load.local $i.1
+          %t18 = const I64 10
+          %t19 = mul.checked.i64 %t17, %t18      #4 @control/labelled_jumps.ci:20:37
+          %t20 = load.local $j.2
+          %t21 = add.checked.i64 %t19, %t20      #5 @control/labelled_jumps.ci:20:42
+          %t22 = add.checked.i64 %t16, %t21      #6 @control/labelled_jumps.ci:20:32
+          store.local $total.0, %t22
+        }
+      }
+      next
+      %t23 = load.local $j.2
+      %t24 = const I64 1
+      %t25 = add.wrap.i64 %t23, %t24
+      store.local $j.2, %t25
+    }
+    next
+    %t26 = load.local $i.1
+    %t27 = const I64 1
+    %t28 = add.wrap.i64 %t26, %t27
+    store.local $i.1, %t28
+  }
+  %t29 = const I64 0
+  local $k.3: I64
+  store.local $k.3, %t29
+  loop L81 {
+    %t30 = load.local $k.3
+    %t31 = const I64 10
+    %t32 = cmp.lt.i64 %t30, %t31
+    while %t32
+    fuel.charge 1                                #7 @control/labelled_jumps.ci:25:12
+    %t33 = load.local $k.3
+    %t34 = const I64 1
+    %t35 = add.checked.i64 %t33, %t34            #8 @control/labelled_jumps.ci:26:11
+    store.local $k.3, %t35
+    %t36 = const I64 0
+    local $m.4: I64
+    store.local $m.4, %t36
+    loop L94 {
+      %t37 = const Bool true
+      while %t37
+      fuel.charge 1                              #9 @control/labelled_jumps.ci:28:9
+      %t38 = load.local $m.4
+      %t39 = const I64 1
+      %t40 = add.checked.i64 %t38, %t39          #10 @control/labelled_jumps.ci:29:15
+      store.local $m.4, %t40
+      if {
+        arm {
+          %t41 = load.local $m.4
+          %t42 = const I64 3
+          %t43 = cmp.eq.i64 %t41, %t42
+        } then %t43 {
+          continue L81
+        }
+      }
+      if {
+        arm {
+          %t44 = load.local $k.3
+          %t45 = const I64 5
+          %t46 = cmp.eq.i64 %t44, %t45
+        } then %t46 {
+          break L81
+        }
+      }
+      next
+    }
+    next
+  }
+  %t47 = load.local $total.0
+  %t48 = const I64 100
+  %t49 = mul.checked.i64 %t47, %t48              #11 @control/labelled_jumps.ci:38:18
+  %t50 = load.local $k.3
+  %t51 = add.checked.i64 %t49, %t50              #12 @control/labelled_jumps.ci:38:24
+  return %t51
+}

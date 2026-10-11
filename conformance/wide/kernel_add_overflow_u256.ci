@@ -1,0 +1,16 @@
+// case: wide/kernel_add_overflow_u256
+// clause: SPEC-02 F-3, F-6, X-8; SPEC-01 IM-6, IM-106; SPEC-09 CONF-11 rule 14 (a work-item's U256 sum overflows; the record has the kernel form with U256 operands)
+// subset: cint-core-1 (unsigned wide integers, kernel)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 8:17 (the `+`), phase work-item, address dispatch 0, work-item 2, step 2, operation add.checked.u256, operands U256 2^256 - 1 and U256 1, exact 2^256, limit U256 2^256 - 1; stack depth 1, stack 14:5; fuel 4 (entry, N = 3). Box 15, unit 1
+
+kernel bump[n](in U256[n] a, out U256[n] b) over [i: n] {
+    b[i] = a[i] + 1;
+}
+
+export Bool run() {
+    U256[3] x = [1, 2, U256.max];
+    U256[3] y;
+    bump(x, y);
+    return y[0] != 0;
+}

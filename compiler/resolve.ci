@@ -678,7 +678,7 @@ export void import_bind[q, k](in scan.Token[_] toks, inout Name[q] names, in lim
             } else if (next == -2) { fail(toks, diag, rs, C_UNSUPPORTED, tk); }
             else { root = next; }
             top += 1;
-        } else if (kd != limits.DK_FIELD && kd != limits.DK_PARAM && kd != limits.DK_NAME) {
+        } else if (kd != limits.DK_FIELD && kd != limits.DK_PARAM && kd != limits.DK_NAME && kd != limits.DK_LIMBS) {
             fail(toks, diag, rs, C_UNSUPPORTED, tk);
         }
         row += 1;
@@ -807,24 +807,32 @@ export I64 lookup[n, t, y, q, r](in U8[n] src, in scan.Token[t] toks, in parse.N
 // ---------------------------------------------------------------- types
 
 // The type identifier class cls names among the eight integer types of cint-boot-1 (I8 to
-// I64, U8 to U64), or 0.
+// I64, U8 to U64) and (box 15 unit 4) the wide integers I128 to I1024 and U128 to U512, or 0.
 export I64 int_class(I32 cls) {
     switch (cls) {
         case scan.IDC_I8: return fold.TY_I8;
         case scan.IDC_I16: return fold.TY_I16;
         case scan.IDC_I32: return fold.TY_I32;
         case scan.IDC_I64: return fold.TY_I64;
+        case scan.IDC_I128: return fold.TY_I128;
+        case scan.IDC_I256: return fold.TY_I256;
+        case scan.IDC_I512: return fold.TY_I512;
+        case scan.IDC_I1024: return fold.TY_I1024;
         case scan.IDC_U8: return fold.TY_U8;
         case scan.IDC_U16: return fold.TY_U16;
         case scan.IDC_U32: return fold.TY_U32;
         case scan.IDC_U64: return fold.TY_U64;
+        case scan.IDC_U128: return fold.TY_U128;
+        case scan.IDC_U256: return fold.TY_U256;
+        case scan.IDC_U512: return fold.TY_U512;
         default: return 0;
     }
 }
 
-// Whether ty is one of the eight integer types.
+// Whether ty is one of the integer types: the eight of cint-boot-1, I128 to I1024, or U128
+// to U512.
 export Bool is_int(I64 ty) {
-    return (ty >= fold.TY_I8 && ty <= fold.TY_I64) || (ty >= fold.TY_U8 && ty <= fold.TY_U64);
+    return (ty >= fold.TY_I8 && ty <= fold.TY_I1024) || (ty >= fold.TY_U8 && ty <= fold.TY_U512);
 }
 
 // The type an N_TYPE node names: an integer type of int_class, or Bool; C3006 at its name
@@ -880,6 +888,18 @@ const I64 ELEM_STEP = 281474976710656;
 
 export Bool is_array(I64 ty) {
     return ty >= TY_ARRAY;
+}
+
+// Whether a module-level variable of type ty is module state that cintc compiles: a scalar,
+// a handle (decision on OQ-242), (box 13 MLA, decision on OQ-239) an array of integer or
+// `Bool` elements, or (box 15, decision on OQ-260) a struct whose fields compiler/check.ci
+// state_struct admits. An array of other elements is C9102.
+export Bool modvar_type_ok(I64 ty) {
+    if (is_array(ty)) {
+        I64 e = array_elem(ty);
+        return is_int(e) || e == fold.TY_BOOL;
+    }
+    return true;
 }
 
 // The rank of array type ty.
@@ -1092,8 +1112,10 @@ export I64 param_type_of[n, t, r](in U8[n] src, in scan.Token[t] toks, in parse.
 // The array type of N_TYPE node x of function node f (-1 outside a parameter), whose shape
 // has one extent, with element code elem; 0 after C9102 for another shape or extent. A
 // shape of 2 to 4 extents (box 09) is checked by the caller (checked_extent -1), which
-// gets the rank-1 type of element code elem and builds the type itself (check.ci h_type);
-// more than 4 is C9102 (`cint_ref` refuses it, SPEC-02 V-2).
+// gets the rank-1 type of element code elem and builds the type itself (check.ci h_type),
+// or (checked_extent MODULE_EXTENTS, a module-level variable) has a decimal literal of at
+// most NARRAY_EXTENT_MAX per dimension, as a rank-1 one has (box 13 MLA); more than 4 is
+// C9102 (`cint_ref` refuses it, SPEC-02 V-2).
 I64 shape_type[n, t, r](in U8[n] src, in scan.Token[t] toks, in parse.Node[_] nodes,
         inout limits.CompilerDiag[r] diag, inout RState[_] rs, I64 x, I64 f, I64 elem, I64 checked_extent) {
     I64 shape = nodes[x].a as I64;
@@ -1104,12 +1126,31 @@ I64 shape_type[n, t, r](in U8[n] src, in scan.Token[t] toks, in parse.Node[_] no
         rank += 1;
         z = nodes[z].next as I64;
     }
-    if (rank == 0 || rank > 4 || (rank > 1 && checked_extent != -1)) {
+    if (rank == 0 || rank > 4 || (rank > 1 && checked_extent != -1 && checked_extent != MODULE_EXTENTS)) {
         fail(toks, diag, rs, C_UNSUPPORTED, nodes[shape].tok as I64);
         return 0;
     }
-    if (rank > 1) {
+    if (rank > 1 && checked_extent == -1) {
         return TY_ARRAY + elem;
+    }
+    if (rank > 1) {
+        I64[4] code;
+        for d in 0..4 {
+            code[d] = 0;
+            if (e >= 0) {
+                I64 v = lit_extent(src, toks, nodes, diag, rs, e, NARRAY_EXTENT_MAX);
+                if (v < 0) {
+                    return 0;
+                }
+                code[d] = v + 1;
+                e = nodes[e].next as I64;
+            }
+        }
+        I64 ty = shaped(elem, rank, code[0], code[1], code[2], code[3]);
+        if (ty == 0) {
+            fail(toks, diag, rs, C_UNSUPPORTED, nodes[shape].tok as I64);
+        }
+        return ty;
     }
     if (checked_extent >= -1) {
         return TY_ARRAY + (checked_extent + 1) * 65536 + elem;
@@ -1125,10 +1166,21 @@ I64 shape_type[n, t, r](in U8[n] src, in scan.Token[t] toks, in parse.Node[_] no
             return TY_ARRAY + (SIZE_CODE + j) * 65536 + elem;
         }
     }
-    I64 nd = toks[et].len as I64;
-    if (k != parse.N_LIT || toks[et].kind != scan.TK_INT || toks[et].sub != 10 || nd > 5) {
-        fail(toks, diag, rs, C_UNSUPPORTED, et);
+    I64 v = lit_extent(src, toks, nodes, diag, rs, e, ARRAY_EXTENT_MAX);
+    if (v < 0) {
         return 0;
+    }
+    return TY_ARRAY + (v + 1) * 65536 + elem;
+}
+
+// The value of extent node e, a decimal literal of at most `most`; -1 after C9102 otherwise.
+I64 lit_extent[n, t, r](in U8[n] src, in scan.Token[t] toks, in parse.Node[_] nodes,
+        inout limits.CompilerDiag[r] diag, inout RState[_] rs, I64 e, I64 most) {
+    I64 et = nodes[e].tok as I64;
+    I64 nd = toks[et].len as I64;
+    if (nodes[e].kind != parse.N_LIT || toks[et].kind != scan.TK_INT || toks[et].sub != 10 || nd > 5) {
+        fail(toks, diag, rs, C_UNSUPPORTED, et);
+        return -1;
     }
     I64 v = 0;
     I64 s = toks[et].start as I64;
@@ -1138,12 +1190,15 @@ I64 shape_type[n, t, r](in U8[n] src, in scan.Token[t] toks, in parse.Node[_] no
             v = v * 10 + ((c - '0') as I64);
         }
     }
-    if (v > ARRAY_EXTENT_MAX) {
+    if (v > most) {
         fail(toks, diag, rs, C_UNSUPPORTED, et);
-        return 0;
+        return -1;
     }
-    return TY_ARRAY + (v + 1) * 65536 + elem;
+    return v;
 }
+
+// checked_extent of a module-level variable's type (shape_type): extents of rank 1 to 4.
+export const I64 MODULE_EXTENTS = -3;
 
 // ---------------------------------------------------------------- string values
 
@@ -1430,12 +1485,34 @@ export void field_type(in scan.Token[_] toks, in parse.Node[_] nodes, inout Sem[
         sem[fd].opty = decls[row].align as I64;
         sem[fd].lit_len = decls[row].b;
     }
-    Bool field_array = is_array(ty) && array_extent(ty) >= 0;
-    if (is_array(ty) && !field_array) {
+    if (is_array(ty) && field_count(ty) < 0) {
         fail(toks, diag, rs, C_UNSUPPORTED, nodes[tn].tok as I64);
         return;
     }
     sem[fd].ty = ty;
+}
+
+// The elements of array field type ty, or -1 for a type no field takes: rank 1 with a static
+// extent, or (BX22-06) rank 2 to 4 with static extents of at least 1 and integer or `Bool`
+// elements. Other shapes are C9102 (compiler/OPEN.md CINTC-OQ-15).
+export I64 field_count(I64 ty) {
+    I64 r = array_rank(ty);
+    if (r == 1) {
+        return array_extent(ty);
+    }
+    I64 e = array_elem(ty);
+    if (!is_int(e) && e != fold.TY_BOOL) {
+        return -1;
+    }
+    I64 n = 1;
+    for d in 0..r {
+        I64 v = dim_extent(ty, d);
+        if (v < 1) {
+            return -1;
+        }
+        n = n * v;
+    }
+    return n;
 }
 
 // Visits local records and their fields in declaration order. The struct Sem rows
@@ -2295,9 +2372,8 @@ export I64 resolve_remainder(in U8[_] src, in scan.Token[_] toks, in parse.Node[
     x = nodes[root].a as I64;
     while (x >= 0 && rs[0].err == 0) {
         if (nodes[x].kind == parse.N_VAR && is_statement(nodes, x)) {
-            I64 ty = type_ref(src, toks, nodes, sem, syms, names, decls, diag, rs, nodes[x].a as I64, -1, -2);
-            if (rs[0].err == 0 && (is_struct(ty) || is_array(ty) || is_handle(ty))) {
-                // A module-level handle is compiler/OPEN.md CINTC-OQ-15 (box 12).
+            I64 ty = type_ref(src, toks, nodes, sem, syms, names, decls, diag, rs, nodes[x].a as I64, -1, MODULE_EXTENTS);
+            if (rs[0].err == 0 && !modvar_type_ok(ty)) {
                 fail(toks, diag, rs, C_UNSUPPORTED, nodes[nodes[x].a as I64].tok as I64);
             }
             sem[x].ty = ty;

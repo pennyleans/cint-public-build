@@ -1,0 +1,12 @@
+// case: fixed/raw_forms_q8_8
+// clause: SPEC-01 IM-60 (wrapping, saturating, negation, abs, min, max and comparison act on the raw values)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 0; prints `-127.5 127.99609375 -128.0 -127.0 1.5 1.5 127.0 true true` (128.5 wraps to -127.5; 128.5 and -128.5 saturate); fuel 1. Box 15, unit 1
+
+export I64 run() {
+    Q8.8 a = 127.0;
+    Q8.8 b = 1.5;
+    "{a +% b} {a +| b} {-a -| b} {-a} {abs(-b)} {min(a, b)} {max(a, b)} {a > b} {b == 1.5}\n";
+    return 0;
+}

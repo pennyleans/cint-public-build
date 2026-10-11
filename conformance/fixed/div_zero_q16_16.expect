@@ -1,0 +1,18 @@
+case fixed/div_zero_q16_16
+clause SPEC-01 IM-65 (B == 0 faults E_DIV_ZERO before any other check; no exact, no limit)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_DIV_ZERO
+fault.operation div.checked.q16_16.half_even
+fault.operand Q16.16 raw 65536
+fault.operand Q16.16 raw 0
+fault.exact none
+fault.limit none
+fault.position fixed/div_zero_q16_16.ci:10:14
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

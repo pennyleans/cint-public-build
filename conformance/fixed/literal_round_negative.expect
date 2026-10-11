@@ -1,0 +1,9 @@
+case fixed/literal_round_negative
+clause SPEC-04 LS-28, LS-37 (SPEC-04I.12, decision 2026-10-09 on OQ-265); SPEC-01 4.5, IM-27 (a round clause after a negative fraction literal rounds the negative value once)
+format 5
+source reference
+outcome value
+stdout-bytes 48
+stdout-sha256 ba11e425ce7ec89156809efad5f61deb20c4c7e0a214a51485ae429b5f8535fa
+return I64 -6553
+fuel-consumed 1

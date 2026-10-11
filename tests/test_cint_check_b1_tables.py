@@ -21,13 +21,13 @@ def lists(compiler):
 class TablesWithoutTheMarker(unittest.TestCase):
     def test_seed_classifies_the_table_outside_the_subset(self):
         cats = {}
-        programs = cint_check.inventory_tables(["add_sat_i64"], cats, lists("seed"))
+        programs = cint_check.inventory_tables(["tables/add_sat_i64"], cats, lists("seed"))
         self.assertEqual(programs, [])
         self.assertEqual(cats["tables/add_sat_i64"][0], "outside_subset")
 
     def test_b1_compiles_the_table(self):
         cats = {}
-        programs = cint_check.inventory_tables(["add_sat_i64"], cats, lists("b1"))
+        programs = cint_check.inventory_tables(["tables/add_sat_i64"], cats, lists("b1"))
         self.assertEqual([p.name for p in programs], ["tables/add_sat_i64"])
         self.assertEqual(cats, {})
         self.assertEqual(len(programs[0].cases), 256)

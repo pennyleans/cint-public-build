@@ -1,0 +1,9 @@
+// case: probes/dot_negative_step
+// clause: box 13 unit 7 probe: dot over a slice with a negative step (slice.checked, dot.checked)
+// entry: run; args: none
+
+export I64 run() {
+    I64[6] a = [1, 2, 3, 4, 5, 6];
+    I64[6] b = [10, 20, 30, 40, 50, 60];
+    return dot(I64, a[.. by -2], b[1..4]);
+}

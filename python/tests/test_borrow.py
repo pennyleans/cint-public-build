@@ -431,8 +431,8 @@ class DLPack(BorrowCase):
             self.assertEqual((producer.exported, producer.deleted, producer.unknown_deletes), (1, 1, 0), fragment)
 
     def test_device_refused_before_export(self):
-        p = Producer([1], device=(2, 0))
-        self.refused(p, "kDLCUDA:0", "CPU memory only")
+        p = Producer([1], device=(_dlpack.kDLCPU + 6, 0))
+        self.refused(p, "kDLVulkan:0", "CPU and CUDA memory")
         self.assertEqual(p.exported, 0)
 
     def test_device_in_the_tensor(self):

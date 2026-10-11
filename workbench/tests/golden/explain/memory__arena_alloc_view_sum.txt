@@ -1,0 +1,93 @@
+module memory/arena_alloc_view_sum.ci   revision 19724e038bf43ea12ad1410d3fdeed5c822cd81a604fc4fcbcfba077e92f7708
+program   1 module, 1 function, 53 nodes
+compile fuel   per phase: k x input bytes + c, k = 21524, c = 19876 (rt/cint_bridge.h; SPEC-09 CINTC-09)
+  plan                             596 bytes in all modules   12848180 units
+  memory/arena_alloc_view_sum.ci   596 bytes   12848180 units for each of compile, measure, and emit
+memory   K x source bytes + 1 MiB + 80 B x program declarations per module (SPEC-09 CINTC-02); K is measured by tools/cint_measure.py
+
+function run   memory/arena_alloc_view_sum.sites:4   pure
+  signature  () -> I64
+  fault sites (18): 18 possible, 0 statically excluded
+    run#1   memory/arena_alloc_view_sum.ci:9:12   fuel.charge          E_FUEL possible
+    run#2   memory/arena_alloc_view_sum.ci:10:31  arena.alloc          E_BOUNDS E_STALE_HANDLE possible
+    run#3   memory/arena_alloc_view_sum.ci:11:31  arena.alloc          E_BOUNDS E_STALE_HANDLE possible
+    run#4   memory/arena_alloc_view_sum.ci:12:5   fuel.charge          E_FUEL possible
+    run#5   memory/arena_alloc_view_sum.ci:12:28  handle.check         possible
+    run#6   memory/arena_alloc_view_sum.ci:12:31  handle.check         possible
+    run#7   memory/arena_alloc_view_sum.ci:12:31  index.checked.i64    E_BOUNDS possible
+    run#8   memory/arena_alloc_view_sum.ci:12:39  add.checked.i64      E_OVERFLOW possible
+    run#9   memory/arena_alloc_view_sum.ci:13:12  handle.check         possible
+    run#10  memory/arena_alloc_view_sum.ci:13:15  handle.check         possible
+    run#11  memory/arena_alloc_view_sum.ci:13:15  index.checked.i64    E_BOUNDS possible
+    run#12  memory/arena_alloc_view_sum.ci:14:23  handle.check         possible
+    run#13  memory/arena_alloc_view_sum.ci:14:12  handle.check         possible
+    run#14  memory/arena_alloc_view_sum.ci:14:12  sum.checked.i64.i64  E_OVERFLOW E_FUEL possible
+    run#15  memory/arena_alloc_view_sum.ci:14:41  handle.check         possible
+    run#16  memory/arena_alloc_view_sum.ci:14:30  handle.check         possible
+    run#17  memory/arena_alloc_view_sum.ci:14:30  sum.checked.i64.i64  E_OVERFLOW E_FUEL possible
+    run#18  memory/arena_alloc_view_sum.ci:14:28  add.checked.i64      E_OVERFLOW possible
+  hint       not analyzed: excluding a possible site needs range analysis, which no component performs yet
+  reductions
+    run#14  sum.checked.i64.i64  result I64; accumulator 64 + ceil(log2 n) bits for n terms (SPEC-01 IM-80); exact; one checked narrowing to I64 at the end
+    run#17  sum.checked.i64.i64  result I64; accumulator 64 + ceil(log2 n) bits for n terms (SPEC-01 IM-80); exact; one checked narrowing to I64 at the end
+  fuel       fuel-v1 charge points (SPEC-01 IM-139, SPEC-09 SIR-07)
+    run#1   fuel.charge 1   at the start of the body
+    run#4   fuel.charge 1   each iteration of loop L13
+  lowering
+    cpu-sir-interp    supported   the workbench evaluator runs this text (SPEC-09 BACK-01a)
+    cpu-c17 (ref-c)   supported   cintc emits C17 from the same SIR (SPEC-09 BACK-03)
+  sir
+export func @memory.arena_alloc_view_sum.run() -> I64 {
+  fuel.charge 1                                  #1 @memory/arena_alloc_view_sum.ci:9:12
+  %t0 = const I64 4
+  %t1 = arena.alloc @scratch, %t0                #2 @memory/arena_alloc_view_sum.ci:10:31
+  local $a.0: Handle
+  store.local $a.0, %t1
+  %t2 = const I64 3
+  %t3 = arena.alloc @scratch, %t2                #3 @memory/arena_alloc_view_sum.ci:11:31
+  local $b.1: Handle
+  store.local $b.1, %t3
+  %t4 = const I64 0
+  %t5 = const I64 4
+  local $i.2: I64
+  store.local $i.2, %t4
+  loop L13 {
+    %t6 = load.local $i.2
+    %t7 = cmp.lt.i64 %t6, %t5
+    while %t7
+    fuel.charge 1                                #4 @memory/arena_alloc_view_sum.ci:12:5
+    %t8 = load.local $a.0
+    handle.view $sc.3, @scratch, %t8             #5 @memory/arena_alloc_view_sum.ci:12:28
+    %t9 = load.local $i.2
+    handle.lease $sc.4                           #6 @memory/arena_alloc_view_sum.ci:12:31
+    index.checked.i64 $sc.3, %t9                 #7 @memory/arena_alloc_view_sum.ci:12:31
+    %t10 = view.offset $sc.3, %t9, 0
+    %t11 = load.local $i.2
+    %t12 = const I64 1
+    %t13 = add.checked.i64 %t11, %t12            #8 @memory/arena_alloc_view_sum.ci:12:39
+    index.store $sc.3, %t10, %t13
+    next
+    %t14 = load.local $i.2
+    %t15 = const I64 1
+    %t16 = add.wrap.i64 %t14, %t15
+    store.local $i.2, %t16
+  }
+  %t17 = load.local $b.1
+  handle.view $sc.5, @scratch, %t17              #9 @memory/arena_alloc_view_sum.ci:13:12
+  %t18 = const I64 2
+  handle.lease $sc.6                             #10 @memory/arena_alloc_view_sum.ci:13:15
+  index.checked.i64 $sc.5, %t18                  #11 @memory/arena_alloc_view_sum.ci:13:15
+  %t19 = view.offset $sc.5, %t18, 0
+  %t20 = const I64 100
+  index.store $sc.5, %t19, %t20
+  %t21 = load.local $a.0
+  handle.view $sc.7, @scratch, %t21              #12 @memory/arena_alloc_view_sum.ci:14:23
+  handle.lease $sc.8                             #13 @memory/arena_alloc_view_sum.ci:14:12
+  %t22 = sum.checked.i64.i64 $sc.7               #14 @memory/arena_alloc_view_sum.ci:14:12
+  %t23 = load.local $b.1
+  handle.view $sc.9, @scratch, %t23              #15 @memory/arena_alloc_view_sum.ci:14:41
+  handle.lease $sc.10                            #16 @memory/arena_alloc_view_sum.ci:14:30
+  %t24 = sum.checked.i64.i64 $sc.9               #17 @memory/arena_alloc_view_sum.ci:14:30
+  %t25 = add.checked.i64 %t22, %t24              #18 @memory/arena_alloc_view_sum.ci:14:28
+  return %t25
+}

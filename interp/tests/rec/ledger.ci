@@ -1,0 +1,26 @@
+// Test program of interp/tests/test_interp.py (box 13 unit 5), not a conformance case: the
+// host interp/tests/rec_host.c records and replays its entries on both CPU backends. B1's SIR
+// text of it is interp/tests/rec/sir/.
+import lib.audit;
+
+I64 total = 100;
+
+export I64 deposit(I64 n) {
+    total += n;
+    "deposit {n}\n";
+    _ = audit.note(n);
+    return total;
+}
+
+export I64 burn(I64 n) {
+    I64 s = 0;
+    for i in 0..n {
+        s += 1;
+    }
+    return s;
+}
+
+void main() {
+    "ledger {total}\n";
+    _ = deposit(1);
+}

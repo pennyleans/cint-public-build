@@ -1,0 +1,16 @@
+// case: fixed/module_state_q16_16
+// clause: SPEC-09 CONF-11 rules 10 and 14 (a module-level fixed-point scalar has a state.global line in format 5; a fixed-point array has none)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 327680, the raw integer; prints, with `!raw`, the Q16.16 value raw 327680 (5.0) and a line feed; fuel 1; state.global fixed.module_state_q16_16 g Q16.16 raw 327680, and no line for the array t. Box 15, unit 1
+
+Q16.16 g = 2.5;
+Q8.8[2] t = [0.5, -1.0];
+
+export I64 run() {
+    g = g * 2.0;
+    t[1] = t[0] + t[1];
+    Q16.16 observed = g;
+    "{observed!raw}\n";
+    return observed.raw as I64;
+}

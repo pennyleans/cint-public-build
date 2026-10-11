@@ -1,0 +1,130 @@
+{
+  "args": [
+    "n",
+    "initial",
+    "seed"
+  ],
+  "bars": [
+    {
+      "against": {
+        "variants": [
+          "c-builtin",
+          "c-portable"
+        ]
+      },
+      "cint": [
+        "cint-builtin"
+      ],
+      "id": "B-6 checked C",
+      "relation": "at_most",
+      "statistic": "median",
+      "status": "Ruled, OQ-224",
+      "times": [
+        11,
+        10
+      ]
+    },
+    {
+      "against": {
+        "variants": [
+          "rust-checked"
+        ]
+      },
+      "cint": [
+        "cint-builtin"
+      ],
+      "id": "B-6 Rust",
+      "relation": "at_most",
+      "statistic": "median",
+      "status": "Ruled, OQ-224",
+      "times": [
+        1,
+        1
+      ]
+    }
+  ],
+  "benchmark": "B-6",
+  "cint": {
+    "entry": "transactions",
+    "source": "bench/cpu_trials/ledger.ci"
+  },
+  "elements": "n",
+  "form": "call",
+  "hypothesis": "H-4",
+  "method": {
+    "rounds": 11,
+    "samples": 10,
+    "warmup": 10
+  },
+  "name": "transactions",
+  "parameters": {
+    "initial": {
+      "value": 1000000
+    },
+    "n": {
+      "agreement": 1000,
+      "value": 1000000
+    },
+    "seed": {
+      "value": 23
+    }
+  },
+  "reports": [
+    {
+      "against": "cint-builtin",
+      "id": "fuel cost",
+      "of": "cint-builtin-fuel-on",
+      "statistic": "median"
+    }
+  ],
+  "summary": "Checked additions over a 256-entry local table built from a seed (ledger.ci's transactions), 10^6 iterations, against checked C and Rust checked_*; fuel off is no allowance and fuel on a finite one (SPEC-01 IM-137).",
+  "variants": [
+    {
+      "fuel": "off",
+      "helpers": "portable",
+      "name": "cint-portable",
+      "role": "cint"
+    },
+    {
+      "fuel": "off",
+      "helpers": "builtin",
+      "name": "cint-builtin",
+      "role": "cint"
+    },
+    {
+      "fuel": "on",
+      "helpers": "builtin",
+      "name": "cint-builtin-fuel-on",
+      "role": "cint"
+    },
+    {
+      "entry": "checked_transactions",
+      "language": "C17",
+      "legs": [
+        "gcc",
+        "clang",
+        "apple-clang"
+      ],
+      "name": "c-builtin",
+      "number_format": "I64",
+      "role": "baseline",
+      "source": "bench/baselines/ledger/checked_builtin.c"
+    },
+    {
+      "entry": "portable_transactions",
+      "language": "C17",
+      "name": "c-portable",
+      "number_format": "I64",
+      "role": "baseline",
+      "source": "bench/baselines/ledger/checked_portable.c"
+    },
+    {
+      "entry": "rust_checked_transactions",
+      "language": "Rust",
+      "name": "rust-checked",
+      "number_format": "I64",
+      "role": "baseline",
+      "source": "bench/cpu_trials/rust/ledger.rs"
+    }
+  ]
+}

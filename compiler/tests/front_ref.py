@@ -18,7 +18,11 @@ static_assert message, the `..=` of a case range, the `!` of an error union, the
 and box 12: arrays of rank 2 to 4, slices, views, `copy`, the reductions, `reduce` and
 kernels, and error sets, error unions, `try`, `catch`, `as?`, `.name`, `defer` and
 `errdefer`, and arenas, pools and handles (`Arena(T)`, `Pool(T)`, `Handle(T)` and a
-module-level `Arena(T, capacity) name;`) parse. The `_` extent of an `over` item, which
+module-level `Arena(T, capacity) name;`) parse, and so does the fixed-point syntax of box
+15 (`fixed=True`; compiler/OPEN.md CINTC-OQ-15): `Q<i>.<f>` types, fraction literals with
+or without a `round` clause, a negative one included (SPEC-04I.12), `Q.raw(n)` and the type
+properties of a fixed-point type. cintc's callee of `Q.raw(n)` is the type property
+`Q.raw`, which front.ci writes as `?`, at the type. The `_` extent of an `over` item, which
 cint_ref parses as the name `_`, is `(_)`, as in a shape. This module shares no code with
 cintc: it reads cint_ref's tree only.
 """
@@ -78,6 +82,18 @@ class Writer:
         lx = lexer.Lexer(self.text[offset:], self.path, p.line, p.column)
         lx.next_token()
         return lx.next_token()
+
+    def raw_type_at(self, e) -> str:
+        """`@line:col` of the type of `Q.raw(n)`, two tokens before `raw`; inside a hole, whose
+        text the module's tokens do not split, the start of the call, which is its type unless
+        the call is parenthesized."""
+        if self.index is None:
+            self.index = {(t.line, t.col): k for k, t in enumerate(self.toks)}
+        k = self.index.get((e.pos.line, e.pos.column))
+        if k is None:
+            return at(e.start)
+        t = self.toks[k - 2]
+        return "@%d:%d" % (t.line, t.col)
 
     def last_token_before(self, p, text):
         found = None
@@ -148,6 +164,10 @@ class Writer:
         if isinstance(e, T.Call):
             qual = " qual:%s" % e.qual if e.qual else ""
             args = " ".join(self.arg(a) for a in e.args)
+            if getattr(e, "raw_type", None):
+                # `Q.raw(n)`: cintc's callee is the type property `Q.raw`, which front.ci writes
+                # as `?`, and the call is at its type, two tokens before `raw`.
+                return "(call ?%s%s%s [%s])" % (self.raw_type_at(e), start(e.start), " p" if e.paren else "", args)
             return "(call %s%s%s [%s])" % (e.callee, qual, self.expr_pos(e), args)
         if isinstance(e, T.Index):
             items = " ".join(self.index_item(x) for x in e.items)
@@ -387,7 +407,7 @@ def outcome(data: bytes, path: str):
     sys.setrecursionlimit(max(old, 200000))
     try:
         text = lexer.decode_source(data, path)
-        module = parser.parse_module(text, path, box09=True, box12=True)   # cintc's surface: boxes 09 and 12
+        module = parser.parse_module(text, path, box09=True, box12=True, fixed=True)   # cintc's parser: boxes 09, 12 and 15
         return ("tree", Writer(text, path).module(module))
     except CompileError as e:
         d = e.diagnostic

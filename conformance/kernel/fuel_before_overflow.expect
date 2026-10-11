@@ -1,0 +1,19 @@
+case kernel/fuel_before_overflow
+clause SPEC-09 BACK-09 (its conformance case), SPEC-02 X-8 items 2 to 4, F-6a item 2
+format 4
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 6001
+fault.code E_FUEL
+fault.operation fuel.charge
+fault.exact none
+fault.limit I64 6001
+fault.position kernel/fuel_before_overflow.ci:9:5
+fault.revision self
+fault.source-map self
+fault.phase work-item
+fault.kernel kernel.fuel_before_overflow.count_up
+fault.address 0 500 1
+fault.stack-depth 1
+fault.stack kernel/fuel_before_overflow.ci:19:5

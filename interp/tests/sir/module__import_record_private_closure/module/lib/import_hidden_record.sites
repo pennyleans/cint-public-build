@@ -1,0 +1,15 @@
+module module.lib.import_hidden_record
+sites module/lib/import_hidden_record.ci 1:2:15:fuel.charge 2:3:12:fuel.charge
+struct Hidden(value: I64)
+export func @module.lib.import_hidden_record.produce() -> Hidden {
+  fuel.charge 1                                  #1 @module/lib/import_hidden_record.ci:2:15
+  local $sc.0: Hidden
+  %t0 = const I64 19
+  field.store $sc.0, value, %t0
+  return $sc.0
+}
+export func @module.lib.import_hidden_record.consume(%value: Hidden) -> I64 {
+  fuel.charge 1                                  #2 @module/lib/import_hidden_record.ci:3:12
+  %t0 = field.load %value, value
+  return %t0
+}

@@ -1,0 +1,18 @@
+// case: probes/rank3_sums
+// clause: box 13 unit 7 probe: sums over views of a rank-3 array and the size of a slice (sum.checked, view.extent -1)
+// entry: run; args: none
+
+export I64 run() {
+    I64[2, 3, 4] t;
+    for i in 0..2 {
+        for j in 0..3 {
+            for k in 0..4 {
+                t[i, j, k] = i * 100 + j * 10 + k;
+            }
+        }
+    }
+    I64 a = sum(t[1]);
+    I64 b = sum(t[.., 1, ..]);
+    I64 c = sum(t[1, .., 2]);
+    return a * 1000000 + b * 1000 + c + size(t[.., 1..]) * 1000000000;
+}

@@ -1,0 +1,11 @@
+// case: fixed/rem_c2103
+// clause: SPEC-01 IM-66; SPEC-04 17.2 (`%` is not defined on fixed point)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: compile-error C2103 at 9:14 (the `%`). Box 15, unit 1
+
+export I64 run() {
+    Q8.8 a = 1.0;
+    Q8.8 b = a % a;
+    return 0;
+}

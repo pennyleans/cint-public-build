@@ -1,0 +1,53 @@
+// orbit_1e8 (B-1): the orbit paper's program, papers/orbit/orbit.ci in pennyleans/cint-demo,
+// with STEPS raised to 10^8. tools/cint_bench.py sets STEPS for a smaller run.
+
+// a two-body orbit stepped in whole numbers, position is centimeters
+// with a micrometer remainder carried separately so nothing is lost,
+// velocity is micrometers per second, the step is one second and the
+// integrator is semi-implicit euler, after one period the program
+// prints how far the vessel is from where it started and a digest of
+// every state it passed through
+
+const I64 GM = 398_600_441_800_000;    // earth, m^3/s^2
+const I64 STEPS = 100000000;          // 10^8 steps (orbit_1e8); the paper runs 5,554, about one period
+
+void main() {
+    I64 x = 677_813_700;  I64 y = 0;                 // cm, 6,778.137 km
+    I64 vx = 0;           I64 vy = 7_668_558_000;    // um/s, circular speed
+    I64 rx = 0;           I64 ry = 0;                // sub-centimeter remainders, um
+    I64 x0 = x;  I64 y0 = y;
+    I64 rmin = 9_223_372_036_854_775_807;  I64 rmax = 0;
+    U64 digest = 0;
+
+    for i in 0..STEPS {
+        // gravity: GM / r^2 in um/s^2, then split along x and y
+        I64 r2 = x * x + y * y;                          // cm^2
+        I64 r = isqrt(r2);                               // cm
+        I64 g = muldiv(I64, GM, 10_000_000_000, r2, half_even);   // (m^3/s^2 * 1e10) / cm^2 = um/s^2
+        I64 ax = -muldiv(I64, g, x, r, half_even);
+        I64 ay = -muldiv(I64, g, y, r, half_even);
+
+        // kick, then drift, carrying the remainder exactly
+        vx = vx + ax;  vy = vy + ay;
+        rx = rx + vx;  ry = ry + vy;
+        x = x + rx / 10_000;  rx = rx % 10_000;
+        y = y + ry / 10_000;  ry = ry % 10_000;
+
+        rmin = min(rmin, r);  rmax = max(rmax, r);
+        // the digest wraps on purpose, it is a fingerprint of the path, not a quantity
+        digest = (digest *% 1_099_511_628_211) ^ (x as% U64) ^ ((y as% U64) <<% 21) ^ ((vx as% U64) <<% 42) ^ ((vy as% U64) <<% 7);
+    }
+
+    I64 dx = x - x0;  I64 dy = y - y0;
+    "after {STEPS} s: x {x} cm, y {y} cm, vx {vx} um/s, vy {vy} um/s\n";
+    "radius stayed between {rmin} and {rmax} cm\n";
+    "distance from the start {isqrt(dx * dx + dy * dy)} cm\n";
+    "state digest {digest}\n";
+}
+
+test "the remainder never holds a whole centimeter" {
+    for i in 0..4_001 {
+        I64 v = i * 7_919 - 15_838_000;       // -15.8 m to +15.8 m in um, both signs
+        assert(v % 10_000 >= 0 && v % 10_000 < 10_000 && v / 10_000 * 10_000 + v % 10_000 == v);
+    }
+}

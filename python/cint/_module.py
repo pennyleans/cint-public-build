@@ -20,11 +20,30 @@ wrapper (A-12) with the carriers of A-13 and BX10-26:
   `E!T` as a C struct of the tag (the set's underlying type, 0 for success)
   and the success value.
 
+`backend="cuda"` builds the library for `gpu-cuda` (`_build`), whose
+kernels run on CUDA device 0 (SPEC-03 A-16a, BX11-16). A context on such a
+module with `device=` a CUDA device registers CUDA memory as placement
+device(1): device `Buffer`s and CUDA arrays borrowed through DLPack, whose
+producer is asked again at each entry on the context's stream (P-10); an
+array on another device is refused before entry (P-11). A context without
+`device=` runs the kernels over host memory, which the runtime maps.
+
 Registration and its end go through `Runtime.register` and `Runtime.release`
 only. A registration lasts until its `View` or `Buffer` is released (or
-collected) or the context is closed; a release that arrives while an entry
-runs is queued and done when the entry returns, since the runtime refuses
-registry changes during an entry (A-11).
+collected), the context is restored, or the context is closed; a release
+that arrives while an entry runs is queued and done when the entry returns,
+since the runtime refuses registry changes during an entry (A-11).
+
+Checkpoints, restore, and the state hash (box 13 unit 9; SPEC-03 5.3, H-19,
+H-19a, M-5, M-11, M-11a) go through `rt/cint_state.h` in the library
+(`_state`): a context binds its program's module state table
+(`cint_observer_state`) before its first checkpoint or restore. A restore
+removes every registration (M-11a), and each `View` or `Buffer` registers
+again on its next use, with a new identifier (P-20; BX13-04 A). A context
+made with `record=` makes every call through its `cint.Recorder` (`_replay`;
+H-14b): an entry through `cint_rec_entry` with the 64-bit patterns of its
+arguments (SPEC-09 CONF-13 X-3), and checkpoints, restores, and clears as
+recorded events.
 """
 from __future__ import annotations
 
@@ -37,19 +56,21 @@ import os
 import threading
 import weakref
 
-from . import _abi, _build, _sig
+from . import _abi, _build, _cuda, _replay, _sig, _state
 from ._args import bind_arguments
 from ._buffer import Buffer
 from ._elem import parse_elem
 from ._errors import (
     CINT_BUSY, CINT_FAULT, CINT_FAULTED, CINT_HAZARD, CINT_HOST_ERROR, CINT_OK, CINT_REFUSED, CINT_RESOURCE,
     Busy, BuildError, Fault, Faulted, LoadError, Refused, error_set_family, exception_for_status)
+from ._replay import Recorder
 from ._report import CopyRecord, EntryReport
 from ._scalar import from_raw
 from ._view import View
 
 BACKENDS = ("ref", "cpu", "cuda", "vulkan", "metal", "webgpu")      # SPEC-09 BACK-15 names
 I64_MIN, I64_MAX = -(1 << 63), (1 << 63) - 1
+M64 = (1 << 64) - 1
 FUEL_UNBOUNDED = -1                                                   # H-11: a budget of -1 is unbounded
 ARENA_ELEMENT_BYTES = 8                                               # LS-110 counts the frame arena in 8-byte elements
 _context_keys = itertools.count(1)
@@ -193,7 +214,7 @@ class Export:
         if not self.call:
             return "its table row has no cx wrapper (A-12)"
         if self.kind not in ("function", "kernel"):
-            return "its table row has export %s, which box 10 does not call" % self.kind
+            return "its table row has export %s, which the package does not call" % self.kind
         if self.kind == "kernel" and self.result_form is not None:
             return "it is a kernel with a result; a kernel returns through its out parameters (SPEC-02 F-1)"
         if self.kind == "function" and any(p.mode == "out" for p in self.params):
@@ -238,16 +259,18 @@ def load(source, *, backend: str = "cpu", require_verified: bool = False) -> "Mo
     source and load it (SPEC-03 6.1, BX10-02). A source is built into a
     directory keyed by the digests of its modules and the toolchain identity,
     so loading unchanged source again builds nothing; its source root is the
-    source's directory. Raises `BuildError` when the build fails or no `cint`
-    is available, and `LoadError` for a library this bridge cannot use."""
+    source's directory. `backend` is "cpu" (`cpu-c17`) or "cuda" (`gpu-cuda`,
+    BX11-16); a library file must have been built for it. Raises
+    `BuildError` when the build fails or no `cint` is available, and
+    `LoadError` for a library this bridge cannot use."""
     if backend not in BACKENDS:
-        raise ValueError("backend is one of %s, not %r (SPEC-09 BACK-15)" % (", ".join(BACKENDS), backend))
+        raise ValueError("backend is \"ref\", \"cpu\" or \"cuda\", not %r (SPEC-09 BACK-15)" % (backend,))
     if backend == "ref":
-        raise NotImplementedError("backend=\"ref\" runs cpu-sir-interp, which is admitted at T4; until then "
-                                  "cint.load builds with cint build --lib for backend=\"cpu\" (BX10-02)")
-    if backend != "cpu":
-        raise NotImplementedError("backend=%r: this bridge loads cpu-c17 libraries only; device backends arrive "
-                                  "with their boxes" % backend)
+        raise NotImplementedError("backend=\"ref\" runs cpu-sir-interp, which cint.load does not build yet; "
+                                  "cint.load builds with cint build --lib for backend=\"cpu\"")
+    if backend not in ("cpu", "cuda"):
+        raise NotImplementedError("backend=%r is not built: this bridge loads cpu-c17 and gpu-cuda libraries"
+                                  % backend)
     if require_verified not in (True, False):
         raise TypeError("require_verified is True or False")
     path = os.fspath(source)
@@ -255,20 +278,21 @@ def load(source, *, backend: str = "cpu", require_verified: bool = False) -> "Mo
         raise TypeError("a source or library path is a str or os.PathLike of str")
     if require_verified:
         raise LoadError("require_verified=True: %s has no build record that this bridge reads, so its verification "
-                        "status is missing (SPEC-07 SEC-HOST-2, SEC-HOST-4)" % path)
+                        "status is missing" % path)
     if path.endswith(".ci"):
-        library = _build.build_library(path)
+        library = _build.build_library(path, backend=backend)
     elif os.path.isfile(path):
         library = os.path.abspath(path)
     else:
         raise LoadError("%s is neither a .ci source nor a library file" % path)
-    return Module._open(library)
+    return Module._open(library, backend)
 
 
 class Module:
     """A loaded library: one program (BX10-07). `exports` maps each export
     name to its `Export`; `revision` is the program's revision identity (32
-    bytes); `abi` the runtime's ABI version; `error_sets` maps the qualified
+    bytes); `abi` the runtime's ABI version; `backend` "cpu" or "cuda", the
+    backend it was built for; `error_sets` maps the qualified
     name of each error set an export's result reaches to its `ErrorResult`
     subclass, which is also `mod.<last part of the name>` when no other set
     shares that last part (BX10-27)."""
@@ -277,7 +301,7 @@ class Module:
         raise TypeError("a Module is made by cint.load(source)")
 
     @classmethod
-    def _open(cls, library: str) -> "Module":
+    def _open(cls, library: str, backend: str = "cpu") -> "Module":
         problem = _abi.layout_problem()
         if problem is not None:
             raise LoadError(problem)
@@ -293,15 +317,20 @@ class Module:
         if runtime.abi != table.abi:
             raise LoadError("%s cannot be used: its runtime reports ABI %#x and its table %#x" % (library, runtime.abi,
                                                                                                    table.abi))
-        return cls._from_table(library, table, runtime)
+        built = "cuda" if runtime.cuda else "cpu"
+        if built != backend:
+            raise LoadError("%s was built for backend=%r (%s), not backend=%r" % (
+                library, built, "gpu-cuda" if runtime.cuda else "cpu-c17", backend))
+        return cls._from_table(library, table, runtime, backend)
 
     @classmethod
-    def _from_table(cls, path: str, table: _abi.LibraryTable, runtime) -> "Module":
+    def _from_table(cls, path: str, table: _abi.LibraryTable, runtime, backend: str = "cpu") -> "Module":
         """A module over a table and a runtime: `_abi.Runtime`, or an object
         with its methods (the tests use one to call through signatures that
         cintc does not yet emit)."""
         m = object.__new__(cls)
         m.path = path
+        m.backend = backend
         m.abi = table.abi
         m.revision = table.revision
         m.records = table.records
@@ -344,6 +373,73 @@ class Module:
         m._set_names = {k: v[0] for k, v in by_short.items() if len(v) == 1}
         return m
 
+    # The canonical state code (rt/cint_state.h) and the observer table (CONF-13).
+
+    def _state_api(self) -> _state.StateApi:
+        """The library's checkpoint, recording, and replay functions; raises
+        NotImplementedError for a library built without them."""
+        api = self.__dict__.get("_state")
+        if api is not None:
+            return api
+        problem = _state.layout_problem()
+        lib = getattr(self._runtime, "lib", None)
+        if problem is None and lib is None:
+            problem = "this module's runtime is not a loaded library, so it has no canonical state code"
+        if problem is None:
+            api = _state.StateApi(lib)
+            if api.stale is not None:
+                problem = ("%s was built at %s, whose checkpoint and recording structures are smaller than "
+                           "ABI 3.2's (SPEC-03 A-5): load its .ci source with cint.load to rebuild it"
+                           % (self.path, api.stale))
+            elif api.missing is not None:
+                problem = ("%s was built without the canonical state code of rt/cint_state.c and rt/cint_rec.c "
+                           "(it lacks %s): load its .ci source with cint.load, whose build links it"
+                           % (self.path, api.missing))
+        if problem is not None:
+            raise NotImplementedError(problem)
+        _state.remember(api)
+        self.__dict__["_state"] = api
+        return api
+
+    def _symbol(self, name: str) -> int | None:
+        """The address of a data symbol the library exports, or None."""
+        try:
+            return ctypes.addressof(ctypes.c_uint8.in_dll(self._runtime.lib, name))
+        except (ValueError, AttributeError):
+            return None
+
+    def _state_table_address(self) -> int | None:
+        """`cint_observer_state`, absent for a program without module state."""
+        return self._symbol("cint_observer_state")
+
+    def _observer_address(self) -> int:
+        address = self._symbol("cint_observer_desc")
+        if address is None:
+            raise NotImplementedError("%s exports no cint_observer_desc, so its entries cannot be recorded or "
+                                      "replayed (SPEC-09 CONF-13)" % self.path)
+        return address
+
+    def _observer_entry(self, export: Export):
+        """(index, type tags) of the export's observer entry, the entry
+        `cint_rec_entry` and replay call; None when it has none, as for an
+        export whose types are not integers and Bool (CONF-13 X-3)."""
+        table = self.__dict__.get("_observers")
+        if table is None:
+            table = {}
+            obs = _state.Observer.from_address(self._observer_address())
+            rows = (_state.ObserverEntry * obs.entry_count).from_address(obs.entries) if obs.entry_count else ()
+            for i, e in enumerate(rows):
+                n = ctypes.c_uint32.from_address(e.types + 4).value if e.types else 0
+                if not e.types or n > 16:
+                    continue
+                name = ctypes.string_at(e.name, e.name_len).decode("utf-8")
+                table[(e.module, name)] = (i, tuple((ctypes.c_uint32 * (n + 2)).from_address(e.types)))
+            self.__dict__["_observers"] = table
+        found = table.get((export.module_index, export.name))
+        if found is None or found[1][1] != len(export.params):
+            return None
+        return found
+
     def __getattr__(self, name: str):
         if name.startswith("_"):
             raise AttributeError(name)
@@ -355,24 +451,44 @@ class Module:
     def context(self, *, device=None, host=None, grants=None, record=None, check_inputs: bool = False,
                 fuel: int | None = 10 ** 9, depth: int = 256, frame_arena_elements: int = 2_097_152) -> "Context":
         """Create a context (cint_ctx_create) on the root module's descriptor.
-        `fuel` is the per-entry budget (H-11), None for unbounded; `depth` and
-        `frame_arena_elements` set the depth limit and the frame-arena
-        capacity in 8-byte elements (BX10-12). Prints are discarded: the
-        context has no output stream."""
-        if device is not None:
-            raise NotImplementedError("device=: this bridge runs on the host CPU only")
+        `device` is a `cint.Device` or its spec: a CUDA device, for a module
+        loaded with backend="cuda", whose kernels then take that device's
+        memory (SPEC-03 A-16a, BX11-16), or the CPU. `fuel` is the per-entry
+        budget (H-11), None for unbounded; `depth` and `frame_arena_elements`
+        set the depth limit and the frame-arena capacity in 8-byte elements
+        (BX10-12). Prints are discarded: the context has no output stream.
+        `record` is a `cint.Recorder`, which then records every call on the
+        context, from a checkpoint of it as it is created (SPEC-03 H-14b)."""
+        if not _cuda.is_host(device) and self.backend != "cuda":
+            raise ValueError("device=%s: this module was loaded with backend=%r; a context on a CUDA device needs a "
+                             "module loaded with backend=\"cuda\"" % (device, self.backend))
+        dev = _cuda.resolve(device)
+        if dev is not None:
+            if not self._runtime.devices:
+                raise LoadError("%s has runtime ABI %d.%d, whose context configuration has no device (SPEC-03 "
+                                "A-16a; ABI 3.1): rebuild it" % (self.path, self.abi >> 16,
+                                                                         self.abi & 0xFFFF))
         if host:
             raise NotImplementedError("host=: host functions for imported externs (A-10) arrive with cint.host; "
                                       "this bridge loads programs that import none")
         if grants is not None:
             raise NotImplementedError("grants=: services take grants (H-8a), and this bridge passes none yet")
         if record is not None:
-            raise NotImplementedError("record=: recordings arrive with box 13 (BX10-01)")
+            if not isinstance(record, Recorder):
+                raise TypeError("record is a cint.Recorder or None, not %s" % type(record).__name__)
+            if record.closed or record.context is not None:
+                raise ValueError("this Recorder is closed or already records a context: a recording holds one "
+                                 "context, so make another Recorder")
+            api = self._state_api()
+            if getattr(api, "rec_end", None) is None:
+                raise NotImplementedError("%s exports no recorder (cint_rec_begin to cint_rec_end, rt/cint_state.h)"
+                                          % self.path)
+            observer = self._observer_address()
         if check_inputs is not False:
             if check_inputs is not True:
                 raise TypeError("check_inputs is True or False")
-            raise NotImplementedError("check_inputs=True: the borrowed-input hazard check (SPEC-03 P-16) arrives "
-                                      "with recordings in box 13")
+            raise NotImplementedError("check_inputs=True: the borrowed-input hazard check (SPEC-03 P-16) is not "
+                                      "provided yet")
         budget = _fuel(fuel)
         depth = _i64(depth, "depth")
         if depth < 0:
@@ -381,13 +497,26 @@ class Module:
         if not 0 <= elements <= I64_MAX // ARENA_ELEMENT_BYTES:
             raise ValueError("frame_arena_elements is 0 to %d, not %d" % (I64_MAX // ARENA_ELEMENT_BYTES, elements))
         rt = self._runtime
-        status, handle = rt.create(self._table.program, self._table.root_info, depth, elements * ARENA_ELEMENT_BYTES)
+        extra = {} if dev is None else {"device": dev._record}
+        status, handle = rt.create(self._table.program, self._table.root_info, depth, elements * ARENA_ELEMENT_BYTES,
+                                   **extra)
         if status != CINT_OK or not handle:
             if status == CINT_RESOURCE:
                 raise MemoryError("cint_ctx_create could not allocate the context (CINT_RESOURCE)")
             raise ValueError("cint_ctx_create refused the configuration (status %d): depth %d, frame arena %d "
-                             "elements" % (status, depth, elements))
-        return Context._make(self, handle, budget)
+                             "elements%s" % (status, depth, elements, "" if dev is None else ", device %s" % dev))
+        c = Context._make(self, handle, budget, dev)
+        if record is not None:
+            try:
+                c._bind(api)
+                record._begin(c, api, observer, _build.program_code(self.path))
+            except BaseException:
+                c.close()
+                raise
+            c.__dict__["_recorder"] = record
+            c._destroy.detach()
+            c.__dict__["_destroy"] = weakref.finalize(c, _replay.end_then_destroy, rt.destroy, handle, record._live)
+        return c
 
     def __repr__(self) -> str:
         return "<cint.Module %s, %d exports>" % (os.path.basename(self.path), len(self.exports))
@@ -442,16 +571,19 @@ class Context:
     registrations of the memory passed to it. One entry runs at a time; a
     call while another runs raises `cint.Busy`. Use it as a context manager,
     or call `close()`, to destroy it. Exports are reached as `ctx.<name>` or
-    `ctx.entry(name)`."""
+    `ctx.entry(name)`. `device` is the `cint.Device` its kernels take memory
+    of: a CUDA device, or the CPU."""
 
     def __init__(self, *args, **kwargs):
         raise TypeError("a Context is made by Module.context()")
 
     @classmethod
-    def _make(cls, module: Module, handle: int, fuel: int) -> "Context":
+    def _make(cls, module: Module, handle: int, fuel: int, device=None) -> "Context":
         c = object.__new__(cls)
         d = c.__dict__
         d["module"] = module
+        d["device"] = device or _cuda.device("cpu")
+        d["_stream_value"] = None
         d["fuel"] = fuel
         d["_rt"] = module._runtime
         d["_handle"] = handle
@@ -460,6 +592,8 @@ class Context:
         d["_pending"] = collections.deque()
         d["_holders"] = weakref.WeakSet()
         d["_last"] = None
+        d["_recorder"] = None
+        d["_bound"] = False
         d["_destroy"] = weakref.finalize(c, module._runtime.destroy, handle)
         return c
 
@@ -500,8 +634,19 @@ class Context:
             raise ValueError("this context is closed; make a new one with Module.context()")
 
     def close(self):
-        """Destroy the context: its registrations end with it. Idempotent;
-        raises `cint.Busy` while an entry runs."""
+        """Destroy the context: its registrations end with it, and a recording
+        of it ends first. Idempotent; raises `cint.Busy` while an entry runs."""
+        if self.closed:
+            return
+        if self._recorder is not None:
+            try:
+                self._recorder.close()
+            except OSError:
+                self._destroy_now()
+                raise
+        self._destroy_now()
+
+    def _destroy_now(self):
         if self.closed:
             return
         if not self._lock.acquire(blocking=False):
@@ -526,11 +671,15 @@ class Context:
         return False
 
     def clear_fault(self) -> None:
-        """Clear the fault record (A-7a); no other state changes."""
+        """Clear the fault record (A-7a); no other state changes. While
+        recording, a clear of a held fault is a `clear_fault` event (H-14)."""
         with self._exclusive():
-            status = self._rt.clear(self._handle)
+            rec = self._recording()
+            status = self.module._state_api().rec_clear_fault(rec) if rec else self._rt.clear(self._handle)
         if status == CINT_BUSY:
             raise Busy("an entry is running on this context")
+        if status == CINT_RESOURCE:
+            raise MemoryError("cint_rec_clear_fault could not allocate (CINT_RESOURCE)")
         if status != CINT_OK:
             raise ValueError("cint_ctx_clear_fault returned status %d" % status)
 
@@ -547,8 +696,10 @@ class Context:
         (BX10-03 A); a kernel entry that succeeds lists each array it wrote, a
         borrowed View as `publish-copy` (P-15) and a Buffer as `staging`, since
         this runtime stages every output rather than renaming it (M-31). An entry
-        that fails published nothing and lists no copy. None before the first
-        entry."""
+        that fails published nothing and lists no copy, except that a kernel's
+        fault at a work-item on a device lists each device array as
+        `fault-readback`, read back for the host's re-execution of that item
+        (SPEC-02 B-16b). None before the first entry."""
         return self._last
 
     def fault(self) -> Fault | None:
@@ -557,23 +708,147 @@ class Context:
             record = self._rt.fault(self._handle)
         return Fault.from_record(record) if record is not None else None
 
+    # Checkpoints (SPEC-03 5.3, H-19, H-19a; box 13 note 5).
+
+    @property
+    def recorder(self) -> Recorder | None:
+        """The `cint.Recorder` that records this context, or None."""
+        return self._recorder
+
+    def _bind(self, api: _state.StateApi):
+        """Bind the program's module state once (cint_ctx_bind_state)."""
+        if self._bound:
+            return
+        status = api.bind_state(self._handle, self.module._state_table_address())
+        if status != CINT_OK:
+            raise LoadError("%s: cint_ctx_bind_state refused the library's own state table (status %d)"
+                            % (self.module.path, status))
+        self.__dict__["_bound"] = True
+
+    def _recording(self) -> int | None:
+        """The recorder handle while recording; refused once the recording ended."""
+        rec = self._recorder
+        if rec is None:
+            return None
+        if rec.ended:
+            raise Refused("the recording of this context ended at an entry that returned CINT_RESOURCE (SPEC-03 "
+                          "A-6, H-14b); close its Recorder to use the context again", reason="recording")
+        return rec._handle
+
+    def _end_recording(self, handle: int) -> int:
+        """`cint_rec_end`: the context gets its output back and is no longer recorded."""
+        with self._exclusive():
+            status = self.module._state_api().rec_end(handle)
+            self.__dict__["_recorder"] = None
+        return status
+
+    def _state_failure(self, status: int, what: str) -> BaseException:
+        if status == CINT_BUSY:
+            return Busy("%s: a buffer of this context has a live export lease (SPEC-03 A-9)" % what)
+        if status == CINT_RESOURCE:
+            return MemoryError("%s could not allocate (CINT_RESOURCE)" % what)
+        return Refused("%s refused this context: %s" % (what, _CHECKPOINT_REFUSAL), reason="state")
+
     def checkpoint(self) -> bytes:
-        raise NotImplementedError("checkpoints (H-19) arrive with box 13 (BX10-01)")
+        """A `CINT-CKPT-1` of this context between entries, Ready or Faulted
+        (SPEC-03 H-19; BX13-06): the envelope and the canonical state, which
+        holds the fault record of a Faulted context. While recording, it is a
+        `checkpoint` event (H-14)."""
+        api = self.module._state_api()
+        with self._exclusive():
+            self._bind(api)
+            status, data = api.take_checkpoint(self._handle, self._recording())
+        if status != CINT_OK:
+            raise self._state_failure(status, "cint_ctx_checkpoint")
+        return data
 
-    def restore(self, data: bytes) -> None:
-        raise NotImplementedError("restore (H-19a) arrives with box 13 (BX10-01)")
+    def restore(self, data) -> None:
+        """Restore a checkpoint (SPEC-03 H-19a, M-11, M-11a). Every check runs
+        before any state changes: bytes that are not a well-formed
+        `CINT-CKPT-1` (case 29a), or a checkpoint of another revision (case
+        29), raise `cint.Refused` with the context unchanged. Module state,
+        the fault record, and the effect-log position come back; identifiers
+        are never reused, since each counter becomes the greater of the
+        checkpoint's and the context's (case 29b); and every registration
+        ends, so each `View` or `Buffer` registers again on its next use (P-20;
+        BX13-04 A). While recording, it is a `restore` event (H-14)."""
+        if not isinstance(data, (bytes, bytearray, memoryview)):
+            raise TypeError("a checkpoint is bytes, as Context.checkpoint() returns, not %s" % type(data).__name__)
+        data = bytes(data)
+        api = self.module._state_api()
+        with self._exclusive():
+            self._bind(api)
+            rec = self._recording()
+            status = api.rec_restore(rec, data, len(data)) if rec else api.restore(self._handle, data, len(data))
+            if status == CINT_OK:
+                self._forget_registrations()
+                return
+        if status == CINT_REFUSED:
+            raise self._restore_refusal(api, data)
+        raise self._state_failure(status, "cint_ctx_restore")
 
-    def entry_scope(self):
-        raise NotImplementedError("entry_scope (BX10-05) needs checkpoints, which arrive with box 13")
+    def _restore_refusal(self, api: _state.StateApi, data: bytes) -> Refused:
+        info = api.decode_checkpoint(data)
+        if info is None:
+            return Refused("these %d bytes are not a well-formed CINT-CKPT-1 (SPEC-03 H-19a, case 29a); the context "
+                           "is unchanged" % len(data), reason="malformed")
+        revision = bytes(info.revision)
+        if self.module.revision is not None and revision != self.module.revision:
+            return Refused("the checkpoint is of revision %s and this context runs revision %s: a checkpoint "
+                           "restores only into its own revision (SPEC-03 H-19, case 29); the context is unchanged"
+                           % (revision.hex(), self.module.revision.hex()), reason="revision")
+        return Refused("the checkpoint names globals, a record type, or a fault position this program does not "
+                       "have, or %s (SPEC-03 H-19a); the context is unchanged" % _CHECKPOINT_REFUSAL,
+                       reason="state")
+
+    def _forget_registrations(self):
+        """M-11a: the restore removed every registration, so each `View` and
+        `Buffer` registers again on its next use (P-20; BX13-04 A). The
+        caller holds the lock."""
+        for holder in list(self._holders):
+            r = holder._registrations.pop(self._key, None)
+            if r is not None:
+                r.finalizer.detach()
+        self._holders.clear()
+        self._pending.clear()
 
     def state_hash(self) -> bytes:
-        raise NotImplementedError("state_hash (M-5) arrives with checkpoints in box 13")
+        """The SHA-256 of the canonical state (SPEC-01 IM-154, SPEC-03 M-5),
+        32 bytes: equal on both CPU backends for the same history."""
+        api = self.module._state_api()
+        with self._exclusive():
+            self._bind(api)
+            status, h = api.hash_of(self._handle)
+        if status != CINT_OK:
+            raise self._state_failure(status, "cint_ctx_state_hash")
+        return h
+
+    @contextlib.contextmanager
+    def entry_scope(self):
+        """`with ctx.entry_scope():` takes a checkpoint when the block starts
+        and restores it when a `cint.Fault` leaves the block, which then
+        continues (BX10-05; box 13 default BX13-14). It needs a Ready context
+        (`cint.Faulted` otherwise). An error result, any other exception, and
+        a normal exit restore nothing. Scopes nest, each with its own
+        checkpoint; while recording, the checkpoint and the restore are
+        recorded events (H-14)."""
+        held = self.fault()
+        if held is not None:
+            raise Faulted(held)
+        saved = self.checkpoint()
+        try:
+            yield self
+        except Fault:
+            self.restore(saved)
+            raise
 
     def global_view(self, name: str) -> View:
         raise NotImplementedError("global_view needs context-owned views, which this bridge does not make yet")
 
     def __repr__(self) -> str:
-        return "<cint.Context of %s%s>" % (os.path.basename(self.module.path), ", closed" if self.closed else "")
+        return "<cint.Context of %s%s%s>" % (os.path.basename(self.module.path),
+                                             "" if self.device.is_host else " on %s" % self.device,
+                                             ", closed" if self.closed else "")
 
     @contextlib.contextmanager
     def _exclusive(self):
@@ -600,8 +875,9 @@ class Context:
         # the output and copies it on success (M-31).
         publish = (isinstance(holder, View) and holder.publish == "copy") or (
             isinstance(holder, Buffer) and region.writable)
+        extra = {} if region.device is None else {"device": True}
         status, ident, generation = self._rt.register(self._handle, region.address, elem, region.extent,
-                                                      region.writable, publish)
+                                                      region.writable, publish, **extra)
         if status != CINT_OK:
             if status == CINT_REFUSED:
                 raise self._refusal("the memory of this argument could not be registered")
@@ -628,6 +904,40 @@ class Context:
         while self._pending and not self.closed:
             self._rt.release(self._handle, self._pending.popleft())
 
+    # Devices (SPEC-03 P-10, P-11).
+
+    def _placement_problem(self, placement: str | None, what: str) -> Refused | None:
+        """The refusal of memory on `placement` (None for host memory) bound
+        on this context, or None: device memory must be the context's device
+        (P-11). Host memory is the runtime's to check (F-5 check 4)."""
+        if placement is None or placement == str(self.device):
+            return None
+        where = ("on %s" % self.device) if not self.device.is_host else (
+            "without a device" if self.module.backend == "cuda" else "on the CPU")
+        return Refused("%s is on %s, and this context runs %s; the bridge makes no implicit transfer (SPEC-03 P-11): "
+                       "cint.copy(x) copies device data to host memory, and cint.copy(x, device=...) to a device"
+                       % (what, placement, where))
+
+    def _stream(self) -> int:
+        """The context's CUDA stream (cint_ctx_device_stream); the caller holds the lock."""
+        if self._stream_value is None:
+            status, stream = self._rt.device_stream(self._handle)
+            if status != CINT_OK or not stream:
+                raise OSError("the context's CUDA stream could not be opened (status %d): the runtime could not "
+                              "open %s through %s (SPEC-03 A-16a)" % (status, self.device, _cuda.driver_path()))
+            self.__dict__["_stream_value"] = stream
+        return self._stream_value
+
+    def _exchange_stream(self, placement: str) -> int:
+        """`cint.borrow(..., context=self)` of memory on `placement`: refused
+        unless it is this context's device, and then the stream of the first
+        exchange (P-10, P-11)."""
+        problem = self._placement_problem(placement, "the array")
+        if problem is not None:
+            raise problem
+        with self._exclusive():
+            return self._stream()
+
     def _refusal(self, what: str) -> Refused:
         reason = self._rt.refusal_reason(self._handle)
         name, text = _abi.REFUSALS.get(reason, ("reason %s" % reason, "the runtime gave no known reason"))
@@ -639,10 +949,22 @@ class Context:
     def _call(self, export: Export, args: tuple, kwargs: dict):
         if not export.callable:
             raise NotImplementedError("%s: %s" % (export.declaration, export.reason))
+        if self._recorder is not None:
+            return self._call_recorded(export, args, kwargs)
         entry = self.module._entries[export.name]
         fuel = _fuel(kwargs.pop("fuel", self.fuel)) if "fuel" not in export.param_names else self.fuel
         with self._exclusive():
             with bind_arguments(export.params, args, kwargs) as call, contextlib.ExitStack() as stack:
+                placed = []
+                for b in call.bounds:
+                    if b.param.rank and isinstance(b.value, (View, Buffer)):
+                        where = b.value._placement
+                        problem = self._placement_problem(where, "parameter %s" % b.param.name)
+                        if problem is not None:
+                            raise problem
+                        if where is not None:
+                            placed.append(b)
+                stream = self._stream() if placed else None
                 bounds = iter(call.bounds)
                 c_args, outs, written, notes, copies, holders = [], [], [], [], [], {}
                 for p in export.params:
@@ -660,7 +982,7 @@ class Context:
                     holder = b.value
                     holders[p.name] = holder
                     if isinstance(holder, View):
-                        stack.enter_context(holder._entry_exchange())
+                        stack.enter_context(holder._entry_exchange(stream if holder._placement else None))
                         notes.extend(holder.notes)
                     c_args.append(self._view(holder, p))
                     if p.written and isinstance(holder, Buffer):
@@ -682,7 +1004,56 @@ class Context:
                 failure = self._failure(status, fuel)
                 if isinstance(failure, Fault) and failure.operation == "bind.limit" and failure.operands:
                     _publish_hint(failure, export, holders)
+                if (export.kind == "kernel" and isinstance(failure, Fault) and failure.dispatch is not None
+                        and failure.work_item is not None and placed):
+                    # B-16b: the host re-executed the faulting item after reading back each device array.
+                    self.__dict__["_last"] = EntryReport(export.name, tuple(
+                        CopyRecord(b.param.name, "fault-readback", b.param.elem, b.value.size) for b in placed),
+                        tuple(notes))
                 raise failure
+
+    def _call_recorded(self, export: Export, args: tuple, kwargs: dict):
+        """A call through the recorder (`cint_rec_entry`, H-14b): an `entry`
+        event, the effects, and an `outcome`. Refused before anything runs
+        for an export the recorder cannot call."""
+        arrays = [p.name for p in export.params if p.rank]
+        if arrays:
+            raise Refused("%s takes the array %s, and a recording does not carry borrowed inputs yet (SPEC-03 P-16, "
+                          "H-14b): call it on a context made without record=" % (export.declaration, arrays[0]),
+                          reason="recording")
+        found = self.module._observer_entry(export)
+        if found is None:
+            raise Refused("%s has types other than integers and Bool, which a recording does not carry yet "
+                          "(SPEC-03 H-14b; SPEC-09 CONF-13 X-3): call it on a context made without record="
+                          % export.declaration, reason="recording")
+        index, _ = found
+        entry = self.module._entries[export.name]
+        fuel = _fuel(kwargs.pop("fuel", self.fuel)) if "fuel" not in export.param_names else self.fuel
+        api = self.module._state_api()
+        with self._exclusive():
+            handle = self._recording()
+            with bind_arguments(export.params, args, kwargs) as call:
+                raw = [int(b.value) & M64 for b in call.bounds]
+            patterns = (ctypes.c_uint64 * max(1, len(raw)))(*raw)
+            result = ctypes.c_uint64(0)
+            self.__dict__["_last"] = EntryReport(export.name, (), ())
+            status = api.rec_entry(handle, index, patterns, fuel, _state.DEPTH_FROM_CONFIG, ctypes.byref(result))
+            if status == CINT_RESOURCE:
+                self._recorder.ended = True
+            if status != CINT_OK:
+                raise self._failure(status, fuel)
+            form = entry.result.form
+            if entry.result.error is not None:
+                es, tag = ctypes.c_void_p(), ctypes.c_uint64(0)
+                if api.ctx_error(self._handle, ctypes.byref(es), ctypes.byref(tag)) == CINT_OK and es.value:
+                    raise entry.result.error.from_tag(tag.value)
+                form = entry.result.value_form
+        if form is None:
+            return None
+        bits = result.value
+        if parse_elem(form).signed and bits >> 63:
+            bits -= 1 << 64
+        return from_raw(bits, form)
 
     def _view(self, holder, p) -> _abi.CintView:
         """The `cint_view` of an array argument over its registration."""
@@ -735,6 +1106,10 @@ class Context:
             return exception_for_status(status)
         except ValueError:
             return ValueError("the entry returned status %d, which is not one of SPEC-03 A-6" % status)
+
+
+_CHECKPOINT_REFUSAL = ("the runtime does not checkpoint a context with arenas or pools yet (rt/OPEN.md RT-OQ-42), "
+                       "and a program the seed built has no revision identity")
 
 
 def _publish_hint(failure: Fault, export: Export, holders: dict):

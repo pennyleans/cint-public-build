@@ -1,0 +1,9 @@
+case fixed/print_layout_raw_bits
+clause SPEC-04 LS-201 to LS-212, LS-214 (width, fill, sign and zero padding on the decimal text; `!raw` and `!bits` print the storage integer; an array prints each element)
+format 5
+source reference
+outcome value
+stdout-bytes 84
+stdout-sha256 ca708636ec6ced1b6583b2b088e8f2c943dd36ebb259b167c1f79ed01c91fc9a
+return I64 0
+fuel-consumed 1

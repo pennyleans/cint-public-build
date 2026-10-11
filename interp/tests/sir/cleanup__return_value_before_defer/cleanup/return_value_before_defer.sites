@@ -1,0 +1,39 @@
+module cleanup.return_value_before_defer
+sites cleanup/return_value_before_defer.ci 1:13:7:add.checked.i64 2:17:12:fuel.charge 3:18:13:call.enter 4:19:14:add.checked.i64
+global @seen: I64 = 7
+func @cleanup.return_value_before_defer.f() -> I64 {
+  %t0 = const I64 300
+  local $x.0: I64
+  store.local $x.0, %t0
+  block L3 {
+    block L4 {
+      %t1 = load.local $x.0
+      %t2 = const I64 40
+      %t3 = add.checked.i64 %t1, %t2             #1 @cleanup/return_value_before_defer.ci:13:7
+      store.local $x.0, %t3
+      %t4 = load.local $x.0
+      local $sc.1: I64
+      store.local $sc.1, %t4
+      %t5 = const I64 1
+      local $sc.2: I64
+      store.local $sc.2, %t5
+      break L4
+    }
+    %t6 = const I64 0
+    store.local $x.0, %t6
+  }
+  %t7 = load.local $x.0
+  store.global @seen, %t7
+  %t8 = load.local $sc.1
+  return %t8
+}
+export func @cleanup.return_value_before_defer.run() -> I64 {
+  fuel.charge 1                                  #2 @cleanup/return_value_before_defer.ci:17:12
+  %t0 = call @cleanup.return_value_before_defer.f() #3 @cleanup/return_value_before_defer.ci:18:13
+  local $r.0: I64
+  store.local $r.0, %t0
+  %t1 = load.local $r.0
+  %t2 = load.global @seen
+  %t3 = add.checked.i64 %t1, %t2                 #4 @cleanup/return_value_before_defer.ci:19:14
+  return %t3
+}

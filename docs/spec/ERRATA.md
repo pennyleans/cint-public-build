@@ -23,3 +23,39 @@ None.
 ## REFERENCES-P.1
 
 None.
+
+## SPEC-00P.2
+
+None.
+
+## SPEC-01P.2
+
+None.
+
+## SPEC-02P.1
+
+None.
+
+## SPEC-03P.1
+
+None.
+
+## SPEC-04P.2
+
+None.
+
+## SPEC-06P.1
+
+None.
+
+## SPEC-09P.1
+
+None.
+
+## GLOSSARY-P.2
+
+None.
+
+## REFERENCES-P.2
+
+None.

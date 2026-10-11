@@ -1,0 +1,10 @@
+// case: fixed/qmul_overflow
+// clause: SPEC-01 IM-63, IM-106 (BX15-05 A: one checked range check against R; exact is the rounded raw value)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 9:12 (the callee `qmul`), operation qmul.checked.q16_16.q16_16.q16_16.floor, operands Q16.16 raw 13107200 twice, exact 2621440000 (40000.0), limit Q16.16 raw 2147483647; stack depth 0; fuel 1. Box 15, unit 1
+
+export Bool run() {
+    Q16.16 a = 200.0;
+    return qmul(Q16.16, a, a, floor) != 0;
+}

@@ -1,0 +1,17 @@
+case wide/sum_u128_overflow
+clause SPEC-01 IM-6, IM-77, IM-81, IM-106; SPEC-09 CONF-11 rule 14 (a sum of U128 elements leaves U128, with the exact total in the record)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 2
+fault.code E_OVERFLOW
+fault.operation sum.checked.u128.u128
+fault.operand I64 3
+fault.exact 340282366920938463463374607431768211457
+fault.limit U128 340282366920938463463374607431768211455
+fault.position wide/sum_u128_overflow.ci:9:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

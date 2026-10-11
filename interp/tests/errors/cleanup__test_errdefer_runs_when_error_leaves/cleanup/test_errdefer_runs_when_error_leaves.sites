@@ -1,0 +1,88 @@
+module cleanup.test_errdefer_runs_when_error_leaves
+sites cleanup/test_errdefer_runs_when_error_leaves.ci 1:14:15:sub.checked.u8 2:14:22:as.checked.u8.i64 3:17:1:fuel.charge 4:20:17:call.enter 5:19:25:mul.checked.i64 6:19:30:add.checked.i64 7:18:28:mul.checked.i64 8:18:33:add.checked.i64
+global @trail: I64 = 0
+error E3: cleanup.test_errdefer_runs_when_error_leaves.ParseError U16 empty, bad_digit, too_large
+func @cleanup.test_errdefer_runs_when_error_leaves.digit(%c: U8) -> U16!I64 {
+  if {
+    arm {
+      %t0 = const U8 48
+      %t1 = cmp.lt.u8 %c, %t0
+      local $sc.0: Bool
+      store.local $sc.0, %t1
+      %t2 = not.bool %t1
+      if {
+        arm {
+        } then %t2 {
+          %t3 = const U8 57
+          %t4 = cmp.gt.u8 %c, %t3
+          store.local $sc.0, %t4
+        }
+      }
+      %t5 = load.local $sc.0
+    } then %t5 {
+      %t6 = const U16 2
+      return.error %t6
+    }
+  }
+  %t7 = const U8 48
+  %t8 = sub.checked.u8 %c, %t7                   #1 @cleanup/test_errdefer_runs_when_error_leaves.ci:14:15
+  %t9 = as.checked.u8.i64 %t8                    #2 @cleanup/test_errdefer_runs_when_error_leaves.ci:14:22
+  return %t9
+}
+test @cleanup.test_errdefer_runs_when_error_leaves 0 {
+  fuel.charge 1                                  #3 @cleanup/test_errdefer_runs_when_error_leaves.ci:17:1
+  block L1 {
+    block L2 {
+      %t0 = const U8 107
+      %t1 = call @cleanup.test_errdefer_runs_when_error_leaves.digit(%t0) #4 @cleanup/test_errdefer_runs_when_error_leaves.ci:20:17
+      %t2 = error.tag
+      %t3 = const U16 0
+      %t4 = cmp.ne.u16 %t2, %t3
+      if {
+        arm {
+        } then %t4 {
+          error.leave %t2, E3
+          %t5 = const I64 -1
+          local $sc.4: I64
+          store.local $sc.4, %t5
+          break L2
+        }
+      }
+      local $d.5: I64
+      store.local $d.5, %t1
+      %t6 = const I64 99
+      store.global @trail, %t6
+      %t7 = const I64 0
+      store.local $sc.4, %t7
+    }
+    %t8 = load.global @trail
+    %t9 = const I64 10
+    %t10 = mul.checked.i64 %t8, %t9              #5 @cleanup/test_errdefer_runs_when_error_leaves.ci:19:25
+    %t11 = const I64 2
+    %t12 = add.checked.i64 %t10, %t11            #6 @cleanup/test_errdefer_runs_when_error_leaves.ci:19:30
+    store.global @trail, %t12
+  }
+  %t13 = load.local $sc.4
+  %t14 = const I64 0
+  %t15 = cmp.lt.i64 %t13, %t14
+  if {
+    arm {
+    } then %t15 {
+      %t16 = load.global @trail
+      %t17 = const I64 10
+      %t18 = mul.checked.i64 %t16, %t17          #7 @cleanup/test_errdefer_runs_when_error_leaves.ci:18:28
+      %t19 = const I64 1
+      %t20 = add.checked.i64 %t18, %t19          #8 @cleanup/test_errdefer_runs_when_error_leaves.ci:18:33
+      store.global @trail, %t20
+    }
+  }
+  %t21 = load.local $sc.4
+  if {
+    arm {
+      %t22 = const I64 -1
+      %t23 = cmp.eq.i64 %t21, %t22
+    } then %t23 {
+      return
+    }
+  }
+}

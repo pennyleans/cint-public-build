@@ -13,6 +13,7 @@ produces inputs, each (name, bytes):
   - widths(): the eight integer widths in every position, pairwise for conversions and
     mixed operands (task 2.13 part a);
   - prelude_names(): modules that declare a prelude name and use it (G-C2 review COR-4);
+  - big_extents(): extents of 2^63 - 1 in a declaration and a `reshape` (box 15);
   - mutants(): seeded single-token mutations of the written modules.
 """
 import pathlib
@@ -425,7 +426,40 @@ MODULES = [
     ("long_else_if",
      "export I64 run(I64 x) {\n" + "".join("    %sif (x == %d) { return %d; }\n" % ("} else " if k else "", k, k)
                                            for k in range(1)) + "    return -1;\n}\n"),
-]
+] + [("fill_reshape/" + name, "void put(inout I64[_, _] a, in I64[_] p) {\n    fill(a[0, ..], p[0]);\n}\n\n"
+      "export I64 run(I64 i) {\n    I64[6] m = [1, 2, 3, 4, 5, 6];\n    I8[2, 3] g;\n    I64[2, 3] a;\n"
+      "    Bool[4] f;\n    I256[4] w;\n%s\n    return 0;\n}\n" % body)
+     for name, body in [
+    # Box 15: `fill` and `reshape`, as `cint_ref` checks them (_copy_fill, _array_builtin) and
+    # as check.ci h_reshape refuses the forms that can fault or be refused at run time.
+    ("fill", "    fill(a, i);\n    fill(f[1..], true);\n    fill(reverse(w, 0)[0..2], -(1 as I256 << 200));"),
+    ("fill_views", "    fill(m, 7);\n    fill(transpose(g)[1, ..], -1);\n    put(a, m);"),
+    ("fill_args", "    fill(a);"),
+    ("fill_args3", "    fill(a, 1, 2);"),
+    ("fill_named", "    fill(a, v = 1);"),
+    ("fill_type", "    fill(a, true);"),
+    ("fill_narrow", "    fill(g, 300);"),
+    ("fill_scalar", "    fill(i, 1);"),
+    ("fill_element", "    fill(a[0, 0], 1);"),
+    ("fill_value_name", "    fill(a, zz);"),
+    ("reshape", "    I64[3, 2] b = reshape(m, 3, 2);\n    I64 s = sum(reshape(reshape(a, 6), 1, 2, 3)) + b[2, 1];"),
+    ("reshape_fill", "    fill(reshape(g, 6)[1..3], 4);\n    copy(reshape(a, 3, 2), reshape(m, 3, 2));"),
+    ("reshape_value", "    I64 s = reshape(m, 2, 3)[1, 2] + transpose(reshape(m, 3, 2))[1, 0] + extent(reshape(w, 2, 2), 0);"),
+    ("reshape_args", "    I64 s = sum(reshape(m));"),
+    ("reshape_type", "    I64 s = sum(reshape(m, true));"),
+    ("reshape_scalar", "    I64 s = sum(reshape(i, 1));"),
+    ("reshape_decl", "    I64[2, 3] b = reshape(m, 3, 2);"),
+    ("reshape_alias", "    copy(reshape(m, 6)[0..4], m[2..6]);"),
+    ("reshape_disjoint", "    copy(reshape(m, 2, 3)[0, ..], reshape(m, 2, 3)[1, ..]);"),
+    ("reshape_rank5", "    I64 s = sum(reshape(m, 1, 1, 1, 2, 3));"),
+    ("reshape_negative", "    I64 s = sum(reshape(m, -1, 6));"),
+    ("reshape_variable", "    I64 s = sum(reshape(m, i, 3));"),
+    ("reshape_count", "    I64 s = sum(reshape(m, 2, 2));"),
+    ("reshape_slice", "    I64 s = sum(reshape(m[0..4], 2, 2));"),
+    ("reshape_view", "    I64 s = sum(reshape(transpose(a), 6));"),
+    ("reshape_argument", "    I64 s = 0;\n    put(a, reshape(a, 6));"),
+    ("reshape_extent", "    I64 s = sum(reshape(m, 1, 3071, 0));"),
+]]
 
 
 def else_if_chain(arms: int, bad_arm: int = -1) -> bytes:
@@ -525,6 +559,92 @@ def consts() -> list:
     for ei, e in enumerate(CONST_EXPRS):
         for pi, place in enumerate(CONST_PLACES):
             out.append(("const/%d_%d" % (ei, pi), (place.format(e=e) + "\n").encode("utf-8")))
+    return out
+
+
+# Box 15 unit 4b: constant expressions of the wide integer types, each folded in the places
+# of WIDE_CONST_PLACES ({t} is the expression's type): every operator and built-in on the
+# four signed widths, at their bounds, and the faults whose records carry wide operands,
+# exact results and limits; since unit 4c, shifts by a wide count as well.
+WIDE_CONST_EXPRS = [
+    ("I128", "I128.max + 1"), ("I128", "I128.min - 1"), ("I128", "I128.min * -1"), ("I128", "I128.min / -1"),
+    ("I128", "I128.min % -1"), ("I128", "-I128.min"), ("I128", "(1 as I128) << 127"), ("I128", "(1 as I128) << 126"),
+    ("I128", "(1 as I128) << 128"), ("I128", "I128.max >> 127"), ("I128", "I128.min >> 200"),
+    ("I128", "(3 as I128) <<% 127"), ("I128", "I128.max +% 1"), ("I128", "I128.min -| 1"), ("I128", "I128.max *| 2"),
+    ("I128", "I128.max *% I128.max"), ("I128", "~I128.max"), ("I128", "1 / (0 as I128)"), ("I128", "7 % (0 as I128)"),
+    ("I128", "I64.max as I128 * (I64.max as I128) * 4"), ("I128", "18446744073709551616 * 18446744073709551616"),
+    ("I128", "170141183460469231731687303715884105728 as I128"), ("I128", "-170141183460469231731687303715884105729"),
+    ("I128", "(I256.max / 2) as I128"), ("I128", "(I256.max / 2) as% I128"), ("I128", "mul_full(I64.max, I64.min)"),
+    ("I128", "mul_full(I64.min, I64.min)"), ("I128", "abs(I128.min)"), ("I128", "abs(I128.min + 1)"),
+    ("I128", "min(I128.min, 5) + max(I128.max, -3)"), ("I128", "clamp(I128.max, 0, 7) * 3"),
+    ("I128", "div_trunc(I128.min, -1)"), ("I128", "rem_trunc(I128.min, -1)"), ("I128", "div_euclid(-7, 2)"),
+    ("I128", "rem_euclid(-7, 0)"), ("I128", "div_round(I128.max, 2, half_even)"), ("I128", "div_round(7, 0, floor)"),
+    ("I128", "muldiv(I128, I128.max, I128.max, I128.max, floor)"), ("I128", "muldiv(I128, I128.max, 3, 2, ceil)"),
+    ("I128", "muldiv(I128, 5, 7, 0, trunc)"), ("I128", "isqrt(I128.max)"), ("I128", "isqrt(-1 as I128)"),
+    ("I128", "isqrt_round(I128.max, half_up)"), ("I128", "true ? I128.max : I128.max + 1"),
+    ("I128", "I128.max > 0 ? I128.min - 1 : 0"),
+    ("I256", "I256.max + 1"), ("I256", "I256.min * I256.min"), ("I256", "-I256.min"), ("I256", "I256.min / -1"),
+    ("I256", "(I128.max as I256) * (I128.max as I256) * 4"), ("I256", "(1 as I256) << 255"), ("I256", "I256.max >> 3"),
+    ("I256", "mul_full(I128.max, I128.max)"), ("I256", "mul_full(I128.min, I128.min) + 1"),
+    ("I256", "abs(I256.min)"), ("I256", "div_round(I256.min, 3, away)"), ("I256", "isqrt(I256.max) + 1"),
+    ("I256", "muldiv(I256, I256.max, I256.max, 1, floor)"), ("I256", "(I512.max as% I256) - 1"),
+    ("I512", "I512.max + 1"), ("I512", "I512.min - 1"), ("I512", "I512.min * -1"), ("I512", "I512.min % -1"),
+    ("I512", "(1 as I512) << 511"), ("I512", "(I256.min as I512) * (I256.min as I512) * 2"),
+    ("I512", "mul_full(I256.min, I256.min)"), ("I512", "isqrt_round(I512.max, half_even) * 2"),
+    ("I512", "div_euclid(I512.min, -1)"), ("I512", "rem_euclid(I512.min, -1)"), ("I512", "clamp(I512.min, 0, -1)"),
+    ("I1024", "I1024.max + 1"), ("I1024", "I1024.min * I1024.min"), ("I1024", "I1024.min / -1"),
+    ("I1024", "-I1024.min"), ("I1024", "(1 as I1024) << 1023"), ("I1024", "(1 as I1024) << 1024"),
+    ("I1024", "mul_full(I512.min, I512.min)"), ("I1024", "mul_full(I512.min, I512.max) - 1"),
+    ("I1024", "I1024.max / 3 * 4"), ("I1024", "I1024.max *| I1024.max"), ("I1024", "I1024.min *% 3"),
+    ("I1024", "muldiv(I1024, I1024.max, I1024.max, I1024.max, half_even)"),
+    ("I1024", "muldiv(I1024, I1024.max, I1024.max, 2, floor)"), ("I1024", "isqrt(I1024.max)"),
+    ("I1024", "div_round(I1024.max, I1024.min, half_down)"), ("I1024", "(I1024.max as I512)"),
+    # Box 15 unit 4c: shifts by a count of a wide type (rt/OPEN.md RT-OQ-52).
+    ("I64", "1 << (63 as I128)"), ("I64", "1 << (64 as I128)"), ("I64", "-9 >> (2 as I512)"),
+    ("I64", "1 << ((1 as I128) << 64)"), ("I8", "(1 as I8) << (7 as I1024)"), ("I128", "(1 as I128) << (-1 as I256)"),
+    ("I256", "(1 as I256) << (255 as I1024)"), ("I256", "(3 as I256) <<% (254 as I128)"),
+    ("I256", "(1 as I256) <<% (256 as I128)"), ("I1024", "I1024.min >> (1023 as I128)"),
+    # Box 15 unit 4d: the unsigned wide types U128 to U512 (ruling BX15-02), their operators,
+    # built-ins, rotations and conversions to and from the signed and narrow types.
+    ("U128", "U128.max + 1"), ("U128", "U128.min - 1"), ("U128", "0 - (1 as U128)"), ("U128", "U128.max * 2"),
+    ("U128", "U128.max / 3"), ("U128", "U128.max % 10"), ("U128", "(1 as U128) << 127"),
+    ("U128", "(1 as U128) << 128"), ("U128", "(3 as U128) << 127"), ("U128", "U128.max >> 127"),
+    ("U128", "(3 as U128) <<% 127"), ("U128", "U128.max +% 1"), ("U128", "U128.min -% 1"), ("U128", "U128.min -| 1"),
+    ("U128", "U128.max +| 1"), ("U128", "U128.max *| 2"), ("U128", "~U128.min"), ("U128", "~(5 as U128)"),
+    ("U128", "1 / (0 as U128)"), ("U128", "340282366920938463463374607431768211455"),
+    ("U128", "340282366920938463463374607431768211456"), ("U128", "-1 as U128"), ("U128", "(-1 as I128) as U128"),
+    ("U128", "(-1 as I128) as% U128"), ("U128", "U256.max as U128"), ("U128", "U256.max as% U128"),
+    ("U128", "I128.max as U128 + 1"), ("U128", "mul_full(U64.max, U64.max)"), ("U128", "uabs(I128.min)"),
+    ("U128", "uabs(I128.max) + 1"), ("U128", "min(U128.max, 5) + max(U128.min, 3)"), ("U128", "clamp(U128.max, 2, 7)"),
+    ("U128", "div_round(U128.max, 2, half_even)"), ("U128", "div_euclid(U128.max, 0)"),
+    ("U128", "rem_euclid(U128.max, 7)"), ("U128", "muldiv(U128, U128.max, U128.max, U128.max, floor)"),
+    ("U128", "muldiv(U128, U128.max, 3, 2, ceil)"), ("U128", "isqrt(U128.max)"),
+    ("U128", "isqrt_round(U128.max, half_up)"), ("U128", "rotl(U128.max - 1, 1)"), ("U128", "rotr(1 as U128, 1)"),
+    ("U128", "rotl(5 as U128, 128)"), ("U128", "rotr(U128.max >> 64, 64)"), ("U128", "rotl(5 as U128, -1)"),
+    ("U256", "U256.max + 1"), ("U256", "(U128.max as U256) * (U128.max as U256)"),
+    ("U256", "mul_full(U128.max, U128.max)"), ("U256", "uabs(I256.min)"), ("U256", "rotl((1 as U256) << 255, 3)"),
+    ("U256", "U256.max - U256.max / 2"), ("U256", "I512.min as% U256"), ("U256", "(1 as U256) << (255 as I128)"),
+    ("U256", "U256.max >> (200 as U512)"), ("U256", "(1 as U256) << (256 as U128)"), ("U512", "U512.max + 1"),
+    ("U512", "mul_full(U256.max, U256.max)"), ("U512", "mul_full(U256.max, U256.max) + 1"), ("U512", "uabs(I512.min)"),
+    ("U512", "U512.max *| U512.max"), ("U512", "U512.max *% 3"), ("U512", "I1024.max as U512"),
+    ("U512", "I1024.max as% U512"), ("U512", "(U256.max as U512) << 256"), ("U512", "rotr(U512.max - 1, 511)"),
+    ("U512", "isqrt(U512.max)"), ("U512", "U512.max / U512.max"), ("I1024", "U512.max as I1024 + 1"),
+    ("I64", "(U128.max >> 65) as I64"), ("U64", "(U128.max >> 64) as U64"), ("I128", "U128.max as I128"),
+    ("I128", "U128.max as% I128"), ("U8", "(U512.max >> 504) as U8"),
+]
+WIDE_CONST_PLACES = [
+    "const {t} X = {e};", "export I64 run() {{ {t} x = {e}; return 0; }}",
+    "export I64 run() {{ const {t} L = {e}; return 0; }}", "{t} g = {e};",
+    "const Bool B = false && ({e} == 0);", "const {t} Y = true ? 0 : {e};", "static_assert({e} != 7);",
+    "export I64 run() {{ \"{{{e}}}\\n\"; return 0; }}", "const {t} A = {e};\nconst {t} B = A * 2;",
+]
+
+
+def wide_consts() -> list:
+    out = []
+    for ei, (t, e) in enumerate(WIDE_CONST_EXPRS):
+        for pi, place in enumerate(WIDE_CONST_PLACES):
+            out.append(("wide_const/%d_%d" % (ei, pi), (place.format(t=t, e=e) + "\n").encode("utf-8")))
     return out
 
 
@@ -706,6 +826,20 @@ def beyond_ls311(name: str) -> bool:
         return int(parts[1]) + int(parts[3]) > 256
     return name.split("/")[0] == "nest" and parts[0] in ("nest/paren", "nest/tilde", "nest/neg", "nest/call",
                                                            "nest/rassoc") and int(parts[1]) > 256
+
+
+def big_extents() -> list:
+    """Extents of 2^63 - 1, C9102 in check.ci h_type and h_reshape rather than a fault of
+    the extent plus 1. Not mutated: `cint_ref` takes these extents, so the model puts them
+    outside only after `cint_ref`'s diagnostics, while B1 refuses them where it checks them."""
+    def fn(body):
+        return ("export I64 run() {\n    I64[6] m = [1, 2, 3, 4, 5, 6];\n%s\n    return 0;\n}\n" % body).encode("ascii")
+    return [
+        ("extent/local_i64_max", fn("    I64[9223372036854775807] a;")),
+        ("extent/local_rank2_i64_max", fn("    I8[9223372036854775807, 3] b;")),
+        ("extent/reshape_i64_max", fn("    I64 s = sum(reshape(m, 9223372036854775807));")),
+        ("extent/reshape_rank2_i64_max", fn("    I64 s = sum(reshape(m, 9223372036854775807, 0));")),
+    ]
 
 
 def nesting() -> list:

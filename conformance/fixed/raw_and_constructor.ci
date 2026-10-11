@@ -1,0 +1,13 @@
+// case: fixed/raw_and_constructor
+// clause: SPEC-01 IM-57; SPEC-04 LS-38 (`.raw` is the storage integer and `Q.raw(n)` constructs from it, both exact)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 114688 (98304 + 16384); prints `16384 1.5`; fuel 1. Box 15, unit 1
+
+export I64 run() {
+    Q1.15 h = 0.5;
+    I16 r = h.raw;
+    Q16.16 x = Q16.16.raw(98304);
+    "{r} {x}\n";
+    return x.raw as I64 + r as I64;
+}

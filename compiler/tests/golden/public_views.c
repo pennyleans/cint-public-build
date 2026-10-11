@@ -83,6 +83,16 @@ static bool ci_15_public_x5Fviews_6_paired(cint_ctx *ctx, int64_t v_n, int64_t v
     (void)n_more;
     (void)s_more;
     (void)result;
+    static const cint_site cs2 = {0u, 2u}; (void)cs2;
+    static const cint_site cs3 = {0u, 3u}; (void)cs3;
+    static const cint_site cs4 = {0u, 4u}; (void)cs4;
+    static const cint_site cs5 = {0u, 5u}; (void)cs5;
+    static const cint_site cs6 = {0u, 6u}; (void)cs6;
+    static const cint_site cs7 = {0u, 7u}; (void)cs7;
+    static const cint_site cs8 = {0u, 8u}; (void)cs8;
+    static const cint_site cs9 = {0u, 9u}; (void)cs9;
+    static const cint_site cs10 = {0u, 10u}; (void)cs10;
+    static const cint_site cs11 = {0u, 11u}; (void)cs11;
     t0 = INT64_C(0);
     t1 = v_n == t0;
     if (!t1) goto L5_f;
@@ -91,39 +101,39 @@ static bool ci_15_public_x5Fviews_6_paired(cint_ctx *ctx, int64_t v_n, int64_t v
 L5_f:;
     t2 = INT64_C(0);
     if (!(t2 >= 0 && t2 < n_a)) {
-        (void)cint_index_check(ctx, (cint_site){0u, 2u}, "index.checked.i64", t2, n_a);
+        (void)cint_index_check(ctx, cs2, "index.checked.i64", t2, n_a);
         goto fault;
     }
     t3 = INT64_C(0);
     if (!(t3 >= 0 && t3 < n_b)) {
-        (void)cint_index_check(ctx, (cint_site){0u, 3u}, "index.checked.i64", t3, n_b);
+        (void)cint_index_check(ctx, cs3, "index.checked.i64", t3, n_b);
         goto fault;
     }
     t4 = v_b[o_b + t3 * s_b];
-    if (!cint_add_i64(ctx, (cint_site){0u, 4u}, t4, v_bias, &t5)) goto fault;
+    if (!cint_add_i64(ctx, cs4, t4, v_bias, &t5)) goto fault;
     v_a[o_a + t2 * s_a] = t5;
     t6 = INT64_C(0);
     if (!(t6 >= 0 && t6 < n_a)) {
-        (void)cint_index_check(ctx, (cint_site){0u, 5u}, "index.checked.i64", t6, n_a);
+        (void)cint_index_check(ctx, cs5, "index.checked.i64", t6, n_a);
         goto fault;
     }
     t7 = v_a[o_a + t6 * s_a];
     t8 = INT64_C(0);
     if (!(t8 >= 0 && t8 < n_bytes)) {
-        (void)cint_index_check(ctx, (cint_site){0u, 6u}, "index.checked.u8", t8, n_bytes);
+        (void)cint_index_check(ctx, cs6, "index.checked.u8", t8, n_bytes);
         goto fault;
     }
     t9 = v_bytes[o_bytes + t8 * s_bytes];
-    if (!cint_as_i64_from_u8(ctx, (cint_site){0u, 7u}, t9, &t10)) goto fault;
-    if (!cint_add_i64(ctx, (cint_site){0u, 8u}, t7, t10, &t11)) goto fault;
+    if (!cint_as_i64_from_u8(ctx, cs7, t9, &t10)) goto fault;
+    if (!cint_add_i64(ctx, cs8, t7, t10, &t11)) goto fault;
     t12 = INT64_C(0);
     if (!(t12 >= 0 && t12 < n_more)) {
-        (void)cint_index_check(ctx, (cint_site){0u, 9u}, "index.checked.u8", t12, n_more);
+        (void)cint_index_check(ctx, cs9, "index.checked.u8", t12, n_more);
         goto fault;
     }
     t13 = v_more[o_more + t12 * s_more];
-    if (!cint_as_i64_from_u8(ctx, (cint_site){0u, 10u}, t13, &t14)) goto fault;
-    if (!cint_add_i64(ctx, (cint_site){0u, 11u}, t11, t14, &t15)) goto fault;
+    if (!cint_as_i64_from_u8(ctx, cs10, t13, &t14)) goto fault;
+    if (!cint_add_i64(ctx, cs11, t11, t14, &t15)) goto fault;
     *result = t15;
     return true;
 fault:
@@ -149,26 +159,31 @@ static bool ci_15_public_x5Fviews_5_fixed(cint_ctx *ctx, int32_t *v_a, int64_t o
     (void)n_b;
     (void)s_b;
     (void)result;
+    static const cint_site cs13 = {0u, 13u}; (void)cs13;
+    static const cint_site cs14 = {0u, 14u}; (void)cs14;
+    static const cint_site cs15 = {0u, 15u}; (void)cs15;
+    static const cint_site cs16 = {0u, 16u}; (void)cs16;
+    static const cint_site cs17 = {0u, 17u}; (void)cs17;
     t0 = INT64_C(0);
     if (!(t0 >= 0 && t0 < n_a)) {
-        (void)cint_index_check(ctx, (cint_site){0u, 13u}, "index.checked.i32", t0, n_a);
+        (void)cint_index_check(ctx, cs13, "index.checked.i32", t0, n_a);
         goto fault;
     }
     t1 = INT64_C(0);
     if (!(t1 >= 0 && t1 < n_b)) {
-        (void)cint_index_check(ctx, (cint_site){0u, 14u}, "index.checked.u8", t1, n_b);
+        (void)cint_index_check(ctx, cs14, "index.checked.u8", t1, n_b);
         goto fault;
     }
     t2 = v_b[o_b + t1 * s_b];
-    if (!cint_as_i32_from_u8(ctx, (cint_site){0u, 15u}, t2, &t3)) goto fault;
+    if (!cint_as_i32_from_u8(ctx, cs15, t2, &t3)) goto fault;
     v_a[o_a + t0 * s_a] = t3;
     t4 = INT64_C(0);
     if (!(t4 >= 0 && t4 < n_a)) {
-        (void)cint_index_check(ctx, (cint_site){0u, 16u}, "index.checked.i32", t4, n_a);
+        (void)cint_index_check(ctx, cs16, "index.checked.i32", t4, n_a);
         goto fault;
     }
     t5 = v_a[o_a + t4 * s_a];
-    if (!cint_as_i64_from_i32(ctx, (cint_site){0u, 17u}, t5, &t6)) goto fault;
+    if (!cint_as_i64_from_i32(ctx, cs17, t5, &t6)) goto fault;
     *result = t6;
     return true;
 fault:
@@ -189,11 +204,12 @@ static bool ci_15_public_x5Fviews_4_bits(cint_ctx *ctx, bool v_a, bool *v_b, int
     (void)s_b;
     (void)l0;
     (void)result;
+    static const cint_site cs19 = {0u, 19u}; (void)cs19;
     l0 = v_a;
     if (!v_a) goto L5_f;
     t0 = INT64_C(0);
     if (!(t0 >= 0 && t0 < n_b)) {
-        (void)cint_index_check(ctx, (cint_site){0u, 19u}, "index.checked.bool", t0, n_b);
+        (void)cint_index_check(ctx, cs19, "index.checked.bool", t0, n_b);
         goto fault;
     }
     t1 = v_b[o_b + t0 * s_b];
@@ -221,15 +237,17 @@ static bool ci_15_public_x5Fviews_8_faulting(cint_ctx *ctx, int64_t *v_a, int64_
     (void)s_a;
     (void)v_divisor;
     (void)result;
+    static const cint_site cs21 = {0u, 21u}; (void)cs21;
+    static const cint_site cs22 = {0u, 22u}; (void)cs22;
     t0 = INT64_C(0);
     if (!(t0 >= 0 && t0 < n_a)) {
-        (void)cint_index_check(ctx, (cint_site){0u, 21u}, "index.checked.i64", t0, n_a);
+        (void)cint_index_check(ctx, cs21, "index.checked.i64", t0, n_a);
         goto fault;
     }
     t1 = INT64_C(42);
     v_a[o_a + t0 * s_a] = t1;
     t2 = INT64_C(10);
-    if (!cint_div_i64(ctx, (cint_site){0u, 22u}, t2, v_divisor, &t3)) goto fault;
+    if (!cint_div_i64(ctx, cs22, t2, v_divisor, &t3)) goto fault;
     *result = t3;
     return true;
 fault:
@@ -257,6 +275,9 @@ static bool ci_15_public_x5Fviews_8_readonly(cint_ctx *ctx, int64_t v_n, int64_t
     (void)n_b;
     (void)s_b;
     (void)result;
+    static const cint_site cs24 = {0u, 24u}; (void)cs24;
+    static const cint_site cs25 = {0u, 25u}; (void)cs25;
+    static const cint_site cs26 = {0u, 26u}; (void)cs26;
     t0 = INT64_C(0);
     t1 = v_n == t0;
     if (!t1) goto L5_f;
@@ -266,17 +287,17 @@ static bool ci_15_public_x5Fviews_8_readonly(cint_ctx *ctx, int64_t v_n, int64_t
 L5_f:;
     t3 = INT64_C(0);
     if (!(t3 >= 0 && t3 < n_a)) {
-        (void)cint_index_check(ctx, (cint_site){0u, 24u}, "index.checked.i64", t3, n_a);
+        (void)cint_index_check(ctx, cs24, "index.checked.i64", t3, n_a);
         goto fault;
     }
     t4 = v_a[o_a + t3 * s_a];
     t5 = INT64_C(0);
     if (!(t5 >= 0 && t5 < n_b)) {
-        (void)cint_index_check(ctx, (cint_site){0u, 25u}, "index.checked.i64", t5, n_b);
+        (void)cint_index_check(ctx, cs25, "index.checked.i64", t5, n_b);
         goto fault;
     }
     t6 = v_b[o_b + t5 * s_b];
-    if (!cint_add_i64(ctx, (cint_site){0u, 26u}, t4, t6, &t7)) goto fault;
+    if (!cint_add_i64(ctx, cs26, t4, t6, &t7)) goto fault;
     *result = t7;
     return true;
 fault:

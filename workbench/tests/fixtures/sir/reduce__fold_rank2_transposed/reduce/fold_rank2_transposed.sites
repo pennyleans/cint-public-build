@@ -1,0 +1,19 @@
+module reduce.fold_rank2_transposed
+sites reduce/fold_rank2_transposed.ci 1:7:11:fuel.charge 2:9:12:fold_checked.add.i8
+export func @reduce.fold_rank2_transposed.run() -> I8 {
+  fuel.charge 1                                  #1 @reduce/fold_rank2_transposed.ci:7:11
+  local $sc.0: I8[4]
+  view.begin $a.1: I8[_, _], $sc.0, 0, 8194
+  %t0 = const I8 100
+  array.init $sc.0, %t0, 0, 0
+  %t1 = const I8 -100
+  array.init $sc.0, %t1, 0, 1
+  %t2 = const I8 100
+  array.init $sc.0, %t2, 0, 2
+  %t3 = const I8 -100
+  array.init $sc.0, %t3, 0, 3
+  %t4 = const I8 0
+  view.transpose $sc.2: I8[_, _], $a.1
+  %t5 = fold_checked.add.i8 $sc.2, %t4           #2 @reduce/fold_rank2_transposed.ci:9:12
+  return %t5
+}

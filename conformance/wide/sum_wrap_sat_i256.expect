@@ -1,0 +1,9 @@
+case wide/sum_wrap_sat_i256
+clause SPEC-01 IM-77, IM-84, IM-85 (sum_wrap reduces the exact total modulo 2^256; sum_sat clamps after each step, in logical order)
+format 2
+source reference
+outcome value
+stdout-bytes 81
+stdout-sha256 3a77b518f701b9a8c5194eea2447465e63f53af603799d5ad8247b372cdb83f9
+return I64 0
+fuel-consumed 3

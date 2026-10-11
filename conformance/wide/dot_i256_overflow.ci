@@ -1,0 +1,11 @@
+// case: wide/dot_i256_overflow
+// clause: SPEC-01 IM-81, IM-87 (dot over I256 into an I256 result: 2 times I256.max plus 2 is one past I256.max; one range check on the exact sum)
+// subset: cint-core-1 (wide integers, built-in dot)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 10:12 (callee `dot`), operation dot.checked.i256.i256, operands I64 2 (n), exact 2^256, limit I256 2^255 - 1; stack depth 0; fuel 2. Box 15, unit 1
+
+export Bool run() {
+    I256[2] a = [2, 2];
+    I256[2] b = [I256.max, 1];
+    return dot(I256, a, b) + 1 != 0;
+}

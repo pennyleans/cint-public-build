@@ -63,7 +63,7 @@ K_CEILING = 800        # T2 (CINTC-02; decision 2026-10-05 on OQ-207, KR-06)
 K_GOAL = 800           # the column 02 reduction goal (CINTC-02; OQ-198, OQ-204)
 T_SYMBOLS, T_NAMES, T_DECLS = 12, 13, 16
 MEASUREMENT_INPUTS = ("tools/cint_measure.py", "tools/cint_measure_host.c")
-TABLE_NAMES = ("modules", "paths", "text", "tokens", "nodes", "parse frames", "SIR", "functions",
+TABLE_NAMES = ("modules", "paths", "text", "tokens", "nodes", "wide values", "SIR", "functions",
                "slots", "lowering frames", "lowering state", "semantic", "symbols", "names",
                "frame region", "literals", "declarations")
 

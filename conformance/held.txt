@@ -67,15 +67,19 @@
 # rt/cint_mem.c) B1 gives the outcome of all 37, and all 37 are frozen.
 # memory/pool_insert_result_try_main no longer names `main` as its entry, since a
 # harness calls an entry line's function as an export and `main` is the program entry.
+# Box 15 unit 1 (2026-10-09, ref/OPEN.md REF-OQ-47) gives cint_ref fixed point in
+# programs: boot/refuse_fixed_point and boot/refuse_fraction_literal run to the values
+# their headers state, and their cintc expectations stay held until a ruling approves
+# their rows. struct/layout_static_assert stays held for its bit fields.
 
 boot/refuse_attribute.cintc I-2 the cintc expectation (decision 26 item 2): an attribute is outside the surface that cint_ref implements, so no reference outcome can be frozen (CONF-11 rule 7); the seed's frozen file is unchanged
 boot/refuse_byte_string.cintc I-2 the cintc expectation (decision 26 item 2): a byte-string literal is outside the surface that cint_ref implements, so no reference outcome can be frozen (CONF-11 rule 7); the seed's frozen file is unchanged
 boot/refuse_destructuring.cintc I-2 the cintc expectation (decision 26 item 2): destructuring is outside the surface that cint_ref implements, so no reference outcome can be frozen (CONF-11 rule 7); the seed's frozen file is unchanged
 boot/refuse_enum.cintc I-2 the cintc expectation (decision 26 item 2): `enum` declarations are outside the surface that cint_ref implements, so no reference outcome can be frozen (CONF-11 rule 7); the seed's frozen file is unchanged
-boot/refuse_fixed_point.cintc I-2 the cintc expectation (decision 26 item 2): fixed point is outside the surface that cint_ref implements, so no reference outcome can be frozen (CONF-11 rule 7); the seed's frozen file is unchanged
-boot/refuse_fraction_literal.cintc I-2 the cintc expectation (decision 26 item 2): fixed point (a fraction literal) is outside the surface that cint_ref implements, so no reference outcome can be frozen (CONF-11 rule 7); the seed's frozen file is unchanged
+boot/refuse_fixed_point.cintc I-2 the cintc expectation (decision 26 item 2): cint_ref runs it since box 15 unit 1 (value I64 3; ref/OPEN.md REF-OQ-47), and it is held until a ruling approves its rows; the seed's frozen file is unchanged
+boot/refuse_fraction_literal.cintc I-2 the cintc expectation (decision 26 item 2): cint_ref runs it since box 15 unit 1 (value I64 32768; ref/OPEN.md REF-OQ-47), and it is held until a ruling approves its rows; the seed's frozen file is unchanged
 boot/refuse_type_alias.cintc I-2 the cintc expectation (decision 26 item 2): `type` declarations are outside the surface that cint_ref implements, so no reference outcome can be frozen (CONF-11 rule 7); the seed's frozen file is unchanged
 boot/refuse_where.cintc I-2 the cintc expectation (decision 26 item 2): a `where` clause is outside the surface that cint_ref implements, so no reference outcome can be frozen (CONF-11 rule 7); the seed's frozen file is unchanged
 control/fuel_total_n3 I-2 an array argument to the entry; a case list has no form for it before T3 (OQ-133), and a scalar wrapper entry would add a call and change the fuel count
 control/fuel_total_n3_enough I-2 an array argument to the entry; a case list has no form for it before T3 (OQ-133), and a scalar wrapper entry would add a call and change the fuel count
-struct/layout_static_assert I-2 a fixed-point field and bit fields in a program; outside cint_ref until T3 and later (D-15 rows 17 and 20)
+struct/layout_static_assert I-2 bit fields in a program, outside cint_ref until T3 and later (D-15 row 20); its fixed-point field runs since box 15 unit 1

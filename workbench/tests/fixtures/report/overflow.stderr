@@ -1,0 +1,18 @@
+fault[E_OVERFLOW]: the exact result is outside the type's range
+  --> overflow.ci:4:16
+   |
+ 4 | I64 next = big + 1;
+   |                ^ add.checked.i64
+   |
+   = operation: add.checked.i64
+   = operand-count: 2
+   = operand: I64 9223372036854775807
+   = operand: I64 1
+   = exact:   9223372036854775808
+   = limit:   I64 9223372036854775807
+   = revision: 76ba0a9026c50af37a794148dbbb10ab4d8aafc829c31984756bf5c6783c84fa
+   = source-map: none
+   = address: none
+   = stack-depth: 0
+   = fuel-consumed: 1 (not part of the fault record)
+   = state: the program stopped; stdout holds what it wrote before the fault

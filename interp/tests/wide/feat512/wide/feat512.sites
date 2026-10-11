@@ -1,0 +1,1113 @@
+module wide.feat512
+sites wide/feat512.ci 1:12:14:add.checked.i512 2:16:17:as.checked.i512.i1024 3:17:14:mul.checked.i1024 4:22:14:as.checked.i512.i1024 5:23:11:index.checked.i512 6:24:11:index.checked.i512 7:24:17:neg.checked.i512 8:30:5:call.enter 9:36:5:fuel.charge 10:37:19:index.checked.i1024 11:37:15:add.checked.i1024 12:43:5:fuel.charge 13:44:10:index.checked.i1024 14:44:17:index.checked.i1024 15:44:21:mul.checked.i1024 16:49:16:as.checked.i64.i512 17:50:14:shl.checked.i512 18:53:12:fuel.charge 19:54:14:call.enter 20:55:23:div.checked.i64 21:55:14:call.enter 22:55:28:add.checked.i512 23:57:5:print 24:58:11:add.checked.i512 25:59:5:print 26:60:11:sub.checked.i512 27:61:5:print 28:62:11:mul.checked.i512 29:63:5:print 30:64:11:div.checked.i512 31:65:5:print 32:66:11:rem.checked.i512 33:67:5:print 34:68:9:neg.checked.i512 35:69:5:print 36:71:5:print 37:73:5:print 38:75:5:print 39:77:5:print 40:78:15:neg.checked.i512 41:79:5:print 42:81:5:print 43:83:5:print 44:85:5:print 45:87:5:print 46:89:5:print 47:90:11:shr.checked.i512 48:91:5:print 49:92:11:shl.checked.i512 50:93:5:print 51:94:11:shl.wrap.i512 52:95:5:print 53:97:5:print 54:99:5:print 55:100:14:neg.checked.i512 56:101:5:print 57:103:5:print 58:105:5:print 59:107:5:print 60:108:13:neg.checked.i512 61:108:9:abs.checked.i512 62:109:5:print 63:110:16:neg.checked.i512 64:111:5:print 65:112:16:neg.checked.i512 66:113:5:print 67:114:18:neg.checked.i512 68:114:9:clamp.checked.i512 69:115:5:print 70:116:19:neg.checked.i512 71:116:9:div_trunc.checked.i512 72:117:5:print 73:118:19:neg.checked.i512 74:118:9:rem_trunc.checked.i512 75:119:5:print 76:120:20:neg.checked.i512 77:120:9:div_euclid.checked.i512 78:121:5:print 79:122:20:neg.checked.i512 80:122:9:rem_euclid.checked.i512 81:123:5:print 82:124:19:neg.checked.i512 83:124:9:div_round.checked.i512.half_even 84:125:5:print 85:126:9:div_round.checked.i512.ceil 86:127:5:print 87:128:9:isqrt.checked.i512 88:129:5:print 89:130:9:isqrt_round.checked.i512.ceil 90:131:5:print 91:132:9:isqrt_round.checked.i512.half_up 92:133:5:print 93:134:13:muldiv.checked.i512.i64.half_even 94:135:5:print 95:136:9:muldiv.checked.i512.i512.floor 96:137:5:print 97:138:15:muldiv.checked.i512.i1024.trunc 98:139:5:print 99:141:5:print 100:143:5:print 101:145:5:print 102:146:18:div.checked.i64 103:146:12:shr.checked.i512 104:146:24:as.checked.i512.i64 105:147:5:print 106:148:11:as.checked.i512.i1024 107:149:5:print 108:150:9:call.enter 109:151:5:print 110:153:5:print 111:154:13:as.checked.u8.i512 112:154:28:as.checked.i8.i512 113:154:22:add.checked.i512 114:155:5:print 115:159:12:fuel.charge 116:160:14:call.enter 117:162:6:index.checked.i512 118:163:8:index.checked.i512 119:163:15:index.checked.i512 120:163:22:index.checked.i512 121:163:5:print 122:165:16:as.checked.i512.i1024 123:165:5:call.enter 124:166:8:index.checked.i1024 125:166:14:call.enter 126:166:5:print 127:167:13:call.enter 128:168:33:index.checked.i512 129:168:45:index.checked.i512 130:168:5:print 131:170:7:index.checked.struct 132:171:7:index.checked.struct 133:172:9:index.checked.struct 134:172:17:index.checked.i512 135:172:25:index.checked.struct 136:172:5:print 137:173:13:call.enter 138:173:11:add.checked.i512 139:174:7:index.checked.i1024 140:174:7:index.checked.i1024 141:174:18:index.checked.i1024 142:174:18:index.checked.i1024 143:174:30:as.checked.i512.i1024 144:174:25:mul.checked.i1024 145:175:13:index.checked.i1024 146:175:13:index.checked.i1024 147:175:24:index.checked.i1024 148:175:24:index.checked.i1024 149:175:5:print 150:177:5:fuel.charge 151:178:10:index.checked.i1024 152:178:19:as.checked.i64.i1024 153:178:29:shl.checked.i1024 154:181:14:slice.checked.i1024 155:181:5:copy.shape 156:182:8:index.checked.i1024 157:182:15:index.checked.i1024 158:182:22:index.checked.i1024 159:182:5:print 160:186:12:fuel.charge 161:187:14:call.enter 162:189:11:add.checked.i512 163:193:12:fuel.charge 164:194:14:call.enter 165:196:11:mul.checked.i512 166:200:12:fuel.charge 167:201:14:call.enter 168:202:16:sub.checked.i512 169:204:11:div.checked.i512 170:208:12:fuel.charge 171:209:14:call.enter 172:211:13:sub.checked.i512 173:211:17:sub.checked.i512 174:211:21:sub.checked.i512 175:211:9:neg.checked.i512 176:215:12:fuel.charge 177:216:14:call.enter 178:218:11:shl.checked.i512 179:222:12:fuel.charge 180:223:14:call.enter 181:225:17:mul.checked.i64 182:225:11:shr.checked.i512 183:229:12:fuel.charge 184:230:14:call.enter 185:232:11:as.checked.i512.i64 186:236:12:fuel.charge 187:237:16:call.enter 188:237:26:as.checked.i512.i1024 189:237:39:call.enter 190:237:49:as.checked.i512.i1024 191:237:36:mul.checked.i1024 192:239:11:as.checked.i1024.i512 193:243:12:fuel.charge 194:244:14:call.enter 195:246:15:sub.checked.i512 196:246:19:sub.checked.i512 197:246:23:sub.checked.i512 198:246:9:abs.checked.i512 199:250:12:fuel.charge 200:251:14:call.enter 201:253:24:sub.checked.i512 202:253:9:div_trunc.checked.i512 203:257:12:fuel.charge 204:258:14:call.enter 205:260:24:sub.checked.i512 206:260:9:div_round.checked.i512.half_even 207:264:12:fuel.charge 208:265:14:call.enter 209:267:15:neg.checked.i512 210:267:9:isqrt.checked.i512 211:271:12:fuel.charge 212:272:14:call.enter 213:274:9:muldiv.checked.i512.i64.floor 214:278:12:fuel.charge 215:281:10:index.checked.i512 216:285:12:fuel.charge 217:286:14:call.enter 218:288:9:call.enter 219:292:12:fuel.charge 220:293:18:call.enter 221:293:13:call.enter 222:295:15:index.checked.i512 223:295:19:mul.checked.i512 224:299:12:fuel.charge 225:302:14:slice.checked.i1024 226:302:5:copy.shape 227:306:12:fuel.charge 228:308:14:call.enter 229:308:24:as.checked.i512.i1024 230:308:5:call.enter 231:310:9:call.enter 232:314:12:fuel.charge 233:315:17:as.checked.i64.i256 234:315:26:shl.checked.i256 235:316:14:neg.checked.i256 236:316:17:sub.checked.i256 237:317:5:print 238:318:5:print 239:319:18:shl.checked.i64 240:319:25:neg.checked.i64 241:319:5:print
+struct Acc(lo: I512, hi: I1024, n: I64, pair: I512[2])
+global @g: I512 = 0
+global @gb: I1024[2, 2] = [1, -2, 3, -4]
+func @wide.feat512.twice(%x: I512) -> I512 {
+  %t0 = add.checked.i512 %x, %x                  #1 @wide/feat512.ci:12:14
+  return %t0
+}
+func @wide.feat512.grow(%x: I512) -> I1024 {
+  %t0 = as.checked.i512.i1024 %x                 #2 @wide/feat512.ci:16:17
+  local $y.0: I1024
+  store.local $y.0, %t0
+  %t1 = load.local $y.0
+  %t2 = load.local $y.0
+  %t3 = mul.checked.i1024 %t1, %t2               #3 @wide/feat512.ci:17:14
+  return %t3
+}
+func @wide.feat512.put(%a: inout Acc, %v: I512) {
+  field.store %a, lo, %v
+  %t0 = as.checked.i512.i1024 %v                 #4 @wide/feat512.ci:22:14
+  field.store %a, hi, %t0
+  %t1 = const I64 0
+  index.checked.i512 %a, %t1, pair               #5 @wide/feat512.ci:23:11
+  field.index.store %a, pair, %t1, %v
+  %t2 = const I64 1
+  index.checked.i512 %a, %t2, pair               #6 @wide/feat512.ci:24:11
+  %t3 = neg.checked.i512 %v                      #7 @wide/feat512.ci:24:17
+  field.index.store %a, pair, %t2, %t3
+  %t4 = const I64 2
+  field.store %a, n, %t4
+}
+func @wide.feat512.make(%v: I512) -> Acc {
+  local $a.0: Acc
+  call @wide.feat512.put($a.0, %v)               #8 @wide/feat512.ci:30:5
+  return $a.0
+}
+func @wide.feat512.total(%n: I64, %xs: I1024[%n]) -> I1024 {
+  %t0 = const I1024 0
+  local $s.0: I1024
+  store.local $s.0, %t0
+  %t1 = const I64 0
+  local $i.1: I64
+  store.local $i.1, %t1
+  loop L6 {
+    %t2 = load.local $i.1
+    %t3 = cmp.lt.i64 %t2, %n
+    while %t3
+    fuel.charge 1                                #9 @wide/feat512.ci:36:5
+    %t4 = load.local $s.0
+    %t5 = load.local $i.1
+    index.checked.i1024 %xs, %t5                 #10 @wide/feat512.ci:37:19
+    %t6 = index.load %xs, %t5
+    %t7 = add.checked.i1024 %t4, %t6             #11 @wide/feat512.ci:37:15
+    store.local $s.0, %t7
+    next
+    %t8 = load.local $i.1
+    %t9 = const I64 1
+    %t10 = add.wrap.i64 %t8, %t9
+    store.local $i.1, %t10
+  }
+  %t11 = load.local $s.0
+  return %t11
+}
+func @wide.feat512.scale(%v: I1024[_], %k: I1024) {
+  %t0 = const I64 0
+  %t1 = view.extent %v, 0
+  local $i.0: I64
+  store.local $i.0, %t0
+  loop L4 {
+    %t2 = load.local $i.0
+    %t3 = cmp.lt.i64 %t2, %t1
+    while %t3
+    fuel.charge 1                                #12 @wide/feat512.ci:43:5
+    %t4 = load.local $i.0
+    index.checked.i1024 %v, %t4                  #13 @wide/feat512.ci:44:10
+    %t5 = load.local $i.0
+    index.checked.i1024 %v, %t5                  #14 @wide/feat512.ci:44:17
+    %t6 = index.load %v, %t5
+    %t7 = mul.checked.i1024 %t6, %k              #15 @wide/feat512.ci:44:21
+    index.store %v, %t4, %t7
+    next
+    %t8 = load.local $i.0
+    %t9 = const I64 1
+    %t10 = add.wrap.i64 %t8, %t9
+    store.local $i.0, %t10
+  }
+}
+func @wide.feat512.big(%k: I64, %s: I64) -> I512 {
+  %t0 = as.checked.i64.i512 %k                   #16 @wide/feat512.ci:49:16
+  local $x.0: I512
+  store.local $x.0, %t0
+  %t1 = load.local $x.0
+  %t2 = shl.checked.i512 %t1, %s                 #17 @wide/feat512.ci:50:14
+  return %t2
+}
+export func @wide.feat512.values(%k: I64, %s: I64) -> I64 {
+  fuel.charge 1                                  #18 @wide/feat512.ci:53:12
+  %t0 = call @wide.feat512.big(%k, %s)           #19 @wide/feat512.ci:54:14
+  local $x.0: I512
+  store.local $x.0, %t0
+  %t1 = const I64 3
+  %t2 = const I64 2
+  %t3 = div.checked.i64 %s, %t2                  #20 @wide/feat512.ci:55:23
+  %t4 = call @wide.feat512.big(%t1, %t3)         #21 @wide/feat512.ci:55:14
+  %t5 = const I512 5
+  %t6 = add.checked.i512 %t4, %t5                #22 @wide/feat512.ci:55:28
+  local $y.1: I512
+  store.local $y.1, %t6
+  %t7 = const I512 0
+  local $q.2: I512
+  store.local $q.2, %t7
+  %t8 = load.local $x.0
+  %t9 = load.local $y.1
+  print.begin                                    #23 @wide/feat512.ci:57:5
+  print.value I512 %t8
+  print.bytes " "
+  print.value I512 %t9
+  print.bytes "\n"
+  print.end
+  %t10 = load.local $x.0
+  %t11 = load.local $y.1
+  %t12 = add.checked.i512 %t10, %t11             #24 @wide/feat512.ci:58:11
+  store.local $q.2, %t12
+  %t13 = load.local $q.2
+  print.begin                                    #25 @wide/feat512.ci:59:5
+  print.value I512 %t13
+  print.bytes "\n"
+  print.end
+  %t14 = load.local $x.0
+  %t15 = load.local $y.1
+  %t16 = sub.checked.i512 %t14, %t15             #26 @wide/feat512.ci:60:11
+  store.local $q.2, %t16
+  %t17 = load.local $q.2
+  print.begin                                    #27 @wide/feat512.ci:61:5
+  print.value I512 %t17
+  print.bytes "\n"
+  print.end
+  %t18 = load.local $y.1
+  %t19 = const I512 7
+  %t20 = mul.checked.i512 %t18, %t19             #28 @wide/feat512.ci:62:11
+  store.local $q.2, %t20
+  %t21 = load.local $q.2
+  print.begin                                    #29 @wide/feat512.ci:63:5
+  print.value I512 %t21
+  print.bytes "\n"
+  print.end
+  %t22 = load.local $x.0
+  %t23 = load.local $y.1
+  %t24 = div.checked.i512 %t22, %t23             #30 @wide/feat512.ci:64:11
+  store.local $q.2, %t24
+  %t25 = load.local $q.2
+  print.begin                                    #31 @wide/feat512.ci:65:5
+  print.value I512 %t25
+  print.bytes "\n"
+  print.end
+  %t26 = load.local $x.0
+  %t27 = load.local $y.1
+  %t28 = rem.checked.i512 %t26, %t27             #32 @wide/feat512.ci:66:11
+  store.local $q.2, %t28
+  %t29 = load.local $q.2
+  print.begin                                    #33 @wide/feat512.ci:67:5
+  print.value I512 %t29
+  print.bytes "\n"
+  print.end
+  %t30 = load.local $x.0
+  %t31 = neg.checked.i512 %t30                   #34 @wide/feat512.ci:68:9
+  store.local $q.2, %t31
+  %t32 = load.local $q.2
+  print.begin                                    #35 @wide/feat512.ci:69:5
+  print.value I512 %t32
+  print.bytes "\n"
+  print.end
+  %t33 = load.local $x.0
+  %t34 = load.local $x.0
+  %t35 = add.wrap.i512 %t33, %t34
+  store.local $q.2, %t35
+  %t36 = load.local $q.2
+  print.begin                                    #36 @wide/feat512.ci:71:5
+  print.value I512 %t36
+  print.bytes "\n"
+  print.end
+  %t37 = load.local $x.0
+  %t38 = load.local $y.1
+  %t39 = sub.wrap.i512 %t37, %t38
+  store.local $q.2, %t39
+  %t40 = load.local $q.2
+  print.begin                                    #37 @wide/feat512.ci:73:5
+  print.value I512 %t40
+  print.bytes "\n"
+  print.end
+  %t41 = load.local $x.0
+  %t42 = load.local $y.1
+  %t43 = mul.wrap.i512 %t41, %t42
+  store.local $q.2, %t43
+  %t44 = load.local $q.2
+  print.begin                                    #38 @wide/feat512.ci:75:5
+  print.value I512 %t44
+  print.bytes "\n"
+  print.end
+  %t45 = load.local $x.0
+  %t46 = load.local $x.0
+  %t47 = add.sat.i512 %t45, %t46
+  store.local $q.2, %t47
+  %t48 = load.local $q.2
+  print.begin                                    #39 @wide/feat512.ci:77:5
+  print.value I512 %t48
+  print.bytes "\n"
+  print.end
+  %t49 = load.local $x.0
+  %t50 = load.local $x.0
+  %t51 = neg.checked.i512 %t50                   #40 @wide/feat512.ci:78:15
+  %t52 = sub.sat.i512 %t49, %t51
+  store.local $q.2, %t52
+  %t53 = load.local $q.2
+  print.begin                                    #41 @wide/feat512.ci:79:5
+  print.value I512 %t53
+  print.bytes "\n"
+  print.end
+  %t54 = load.local $x.0
+  %t55 = load.local $y.1
+  %t56 = mul.sat.i512 %t54, %t55
+  store.local $q.2, %t56
+  %t57 = load.local $q.2
+  print.begin                                    #42 @wide/feat512.ci:81:5
+  print.value I512 %t57
+  print.bytes "\n"
+  print.end
+  %t58 = load.local $x.0
+  %t59 = load.local $y.1
+  %t60 = and.i512 %t58, %t59
+  store.local $q.2, %t60
+  %t61 = load.local $q.2
+  print.begin                                    #43 @wide/feat512.ci:83:5
+  print.value I512 %t61
+  print.bytes "\n"
+  print.end
+  %t62 = load.local $x.0
+  %t63 = load.local $y.1
+  %t64 = or.i512 %t62, %t63
+  store.local $q.2, %t64
+  %t65 = load.local $q.2
+  print.begin                                    #44 @wide/feat512.ci:85:5
+  print.value I512 %t65
+  print.bytes "\n"
+  print.end
+  %t66 = load.local $x.0
+  %t67 = load.local $y.1
+  %t68 = xor.i512 %t66, %t67
+  store.local $q.2, %t68
+  %t69 = load.local $q.2
+  print.begin                                    #45 @wide/feat512.ci:87:5
+  print.value I512 %t69
+  print.bytes "\n"
+  print.end
+  %t70 = load.local $x.0
+  %t71 = not.i512 %t70
+  store.local $q.2, %t71
+  %t72 = load.local $q.2
+  print.begin                                    #46 @wide/feat512.ci:89:5
+  print.value I512 %t72
+  print.bytes "\n"
+  print.end
+  %t73 = load.local $x.0
+  %t74 = const I64 3
+  %t75 = shr.checked.i512 %t73, %t74             #47 @wide/feat512.ci:90:11
+  store.local $q.2, %t75
+  %t76 = load.local $q.2
+  print.begin                                    #48 @wide/feat512.ci:91:5
+  print.value I512 %t76
+  print.bytes "\n"
+  print.end
+  %t77 = load.local $y.1
+  %t78 = const I64 2
+  %t79 = shl.checked.i512 %t77, %t78             #49 @wide/feat512.ci:92:11
+  store.local $q.2, %t79
+  %t80 = load.local $q.2
+  print.begin                                    #50 @wide/feat512.ci:93:5
+  print.value I512 %t80
+  print.bytes "\n"
+  print.end
+  %t81 = load.local $x.0
+  %t82 = shl.wrap.i512 %t81, %s                  #51 @wide/feat512.ci:94:11
+  store.local $q.2, %t82
+  %t83 = load.local $q.2
+  print.begin                                    #52 @wide/feat512.ci:95:5
+  print.value I512 %t83
+  print.bytes "\n"
+  print.end
+  %t84 = load.local $x.0
+  %t85 = load.local $y.1
+  %t86 = cmp.lt.i512 %t84, %t85
+  local $b.3: Bool
+  store.local $b.3, %t86
+  %t87 = load.local $b.3
+  print.begin                                    #53 @wide/feat512.ci:97:5
+  print.value Bool %t87
+  print.bytes "\n"
+  print.end
+  %t88 = load.local $x.0
+  %t89 = load.local $y.1
+  %t90 = cmp.eq.i512 %t88, %t89
+  store.local $b.3, %t90
+  %t91 = load.local $b.3
+  print.begin                                    #54 @wide/feat512.ci:99:5
+  print.value Bool %t91
+  print.bytes "\n"
+  print.end
+  %t92 = load.local $x.0
+  %t93 = load.local $y.1
+  %t94 = neg.checked.i512 %t93                   #55 @wide/feat512.ci:100:14
+  %t95 = cmp.ge.i512 %t92, %t94
+  store.local $b.3, %t95
+  %t96 = load.local $b.3
+  print.begin                                    #56 @wide/feat512.ci:101:5
+  print.value Bool %t96
+  print.bytes "\n"
+  print.end
+  %t97 = load.local $x.0
+  %t98 = load.local $y.1
+  %t99 = cmp.ne.i512 %t97, %t98
+  store.local $b.3, %t99
+  %t100 = load.local $b.3
+  print.begin                                    #57 @wide/feat512.ci:103:5
+  print.value Bool %t100
+  print.bytes "\n"
+  print.end
+  %t101 = load.local $y.1
+  %t102 = load.local $y.1
+  %t103 = cmp.le.i512 %t101, %t102
+  store.local $b.3, %t103
+  %t104 = load.local $b.3
+  print.begin                                    #58 @wide/feat512.ci:105:5
+  print.value Bool %t104
+  print.bytes "\n"
+  print.end
+  %t105 = load.local $x.0
+  %t106 = load.local $y.1
+  %t107 = cmp.gt.i512 %t105, %t106
+  store.local $b.3, %t107
+  %t108 = load.local $b.3
+  print.begin                                    #59 @wide/feat512.ci:107:5
+  print.value Bool %t108
+  print.bytes "\n"
+  print.end
+  %t109 = load.local $y.1
+  %t110 = neg.checked.i512 %t109                 #60 @wide/feat512.ci:108:13
+  %t111 = abs.checked.i512 %t110                 #61 @wide/feat512.ci:108:9
+  store.local $q.2, %t111
+  %t112 = load.local $q.2
+  print.begin                                    #62 @wide/feat512.ci:109:5
+  print.value I512 %t112
+  print.bytes "\n"
+  print.end
+  %t113 = load.local $x.0
+  %t114 = load.local $y.1
+  %t115 = neg.checked.i512 %t114                 #63 @wide/feat512.ci:110:16
+  %t116 = min.checked.i512 %t113, %t115
+  store.local $q.2, %t116
+  %t117 = load.local $q.2
+  print.begin                                    #64 @wide/feat512.ci:111:5
+  print.value I512 %t117
+  print.bytes "\n"
+  print.end
+  %t118 = load.local $x.0
+  %t119 = load.local $y.1
+  %t120 = neg.checked.i512 %t119                 #65 @wide/feat512.ci:112:16
+  %t121 = max.checked.i512 %t118, %t120
+  store.local $q.2, %t121
+  %t122 = load.local $q.2
+  print.begin                                    #66 @wide/feat512.ci:113:5
+  print.value I512 %t122
+  print.bytes "\n"
+  print.end
+  %t123 = load.local $x.0
+  %t124 = load.local $y.1
+  %t125 = neg.checked.i512 %t124                 #67 @wide/feat512.ci:114:18
+  %t126 = load.local $y.1
+  %t127 = clamp.checked.i512 %t123, %t125, %t126 #68 @wide/feat512.ci:114:9
+  store.local $q.2, %t127
+  %t128 = load.local $q.2
+  print.begin                                    #69 @wide/feat512.ci:115:5
+  print.value I512 %t128
+  print.bytes "\n"
+  print.end
+  %t129 = load.local $x.0
+  %t130 = neg.checked.i512 %t129                 #70 @wide/feat512.ci:116:19
+  %t131 = load.local $y.1
+  %t132 = div_trunc.checked.i512 %t130, %t131    #71 @wide/feat512.ci:116:9
+  store.local $q.2, %t132
+  %t133 = load.local $q.2
+  print.begin                                    #72 @wide/feat512.ci:117:5
+  print.value I512 %t133
+  print.bytes "\n"
+  print.end
+  %t134 = load.local $x.0
+  %t135 = neg.checked.i512 %t134                 #73 @wide/feat512.ci:118:19
+  %t136 = load.local $y.1
+  %t137 = rem_trunc.checked.i512 %t135, %t136    #74 @wide/feat512.ci:118:9
+  store.local $q.2, %t137
+  %t138 = load.local $q.2
+  print.begin                                    #75 @wide/feat512.ci:119:5
+  print.value I512 %t138
+  print.bytes "\n"
+  print.end
+  %t139 = load.local $x.0
+  %t140 = neg.checked.i512 %t139                 #76 @wide/feat512.ci:120:20
+  %t141 = load.local $y.1
+  %t142 = div_euclid.checked.i512 %t140, %t141   #77 @wide/feat512.ci:120:9
+  store.local $q.2, %t142
+  %t143 = load.local $q.2
+  print.begin                                    #78 @wide/feat512.ci:121:5
+  print.value I512 %t143
+  print.bytes "\n"
+  print.end
+  %t144 = load.local $x.0
+  %t145 = neg.checked.i512 %t144                 #79 @wide/feat512.ci:122:20
+  %t146 = load.local $y.1
+  %t147 = rem_euclid.checked.i512 %t145, %t146   #80 @wide/feat512.ci:122:9
+  store.local $q.2, %t147
+  %t148 = load.local $q.2
+  print.begin                                    #81 @wide/feat512.ci:123:5
+  print.value I512 %t148
+  print.bytes "\n"
+  print.end
+  %t149 = load.local $x.0
+  %t150 = neg.checked.i512 %t149                 #82 @wide/feat512.ci:124:19
+  %t151 = load.local $y.1
+  %t152 = div_round.checked.i512.half_even %t150, %t151 #83 @wide/feat512.ci:124:9
+  store.local $q.2, %t152
+  %t153 = load.local $q.2
+  print.begin                                    #84 @wide/feat512.ci:125:5
+  print.value I512 %t153
+  print.bytes "\n"
+  print.end
+  %t154 = load.local $x.0
+  %t155 = load.local $y.1
+  %t156 = div_round.checked.i512.ceil %t154, %t155 #85 @wide/feat512.ci:126:9
+  store.local $q.2, %t156
+  %t157 = load.local $q.2
+  print.begin                                    #86 @wide/feat512.ci:127:5
+  print.value I512 %t157
+  print.bytes "\n"
+  print.end
+  %t158 = load.local $x.0
+  %t159 = isqrt.checked.i512 %t158               #87 @wide/feat512.ci:128:9
+  store.local $q.2, %t159
+  %t160 = load.local $q.2
+  print.begin                                    #88 @wide/feat512.ci:129:5
+  print.value I512 %t160
+  print.bytes "\n"
+  print.end
+  %t161 = load.local $x.0
+  %t162 = isqrt_round.checked.i512.ceil %t161    #89 @wide/feat512.ci:130:9
+  store.local $q.2, %t162
+  %t163 = load.local $q.2
+  print.begin                                    #90 @wide/feat512.ci:131:5
+  print.value I512 %t163
+  print.bytes "\n"
+  print.end
+  %t164 = load.local $y.1
+  %t165 = isqrt_round.checked.i512.half_up %t164 #91 @wide/feat512.ci:132:9
+  store.local $q.2, %t165
+  %t166 = load.local $q.2
+  print.begin                                    #92 @wide/feat512.ci:133:5
+  print.value I512 %t166
+  print.bytes "\n"
+  print.end
+  %t167 = load.local $y.1
+  %t168 = const I512 3
+  %t169 = const I512 7
+  %t170 = muldiv.checked.i512.i64.half_even %t167, %t168, %t169 #93 @wide/feat512.ci:134:13
+  local $m.4: I64
+  store.local $m.4, %t170
+  %t171 = load.local $m.4
+  print.begin                                    #94 @wide/feat512.ci:135:5
+  print.value I64 %t171
+  print.bytes "\n"
+  print.end
+  %t172 = load.local $x.0
+  %t173 = load.local $y.1
+  %t174 = load.local $y.1
+  %t175 = muldiv.checked.i512.i512.floor %t172, %t173, %t174 #95 @wide/feat512.ci:136:9
+  store.local $q.2, %t175
+  %t176 = load.local $q.2
+  print.begin                                    #96 @wide/feat512.ci:137:5
+  print.value I512 %t176
+  print.bytes "\n"
+  print.end
+  %t177 = load.local $x.0
+  %t178 = load.local $y.1
+  %t179 = const I512 3
+  %t180 = muldiv.checked.i512.i1024.trunc %t177, %t178, %t179 #97 @wide/feat512.ci:138:15
+  local $w.5: I1024
+  store.local $w.5, %t180
+  %t181 = load.local $w.5
+  print.begin                                    #98 @wide/feat512.ci:139:5
+  print.value I1024 %t181
+  print.bytes "\n"
+  print.end
+  %t182 = load.local $x.0
+  %t183 = as.wrap.i512.i64 %t182
+  local $n.6: I64
+  store.local $n.6, %t183
+  %t184 = load.local $n.6
+  print.begin                                    #99 @wide/feat512.ci:141:5
+  print.value I64 %t184
+  print.bytes "\n"
+  print.end
+  %t185 = load.local $y.1
+  %t186 = as.wrap.i512.i8 %t185
+  local $n8.7: I8
+  store.local $n8.7, %t186
+  %t187 = load.local $n8.7
+  print.begin                                    #100 @wide/feat512.ci:143:5
+  print.value I8 %t187
+  print.bytes "\n"
+  print.end
+  %t188 = load.local $y.1
+  %t189 = as.wrap.i512.u8 %t188
+  local $u8.8: U8
+  store.local $u8.8, %t189
+  %t190 = load.local $u8.8
+  print.begin                                    #101 @wide/feat512.ci:145:5
+  print.value U8 %t190
+  print.bytes "\n"
+  print.end
+  %t191 = load.local $y.1
+  %t192 = const I64 2
+  %t193 = div.checked.i64 %s, %t192              #102 @wide/feat512.ci:146:18
+  %t194 = shr.checked.i512 %t191, %t193          #103 @wide/feat512.ci:146:12
+  %t195 = as.checked.i512.i64 %t194              #104 @wide/feat512.ci:146:24
+  store.local $n.6, %t195
+  %t196 = load.local $n.6
+  print.begin                                    #105 @wide/feat512.ci:147:5
+  print.value I64 %t196
+  print.bytes "\n"
+  print.end
+  %t197 = load.local $x.0
+  %t198 = as.checked.i512.i1024 %t197            #106 @wide/feat512.ci:148:11
+  store.local $w.5, %t198
+  %t199 = load.local $w.5
+  print.begin                                    #107 @wide/feat512.ci:149:5
+  print.value I1024 %t199
+  print.bytes "\n"
+  print.end
+  %t200 = load.local $x.0
+  %t201 = call @wide.feat512.grow(%t200)         #108 @wide/feat512.ci:150:9
+  store.local $w.5, %t201
+  %t202 = load.local $w.5
+  print.begin                                    #109 @wide/feat512.ci:151:5
+  print.value I1024 %t202
+  print.bytes "\n"
+  print.end
+  %t203 = load.local $w.5
+  %t204 = as.wrap.i1024.i512 %t203
+  store.local $q.2, %t204
+  %t205 = load.local $q.2
+  print.begin                                    #110 @wide/feat512.ci:153:5
+  print.value I512 %t205
+  print.bytes "\n"
+  print.end
+  %t206 = load.local $u8.8
+  %t207 = as.checked.u8.i512 %t206               #111 @wide/feat512.ci:154:13
+  %t208 = load.local $n8.7
+  %t209 = as.checked.i8.i512 %t208               #112 @wide/feat512.ci:154:28
+  %t210 = add.checked.i512 %t207, %t209          #113 @wide/feat512.ci:154:22
+  store.local $q.2, %t210
+  %t211 = load.local $q.2
+  print.begin                                    #114 @wide/feat512.ci:155:5
+  print.value I512 %t211
+  print.bytes "\n"
+  print.end
+  %t212 = const I64 0
+  return %t212
+}
+export func @wide.feat512.aggregates(%k: I64, %s: I64) -> I64 {
+  fuel.charge 1                                  #115 @wide/feat512.ci:159:12
+  view.begin $gb.0: I1024[_, _], @gb, 0, 8194
+  %t0 = call @wide.feat512.big(%k, %s)           #116 @wide/feat512.ci:160:14
+  local $x.1: I512
+  store.local $x.1, %t0
+  local $a.2: I512[3]
+  %t1 = const I512 1
+  array.init $a.2, %t1, 0, 0
+  %t2 = const I512 -2
+  array.init $a.2, %t2, 0, 1
+  %t3 = const I512 3
+  array.init $a.2, %t3, 0, 2
+  %t4 = const I64 1
+  index.checked.i512 $a.2, %t4                   #117 @wide/feat512.ci:162:6
+  %t5 = load.local $x.1
+  index.store $a.2, %t4, %t5
+  %t6 = const I64 0
+  index.checked.i512 $a.2, %t6                   #118 @wide/feat512.ci:163:8
+  %t7 = index.load $a.2, %t6
+  %t8 = const I64 1
+  index.checked.i512 $a.2, %t8                   #119 @wide/feat512.ci:163:15
+  %t9 = index.load $a.2, %t8
+  %t10 = const I64 2
+  index.checked.i512 $a.2, %t10                  #120 @wide/feat512.ci:163:22
+  %t11 = index.load $a.2, %t10
+  print.begin                                    #121 @wide/feat512.ci:163:5
+  print.value I512 %t7
+  print.bytes " "
+  print.value I512 %t9
+  print.bytes " "
+  print.value I512 %t11
+  print.bytes "\n"
+  print.end
+  local $v.3: I1024[4]
+  %t12 = const I1024 1
+  array.init $v.3, %t12, 0, 0
+  %t13 = const I1024 2
+  array.init $v.3, %t13, 0, 1
+  %t14 = const I1024 3
+  array.init $v.3, %t14, 0, 2
+  %t15 = const I1024 4
+  array.init $v.3, %t15, 0, 3
+  %t16 = load.local $x.1
+  %t17 = as.checked.i512.i1024 %t16              #122 @wide/feat512.ci:165:16
+  call @wide.feat512.scale($v.3, %t17)           #123 @wide/feat512.ci:165:5
+  %t18 = const I64 3
+  index.checked.i1024 $v.3, %t18                 #124 @wide/feat512.ci:166:8
+  %t19 = index.load $v.3, %t18
+  %t20 = call @wide.feat512.total(extent $v.3, $v.3) #125 @wide/feat512.ci:166:14
+  print.begin                                    #126 @wide/feat512.ci:166:5
+  print.value I1024 %t19
+  print.bytes " "
+  print.value I1024 %t20
+  print.bytes "\n"
+  print.end
+  %t21 = load.local $x.1
+  call @wide.feat512.make(%t21) into $sc.4       #127 @wide/feat512.ci:167:13
+  local $c.5: Acc
+  struct.copy $c.5, $sc.4
+  %t22 = field.load $c.5, lo
+  %t23 = field.load $c.5, hi
+  %t24 = field.load $c.5, n
+  %t25 = const I64 0
+  index.checked.i512 $c.5, %t25, pair            #128 @wide/feat512.ci:168:33
+  %t26 = field.index.load $c.5, pair, %t25
+  %t27 = const I64 1
+  index.checked.i512 $c.5, %t27, pair            #129 @wide/feat512.ci:168:45
+  %t28 = field.index.load $c.5, pair, %t27
+  print.begin                                    #130 @wide/feat512.ci:168:5
+  print.value I512 %t22
+  print.bytes " "
+  print.value I1024 %t23
+  print.bytes " "
+  print.value I64 %t24
+  print.bytes " "
+  print.value I512 %t26
+  print.bytes " "
+  print.value I512 %t28
+  print.bytes "\n"
+  print.end
+  local $cs.6: Acc[2]
+  %t29 = const I64 1
+  index.checked.struct $cs.6, %t29               #131 @wide/feat512.ci:170:7
+  element.address $sc.7, $cs.6, %t29
+  struct.copy $sc.7, $c.5
+  %t30 = const I64 0
+  index.checked.struct $cs.6, %t30               #132 @wide/feat512.ci:171:7
+  %t31 = const I1024 9
+  element.store $cs.6, %t30, hi, %t31
+  %t32 = const I64 1
+  index.checked.struct $cs.6, %t32               #133 @wide/feat512.ci:172:9
+  element.address $sc.8, $cs.6, %t32
+  %t33 = const I64 1
+  index.checked.i512 $sc.8, %t33, pair           #134 @wide/feat512.ci:172:17
+  %t34 = field.index.load $sc.8, pair, %t33
+  %t35 = const I64 0
+  index.checked.struct $cs.6, %t35               #135 @wide/feat512.ci:172:25
+  %t36 = element.load $cs.6, %t35, hi
+  print.begin                                    #136 @wide/feat512.ci:172:5
+  print.value I512 %t34
+  print.bytes " "
+  print.value I1024 %t36
+  print.bytes "\n"
+  print.end
+  %t37 = load.global @g
+  %t38 = load.local $x.1
+  %t39 = call @wide.feat512.twice(%t38)          #137 @wide/feat512.ci:173:13
+  %t40 = add.checked.i512 %t37, %t39             #138 @wide/feat512.ci:173:11
+  store.global @g, %t40
+  %t41 = const I64 1
+  %t42 = const I64 1
+  index.checked.i1024 $gb.0, %t41, 0             #139 @wide/feat512.ci:174:7
+  index.checked.i1024 $gb.0, %t42, 1             #140 @wide/feat512.ci:174:7
+  %t43 = view.offset $gb.0, %t41, 0
+  %t44 = view.offset $gb.0, %t42, %t43, 1
+  %t45 = const I64 1
+  %t46 = const I64 0
+  index.checked.i1024 $gb.0, %t45, 0             #141 @wide/feat512.ci:174:18
+  index.checked.i1024 $gb.0, %t46, 1             #142 @wide/feat512.ci:174:18
+  %t47 = view.offset $gb.0, %t45, 0
+  %t48 = view.offset $gb.0, %t46, %t47, 1
+  %t49 = index.load $gb.0, %t48
+  %t50 = load.local $x.1
+  %t51 = as.checked.i512.i1024 %t50              #143 @wide/feat512.ci:174:30
+  %t52 = mul.checked.i1024 %t49, %t51            #144 @wide/feat512.ci:174:25
+  index.store $gb.0, %t44, %t52
+  %t53 = load.global @g
+  %t54 = const I64 1
+  %t55 = const I64 1
+  index.checked.i1024 $gb.0, %t54, 0             #145 @wide/feat512.ci:175:13
+  index.checked.i1024 $gb.0, %t55, 1             #146 @wide/feat512.ci:175:13
+  %t56 = view.offset $gb.0, %t54, 0
+  %t57 = view.offset $gb.0, %t55, %t56, 1
+  %t58 = index.load $gb.0, %t57
+  %t59 = const I64 0
+  %t60 = const I64 1
+  index.checked.i1024 $gb.0, %t59, 0             #147 @wide/feat512.ci:175:24
+  index.checked.i1024 $gb.0, %t60, 1             #148 @wide/feat512.ci:175:24
+  %t61 = view.offset $gb.0, %t59, 0
+  %t62 = view.offset $gb.0, %t60, %t61, 1
+  %t63 = index.load $gb.0, %t62
+  print.begin                                    #149 @wide/feat512.ci:175:5
+  print.value I512 %t53
+  print.bytes " "
+  print.value I1024 %t58
+  print.bytes " "
+  print.value I1024 %t63
+  print.bytes "\n"
+  print.end
+  local $r.9: I1024[6]
+  %t64 = const I64 0
+  %t65 = const I64 6
+  local $i.10: I64
+  store.local $i.10, %t64
+  loop L167 {
+    %t66 = load.local $i.10
+    %t67 = cmp.lt.i64 %t66, %t65
+    while %t67
+    fuel.charge 1                                #150 @wide/feat512.ci:177:5
+    %t68 = load.local $i.10
+    index.checked.i1024 $r.9, %t68               #151 @wide/feat512.ci:178:10
+    %t69 = load.local $i.10
+    %t70 = as.checked.i64.i1024 %t69             #152 @wide/feat512.ci:178:19
+    %t71 = shl.checked.i1024 %t70, %s            #153 @wide/feat512.ci:178:29
+    index.store $r.9, %t68, %t71
+    next
+    %t72 = load.local $i.10
+    %t73 = const I64 1
+    %t74 = add.wrap.i64 %t72, %t73
+    store.local $i.10, %t74
+  }
+  local $h.11: I1024[3]
+  %t75 = const I64 5
+  %t76 = const I64 0
+  view.begin $sc.12: I1024[_], $r.9, 0, 0
+  slice.checked.i1024 $sc.12, %t75, %t76, 192, -2 #154 @wide/feat512.ci:181:14
+  view.end $sc.12, $r.9, 1, 0
+  view.copy $h.11, $sc.12                        #155 @wide/feat512.ci:181:5
+  %t77 = const I64 0
+  index.checked.i1024 $h.11, %t77                #156 @wide/feat512.ci:182:8
+  %t78 = index.load $h.11, %t77
+  %t79 = const I64 1
+  index.checked.i1024 $h.11, %t79                #157 @wide/feat512.ci:182:15
+  %t80 = index.load $h.11, %t79
+  %t81 = const I64 2
+  index.checked.i1024 $h.11, %t81                #158 @wide/feat512.ci:182:22
+  %t82 = index.load $h.11, %t81
+  print.begin                                    #159 @wide/feat512.ci:182:5
+  print.value I1024 %t78
+  print.bytes " "
+  print.value I1024 %t80
+  print.bytes " "
+  print.value I1024 %t82
+  print.bytes "\n"
+  print.end
+  %t83 = const I64 0
+  return %t83
+}
+export func @wide.feat512.f_add(%k: I64, %s: I64) -> I64 {
+  fuel.charge 1                                  #160 @wide/feat512.ci:186:12
+  %t0 = call @wide.feat512.big(%k, %s)           #161 @wide/feat512.ci:187:14
+  local $x.0: I512
+  store.local $x.0, %t0
+  %t1 = const I512 0
+  local $q.1: I512
+  store.local $q.1, %t1
+  %t2 = load.local $x.0
+  %t3 = load.local $x.0
+  %t4 = add.checked.i512 %t2, %t3                #162 @wide/feat512.ci:189:11
+  store.local $q.1, %t4
+  %t5 = const I64 0
+  return %t5
+}
+export func @wide.feat512.f_mul(%k: I64, %s: I64) -> I64 {
+  fuel.charge 1                                  #163 @wide/feat512.ci:193:12
+  %t0 = call @wide.feat512.big(%k, %s)           #164 @wide/feat512.ci:194:14
+  local $x.0: I512
+  store.local $x.0, %t0
+  %t1 = const I512 0
+  local $q.1: I512
+  store.local $q.1, %t1
+  %t2 = load.local $x.0
+  %t3 = load.local $x.0
+  %t4 = mul.checked.i512 %t2, %t3                #165 @wide/feat512.ci:196:11
+  store.local $q.1, %t4
+  %t5 = const I64 0
+  return %t5
+}
+export func @wide.feat512.f_div(%k: I64, %s: I64) -> I64 {
+  fuel.charge 1                                  #166 @wide/feat512.ci:200:12
+  %t0 = call @wide.feat512.big(%k, %s)           #167 @wide/feat512.ci:201:14
+  local $x.0: I512
+  store.local $x.0, %t0
+  %t1 = load.local $x.0
+  %t2 = load.local $x.0
+  %t3 = sub.checked.i512 %t1, %t2                #168 @wide/feat512.ci:202:16
+  local $z.1: I512
+  store.local $z.1, %t3
+  %t4 = const I512 0
+  local $q.2: I512
+  store.local $q.2, %t4
+  %t5 = load.local $x.0
+  %t6 = load.local $z.1
+  %t7 = div.checked.i512 %t5, %t6                #169 @wide/feat512.ci:204:11
+  store.local $q.2, %t7
+  %t8 = const I64 0
+  return %t8
+}
+export func @wide.feat512.f_neg(%k: I64, %s: I64) -> I64 {
+  fuel.charge 1                                  #170 @wide/feat512.ci:208:12
+  %t0 = call @wide.feat512.big(%k, %s)           #171 @wide/feat512.ci:209:14
+  local $x.0: I512
+  store.local $x.0, %t0
+  %t1 = const I512 0
+  local $q.1: I512
+  store.local $q.1, %t1
+  %t2 = load.local $x.0
+  %t3 = load.local $x.0
+  %t4 = sub.checked.i512 %t2, %t3                #172 @wide/feat512.ci:211:13
+  %t5 = load.local $x.0
+  %t6 = sub.checked.i512 %t4, %t5                #173 @wide/feat512.ci:211:17
+  %t7 = load.local $x.0
+  %t8 = sub.checked.i512 %t6, %t7                #174 @wide/feat512.ci:211:21
+  %t9 = neg.checked.i512 %t8                     #175 @wide/feat512.ci:211:9
+  store.local $q.1, %t9
+  %t10 = const I64 0
+  return %t10
+}
+export func @wide.feat512.f_shl(%k: I64, %s: I64) -> I64 {
+  fuel.charge 1                                  #176 @wide/feat512.ci:215:12
+  %t0 = call @wide.feat512.big(%k, %s)           #177 @wide/feat512.ci:216:14
+  local $x.0: I512
+  store.local $x.0, %t0
+  %t1 = const I512 0
+  local $q.1: I512
+  store.local $q.1, %t1
+  %t2 = load.local $x.0
+  %t3 = shl.checked.i512 %t2, %s                 #178 @wide/feat512.ci:218:11
+  store.local $q.1, %t3
+  %t4 = const I64 0
+  return %t4
+}
+export func @wide.feat512.f_shr(%k: I64, %s: I64) -> I64 {
+  fuel.charge 1                                  #179 @wide/feat512.ci:222:12
+  %t0 = call @wide.feat512.big(%k, %s)           #180 @wide/feat512.ci:223:14
+  local $x.0: I512
+  store.local $x.0, %t0
+  %t1 = const I512 0
+  local $q.1: I512
+  store.local $q.1, %t1
+  %t2 = load.local $x.0
+  %t3 = const I64 100
+  %t4 = mul.checked.i64 %s, %t3                  #181 @wide/feat512.ci:225:17
+  %t5 = shr.checked.i512 %t2, %t4                #182 @wide/feat512.ci:225:11
+  store.local $q.1, %t5
+  %t6 = const I64 0
+  return %t6
+}
+export func @wide.feat512.f_as(%k: I64, %s: I64) -> I64 {
+  fuel.charge 1                                  #183 @wide/feat512.ci:229:12
+  %t0 = call @wide.feat512.big(%k, %s)           #184 @wide/feat512.ci:230:14
+  local $x.0: I512
+  store.local $x.0, %t0
+  %t1 = const I64 0
+  local $n.1: I64
+  store.local $n.1, %t1
+  %t2 = load.local $x.0
+  %t3 = as.checked.i512.i64 %t2                  #185 @wide/feat512.ci:232:11
+  store.local $n.1, %t3
+  %t4 = load.local $n.1
+  return %t4
+}
+export func @wide.feat512.f_as_wide(%k: I64, %s: I64) -> I64 {
+  fuel.charge 1                                  #186 @wide/feat512.ci:236:12
+  %t0 = call @wide.feat512.big(%k, %s)           #187 @wide/feat512.ci:237:16
+  %t1 = as.checked.i512.i1024 %t0                #188 @wide/feat512.ci:237:26
+  %t2 = call @wide.feat512.big(%k, %s)           #189 @wide/feat512.ci:237:39
+  %t3 = as.checked.i512.i1024 %t2                #190 @wide/feat512.ci:237:49
+  %t4 = mul.checked.i1024 %t1, %t3               #191 @wide/feat512.ci:237:36
+  local $w.0: I1024
+  store.local $w.0, %t4
+  %t5 = const I512 0
+  local $q.1: I512
+  store.local $q.1, %t5
+  %t6 = load.local $w.0
+  %t7 = as.checked.i1024.i512 %t6                #192 @wide/feat512.ci:239:11
+  store.local $q.1, %t7
+  %t8 = const I64 0
+  return %t8
+}
+export func @wide.feat512.f_abs(%k: I64, %s: I64) -> I64 {
+  fuel.charge 1                                  #193 @wide/feat512.ci:243:12
+  %t0 = call @wide.feat512.big(%k, %s)           #194 @wide/feat512.ci:244:14
+  local $x.0: I512
+  store.local $x.0, %t0
+  %t1 = const I512 0
+  local $q.1: I512
+  store.local $q.1, %t1
+  %t2 = load.local $x.0
+  %t3 = load.local $x.0
+  %t4 = sub.checked.i512 %t2, %t3                #195 @wide/feat512.ci:246:15
+  %t5 = load.local $x.0
+  %t6 = sub.checked.i512 %t4, %t5                #196 @wide/feat512.ci:246:19
+  %t7 = load.local $x.0
+  %t8 = sub.checked.i512 %t6, %t7                #197 @wide/feat512.ci:246:23
+  %t9 = abs.checked.i512 %t8                     #198 @wide/feat512.ci:246:9
+  store.local $q.1, %t9
+  %t10 = const I64 0
+  return %t10
+}
+export func @wide.feat512.f_div_trunc(%k: I64, %s: I64) -> I64 {
+  fuel.charge 1                                  #199 @wide/feat512.ci:250:12
+  %t0 = call @wide.feat512.big(%k, %s)           #200 @wide/feat512.ci:251:14
+  local $x.0: I512
+  store.local $x.0, %t0
+  %t1 = const I512 0
+  local $q.1: I512
+  store.local $q.1, %t1
+  %t2 = load.local $x.0
+  %t3 = load.local $x.0
+  %t4 = load.local $x.0
+  %t5 = sub.checked.i512 %t3, %t4                #201 @wide/feat512.ci:253:24
+  %t6 = div_trunc.checked.i512 %t2, %t5          #202 @wide/feat512.ci:253:9
+  store.local $q.1, %t6
+  %t7 = const I64 0
+  return %t7
+}
+export func @wide.feat512.f_div_round(%k: I64, %s: I64) -> I64 {
+  fuel.charge 1                                  #203 @wide/feat512.ci:257:12
+  %t0 = call @wide.feat512.big(%k, %s)           #204 @wide/feat512.ci:258:14
+  local $x.0: I512
+  store.local $x.0, %t0
+  %t1 = const I512 0
+  local $q.1: I512
+  store.local $q.1, %t1
+  %t2 = load.local $x.0
+  %t3 = load.local $x.0
+  %t4 = load.local $x.0
+  %t5 = sub.checked.i512 %t3, %t4                #205 @wide/feat512.ci:260:24
+  %t6 = div_round.checked.i512.half_even %t2, %t5 #206 @wide/feat512.ci:260:9
+  store.local $q.1, %t6
+  %t7 = const I64 0
+  return %t7
+}
+export func @wide.feat512.f_isqrt(%k: I64, %s: I64) -> I64 {
+  fuel.charge 1                                  #207 @wide/feat512.ci:264:12
+  %t0 = call @wide.feat512.big(%k, %s)           #208 @wide/feat512.ci:265:14
+  local $x.0: I512
+  store.local $x.0, %t0
+  %t1 = const I512 0
+  local $q.1: I512
+  store.local $q.1, %t1
+  %t2 = load.local $x.0
+  %t3 = neg.checked.i512 %t2                     #209 @wide/feat512.ci:267:15
+  %t4 = isqrt.checked.i512 %t3                   #210 @wide/feat512.ci:267:9
+  store.local $q.1, %t4
+  %t5 = const I64 0
+  return %t5
+}
+export func @wide.feat512.f_muldiv(%k: I64, %s: I64) -> I64 {
+  fuel.charge 1                                  #211 @wide/feat512.ci:271:12
+  %t0 = call @wide.feat512.big(%k, %s)           #212 @wide/feat512.ci:272:14
+  local $x.0: I512
+  store.local $x.0, %t0
+  %t1 = const I64 0
+  local $m.1: I64
+  store.local $m.1, %t1
+  %t2 = load.local $x.0
+  %t3 = load.local $x.0
+  %t4 = const I512 3
+  %t5 = muldiv.checked.i512.i64.floor %t2, %t3, %t4 #213 @wide/feat512.ci:274:9
+  store.local $m.1, %t5
+  %t6 = load.local $m.1
+  return %t6
+}
+export func @wide.feat512.f_index(%k: I64, %s: I64) -> I64 {
+  fuel.charge 1                                  #214 @wide/feat512.ci:278:12
+  local $a.0: I512[3]
+  %t0 = const I512 1
+  array.init $a.0, %t0, 0, 0
+  %t1 = const I512 2
+  array.init $a.0, %t1, 0, 1
+  %t2 = const I512 3
+  array.init $a.0, %t2, 0, 2
+  %t3 = const I512 0
+  local $q.1: I512
+  store.local $q.1, %t3
+  index.checked.i512 $a.0, %k                    #215 @wide/feat512.ci:281:10
+  %t4 = index.load $a.0, %k
+  store.local $q.1, %t4
+  %t5 = const I64 0
+  return %t5
+}
+export func @wide.feat512.f_call(%k: I64, %s: I64) -> I64 {
+  fuel.charge 1                                  #216 @wide/feat512.ci:285:12
+  %t0 = call @wide.feat512.big(%k, %s)           #217 @wide/feat512.ci:286:14
+  local $x.0: I512
+  store.local $x.0, %t0
+  %t1 = const I512 0
+  local $q.1: I512
+  store.local $q.1, %t1
+  %t2 = load.local $x.0
+  %t3 = call @wide.feat512.twice(%t2)            #218 @wide/feat512.ci:288:9
+  store.local $q.1, %t3
+  %t4 = const I64 0
+  return %t4
+}
+export func @wide.feat512.f_struct(%k: I64, %s: I64) -> I64 {
+  fuel.charge 1                                  #219 @wide/feat512.ci:292:12
+  %t0 = call @wide.feat512.big(%k, %s)           #220 @wide/feat512.ci:293:18
+  call @wide.feat512.make(%t0) into $sc.0        #221 @wide/feat512.ci:293:13
+  local $c.1: Acc
+  struct.copy $c.1, $sc.0
+  %t1 = const I512 0
+  local $q.2: I512
+  store.local $q.2, %t1
+  %t2 = const I64 1
+  index.checked.i512 $c.1, %t2, pair             #222 @wide/feat512.ci:295:15
+  %t3 = field.index.load $c.1, pair, %t2
+  %t4 = field.load $c.1, lo
+  %t5 = mul.checked.i512 %t3, %t4                #223 @wide/feat512.ci:295:19
+  store.local $q.2, %t5
+  %t6 = const I64 0
+  return %t6
+}
+export func @wide.feat512.f_slice(%k: I64, %s: I64) -> I64 {
+  fuel.charge 1                                  #224 @wide/feat512.ci:299:12
+  local $a.0: I1024[6]
+  local $h.1: I1024[3]
+  %t0 = const I64 1
+  view.begin $sc.2: I1024[_], $a.0, 0, 0
+  slice.checked.i1024 $sc.2, %t0, %k, 192, 1     #225 @wide/feat512.ci:302:14
+  view.end $sc.2, $a.0, 1, 0
+  view.copy $h.1, $sc.2                          #226 @wide/feat512.ci:302:5
+  %t1 = const I64 0
+  return %t1
+}
+export func @wide.feat512.f_view(%k: I64, %s: I64) -> I64 {
+  fuel.charge 1                                  #227 @wide/feat512.ci:306:12
+  local $v.0: I1024[4]
+  %t0 = const I1024 1
+  array.init $v.0, %t0, 0, 0
+  %t1 = const I1024 2
+  array.init $v.0, %t1, 0, 1
+  %t2 = const I1024 3
+  array.init $v.0, %t2, 0, 2
+  %t3 = const I1024 4
+  array.init $v.0, %t3, 0, 3
+  %t4 = call @wide.feat512.big(%k, %s)           #228 @wide/feat512.ci:308:14
+  %t5 = as.checked.i512.i1024 %t4                #229 @wide/feat512.ci:308:24
+  call @wide.feat512.scale($v.0, %t5)            #230 @wide/feat512.ci:308:5
+  %t6 = const I1024 0
+  local $t.1: I1024
+  store.local $t.1, %t6
+  %t7 = call @wide.feat512.total(extent $v.0, $v.0) #231 @wide/feat512.ci:310:9
+  store.local $t.1, %t7
+  %t8 = const I64 0
+  return %t8
+}
+export func @wide.feat512.products(%k: I64, %s: I64) -> I64 {
+  fuel.charge 1                                  #232 @wide/feat512.ci:314:12
+  %t0 = as.checked.i64.i256 %k                   #233 @wide/feat512.ci:315:17
+  %t1 = shl.checked.i256 %t0, %s                 #234 @wide/feat512.ci:315:26
+  local $x.0: I256
+  store.local $x.0, %t1
+  %t2 = load.local $x.0
+  %t3 = neg.checked.i256 %t2                     #235 @wide/feat512.ci:316:14
+  %t4 = const I256 3
+  %t5 = sub.checked.i256 %t3, %t4                #236 @wide/feat512.ci:316:17
+  local $y.1: I256
+  store.local $y.1, %t5
+  %t6 = load.local $x.0
+  %t7 = load.local $y.1
+  %t8 = mul_full.checked.i256.i512 %t6, %t7
+  print.begin                                    #237 @wide/feat512.ci:317:5
+  print.value I512 %t8
+  print.bytes "\n"
+  print.end
+  %t9 = load.local $x.0
+  %t10 = load.local $x.0
+  %t11 = mul_full.checked.i256.i512 %t9, %t10
+  print.begin                                    #238 @wide/feat512.ci:318:5
+  print.value I512 %t11
+  print.bytes "\n"
+  print.end
+  %t12 = const I64 40
+  %t13 = shl.checked.i64 %k, %t12                #239 @wide/feat512.ci:319:18
+  %t14 = neg.checked.i64 %s                      #240 @wide/feat512.ci:319:25
+  %t15 = mul_full.checked.i64.i128 %t13, %t14
+  print.begin                                    #241 @wide/feat512.ci:319:5
+  print.value I128 %t15
+  print.bytes "\n"
+  print.end
+  %t16 = const I64 0
+  return %t16
+}

@@ -785,6 +785,7 @@ class SeedLeg(unittest.TestCase):
             ("I64 f(I64 n) {\n    return f(n);\n}\n", "C4040", 2, 12),                # recursion
             ("export I64 run() {\n    defer run();\n    return 0;\n}\n", b, 2, 5),
             ("export I128 run() {\n    return 0;\n}\n", b, 1, 8),
+            ("export U256 run() {\n    return 0;\n}\n", b, 1, 8),                    # BX15-02 type
             ("export I64 run() {\n    I64 x = 1;\n    x = x catch 0;\n    return x;\n}\n", b, 3, 11),
             ("profile \"cint-core-1\";\n", b, 1, 1),
             ("I64 g = 0;\n", b, 1, 1),                                                 # module variable

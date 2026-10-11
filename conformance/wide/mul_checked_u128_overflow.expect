@@ -1,0 +1,18 @@
+case wide/mul_checked_u128_overflow
+clause SPEC-01 IM-6, IM-32, IM-106; SPEC-09 CONF-11 rule 14 ((2^64 - 1)^2 fits U128 and 2^64 squared does not)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_OVERFLOW
+fault.operation mul.checked.u128
+fault.operand U128 18446744073709551616
+fault.operand U128 18446744073709551616
+fault.exact 340282366920938463463374607431768211456
+fault.limit U128 340282366920938463463374607431768211455
+fault.position wide/mul_checked_u128_overflow.ci:11:14
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

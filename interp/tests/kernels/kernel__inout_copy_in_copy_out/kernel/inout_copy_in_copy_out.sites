@@ -1,0 +1,82 @@
+module kernel.inout_copy_in_copy_out
+sites kernel/inout_copy_in_copy_out.ci 1:8:11:add.checked.i64 2:9:10:index.checked.i64 3:9:20:add.checked.i64 4:9:17:index.checked.i64 5:13:12:fuel.charge 6:15:5:dispatch 7:16:13:index.checked.i64 8:16:17:mul.checked.i64 9:16:26:index.checked.i64 10:16:30:mul.checked.i64 11:16:23:add.checked.i64 12:16:38:index.checked.i64 13:16:35:add.checked.i64
+kernel @kernel.inout_copy_in_copy_out.shift_left(%t: I64[_]) {
+  dispatch.entry
+  local $n.0: I64
+  %t0 = view.extent %t, 0
+  store.local $n.0, %t0
+  %t1 = load.local $n.0
+  store.local $sc.1, %t1
+  dispatch.charge $sc.2, 1, $sc.1
+  dispatch.stage $sc.3, %t, 2
+  dispatch.push
+  %t2 = const I64 0
+  store.local $sc.4, %t2
+  loop L11 {
+    %t3 = load.local $sc.4
+    %t4 = load.local $sc.2
+    %t5 = cmp.lt.i64 %t3, %t4
+    while %t5
+    %t6 = load.local $sc.4
+    dispatch.item %t6, 1, $i.5, $sc.1
+    if {
+      arm {
+        %t7 = load.local $i.5
+        %t8 = const I64 1
+        %t9 = add.checked.i64 %t7, %t8           #1 @kernel/inout_copy_in_copy_out.ci:8:11
+        dispatch.step
+        %t10 = load.local $n.0
+        %t11 = cmp.lt.i64 %t9, %t10
+      } then %t11 {
+        %t12 = load.local $i.5
+        index.checked.i64 $sc.3, %t12            #2 @kernel/inout_copy_in_copy_out.ci:9:10
+        %t13 = view.offset $sc.3, %t12, 0
+        dispatch.step
+        %t14 = load.local $i.5
+        %t15 = const I64 1
+        %t16 = add.checked.i64 %t14, %t15        #3 @kernel/inout_copy_in_copy_out.ci:9:20
+        dispatch.step
+        index.checked.i64 %t, %t16               #4 @kernel/inout_copy_in_copy_out.ci:9:17
+        %t17 = view.offset %t, %t16, 0
+        dispatch.step
+        %t18 = index.load %t, %t17
+        index.store $sc.3, %t13, %t18
+      }
+    }
+    next
+    %t19 = load.local $sc.4
+    %t20 = const I64 1
+    %t21 = add.wrap.i64 %t19, %t20
+    store.local $sc.4, %t21
+  }
+  dispatch.phase 2
+  dispatch.pop
+  dispatch.publish %t, $sc.3
+}
+export func @kernel.inout_copy_in_copy_out.run() -> I64 {
+  fuel.charge 1                                  #5 @kernel/inout_copy_in_copy_out.ci:13:12
+  local $t.0: I64[3]
+  %t0 = const I64 1
+  array.init $t.0, %t0, 0, 0
+  %t1 = const I64 2
+  array.init $t.0, %t1, 0, 1
+  %t2 = const I64 3
+  array.init $t.0, %t2, 0, 2
+  dispatch @kernel.inout_copy_in_copy_out.shift_left($t.0), 1 #6 @kernel/inout_copy_in_copy_out.ci:15:5
+  %t3 = const I64 0
+  index.checked.i64 $t.0, %t3                    #7 @kernel/inout_copy_in_copy_out.ci:16:13
+  %t4 = index.load $t.0, %t3
+  %t5 = const I64 100
+  %t6 = mul.checked.i64 %t4, %t5                 #8 @kernel/inout_copy_in_copy_out.ci:16:17
+  %t7 = const I64 1
+  index.checked.i64 $t.0, %t7                    #9 @kernel/inout_copy_in_copy_out.ci:16:26
+  %t8 = index.load $t.0, %t7
+  %t9 = const I64 10
+  %t10 = mul.checked.i64 %t8, %t9                #10 @kernel/inout_copy_in_copy_out.ci:16:30
+  %t11 = add.checked.i64 %t6, %t10               #11 @kernel/inout_copy_in_copy_out.ci:16:23
+  %t12 = const I64 2
+  index.checked.i64 $t.0, %t12                   #12 @kernel/inout_copy_in_copy_out.ci:16:38
+  %t13 = index.load $t.0, %t12
+  %t14 = add.checked.i64 %t11, %t13              #13 @kernel/inout_copy_in_copy_out.ci:16:35
+  return %t14
+}

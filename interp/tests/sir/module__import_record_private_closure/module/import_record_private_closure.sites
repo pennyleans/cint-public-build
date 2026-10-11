@@ -1,0 +1,8 @@
+module module.import_record_private_closure
+sites module/import_record_private_closure.ci 1:8:12:fuel.charge 2:9:62:call.enter 3:9:33:call.enter
+export func @module.import_record_private_closure.run() -> I64 {
+  fuel.charge 1                                  #1 @module/import_record_private_closure.ci:8:12
+  call @module.lib.import_hidden_record.produce() into $sc.0 #2 @module/import_record_private_closure.ci:9:62
+  %t0 = call @module.lib.import_hidden_record.consume($sc.0) #3 @module/import_record_private_closure.ci:9:33
+  return %t0
+}

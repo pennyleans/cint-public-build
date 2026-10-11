@@ -1,0 +1,9 @@
+// case: probes/reverse_sum
+// clause: box 13 unit 7 probe: sum of a slice of a reversed view (view.reverse, slice.checked)
+// entry: run; args: none
+
+export I64 run() {
+    I64[5] a = [1, 2, 3, 4, 5];
+    in I64[_] r = reverse(a, 0);
+    return r[0] * 100 + r[4] * 10 + sum(r[1..4]);
+}

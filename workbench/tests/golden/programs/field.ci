@@ -1,0 +1,39 @@
+// field.ci: SPEC-00 section 4's double-buffered integer heat field, the stencil of box 11's T3
+// acceptance (box 14 ruling BX14-06 A). 240 steps on 64 by 64 cells from a hot spot of 65,536
+// at the center, run by main. The tour swaps the two buffers after each step; here the steps
+// alternate between them, as python/tests/programs/stencil.ci does, so after 240 steps the
+// field is in `a` again.
+
+kernel diffuse[h, w](in I32[h, w] u, in I64 kn, in I64 kd,
+                     out I32[h, w] v, out I64 total) over [y: h, x: w] {
+    I64 c = u[y, x] as I64;
+    I32 r = u[y, x];
+    if (y > 0 && y < h - 1 && x > 0 && x < w - 1) {
+        I64 lap = (u[y - 1, x] as I64) + (u[y + 1, x] as I64)
+                + (u[y, x - 1] as I64) + (u[y, x + 1] as I64) - 4 * c;
+        r = (c + div_round(kn * lap, kd, half_even)) as I32;
+    }
+    v[y, x] = r;
+    reduce total = sum(r);
+}
+
+export void main() {
+    I32[64, 64] a;
+    I32[64, 64] b;
+    a[32, 32] = 65_536;
+    I64 heat = 0;
+    for t in 0..120 {
+        diffuse(a, 1, 8, b, heat);
+        diffuse(b, 1, 8, a, heat);
+    }
+    "after 240 steps: total={heat} center={a[32, 32]}\n";
+}
+
+test "one step from a hot spot" {
+    I32[8, 8] p;
+    I32[8, 8] q;
+    p[3, 4] = 65_536;
+    I64 s = 0;
+    diffuse(p, 1, 8, q, s);
+    assert(q[3, 4] == 32_768 && q[2, 4] == 8_192 && s == 65_536);
+}

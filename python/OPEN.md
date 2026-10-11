@@ -1,17 +1,37 @@
-# Python bridge: open items
+# python/OPEN.md: open items
 
-Items of the Python package (`python/cint/`) that wait for a decision or a later box. The design is `docs/design/notes/2026-10-05-box10-python-integration.md`; the rows of SPEC-03 section 6 govern.
+Known limitations of the Python package (`python/cint/`) at this release, by entry ID. Source comments cite these IDs. SPEC-03 section 6 governs the package.
 
-## PY-OQ-01. Loading and calling compiled code: choices box 10 unit 2 made (Proposed)
+## PY-OQ-01. Loading and calling compiled code
 
-Clause: SPEC-03 5.6, 6.1, A-13, A-18, A-20 to A-25, H-11, P-1 to P-24; box 10 defaults BX10-07 to BX10-13 and BX10-27; card 2 (OQ-201) with the correction of 2026-10-05.
+Status: Proposed.
 
-- Build. `cint.load` runs `cint build --lib` with the `cint` that `CINT_EXE` names, else `cint` on `PATH`, else a bootstrap under `CINT_BUILD`, and keeps the library in `<toolchain cache>/py-lib`, keyed by every module digest the build receipt lists, the absent lookups, and the toolchain identity. `require_verified=True` raises `LoadError`, since nothing reads build records yet.
-- Registration. One place, `Runtime.register` and `Runtime.release` (`_abi.py`). Under ABI 3 a `Bool` or `I8` to `U64` argument goes through the descriptor form of `cint_buffer_register` (`rt/OPEN.md` RT-OQ-39); a record view and every argument under ABI 2 use the byte form. A context passes the root `cm` descriptor as `module` and keeps the runtime's default of 256 live registrations: `Module.context()` has no `max_buffers` parameter, and the 257th live `View` or `Buffer` on one context raises `MemoryError`. Arguments that are neither are registered for the call and released after it.
-- Signatures. A type signature the decoder rejects (A-24) makes that export alone not callable; the library still loads. So does an empty error set, or one defined two ways in one library. The decoder checks that references point backward, not the full depth-first order of definitions.
-- Results. A struct export is listed and its call raises `NotImplementedError` naming the parameter and form (BX10-27). An `E!T` or tuple result is read as a natural C struct (the tag in the set's underlying type, then the value; a tuple as a struct of its items); A-13 does not fix the padding. `cintc` writes that struct for `E!T` (`compiler/OPEN.md` CINTC-OQ-58 item 7), which `tests/test_calls.py` calls; it has no tuples yet. An export whose signature `cintc` writes as the domain alone (an error set value outside an error union, CINTC-OQ-58 item 6) is listed and not callable.
-- Errors. A combined set's class is a base of each member set's class; a combined tag becomes the member set and its tag there (OQ-201, as corrected).
-- Calls. `fuel=` is reserved in every call unless the export has a parameter of that name; `None` is -1. Print output is discarded. A view's lower bound is passed as 0. A view with a negative or non-unit stride is passed as it is, and the compiled body indexes it by its stride (`rt/OPEN.md` RT-OQ-38).
-- Kernels (box 10 unit 3). An exported kernel is called as a function is, its written arguments by name, and its scalar `out` parameters return as results (BX10-14). A borrowed `View` bound to a kernel output must have `publish="copy"`; without it the entry faults `E_UNSUPPORTED` `bind.limit` at entry, and the bridge adds to the message what to pass instead (P-15, M-30a). A `Buffer` is registered with `publish = copy`, since this runtime stages a bridge-owned output and copies it on success instead of renaming it (M-31; `rt/OPEN.md` RT-OQ-40). `last_entry()` lists each such copy, `publish-copy` for a View and `staging` for a Buffer; a function entry lists none (M-30b).
-- Receipts (box 10 gate; default BX10-21). `tools/cint_python.py --leg <leg>` runs these tests with a `cint` bootstrapped from the tree, and `examples/matmul_i8.py`, and writes a receipt whose identity hashes `python/` (SPEC-09 RCPT-11). Every test is required but two that a host may lack the means to run (PyTorch for case 16b; CPython 3.12 for an exporter's buffer flags), so a leg without NumPy fails its receipt.
-- Not provided, raising `NotImplementedError`: `.inplace`, checkpoints and restore (box 13), and the `device`, `host`, `grants`, `record` and `check_inputs` parameters.
+- `cint.load` builds the library with `cint build --lib`, using the `cint` that `CINT_EXE` names, else `cint` on `PATH`, else a bootstrap under `CINT_BUILD`. It keeps the library in the toolchain cache, keyed by every module digest the build receipt lists, the absent lookups and the toolchain identity.
+- `require_verified=True` raises `LoadError`: nothing reads build records yet.
+- A context keeps the runtime's default of 256 live registrations, and `Module.context()` has no `max_buffers` parameter, so the 257th live `View` or `Buffer` on one context raises `MemoryError`.
+- An export whose type signature the decoder rejects is not callable; the rest of the library still loads. The decoder checks that references point backward, not the full order of definitions.
+- A struct result raises `NotImplementedError` naming the parameter and form. An `E!T` or tuple result is read as a natural C struct: the tag in the set's underlying type, then the value.
+- `fuel=` is reserved in every call unless the export has a parameter of that name; `None` is -1. Print output is discarded.
+- A borrowed `View` bound to a kernel output must have `publish="copy"`; without it the entry faults `E_UNSUPPORTED` at entry, and the message says what to pass instead.
+- Not provided, raising `NotImplementedError`: `.inplace`, and the `host`, `grants` and `check_inputs` parameters.
+
+## PY-OQ-02. The device path
+
+Status: Proposed.
+
+- `cint.device(spec)` takes `"cpu"` (or `"cpu:0"`) and `"cuda:<ordinal>"`. A CUDA device is opened through the driver library (`nvcuda.dll` on Windows, `libcuda.so.1` elsewhere) with `ctypes`, so the package needs no toolkit. `"rocm"`, `"vulkan"`, `"metal"` and `"webgpu"` raise `NotImplementedError`.
+- A device `Buffer` holds `I8` to `U64` elements. `Bool`, wide and fixed-point elements are refused.
+- Nothing reads device memory implicitly. Indexing, `values()`, `memoryview` and the buffer protocol of a device `Buffer` or `View` raise, naming `cint.copy(x)`.
+- DLPack: a published `Buffer` exports a read-only versioned capsule, version 1.0. A borrowed CUDA array must come as a versioned capsule, since an unversioned one cannot report a copy.
+- When a kernel entry faults, the copy report lists a `fault-readback` copy for each device array argument. A function entry's copy report lists no read-backs, since the package cannot tell which of its device arrays the faulting dispatch read back.
+
+## PY-OQ-03. Checkpoints, recordings and replay
+
+Status: Proposed.
+
+- Every library the package builds links the runtime's state functions (`rt/cint_state.h`), so a context can take a checkpoint, restore one, and give its state hash. A library built elsewhere loads and calls as before, and its checkpoints and `record=` raise `NotImplementedError` naming the function it lacks.
+- `restore` raises `cint.Refused`, with `reason` "malformed", "revision" or "state", and leaves the context unchanged. After a restore, every `View` and `Buffer` registers again on its next use.
+- `cint.read_checkpoint(data)` gives a typed view. Its `arenas` and `pools` are empty until the runtime checkpoints them.
+- `cint.Recorder` records calls through each export's observer entry. An export that borrows an array is refused while recording, since a registration is not an event of `CINT-REC-1`.
+- `cint.replay(module, recording, backend="ref")` replays on the SIR interpreter, built from this tree's `interp/` and `rt/`; `backend="cpu"` replays on the module's own library. Replays on the interpreter run one at a time.
+- Not provided yet: `global_view`, `check_inputs=`, `audit_pure=True`, interrupting a call, a change of revision, `backend="ref"` in `cint.load`, and a context on the interpreter other than replay's.

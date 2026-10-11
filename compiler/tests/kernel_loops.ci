@@ -1,0 +1,129 @@
+// compiler/tests/kernel_loops.ci: kernel work-item loops and sums in the C back end
+// (back_c.ci kitem_counters and ksum_add), compared with cint_ref by the golden suite. The
+// `over` variables of each item across the carries of ranks 1 to 4, faults at later items,
+// whose work-item and step the fault record holds, and sums whose int64_t partial overflows
+// before the total does, or whose total overflows.
+
+kernel cells3[d, h, w](in I64 k, out I64[d, h, w] v, out I64 total) over [z: d, y: h, x: w] {
+    I64 e = (z * 100 + y) * 100 + x;
+    v[z, y, x] = e;
+    reduce total = sum(e * k);
+}
+
+kernel cells4[c, d, h, w](out I64[c, d, h, w] v, out I64 total) over [q: c, z: d, y: h, x: w] {
+    I64 e = ((q * 10 + z) * 10 + y) * 10 + x;
+    v[q, z, y, x] = e;
+    reduce total = sum(e);
+}
+
+kernel cells1[n](out I64[n] v, out I64 total) over [i: n] {
+    v[i] = i * i;
+    reduce total = sum(i);
+}
+
+// Every item's code times k, and three elements whose positions follow a row and a plane carry.
+export I64 block(I64 k) {
+    I64[3, 4, 5] v;
+    I64 total = 0;
+    cells3(k, v, total);
+    return total * 1000003 + v[2, 3, 4] + 7 * v[1, 0, 4] + 11 * v[0, 3, 0] + 13 * v[2, 0, 0];
+}
+
+export I64 block4() {
+    I64[2, 3, 2, 3] v;
+    I64 total = 0;
+    cells4(v, total);
+    return total * 1000003 + v[1, 2, 1, 2] + 7 * v[1, 0, 0, 0] + 11 * v[0, 2, 1, 0];
+}
+
+export I64 line() {
+    I64[7] v;
+    I64 total = 0;
+    cells1(v, total);
+    return total * 1000003 + v[6] + 7 * v[3];
+}
+
+// Item `at` (row-major) divides by zero: the fault names that work-item and the step in it.
+kernel divide_at[h, w](in I64 at, out I64[h, w] v, out I64 total) over [y: h, x: w] {
+    I64 e = 1000 / (y * w + x - at);
+    v[y, x] = e;
+    reduce total = sum(e);
+}
+
+kernel divide_at3[d, h, w](in I64 at, out I64[d, h, w] v) over [z: d, y: h, x: w] {
+    v[z, y, x] = 1000 / ((z * h + y) * w + x - at);
+}
+
+export I64 fault_at(I64 at) {
+    I64[4, 5] v;
+    I64 total = 0;
+    divide_at(at, v, total);
+    return total;
+}
+
+export I64 fault_at3(I64 at) {
+    I64[2, 3, 4] v;
+    divide_at3(at, v);
+    return v[1, 2, 3];
+}
+
+kernel total_i64[n](in I64[n] x, out I64 s) over [i: n] {
+    reduce s = sum(x[i]);
+}
+
+kernel total_i8[n](in I8[n] x, out I64 s) over [i: n] {
+    reduce s = sum(x[i]);
+}
+
+kernel total_u32[n](in U32[n] x, out I64 s) over [i: n] {
+    reduce s = sum(x[i]);
+}
+
+kernel total_u64[n](in U64[n] x, out U64 s) over [i: n] {
+    reduce s = sum(x[i]);
+}
+
+// The partial passes I64 MAX after two items and comes back; the total is 5.
+export I64 spill_fits() {
+    I64[5] x = [4611686018427387904, 4611686018427387904, -4611686018427387904, -4611686018427387904, 5];
+    I64 s = 0;
+    total_i64(x, s);
+    return s;
+}
+
+// The partial passes I64 MIN at the second item; the total is I64 MIN.
+export I64 spill_min() {
+    I64[3] x = [-9223372036854775808, -1, 1];
+    I64 s = 0;
+    total_i64(x, s);
+    return s;
+}
+
+// The total is 2^64: E_OVERFLOW at the epilogue, with the exact total.
+export I64 spill_overflows() {
+    I64[4] x = [4611686018427387904, 4611686018427387904, 4611686018427387904, 4611686018427387904];
+    I64 s = 0;
+    total_i64(x, s);
+    return s;
+}
+
+export I64 narrow_i8() {
+    I8[4] x = [-128, -1, 127, -128];
+    I64 s = 0;
+    total_i8(x, s);
+    return s;
+}
+
+export I64 narrow_u32() {
+    U32[3] x = [4294967295, 1, 2];
+    I64 s = 0;
+    total_u32(x, s);
+    return s;
+}
+
+export U64 wide_u64() {
+    U64[2] x = [9223372036854775808, 9223372036854775807];
+    U64 s = 0;
+    total_u64(x, s);
+    return s;
+}

@@ -1,0 +1,9 @@
+case wide/convert_wrap_u128
+clause SPEC-01 IM-6, IM-50 (wrapping and checked conversions between the signed and unsigned wide types)
+format 5
+source reference
+outcome value
+stdout-bytes 238
+stdout-sha256 819522c1470c82de9aa2044046dd8aaf17e7ce81d6b3ae4bb4f8df58369e3f45
+return I64 0
+fuel-consumed 1

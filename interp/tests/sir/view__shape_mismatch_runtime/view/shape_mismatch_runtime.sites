@@ -1,0 +1,24 @@
+module view.shape_mismatch_runtime
+sites view/shape_mismatch_runtime.ci 1:8:13:index.checked.i64 2:8:20:index.checked.i64 3:8:17:add.checked.i64 4:12:12:bind.shape 5:12:12:call.enter 6:15:12:fuel.charge 7:18:12:call.enter
+func @view.shape_mismatch_runtime.first_sum(%n: I64, %a: I64[%n], %b: I64[%n]) -> I64 {
+  %t0 = const I64 0
+  index.checked.i64 %a, %t0                      #1 @view/shape_mismatch_runtime.ci:8:13
+  %t1 = index.load %a, %t0
+  %t2 = const I64 0
+  index.checked.i64 %b, %t2                      #2 @view/shape_mismatch_runtime.ci:8:20
+  %t3 = index.load %b, %t2
+  %t4 = add.checked.i64 %t1, %t3                 #3 @view/shape_mismatch_runtime.ci:8:17
+  return %t4
+}
+func @view.shape_mismatch_runtime.pass_on(%n: I64, %m: I64, %a: I64[%n], %b: I64[%m]) -> I64 {
+  bind.shape %b, 1, %a                           #4 @view/shape_mismatch_runtime.ci:12:12
+  %t0 = call @view.shape_mismatch_runtime.first_sum(extent %a, %a, %b) #5 @view/shape_mismatch_runtime.ci:12:12
+  return %t0
+}
+export func @view.shape_mismatch_runtime.run() -> I64 {
+  fuel.charge 1                                  #6 @view/shape_mismatch_runtime.ci:15:12
+  local $a.0: I64[4]
+  local $b.1: I64[3]
+  %t0 = call @view.shape_mismatch_runtime.pass_on(extent $a.0, extent $b.1, $a.0, $b.1) #7 @view/shape_mismatch_runtime.ci:18:12
+  return %t0
+}

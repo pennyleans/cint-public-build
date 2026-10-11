@@ -215,10 +215,11 @@ export const I32 N_PRINT = 45;
 export const I32 N_TEXT = 46;
 export const I32 N_HOLE = 47;
 
-// Expressions. N_LIT: tok literal, op its token kind. N_NEGLIT: tok and start `-`, c the
-// literal token. N_BOOL: op 1 for true. N_STRING: tok first string token, op token ntoken.
-// N_BYTES: tok. N_NAME: tok. N_TYPENAME: tok (a scalar or fixed-point type name used as an
-// expression). N_TYPEPROP: tok type token, c property token. N_DOTNAME: tok name, start `.`.
+// Expressions. N_LIT: tok literal, op its token kind, c rounding mode token or -1. N_NEGLIT:
+// tok and start `-`, c the literal token, b rounding mode token or -1. N_BOOL: op 1 for
+// true. N_STRING: tok first string token, op token ntoken. N_BYTES: tok. N_NAME: tok.
+// N_TYPENAME: tok (a scalar or fixed-point type name used as an expression). N_TYPEPROP: tok
+// type token, c property token. N_DOTNAME: tok name, start `.`.
 export const I32 N_LIT = 50;
 export const I32 N_NEGLIT = 51;
 export const I32 N_BOOL = 52;
@@ -422,9 +423,9 @@ I64 advance[t](in scan.Token[t] toks, inout PState[_] ps) {
     return j;
 }
 
-// An identifier class that names a scalar type (I8 to I1024, U8 to U64, Bool).
+// An identifier class that names a scalar type (I8 to I1024, U8 to U512, Bool).
 Bool scalar_class(I32 cls) {
-    return cls >= scan.IDC_I8 && cls <= scan.IDC_BOOL;
+    return (cls >= scan.IDC_I8 && cls <= scan.IDC_BOOL) || (cls >= scan.IDC_U128 && cls <= scan.IDC_U512);
 }
 
 // The type names of SPEC-04 18.4 that are not scalar: Str, T1, T27, PT5, PT4, Arena, Pool, Handle.
@@ -1102,6 +1103,12 @@ void h_operand[n, t, m, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node
             I64 lit = new_node(toks, nodes, diag, ps, N_NEGLIT, tk, tk);
             if (lit >= 0) {
                 nodes[lit].c = nt as I32;
+                // A fraction's `round` clause rounds the negative value (SPEC-04 LS-37).
+                if (nk == scan.TK_FRAC && class_at(toks, ps, 0) == scan.IDC_ROUND &&
+                        kind_at(toks, ps, 1) == scan.TK_IDENT) {
+                    _ = advance(toks, ps);
+                    nodes[lit].b = advance(toks, ps) as I32;
+                }
                 to_postfix(st, f, lit);
             }
             return;
@@ -3495,7 +3502,7 @@ void h_enum[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[
 // An INT_TYPE token (SPEC-04 18.1), or -1 with C1050.
 I64 int_type_name[t, r](inout scan.Token[t] toks, inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
     I32 cls = class_at(toks, ps, 0);
-    if (cls < scan.IDC_I8 || cls > scan.IDC_U64) {
+    if ((cls < scan.IDC_I8 || cls > scan.IDC_U64) && (cls < scan.IDC_U128 || cls > scan.IDC_U512)) {
         fail(toks, diag, ps, scan.C_SYNTAX, cur(ps));
         return -1;
     }

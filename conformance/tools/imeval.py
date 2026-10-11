@@ -16,6 +16,7 @@ TYPES = {
     "I8": (True, 8), "I16": (True, 16), "I32": (True, 32), "I64": (True, 64),
     "U8": (False, 8), "U16": (False, 16), "U32": (False, 32), "U64": (False, 64),
     "I128": (True, 128), "I256": (True, 256), "I512": (True, 512), "I1024": (True, 1024),
+    "U128": (False, 128), "U256": (False, 256), "U512": (False, 512),   # SPEC-01 IM-6 (BX15-02)
 }
 
 # SPEC-01 4.1: the forms each binary operator has.

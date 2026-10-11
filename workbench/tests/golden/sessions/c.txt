@@ -1,0 +1,162 @@
+cint workbench   profile cint-core-1   backend cpu-sir-interp   new session
+ci[1]> kernel diffuse[h, w](in I32[h, w] u, in I64 kn, in I64 kd,
+..>                      out I32[h, w] v, out I64 total) over [y: h, x: w] {
+..>     I64 c = u[y, x] as I64;
+..>     I32 r = u[y, x];
+..>     if (y > 0 && y < h - 1 && x > 0 && x < w - 1) {
+..>         I64 lap = (u[y - 1, x] as I64) + (u[y + 1, x] as I64)
+..>                 + (u[y, x - 1] as I64) + (u[y, x + 1] as I64) - 4 * c;
+..>         r = (c + div_round(kn * lap, kd, half_even)) as I32;
+..>     }
+..>     v[y, x] = r;
+..>     reduce total = sum(r);
+..> }
+diffuse   revision session@r1
+ci[2]> I32[64, 64] density;
+density : I32[64, 64]   4096 elements   host
+  [0, 0] = 0
+  [0, 1] = 0
+  [0, 2] = 0
+  [0, 3] = 0
+  [0, 4] = 0
+  [0, 5] = 0
+  [0, 6] = 0
+  [0, 7] = 0
+  ... 4088 more; /grid and /stats show them
+ci[3]> I32[64, 64] scratch;
+scratch : I32[64, 64]   4096 elements   host
+  [0, 0] = 0
+  [0, 1] = 0
+  [0, 2] = 0
+  [0, 3] = 0
+  [0, 4] = 0
+  [0, 5] = 0
+  [0, 6] = 0
+  [0, 7] = 0
+  ... 4088 more; /grid and /stats show them
+ci[4]> I64 rate_num = 1;
+rate_num = 1 : I64
+ci[5]> I64 rate_den = 8;
+rate_den = 8 : I64
+ci[6]> I64 heat = 0;
+heat = 0 : I64
+ci[7]> export void init() {
+..>     density[32, 32] = 65_536;
+..> }
+init : () -> void   revision session@r7
+ci[8]> export void step() {
+..>     diffuse(density, rate_num, rate_den, scratch, heat);
+..>     density = scratch;
+..> }
+step : () -> void   revision session@r8
+ci[9]> init();
+ci[10]> :checkpoint baseline
+checkpoint baseline   #1   bindings 5   revisions: session@r8
+ci[10]> rate_num = 3;
+ci[11]> rate_den = 8;
+ci[12]> :backend cpu-c17
+backend: cpu-c17; each revision is built as a library, entries on it are not recorded, and :inspect and the watches stay on cpu-sir-interp
+ci[12]> :run step() 240 --check cpu-sir-interp
+cpu-c17: revision <h> built as a library in <n> ms
+fault[E_NARROW]: the value does not fit the destination type
+  --> entry 1:8:54
+   |
+ 8 |         r = (c + div_round(kn * lap, kd, half_even)) as I32;
+   |                                                      ^ as.checked.i64.i32
+   |
+   = operation: as.checked.i64.i32
+   = operand-count: 1
+   = operand: I64 -2417121562
+   = exact:   -2417121562
+   = limit:   I32 -2147483648
+   = revision: <revision>
+   = source-map: none
+   = address: session.diffuse, dispatch 0, phase 1, work-item 2015, step 25
+   = stack-depth: 1
+   = called from: entry 8:2:5
+   = fuel-consumed: 4097 (not part of the fault record)
+   = state: no store completed in this entry; context reset
+   = noncanonical: not part of the fault record
+   = stack-source: entry 8:2:5
+   |
+ 2 |     diffuse(density, rate_num, rate_den, scratch, heat);
+   |     ^
+   |
+   = work-item-tuple: [31, 31]
+   = workbench-position: entry 32, call 21 of 240
+   = site: diffuse#32
+   = backend: cpu-c17; the dispatch ran in F-3 order and stopped at its first fault (SPEC-02 B-5)
+check: cpu-c17 and cpu-sir-interp agree at 21 boundaries
+21 of 240 calls made
+ci[33]> :backend cpu-sir-interp
+backend: cpu-sir-interp
+ci[33]> :inspect density /grid [30..35, 30..35]
+density : I32[64, 64]   4096 elements   host
+  grid   rows 30 to 34 of 0 to 63, columns 30 to 34 of 0 to 63
+               30           31           32           33           34
+  30    852894145  -1037802955   1107911716  -1037802955    852894145
+  31  -1037802955   1260430071  -1344739080   1260430071  -1037802955
+  32   1107911716  -1344739080   1434395232  -1344739080   1107911716
+  33  -1037802955   1260430071  -1344739080   1260430071  -1037802955
+  34    852894145  -1037802955   1107911716  -1037802955    852894145
+ci[33]> :watch density[32, 32]
+watch 1   density[32, 32] = 1434395232 : I32
+ci[33]> :replay baseline
+replaying 23 entries from baseline to the current state (entry 10 to entry 32), comparing prints and outcomes with the recording
+watch 1   entry 12   density[32, 32] = -32768
+watch 1   entry 13   density[32, 32] = 53248
+watch 1   entry 14   density[32, 32] = -63488
+watch 1   entry 15   density[32, 32] = 106048
+watch 1   entry 16   density[32, 32] = -164768
+watch 1   entry 17   density[32, 32] = 283444
+watch 1   entry 18   density[32, 32] = -483974
+watch 1   entry 19   density[32, 32] = 856386
+watch 1   entry 20   density[32, 32] = -1524772
+watch 1   entry 21   density[32, 32] = 2758114
+watch 1   entry 22   density[32, 32] = -5025692
+watch 1   entry 23   density[32, 32] = 9239390
+watch 1   entry 24   density[32, 32] = -17089438
+watch 1   entry 25   density[32, 32] = 31796622
+watch 1   entry 26   density[32, 32] = -59442484
+watch 1   entry 27   density[32, 32] = 111607780
+watch 1   entry 28   density[32, 32] = -210333908
+watch 1   entry 29   density[32, 32] = 397722352
+watch 1   entry 30   density[32, 32] = -754295616
+watch 1   entry 31   density[32, 32] = 1434395232
+entry 32: E_NARROW reproduced, its fault record equal to the recorded one
+replay matches the recording at 23 boundaries
+ci[33]> :fault
+fault[E_NARROW]: the value does not fit the destination type
+  --> entry 1:8:54
+   |
+ 8 |         r = (c + div_round(kn * lap, kd, half_even)) as I32;
+   |                                                      ^ as.checked.i64.i32
+   |
+   = operation: as.checked.i64.i32
+   = operand-count: 1
+   = operand: I64 -2417121562
+   = exact:   -2417121562
+   = limit:   I32 -2147483648
+   = revision: <revision>
+   = source-map: none
+   = address: session.diffuse, dispatch 0, phase 1, work-item 2015, step 25
+   = stack-depth: 1
+   = called from: entry 8:2:5
+   = fuel-consumed: 4097 (not part of the fault record)
+   = state: no store completed in this entry; context reset
+   = noncanonical: not part of the fault record
+   = stack-source: entry 8:2:5
+   |
+ 2 |     diffuse(density, rate_num, rate_den, scratch, heat);
+   |     ^
+   |
+   = work-item-tuple: [31, 31]
+   = workbench-position: entry 32, call 21 of 240
+   = site: diffuse#32
+   = backend: cpu-c17; the dispatch ran in F-3 order and stopped at its first fault (SPEC-02 B-5)
+ci[33]> :save-case overflow.cicase
+note: the case includes every recorded observe result verbatim; this case has none
+case overflow.cicase   checkpoint baseline   entries 10..32   effects 0   density entry
+ci[33]> :save session-c
+saved session to session-c   entries 32   checkpoints 1   objects 103
+ci[33]> :quit

@@ -1,0 +1,5 @@
+"counting past the largest I64\n";
+I64 big = 9223372036854775807;
+"big={big}\n";
+I64 next = big + 1;
+"next={next}\n";

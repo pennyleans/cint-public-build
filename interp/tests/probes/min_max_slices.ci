@@ -1,0 +1,10 @@
+// case: probes/min_max_slices
+// clause: box 13 unit 7 probe: min and max over strided and reversed slices (reduce_min, reduce_max)
+// entry: run; args: none
+
+export I64 run() {
+    I8[7] a = [5, -3, 9, 0, -8, 4, 2];
+    I8 lo = min(a[1..6 by 2]);
+    I8 hi = max(a[.. by -3]);
+    return (lo as I64) * 100 + (hi as I64);
+}

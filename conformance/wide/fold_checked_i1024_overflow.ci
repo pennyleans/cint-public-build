@@ -1,0 +1,10 @@
+// case: wide/fold_checked_i1024_overflow
+// clause: SPEC-01 IM-77, IM-83 (the left fold leaves I1024 at index 2, with the I64 index and the I1024 accumulator and element in the record)
+// subset: cint-core-1 (wide integers, built-in fold_checked)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 9:12 (callee `fold_checked`), operation fold_checked.add.i1024, operands I64 2 (index), I1024 2^1023 - 1 (accumulator), I1024 1 (element), exact 2^1023, limit I1024 2^1023 - 1; stack depth 0; fuel 2. Record layout: box 09 ruling R5. Box 15, unit 1
+
+export Bool run() {
+    I1024[3] a = [I1024.max - 1, 1, 1];
+    return fold_checked(add, 0, a) != 0;
+}

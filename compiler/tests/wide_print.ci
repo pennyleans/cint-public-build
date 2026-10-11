@@ -1,0 +1,28 @@
+// Format specifications on holes of the wide types (SPEC-04 LS-202 to LS-213; rt/OPEN.md
+// RT-OQ-55; box 15 unit 4c): every kind but `c`, the flags, grouping, fill, alignment, width
+// and scale, at the extremes of I128 to I1024 and between.
+I256 told = 0;
+
+I256 tell(I256 v) {
+    "<{v:x}>";
+    told = told + v;
+    return v;
+}
+
+void main() {
+    I128 a = I128.max;
+    I128 b = I128.min;
+    I256 c = -12345678901234567890123456789;
+    I512 d = 1 as I512 << 300;
+    I1024 e = I1024.min;
+    I1024 f = I1024.max;
+    I128 z = 0;
+    "{a:x}|{a:#X}|{b:x}|{b:#b}|{c:o}|{c:#o}|{z:#x}|{z:b}\n";
+    "{a:,}|{b:_}|{c:+,}|{d: }|{d:+}|{z:+}|{a:d}\n";
+    "{c:>60}|{c:*^70}|{c:<50}|{c:060}|{d:#0110x}|{b:=>45}\n";
+    "{a:t}|{b:t}|{z:t}\n";
+    "{d:/1000}|{c:/100}|{c:+/10}|{z:/10}|{a:/100000000000000000000000000000000000000000}\n";
+    "{e:x}\n{e:,}\n{f:#b}\n{f:t}\n{f:_o}\n";
+    "{a:_x}|{a:_b}|{b:#_X}\n";
+    "{tell(c):>40}|{tell(-c):_}|{told}\n";
+}

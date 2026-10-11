@@ -1,4 +1,4 @@
-"""Deterministic fuzz targets for the two decoders that freeze with fault record version 2.
+"""Deterministic fuzz targets for the decoders that freeze with fault record versions 2 and 3.
 
 Slice 2 decision patch D-10 (decision 23) freezes the IM-149 fault
 record at T2 stage acceptance "with each decoder (the IM-149 reader in
@@ -8,6 +8,9 @@ random seed and count the receipt records". The targets:
 - `record`: `cint_ref.faults.decode_fault_record` (SPEC-01 IM-148, IM-149),
   under both record kinds (D-17: the caller passes compile-time or run-time).
 - `expect`: `cint_ref.expect.parse` (SPEC-09 CONF-11, formats 1 and 2).
+- `record-py`: `decode_fault_record` of the Python package (`python/cint/_record.py`), versions
+  1 to 3 under both record kinds, on the `record` target's generator with version 3 seeds added
+  (OQ-14).
 
 Each target mutates a fixed seed corpus with a pseudo-random generator seeded
 by `--seed`, `--count` times. The generator is Python's `random.Random`, used
@@ -19,13 +22,16 @@ written here. No floating point. Properties checked on every input:
   re-encodes to the same bytes (`encode_fault_record`, same kind and version);
   every record accepted under the run-time kind is accepted, equal, under the
   compile-time kind, whose bounds are wider (IM-108).
+- record-py: the reader raises nothing but `ValueError`; a record it accepts names its own bytes
+  and version; a run-time record of version 1 or 2 it accepts is accepted, equal, under the
+  compile-time kind, and one of version 3 is refused under it (IM-148).
 - expect: the reader raises nothing but `ValueError`; a text it accepts
   renders back to the same text; an accepted format 2 text holds as many
   `fault.stack` lines as `fault.stack-depth` says (CONF-11 rule 5).
 
 Usage, from the repository root:
-    python conformance/tools/fuzz_decoders.py [--seed N] [--count N] [--target record|expect|all]
-                                              [--receipt FILE]
+    python conformance/tools/fuzz_decoders.py [--seed N] [--count N]
+                                              [--target record|expect|record-py|all] [--receipt FILE]
 
 It prints one line per target, `fuzz <target>: seed S, count N, accepted A,
 rejected R, failures F, inputs-sha256 H`, where H is the SHA-256 of every
@@ -46,7 +52,9 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, "ref"))
+sys.path.insert(0, os.path.join(ROOT, "python"))
 
+from cint import _record as P  # noqa: E402
 from cint_ref import expect as X  # noqa: E402
 from cint_ref import faults as F  # noqa: E402
 from cint_ref.types import Value  # noqa: E402
@@ -113,6 +121,18 @@ def record_corpus() -> list:
     for r in (wide, widest, q_exact):
         out.append((F.encode_fault_record(r, F.COMPILE_TIME, 2), F.COMPILE_TIME))
     return out
+
+
+def record_v3_corpus() -> list:
+    """(bytes, run-time) pairs of version 3 (BX15-07 C): dot.checked.i1024.<R> records, one with an
+    `exact` of 264 bytes, the bound of IM-108 item 4, written as version 2 with the domain changed."""
+    i1024max = (1 << 1023) - 1
+    dot = _rec("E_OVERFLOW", "dot.checked.i1024.i1024", [Value("I64", 1 << 62)], 1 << 2108, Value("I1024", i1024max),
+               ("w/dot.ci", 3, 5), [("w/dot.ci", 9, 2)], revision=bytes(range(32)))
+    small = _rec("E_OVERFLOW", "dot.checked.i1024.i64", [Value("I1024", -1), Value("I1024", 2)], -(1 << 64),
+                 Value("I64", -(1 << 63)), ("w/dot.ci", 4, 1))
+    v2, v3 = F.DOMAIN_V2.encode("ascii"), P.DOMAIN_V3
+    return [(F.encode_fault_record(r, F.COMPILE_TIME, 2).replace(v2, v3, 1), F.RUN_TIME) for r in (dot, small)]
 
 
 def expect_corpus() -> list:
@@ -249,20 +269,65 @@ def fuzz_expect(seed: int, count: int):
     return accepted, rejected, failures, digest.hexdigest()
 
 
-TARGETS = {"record": fuzz_record, "expect": fuzz_expect}
+def fuzz_record_py(seed: int, count: int):
+    d = Draw(seed)
+    corpus = record_corpus() + record_v3_corpus()
+    donors = [b for b, _ in corpus]
+    digest = hashlib.sha256()
+    accepted = rejected = 0
+    failures = []
+    for n in range(len(corpus) + count):
+        if n < len(corpus):
+            data, kind = corpus[n]
+        else:
+            base, kind = d.pick(corpus)
+            data = mutate_bytes(d, base, donors)
+            kind = d.pick(F.RECORD_KINDS) if d.below(4) == 0 else kind
+        digest.update(len(data).to_bytes(4, "little") + data + kind.encode("ascii"))
+        try:
+            rec = P.decode_fault_record(data, kind)
+        except ValueError:
+            rejected += 1
+            if n < len(corpus):
+                failures.append("seed input %d is rejected" % n)
+            continue
+        except Exception as e:                              # any other exception is a reader defect
+            failures.append("input %d: %s: %s" % (n, type(e).__name__, e))
+            continue
+        accepted += 1
+        try:
+            if rec["record"] != data or data[4:24] != (P.DOMAIN_V1, P.DOMAIN_V2, P.DOMAIN_V3)[rec["version"] - 1]:
+                failures.append("input %d: an accepted record names other bytes or another version" % n)
+            if kind == F.RUN_TIME and rec["version"] < 3 and P.decode_fault_record(data, F.COMPILE_TIME) != rec:
+                failures.append("input %d: accepted run-time, not equal under compile-time" % n)
+            if kind == F.RUN_TIME and rec["version"] == 3:
+                try:
+                    P.decode_fault_record(data, F.COMPILE_TIME)
+                    failures.append("input %d: a version 3 record accepted under compile-time" % n)
+                except ValueError:
+                    pass
+        except Exception as e:
+            failures.append("input %d: %s: %s" % (n, type(e).__name__, e))
+    return accepted, rejected, failures, digest.hexdigest()
+
+
+TARGETS = {"record": fuzz_record, "expect": fuzz_expect, "record-py": fuzz_record_py}
+# The sources a receipt pins: the readers, and this file.
+SOURCES = ("ref/cint_ref/faults.py", "ref/cint_ref/expect.py", "python/cint/_record.py", "python/cint/_elem.py",
+           "python/cint/_fixed.py", "conformance/tools/fuzz_decoders.py")
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--seed", type=int, default=DEFAULT_SEED)
     ap.add_argument("--count", type=int, default=DEFAULT_COUNT)
-    ap.add_argument("--target", choices=["record", "expect", "all"], default="all")
+    ap.add_argument("--target", choices=[*TARGETS, "all"], default="all")
     ap.add_argument("--receipt", help="also write the results as JSON to this file")
     ns = ap.parse_args(argv)
     if ns.count < 0 or ns.seed < 0:
         ap.error("--seed and --count are integers >= 0")
     results = []
-    for name in (["record", "expect"] if ns.target == "all" else [ns.target]):
+    for name in (list(TARGETS) if ns.target == "all" else [ns.target]):
         accepted, rejected, failures, h = TARGETS[name](ns.seed, ns.count)
         for f in failures[:20]:
             print("failure %s: %s" % (name, f))
@@ -272,7 +337,7 @@ def main(argv=None) -> int:
                         "rejected": rejected, "failures": len(failures), "inputs_sha256": h})
     if ns.receipt:
         decoders = {}
-        for rel in ("ref/cint_ref/faults.py", "ref/cint_ref/expect.py", "conformance/tools/fuzz_decoders.py"):
+        for rel in SOURCES:
             with open(os.path.join(ROOT, rel), "rb") as fh:
                 decoders[rel] = hashlib.sha256(fh.read()).hexdigest()
         with open(ns.receipt, "wb") as fh:

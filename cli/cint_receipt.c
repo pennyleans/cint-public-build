@@ -19,7 +19,7 @@
 #include "cint_proc.h"
 #include "cint_receipt.h"
 
-#define TOOL_VERSION "0.2.0 (slice 2)"
+#define TOOL_VERSION "0.2.0"
 #define RUNTIME_CONTRACT "cint-rt-3"
 
 /* ------------------------------------------------------------------------- */
@@ -43,9 +43,7 @@ static void sb_grow(sbuf *b, size_t n)
 void sb_put(sbuf *b, const void *s, size_t n)
 {
     sb_grow(b, n);
-    if (n > 0u) {
-        memcpy(b->p + b->n, s, n);
-    }
+    if (n > 0u) memcpy(b->p + b->n, s, n);
     b->n += n;
     b->p[b->n] = '\0';
 }
@@ -81,31 +79,19 @@ void sb_jstr(sbuf *b, const char *s, size_t n)
         unsigned c = (unsigned char)s[i], k = 0, u;
         if (c < 0x80u) {
             i++;
-            if (c == '"' || c == '\\') {
-                sb_f(b, "\\%c", (char)c);
-            } else if (c < 0x20u) {
-                const char *esc = c == 8u ? "\\b" : c == 9u ? "\\t" : c == 10u ? "\\n" : c == 12u ? "\\f" : c == 13u ? "\\r" : NULL;
-                if (esc != NULL) {
-                    sb_s(b, esc);
-                } else {
-                    sb_f(b, "\\u%04x", c);
-                }
-            } else {
-                sb_put(b, &s[i - 1u], 1u);
-            }
+            const char *esc = c == 8u ? "\\b" : c == 9u ? "\\t" : c == 10u ? "\\n" : c == 12u ? "\\f" : c == 13u ? "\\r" : NULL;
+            if (c == '"' || c == '\\') sb_f(b, "\\%c", (char)c);
+            else if (esc != NULL) sb_s(b, esc);
+            else if (c < 0x20u) sb_f(b, "\\u%04x", c);
+            else sb_put(b, &s[i - 1u], 1u);
             continue;
         }
         k = c >= 0xF8u ? 0u : c >= 0xF0u ? 3u : c >= 0xE0u ? 2u : c >= 0xC2u ? 1u : 0u;
         u = c & (0x3Fu >> k);
-        if (i + k >= n) {
-            k = 0u;  /* truncated: the lead byte alone is replaced */
-        }
+        if (i + k >= n) k = 0u;  /* truncated: the lead byte alone is replaced */
         for (unsigned j = 1; j <= k; j++) {
             unsigned d = (unsigned char)s[i + j];
-            if ((d & 0xC0u) != 0x80u) {
-                k = 0u;
-                break;
-            }
+            if ((d & 0xC0u) != 0x80u) { k = 0u; break; }
             u = (u << 6) | (d & 0x3Fu);
         }
         if (k == 0u || u > 0x10FFFFu || (u >= 0xD800u && u <= 0xDFFFu) || (k == 2u && u < 0x800u) ||
@@ -114,11 +100,8 @@ void sb_jstr(sbuf *b, const char *s, size_t n)
             k = 0u;
         }
         i += k + 1u;
-        if (u >= 0x10000u) {
-            sb_f(b, "\\u%04x\\u%04x", 0xD800u + ((u - 0x10000u) >> 10), 0xDC00u + ((u - 0x10000u) & 0x3FFu));
-        } else {
-            sb_f(b, "\\u%04x", u);
-        }
+        if (u >= 0x10000u) sb_f(b, "\\u%04x\\u%04x", 0xD800u + ((u - 0x10000u) >> 10), 0xDC00u + ((u - 0x10000u) & 0x3FFu));
+        else sb_f(b, "\\u%04x", u);
     }
     sb_s(b, "\"");
 }
@@ -158,9 +141,7 @@ int tool_error(int status, const char *tool, int tool_status, const char *log, c
                                        : status == CINT_EXIT_ENVIRONMENT ? "environment"
                                                                          : "internal");
         sb_f(&b, ",\"exit_status\":%d", status);
-        if (log != NULL) {
-            sb_jkey(&b, ",\"log_path\":", log);
-        }
+        if (log != NULL) sb_jkey(&b, ",\"log_path\":", log);
         sb_jkey(&b, ",\"message\":", msg);
         sb_s(&b, ",\"schema\":\"CINT-TOOL-1\"");
         if (tool != NULL) {
@@ -177,19 +158,25 @@ int tool_error(int status, const char *tool, int tool_status, const char *log, c
     return status;
 }
 
+/* A value as {"t":TYPE,"v":DIGITS}, or null for none. */
 static void sb_jvalue(sbuf *b, const fvalue *v)
 {
     char text[1700];
-    size_t n = value_text(v, text, 1);
-    char *sp = n > 0u ? strchr(text, ' ') : NULL;
-    if (sp == NULL) {
-        sb_s(b, "null");
-        return;
-    }
+    char *sp = v != NULL && value_text(v, text, 1) > 0u ? strchr(text, ' ') : NULL;
+    if (sp == NULL) { sb_s(b, "null"); return; }
     *sp = '\0';
     sb_jkey(b, "{\"t\":", text);
     sb_jkey(b, ",\"v\":", sp + 1);
     sb_s(b, "}");
+}
+
+/* A digest as a quoted hex string, or null for none. */
+static void sb_jhex(sbuf *b, const uint8_t *p)
+{
+    if (p == NULL) { sb_s(b, "null"); return; }
+    sb_s(b, "\"");
+    sb_hex(b, p, 32);
+    sb_s(b, "\"");
 }
 
 static void sb_jpos(sbuf *b, const fpos *p)
@@ -208,34 +195,18 @@ void sb_jfault(sbuf *b, const frec *f, int64_t fuel)
         sb_f(b, "{\"dispatch\":\"%lld\",\"kernel\":", (long long)f->dispatch);
         sb_jstr(b, f->kernel, f->kernel_len);
         sb_f(b, ",\"phase\":%u,\"step\":", (unsigned)f->phase);
-        if (f->has_item) sb_f(b, "\"%lld\"", (long long)f->step);
-        else sb_s(b, "null");
-        sb_s(b, ",\"work_item\":");
-        if (f->has_item) sb_f(b, "\"%lld\"", (long long)f->item);
-        else sb_s(b, "null");
-        sb_s(b, "}");
-    } else {
-        sb_s(b, "null");
-    }
+        if (f->has_item) sb_f(b, "\"%lld\",\"work_item\":\"%lld\"}", (long long)f->step, (long long)f->item);
+        else sb_s(b, "null,\"work_item\":null}");
+    } else sb_s(b, "null");
     sb_jkey(b, ",\"code\":", CODE_NAMES[f->code]);
     sb_f(b, ",\"column\":%u,\"exact\":", (unsigned)f->pos.column);
-    if (f->has_exact) {
-        sb_jvalue(b, &f->exact);
-    } else {
-        sb_s(b, "null");
-    }
+    sb_jvalue(b, f->has_exact ? &f->exact : NULL);
     sb_s(b, ",\"file\":");
     sb_jstr(b, f->pos.path, f->pos.path_len);
     sb_s(b, ",\"limit\":");
-    if (f->has_limit) {
-        sb_jvalue(b, &f->limit);
-    } else {
-        sb_s(b, "null");
-    }
+    sb_jvalue(b, f->has_limit ? &f->limit : NULL);
     sb_f(b, ",\"line\":%u", (unsigned)f->pos.line);
-    if (fuel >= 0) {
-        sb_f(b, ",\"noncanonical\":{\"fuel_consumed\":\"%lld\"}", (long long)fuel);
-    }
+    if (fuel >= 0) sb_f(b, ",\"noncanonical\":{\"fuel_consumed\":\"%lld\"}", (long long)fuel);
     sb_s(b, ",\"operands\":[");
     for (uint32_t i = 0; i < f->nop; i++) {
         sb_s(b, i > 0u ? "," : "");
@@ -243,21 +214,9 @@ void sb_jfault(sbuf *b, const frec *f, int64_t fuel)
     }
     sb_jkey(b, "],\"operation\":", f->op);
     sb_s(b, ",\"revision\":");
-    if (f->has_rev) {
-        sb_s(b, "\"");
-        sb_hex(b, f->rev, 32);
-        sb_s(b, "\"");
-    } else {
-        sb_s(b, "null");
-    }
+    sb_jhex(b, f->has_rev ? f->rev : NULL);
     sb_s(b, ",\"schema\":\"CINT-FAULT-1\",\"severity\":\"fault\",\"source_map\":");
-    if (f->has_map) {
-        sb_s(b, "\"");
-        sb_hex(b, f->map, 32);
-        sb_s(b, "\"");
-    } else {
-        sb_s(b, "null");
-    }
+    sb_jhex(b, f->has_map ? f->map : NULL);
     sb_s(b, ",\"stack\":[");
     for (uint32_t i = 0; i < f->nstack; i++) {
         sb_s(b, i > 0u ? "," : "");
@@ -272,16 +231,10 @@ void sb_jdiag(sbuf *o, const cint_compiler_diag *d, const frec *fault, const cha
               const char *note)
 {
     sb_f(o, "{\"code\":\"C%04lld\",\"column\":%lld", (long long)d->code, (long long)d->column);
-    if (fault != NULL) {
-        sb_s(o, ",\"fault\":");
-        sb_jfault(o, fault, -1);
-    }
+    if (fault != NULL) { sb_s(o, ",\"fault\":"); sb_jfault(o, fault, -1); }
     sb_jkey(o, ",\"file\":", file);
     sb_f(o, ",\"line\":%lld", (long long)d->line);
-    if (message == NULL) {
-        sb_s(o, "}");
-        return;
-    }
+    if (message == NULL) { sb_s(o, "}"); return; }
     sb_jkey(o, ",\"message\":", message);
     if (note != NULL) {
         sb_s(o, ",\"notes\":[{");
@@ -334,9 +287,7 @@ static void utc(char out[24], int64_t ns)
 {
     time_t t = (time_t)(ns / 1000000000);
     struct tm *tm = gmtime(&t);
-    if (tm == NULL || strftime(out, 24, "%Y-%m-%dT%H:%M:%SZ", tm) == 0u) {
-        (void)snprintf(out, 24, "unknown");
-    }
+    if (tm == NULL || strftime(out, 24, "%Y-%m-%dT%H:%M:%SZ", tm) == 0u) (void)snprintf(out, 24, "unknown");
 }
 
 static const char *const KINDS[3] = {"run", "build", "test"};
@@ -345,17 +296,14 @@ static int write_identity(sbuf *b, const char *source_hex, outset *set)
 {
     char hex[65];
     sb_s(b, "{\"backend\":{\"id\":\"cpu-c17\"},\"encodings\":{\"fault\":\"cint-core-1/fault/v2\"},\"generated\":");
-    if (set == NULL) {
-        sb_s(b, "null");
-    } else {
+    if (set == NULL) sb_s(b, "null");
+    else {
         sb_s(b, "{\"files\":{");
         for (size_t i = 0; i < set->n; i++) {
             char *p = join(set->stage, set->rel[i]);
-            if (digest_file(p, hex) != 0) {
-                free(p);
-                return -1;
-            }
+            int bad = digest_file(p, hex) != 0;
             free(p);
+            if (bad) return -1;
             sb_s(b, i > 0u ? "," : "");
             sb_jz(b, set->rel[i]);
             sb_f(b, ":\"%s\"", hex);
@@ -380,20 +328,14 @@ static int write_identity(sbuf *b, const char *source_hex, outset *set)
         sb_s(b, "}");
         free(v);
     }
-    if (g.mode == MODE_BUILD) {
-        sb_s(b, ",\"method\":null");
-    } else {
-        sb_f(b, ",\"method\":{\"depth_limit\":256,\"frame_arena_bytes\":16777216,\"fuel_budget\":\"%s\","
-                "\"fuel_model\":\"fuel-v1\",\"stdin\":\"null\"}", g.mode == MODE_TEST ? "1000000000" : "none");
-    }
+    if (g.mode == MODE_BUILD) sb_s(b, ",\"method\":null");
+    else sb_f(b, ",\"method\":{\"depth_limit\":256,\"frame_arena_bytes\":16777216,\"fuel_budget\":\"%s\","
+                 "\"fuel_model\":\"fuel-v1\",\"stdin\":\"null\"}", g.mode == MODE_TEST ? "1000000000" : "none");
     sb_s(b, ",\"profile\":\"cint-core-1\",\"runtime\":{\"contract\":\"" RUNTIME_CONTRACT "\",\"files\":{");
     for (size_t i = 0; i < g.tc.nrt; i++) {
-        const char *name = basename_utf8(g.tc.rt_sources[i]);
-        if (digest_file(g.tc.rt_sources[i], hex) != 0) {
-            return -1;
-        }
+        if (digest_file(g.tc.rt_sources[i], hex) != 0) return -1;
         sb_s(b, i > 0u ? "," : "");
-        sb_jz(b, name);
+        sb_jz(b, basename_utf8(g.tc.rt_sources[i]));
         sb_f(b, ":\"%s\"", hex);
     }
     sb_f(b, "}},\"schema\":\"cint-receipt-1/%s\",\"source\":{\"dirty\":", KINDS[g.mode]);
@@ -414,11 +356,8 @@ static int write_identity(sbuf *b, const char *source_hex, outset *set)
     if (g.source_revision[0] != '\0') sb_jz(b, g.source_revision);
     else sb_s(b, "null");
     sb_jkey(b, ",\"root_module\":", g.rel);
-    if (digest_file(g.tc.compiler_sources, hex) != 0) {
-        return -1;
-    }
-    sb_f(b, "},\"tool\":{\"compiler_source_identity\":\"%s\",\"name\":\"cint\",\"version\":\"" TOOL_VERSION "\"}}",
-         hex);
+    if (digest_file(g.tc.compiler_sources, hex) != 0) return -1;
+    sb_f(b, "},\"tool\":{\"compiler_source_identity\":\"%s\",\"name\":\"cint\",\"version\":\"" TOOL_VERSION "\"}}", hex);
     return 0;
 }
 
@@ -431,36 +370,24 @@ static int write_receipt(const outcome *oc, const char *source_hex)
         free(id.p);
         return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot read a receipt identity input");
     }
-    sb_s(&res, "{\"diagnostics\":");
-    if (strcmp(oc->kind, "compile-error") == 0) {
-        sb_s(&res, "[");
-        report_diags(&res);
-        sb_f(&res, "],\"diagnostics_not_retained\":%lld", (long long)g_diag[0].detail[1]);
-    } else {
-        sb_s(&res, "[],\"diagnostics_not_retained\":0");
-    }
+    int compile_error = strcmp(oc->kind, "compile-error") == 0;
+    sb_s(&res, "{\"diagnostics\":[");
+    if (compile_error) report_diags(&res);
+    sb_f(&res, "],\"diagnostics_not_retained\":%lld", compile_error ? (long long)g_diag[0].detail[1] : 0LL);
     if (oc->error != NULL) { sb_s(&res, ",\"error\":"); sb_error(&res, oc->error, 1); }
     sb_f(&res, ",\"exit_status\":%d", oc->status);
     if (g.mode == MODE_RUN) {
         sb_s(&res, ",\"fault\":");
-        if (oc->fault != NULL) {
-            sb_jfault(&res, oc->fault, -1);
-        } else {
-            sb_s(&res, "null");
-        }
-        if (oc->fuel >= 0) {
-            sb_f(&res, ",\"fuel_consumed\":\"%lld\"", (long long)oc->fuel);
-        } else {
-            sb_s(&res, ",\"fuel_consumed\":null");
-        }
+        if (oc->fault != NULL) sb_jfault(&res, oc->fault, -1);
+        else sb_s(&res, "null");
+        if (oc->fuel >= 0) sb_f(&res, ",\"fuel_consumed\":\"%lld\"", (long long)oc->fuel);
+        else sb_s(&res, ",\"fuel_consumed\":null");
     }
     sb_jkey(&res, ",\"kind\":", oc->kind);
-    if (g.mode == MODE_RUN) {
-        if (digest((const uint8_t *)o->bytes.p, o->bytes.n, hex) != 0) {
-            return tool_error(CINT_EXIT_INTERNAL, NULL, 0, NULL, "the digest export of the compiler failed");
-        }
-        sb_f(&res, ",\"stdout\":{\"bytes\":%llu,\"sha256\":\"%s\"}", (unsigned long long)o->bytes.n, hex);
+    if (g.mode == MODE_RUN && digest((const uint8_t *)o->bytes.p, o->bytes.n, hex) != 0) {
+        return tool_error(CINT_EXIT_INTERNAL, NULL, 0, NULL, "the digest export of the compiler failed");
     }
+    if (g.mode == MODE_RUN) sb_f(&res, ",\"stdout\":{\"bytes\":%llu,\"sha256\":\"%s\"}", (unsigned long long)o->bytes.n, hex);
     if (g.mode == MODE_TEST && oc->status != CINT_EXIT_COMPILE) {
         sb_s(&res, ",\"tests\":[");
         for (int k = 0; k < g.ntests; k++) {
@@ -491,27 +418,19 @@ static int write_receipt(const outcome *oc, const char *source_hex)
     sb_jkey(&rec, "],\"log\":\"cc.log\",\"name\":", g.tc.leg);
     sb_jkey(&rec, ",\"version\":", g.tc.cc_version != NULL ? g.tc.cc_version : "unknown");
     sb_s(&rec, "},\"executables\":{");
-    {
-        char *cli_path = cli_self_path();
-        char executable_hex[65];
-        if (cli_path == NULL || digest_file(cli_path, executable_hex) != 0) {
-            free(cli_path);
-            return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot read the cint executable for the receipt");
-        }
-        free(cli_path);
-        sb_f(&rec, "\"cint\":\"%s\"", executable_hex);
-        if (oc->exe != NULL) {
-            if (digest_file(oc->exe, executable_hex) != 0) {
-                return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot read the program executable for the receipt");
-            }
-            sb_f(&rec, ",\"program\":\"%s\"", executable_hex);
-        }
-        if (digest_file(g.tc.runtime_object, executable_hex) != 0) {
-            return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot read the runtime object for the receipt");
-        }
-        sb_f(&rec, ",\"runtime\":\"%s\"", executable_hex);
+    char *cli_path = cli_self_path(), executable_hex[65];
+    int unread = cli_path == NULL || digest_file(cli_path, executable_hex) != 0;
+    free(cli_path);
+    if (unread) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot read the cint executable for the receipt");
+    sb_f(&rec, "\"cint\":\"%s\"", executable_hex);
+    if (oc->exe != NULL && digest_file(oc->exe, executable_hex) != 0) {
+        return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot read the program executable for the receipt");
     }
-    sb_f(&rec, "},\"finished_utc\":\"%s\",\"host\":", when[1]);
+    if (oc->exe != NULL) sb_f(&rec, ",\"program\":\"%s\"", executable_hex);
+    if (digest_file(g.tc.runtime_object, executable_hex) != 0) {
+        return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot read the runtime object for the receipt");
+    }
+    sb_f(&rec, ",\"runtime\":\"%s\"},\"finished_utc\":\"%s\",\"host\":", executable_hex, when[1]);
     sb_jz(&rec, g.tc.host != NULL ? g.tc.host : "unknown");
     {
         sbuf limits = {0};
@@ -535,10 +454,8 @@ static int write_receipt(const outcome *oc, const char *source_hex)
     if (!cint_commit_output(g.receipt, (const uint8_t *)rec.p, rec.n, (size_t)1 << 30)) {
         return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot write the receipt %s", g.receipt);
     }
-    if (!json_mode) {
-        fprintf(stderr, "receipt: %s\n", g.receipt);
-        fflush(stderr);
-    }
+    if (!json_mode) fprintf(stderr, "receipt: %s\n", g.receipt);
+    fflush(stderr);
     free(id.p);
     free(res.p);
     free(all.p);

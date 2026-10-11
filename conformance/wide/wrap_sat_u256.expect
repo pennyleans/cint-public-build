@@ -1,0 +1,9 @@
+case wide/wrap_sat_u256
+clause SPEC-01 IM-6, IM-28, IM-31, IM-32 (the wrapping and saturating forms of +, - and * on U256)
+format 5
+source reference
+outcome value
+stdout-bytes 243
+stdout-sha256 a548faa47f50d49973b24f83c136781f491934653a2e003ffe01ba03368fef18
+return I64 0
+fuel-consumed 1

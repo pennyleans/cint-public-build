@@ -1,0 +1,20 @@
+// case: probes/module_array_fault
+// clause: box 13 MLA probe: an index past a module-level array's extent faults E_BOUNDS after the stores before it
+// entry: run; args: none
+
+I64 calls = 0;
+U8[3] seen = [1, 2, 3];
+
+U8 at(I64 k) {
+    calls += 1;
+    seen[0] += 1;
+    return seen[k];
+}
+
+export I64 run() {
+    I64 t = 0;
+    for k in 0..4 {
+        t += at(k) as I64;
+    }
+    return t;
+}

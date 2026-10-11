@@ -1,0 +1,9 @@
+case wide/kernel_reduce_sum_i512
+clause SPEC-02 R-1, R-5, 8.2 (a `reduce` statement sums I512 contributions, one per work-item, exactly)
+format 2
+source reference
+outcome value
+stdout-bytes 3
+stdout-sha256 f4ccd05b3271c386ee55d9876c7450012a3b361e5065c09dc22075e38b3cc35c
+return I64 30
+fuel-consumed 5

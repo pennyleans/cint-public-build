@@ -1,8 +1,9 @@
 """The program symbol audit of tools/cint_check.py: SPEC-09 EMIT-31 and SPEC-03 A-3 as amended by
 slice 2 decision patch D-2 (exports `cx_*`, `cm_*`, `cint_program_abi`, `cint_observer_desc`;
 external, non-exported `ci_*` and `cg_*` of per-module output), with the Apple Clang target row of
-decision 25 (`__chkstk_darwin` on the apple-clang leg only), the `bzero` that the ruling of
-2026-10-05 adds to that row (G-C1, rt/OPEN.md RT-OQ-32), the MSVC `/GS` range check
+decision 25 (`__chkstk_darwin` on the apple-clang leg only), its x86-64 spelling
+`___chkstk_darwin` (OQ-219), the `bzero` that the ruling of 2026-10-05 adds to that row (G-C1,
+rt/OPEN.md RT-OQ-32), the MSVC `/GS` range check
 `__report_rangecheckfailure` and the MSVC C runtime's `__isa_available` on the msvc leg only
 (OQ-211, OQ-215), and MSVC's `__isa_available_default` among the toolchain names (OQ-215).
 Python standard library only; no toolchain is needed."""
@@ -63,15 +64,29 @@ class Audit(unittest.TestCase):
         for leg in ("msvc", "gcc", "clang"):
             self.assertEqual(audit_program([obj], exports, RT, leg), ["refers to __chkstk_darwin"])
 
+    def test_apple_x86_64_stack_probe_on_the_apple_target_only(self):
+        # OQ-219: on macOS x86-64 the probe's C name is `___chkstk_darwin` (nm -P prints
+        # `____chkstk_darwin`); as norm() leaves it, it passes on apple-clang only.
+        exports = {"cx_3_add_4_add3", "cm_3_add", "cint_program_abi", "cint_observer_desc"}
+        obj = (SEED_OBJECT[0], SEED_OBJECT[1] | {"___chkstk_darwin"})
+        self.assertEqual(audit_program([obj], exports, RT, "apple-clang"), [])
+        for leg in ("msvc", "gcc", "clang"):
+            self.assertEqual(audit_program([obj], exports, RT, leg), ["refers to ___chkstk_darwin"])
+
     def test_apple_target_still_rejects_unknown_symbols(self):
         exports = {"cx_3_add_4_add3", "cint_observer_desc"}
-        # The raw Mach-O spelling is not the normalized name, and an unrelated symbol still fails.
-        obj = (SEED_OBJECT[0], SEED_OBJECT[1] | {"___chkstk_darwin", "__chkstk_darwin", "printf"})
+        # The raw x86-64 Mach-O spelling is not the normalized name, and an unrelated symbol
+        # still fails.
+        obj = (SEED_OBJECT[0], SEED_OBJECT[1] | {"____chkstk_darwin", "___chkstk_darwin",
+                                                 "__chkstk_darwin", "printf"})
         self.assertEqual(audit_program([obj], exports, RT, "apple-clang"),
-                         ["refers to ___chkstk_darwin", "refers to printf"])
+                         ["refers to ____chkstk_darwin", "refers to printf"])
         # The allowance is for an undefined reference only; a program may not define the probe.
         obj = (SEED_OBJECT[0] | {"__chkstk_darwin"}, SEED_OBJECT[1])
         self.assertEqual(audit_program([obj], exports, RT, "apple-clang"), ["defines __chkstk_darwin"])
+        obj = (SEED_OBJECT[0] | {"___chkstk_darwin"}, SEED_OBJECT[1])
+        self.assertEqual(audit_program([obj], exports, RT, "apple-clang"),
+                         ["defines ___chkstk_darwin"])
 
     def test_apple_bzero_on_the_apple_target_only(self):
         # Ruling 2026-10-05 (G-C1): Apple Clang at -O0 zeroes the local `int64_t l0_a[512] = {0};`
@@ -154,6 +169,7 @@ class Audit(unittest.TestCase):
     def test_mach_o_normalization_removes_one_underscore(self):
         with mock.patch.object(sys, "platform", "darwin"):
             self.assertEqual(norm("___chkstk_darwin"), "__chkstk_darwin")
+            self.assertEqual(norm("____chkstk_darwin"), "___chkstk_darwin")
             self.assertEqual(norm("_memcpy"), "memcpy")
             self.assertEqual(norm("_bzero"), "bzero")
         with mock.patch.object(sys, "platform", "linux"):

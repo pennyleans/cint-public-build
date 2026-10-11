@@ -1,0 +1,18 @@
+module reduce.fold_checked_reversed_view
+sites reduce/fold_checked_reversed_view.ci 1:7:12:fuel.charge 2:9:34:slice.checked.i32 3:9:12:fold_checked.add.i32
+export func @reduce.fold_checked_reversed_view.run() -> I32 {
+  fuel.charge 1                                  #1 @reduce/fold_checked_reversed_view.ci:7:12
+  local $a.0: I32[3]
+  %t0 = const I32 2000000000
+  array.init $a.0, %t0, 0, 0
+  %t1 = const I32 2000000000
+  array.init $a.0, %t1, 0, 1
+  %t2 = const I32 -2000000000
+  array.init $a.0, %t2, 0, 2
+  %t3 = const I32 0
+  view.begin $sc.1: I32[_], $a.0, 0, 0
+  slice.checked.i32 $sc.1, _, _, 0, -1           #2 @reduce/fold_checked_reversed_view.ci:9:34
+  view.end $sc.1, $a.0, 1, 0
+  %t4 = fold_checked.add.i32 $sc.1, %t3          #3 @reduce/fold_checked_reversed_view.ci:9:12
+  return %t4
+}

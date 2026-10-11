@@ -1,0 +1,7 @@
+case wide/u1024_refused
+clause SPEC-01 IM-6; SPEC-04 17.2 (U1024 stays Proposed under BX15-02, so it is an unknown type)
+format 5
+source compile-error
+outcome compile-error
+diagnostic.code C3006
+diagnostic.position wide/u1024_refused.ci:8:5

@@ -3,7 +3,6 @@ import os, sys; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspa
 import unittest
 
 from cint_ref import fixed
-from cint_ref.arith import OpenCase
 from cint_ref.faults import Fault
 from cint_ref.types import Value
 
@@ -118,10 +117,12 @@ class Conversions(unittest.TestCase):                      # SPEC-01 5.6 table
 
     def test_int_to_q(self):
         self.assertEqual(fixed.convert("checked", "I64", "Q16.16", 2), Value("Q16.16", 131072))
-        # n as Q16.16 with n = 40000 is E_NARROW, but whether `exact` is 40000 or the raw
-        # 2621440000 is not stated (ref/OPEN.md O-8), so cint_ref decides nothing.
-        with self.assertRaises(OpenCase):
-            fixed.convert("checked", "I64", "Q16.16", 40000)
+        # n as Q16.16 with n = 40000 is E_NARROW with the raw exact 2621440000 and the raw
+        # limit (IM-106; D-17 on OQ-147, ref/OPEN.md O-8).
+        f = fixed.convert("checked", "I64", "Q16.16", 40000)
+        self.assertEqual((f.code, f.operation, f.operands, f.exact, f.limit),
+                         ("E_NARROW", "as.checked.i64.q16_16", (Value("I64", 40000),), 2621440000,
+                          Value("Q16.16", 2147483647)))
 
     def test_mode_presence(self):                         # SPEC-01 9.8: mode present exactly when it rounds
         with self.assertRaises(ValueError):

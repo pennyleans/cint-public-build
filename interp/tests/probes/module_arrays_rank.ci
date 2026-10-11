@@ -1,0 +1,54 @@
+// case: probes/module_arrays_rank
+// clause: box 13 MLA (c) probe: module-level arrays of rank 2 to 4 read and written by several functions, passed as views and rows, copied, transposed, reduced and sliced
+// entry: run; args: none
+
+I64[3, 3] grid;
+I32[2, 2] pair = [[1, 2], [3, 4]];
+U8[2, 2, 2] cube = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]];
+Bool[1, 2, 1, 2] marks;
+
+void put(I64 i, I64 j, I64 v) {
+    grid[i, j] = v;
+}
+
+I64 corner(in I64[_, _] v) {
+    return v[extent(v, 0) - 1, extent(v, 1) - 1];
+}
+
+void bump(inout I32[_, _] v) {
+    v[0, 1] += 7;
+}
+
+I64 digits(in I64[_] v) {
+    I64 t = 0;
+    for i in 0..len(v) {
+        t = t * 10 + v[i];
+    }
+    return t;
+}
+
+export I64 run() {
+    put(2, 1, 9);
+    put(0, 2, 4);
+    put(2, 2, 5);
+    bump(pair);
+    cube[1, 0, 1] = 60;
+    marks[0, 1, 0, 1] = true;
+    I64[3, 3] moved = grid;
+    moved[1, 1] = 3;
+    grid = moved;
+    I64 c = 0;
+    for i in 0..2 {
+        for j in 0..2 {
+            for k in 0..2 {
+                c = c * 10 + cube[i, j, k] as I64 % 10;
+            }
+        }
+    }
+    I64 m = 0;
+    if (marks[0, 1, 0, 1] && !marks[0, 0, 0, 1]) {
+        m = 1;
+    }
+    return corner(transpose(grid)) * 100000000000000 + digits(grid[2]) * 100000000000 + sum(grid[1, 1..3]) * 1000000000 +
+        (pair[0, 1] as I64) * 10000000 + c * 10 + m;
+}

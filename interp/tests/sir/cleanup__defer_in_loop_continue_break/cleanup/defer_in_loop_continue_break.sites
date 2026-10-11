@@ -1,0 +1,70 @@
+module cleanup.defer_in_loop_continue_break
+sites cleanup/defer_in_loop_continue_break.ci 1:7:13:fuel.charge 2:8:5:fuel.charge 3:16:9:print 4:9:17:print
+export func @cleanup.defer_in_loop_continue_break.run() {
+  fuel.charge 1                                  #1 @cleanup/defer_in_loop_continue_break.ci:7:13
+  %t0 = const I64 0
+  %t1 = const I64 5
+  local $i.0: I64
+  store.local $i.0, %t0
+  loop L5 {
+    %t2 = load.local $i.0
+    %t3 = cmp.lt.i64 %t2, %t1
+    while %t3
+    fuel.charge 1                                #2 @cleanup/defer_in_loop_continue_break.ci:8:5
+    block L10 {
+      if {
+        arm {
+          %t4 = load.local $i.0
+          %t5 = const I64 1
+          %t6 = cmp.eq.i64 %t4, %t5
+        } then %t6 {
+          %t7 = const I64 13
+          local $sc.1: I64
+          store.local $sc.1, %t7
+          break L10
+        }
+      }
+      if {
+        arm {
+          %t8 = load.local $i.0
+          %t9 = const I64 3
+          %t10 = cmp.eq.i64 %t8, %t9
+        } then %t10 {
+          %t11 = const I64 12
+          store.local $sc.1, %t11
+          break L10
+        }
+      }
+      print.begin                                #3 @cleanup/defer_in_loop_continue_break.ci:16:9
+      print.bytes "a\n"
+      print.end
+      %t12 = const I64 0
+      store.local $sc.1, %t12
+    }
+    %t13 = load.local $i.0
+    print.begin                                  #4 @cleanup/defer_in_loop_continue_break.ci:9:17
+    print.value I64 %t13
+    print.bytes "\n"
+    print.end
+    %t14 = load.local $sc.1
+    if {
+      arm {
+        %t15 = const I64 12
+        %t16 = cmp.eq.i64 %t14, %t15
+      } then %t16 {
+        break L5
+      }
+      arm {
+        %t17 = const I64 13
+        %t18 = cmp.eq.i64 %t14, %t17
+      } then %t18 {
+        continue L5
+      }
+    }
+    next
+    %t19 = load.local $i.0
+    %t20 = const I64 1
+    %t21 = add.wrap.i64 %t19, %t20
+    store.local $i.0, %t21
+  }
+}

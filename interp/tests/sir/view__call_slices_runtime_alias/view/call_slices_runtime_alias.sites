@@ -1,0 +1,34 @@
+module view.call_slices_runtime_alias
+sites view/call_slices_runtime_alias.ci 1:8:6:index.checked.i64 2:8:13:index.checked.i64 3:12:10:slice.checked.i64 4:12:25:add.checked.i64 5:12:19:slice.checked.i64 6:12:5:bind.shape 7:12:5:bind.alias 8:12:5:call.enter 9:15:12:fuel.charge 10:17:5:call.enter 11:18:13:index.checked.i64
+func @view.call_slices_runtime_alias.put(%n: I64, %d: I64[%n], %s: I64[%n]) {
+  %t0 = const I64 0
+  index.checked.i64 %d, %t0                      #1 @view/call_slices_runtime_alias.ci:8:6
+  %t1 = const I64 0
+  index.checked.i64 %s, %t1                      #2 @view/call_slices_runtime_alias.ci:8:13
+  %t2 = index.load %s, %t1
+  index.store %d, %t0, %t2
+}
+func @view.call_slices_runtime_alias.pair(%m: I64, %x: I64[%m], %j: I64, %k: I64) {
+  %t0 = const I64 0
+  view.begin $sc.0: I64[_], %x, 0, 0
+  slice.checked.i64 $sc.0, %t0, %k, 192, 1       #3 @view/call_slices_runtime_alias.ci:12:10
+  view.end $sc.0, %x, 1, 0
+  %t1 = add.checked.i64 %j, %k                   #4 @view/call_slices_runtime_alias.ci:12:25
+  view.begin $sc.1: I64[_], %x, 0, 0
+  slice.checked.i64 $sc.1, %j, %t1, 192, 1       #5 @view/call_slices_runtime_alias.ci:12:19
+  view.end $sc.1, %x, 1, 0
+  bind.shape $sc.1, 1, $sc.0                     #6 @view/call_slices_runtime_alias.ci:12:5
+  bind.alias $sc.0, $sc.1, 1, 0                  #7 @view/call_slices_runtime_alias.ci:12:5
+  call @view.call_slices_runtime_alias.put(extent $sc.0, $sc.0, $sc.1) #8 @view/call_slices_runtime_alias.ci:12:5
+}
+export func @view.call_slices_runtime_alias.run() -> I64 {
+  fuel.charge 1                                  #9 @view/call_slices_runtime_alias.ci:15:12
+  local $x.0: I64[8]
+  %t0 = const I64 2
+  %t1 = const I64 4
+  call @view.call_slices_runtime_alias.pair(extent $x.0, $x.0, %t0, %t1) #10 @view/call_slices_runtime_alias.ci:17:5
+  %t2 = const I64 0
+  index.checked.i64 $x.0, %t2                    #11 @view/call_slices_runtime_alias.ci:18:13
+  %t3 = index.load $x.0, %t2
+  return %t3
+}

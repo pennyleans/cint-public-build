@@ -1,0 +1,11 @@
+// case: fixed/print_kind_c1037
+// clause: SPEC-04 LS-213, 17.2 (a kind does not apply to a fixed-point value)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: compile-error C1037 at 9:7 (the hole expression a). Box 15, unit 1
+
+export I64 run() {
+    Q8.8 a = 1.0;
+    "{a:x}\n";
+    return 0;
+}

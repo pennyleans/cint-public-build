@@ -1,0 +1,10 @@
+case fixed/module_state_q16_16
+clause SPEC-09 CONF-11 rules 10 and 14 (a module-level fixed-point scalar has a state.global line in format 5; a fixed-point array has none)
+format 5
+source reference
+outcome value
+stdout-bytes 7
+stdout-sha256 8dfcfd4c5aa6a283b18886f3804665b9969308a2d27ff178a33d51da9ea06fda
+return I64 327680
+fuel-consumed 1
+state.global fixed.module_state_q16_16 g Q16.16 raw 327680

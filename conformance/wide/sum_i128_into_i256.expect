@@ -1,0 +1,9 @@
+case wide/sum_i128_into_i256
+clause SPEC-01 IM-77, IM-80; SPEC-02 R-5 (sum of I128 contributions into a wider I256 result, exact)
+format 2
+source reference
+outcome value
+stdout-bytes 40
+stdout-sha256 e16a54c0d6149e6ba7adebc16b300d412c656188bf9d22d6e31e4ea67b7e8d8a
+return I64 -3
+fuel-consumed 2

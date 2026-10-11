@@ -1,0 +1,52 @@
+// The program of python/tests/test_state.py (box 13 unit 9): checkpoints, recordings and
+// replay on both CPU backends. Its exports take and return integers and Bool only, the
+// forms a recording carries (SPEC-09 CONF-13 X-3) and the interpreter runs.
+import lib.audit;
+
+I64 total = 100;
+Bool active = true;
+U8 mark = 0;
+
+export I64 deposit(I64 n) {
+    total += n;
+    "deposit {n}\n";
+    _ = audit.note(n);
+    return total;
+}
+
+export I64 balance() {
+    return total;
+}
+
+export I64 burn(I64 n) {
+    I64 s = 0;
+    for i in 0..n {
+        s += 1;
+    }
+    return s;
+}
+
+export I64 share(I64 n, I64 d) {
+    return n / d;
+}
+
+export void shut() {
+    active = false;
+}
+
+export Bool is_active() {
+    return active;
+}
+
+export U8 keep(U8 m) {
+    mark = m;
+    return mark;
+}
+
+export I32 neg(I32 a) {
+    return -a;
+}
+
+export I64 notes() {
+    return audit.tally();
+}

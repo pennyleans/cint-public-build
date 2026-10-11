@@ -1,0 +1,9 @@
+// case: fixed/convert_literal_c6001
+// clause: SPEC-01 IM-23, IM-106, IM-184 (an integer literal converted to fixed point is decided at compile time; operation unassigned, exact the raw value)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: compile-error C6001 at 8:18 (the `as`), with fault E_NARROW, operation unassigned, operand Z 40000, exact 2621440000, limit Q16.16 raw 2147483647. Box 15, unit 1
+
+export Q16.16 run() {
+    return 40000 as Q16.16;
+}

@@ -1,0 +1,9 @@
+case fixed/kernel_scale_reduce
+clause SPEC-04 LS-246; SPEC-02 R-4, K-9 (fixed-point kernel parameters, a fixed-point product per work-item, and a fixed-point sum reduction)
+format 5
+source reference
+outcome value
+stdout-bytes 22
+stdout-sha256 e4df75b80d98797a90024875fbc17a0fc609f89330dbdbf46c2ffaab605a05f0
+return I64 212992
+fuel-consumed 4

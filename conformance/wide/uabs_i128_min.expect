@@ -1,0 +1,9 @@
+case wide/uabs_i128_min
+clause SPEC-01 IM-6, IM-16, IM-34; SPEC-09 CONF-11 rule 14 (uabs of I128.min is 2^127 in U128)
+format 5
+source reference
+outcome value
+stdout-bytes 40
+stdout-sha256 0372c635a5a66ce8c0abe5b2c19c411d9797101a82f7d7c8d496e9c966ffa294
+return I64 0
+fuel-consumed 1

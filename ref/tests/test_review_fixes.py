@@ -87,24 +87,29 @@ class ConditionalConstantFaults(unittest.TestCase):
 
 
 class MulFull(unittest.TestCase):
-    """SPEC-01 2.4 and 4.10: U8..U32 Specified with the same signedness; U64 Proposed."""
+    """SPEC-01 2.4 and 4.10: U8..U256 Specified with the same signedness (U64 to U256 by decision
+    2026-10-09, BX15-02); U512 has none while U1024 is Proposed."""
 
     def test_unsigned_operation(self):
         self.assertEqual(arith.op("mul_full", "checked", "U8", Value("U8", 255), Value("U8", 255)),
                          Value("U16", 65025))
         self.assertEqual(arith.op("mul_full", "checked", "U32", Value("U32", 4294967295), Value("U32", 4294967295)),
                          Value("U64", 18446744065119617025))
-        with self.assertRaises(arith.OpenCase):
-            arith.op("mul_full", "checked", "U64", Value("U64", 1), Value("U64", 1))
+        self.assertEqual(arith.op("mul_full", "checked", "U64", Value("U64", 2**64 - 1), Value("U64", 2**64 - 1)),
+                         Value("U128", (2**64 - 1) ** 2))
+        with self.assertRaises(ValueError):
+            arith.op("mul_full", "checked", "U512", Value("U512", 1), Value("U512", 1))
 
     def test_unsigned_program(self):
         o = run("export U16 run() { U8 a = 255; U8 b = 255; return mul_full(a, b); }")
         self.assertEqual(o.kind, "value")
         self.assertEqual(o.value, Value("U16", 65025))
 
-    def test_u64_is_refused(self):
-        o = run("export I64 run() { U64 a = 2; _ = mul_full(a, a); return 0; }")
-        self.assertEqual(o.kind, "refused")
+    def test_u64_gives_u128_and_u512_has_none(self):
+        o = run("export I64 run() { U64 a = U64.max; return (mul_full(a, a) >> 70) as I64; }")
+        self.assertEqual((o.kind, o.value), ("value", Value("I64", 2**58 - 1)))
+        o = run("export I64 run() { U512 a = 2; _ = mul_full(a, a); return 0; }")
+        self.assertEqual((o.kind, o.diagnostic.code), ("compile-error", "C2103"))
 
 
 class ClampConstantBounds(unittest.TestCase):

@@ -32,7 +32,7 @@ P, V, I = ctypes.c_void_p, ctypes.c_int64, ctypes.c_int32
 
 class FakeRuntime:
     """The methods of `cint._abi.Runtime`, recording what the bridge asks."""
-    abi = 0x00030000
+    abi = 0x00030001
     major = 3
 
     def __init__(self):
@@ -333,8 +333,8 @@ class Callable(unittest.TestCase):
 
     def test_listed_not_callable(self):
         reasons = {
-            "make": r"result is struct m\.S.*BX10-27",
-            "take": r"parameter p0 is struct m\.S.*BX10-27",
+            "make": r"result is struct m\.S.*no Python form yet",
+            "take": r"parameter p0 is struct m\.S.*no Python form yet",
             "color": r"result is enum m\.K",
             "broken": r"A-24",
             "empty": r"no values",
@@ -492,22 +492,31 @@ class Contexts(unittest.TestCase):
         self.assertEqual(lib.runtime.created[-1], (0x20, 0x10, 4, 80))
         mod.context()
         self.assertEqual(lib.runtime.created[-1][2:], (256, 2_097_152 * 8))
-        for kwargs in ({"device": "cpu"}, {"host": {"f": print}}, {"grants": object()}, {"record": object()},
-                       {"check_inputs": True}):
+        self.assertIs(mod.context(device="cpu").device, cint.device("cpu"))
+        with self.assertRaisesRegex(ValueError, "backend=\"cuda\""):
+            mod.context(device="cuda:0")
+        for kwargs in ({"host": {"f": print}}, {"grants": object()}, {"check_inputs": True}):
             with self.subTest(kwargs):
                 with self.assertRaises(NotImplementedError):
                     mod.context(**kwargs)
         for kwargs, error in (({"depth": -1}, ValueError), ({"depth": 1.5}, TypeError),
+                              ({"record": object()}, TypeError),
                               ({"frame_arena_elements": 2 ** 62}, ValueError), ({"fuel": True}, TypeError)):
             with self.subTest(kwargs):
                 with self.assertRaises(error):
                     mod.context(**kwargs)
+        # A runtime without the canonical state code (rt/cint_state.c, rt/cint_rec.c) has no checkpoints.
+        with self.assertRaisesRegex(NotImplementedError, "canonical state code"):
+            mod.context(record=cint.Recorder(os.path.join(tempfile.gettempdir(), "never-written.rec")))
         ctx = mod.context()
-        for name in ("checkpoint", "state_hash", "entry_scope"):
-            with self.assertRaisesRegex(NotImplementedError, "box 13"):
+        for name in ("checkpoint", "state_hash"):
+            with self.assertRaisesRegex(NotImplementedError, "canonical state code"):
                 getattr(ctx, name)()
-        with self.assertRaisesRegex(NotImplementedError, "box 13"):
+        with self.assertRaisesRegex(NotImplementedError, "canonical state code"):
             ctx.restore(b"")
+        with self.assertRaisesRegex(NotImplementedError, "canonical state code"):
+            with ctx.entry_scope():
+                self.fail("the scope ran without a checkpoint")
         self.assertIsNone(ctx.last_entry())
         self.assertIsNone(ctx.fault())
 
@@ -515,10 +524,10 @@ class Contexts(unittest.TestCase):
 class Load(unittest.TestCase):
 
     def test_backends_and_paths(self):
-        with self.assertRaisesRegex(NotImplementedError, "T4"):
+        with self.assertRaisesRegex(NotImplementedError, "does not build yet"):
             cint.load("x.ci", backend="ref")
         with self.assertRaises(NotImplementedError):
-            cint.load("x.ci", backend="cuda")
+            cint.load("x.ci", backend="vulkan")
         with self.assertRaises(ValueError):
             cint.load("x.ci", backend="gpu")
         with self.assertRaisesRegex(cint.LoadError, "missing"):

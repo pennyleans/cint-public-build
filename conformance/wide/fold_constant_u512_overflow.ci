@@ -1,0 +1,12 @@
+// case: wide/fold_constant_u512_overflow
+// clause: SPEC-01 IM-6, IM-23, IM-32; SPEC-04 17.2; SPEC-09 CONF-11 rule 14 (a U512 constant expression overflows at compile time; the fault record in the diagnostic has U512 operands)
+// subset: cint-core-1 (unsigned wide integers, module constants)
+// entry: run; args: none
+// spec outcome: compile-error C6001 at 8:23 (the `+`), with fault E_OVERFLOW, operation add.checked.u512, operands U512 2^512 - 1 and U512 1, exact 2^512, limit U512 2^512 - 1. Box 15, unit 1
+
+const U512 TOP = U512.max;
+const U512 OVER = TOP + 1;
+
+export U512 run() {
+    return OVER;
+}

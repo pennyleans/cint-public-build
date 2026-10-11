@@ -1,0 +1,12 @@
+// case: fixed/constant_fold_overflow
+// clause: SPEC-01 IM-23, IM-61; SPEC-04 17.2 (a fixed-point constant expression that overflows is C6001 with the mul record)
+// subset: cint-core-1 (fixed point, module constants)
+// entry: run; args: none
+// spec outcome: compile-error C6001 at 8:25 (the `*`), with fault E_OVERFLOW, operation mul.checked.q16_16.half_even, operands Q16.16 raw 16777216 and Q16.16 raw 8388608, exact 2147483648, limit Q16.16 raw 2147483647. Box 15, unit 1
+
+const Q16.16 BIG = 256.0;
+const Q16.16 OVER = BIG * 128.0;
+
+export Q16.16 run() {
+    return OVER;
+}

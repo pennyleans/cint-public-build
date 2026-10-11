@@ -1,0 +1,16 @@
+// case: wide/kernel_mul_overflow_i128
+// clause: SPEC-02 F-3, F-6, X-8; SPEC-01 IM-106 (a work-item's I128 product overflows; the record has the kernel form with I128 operands)
+// subset: cint-core-1 (wide integers, kernel)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 8:17 (the `*`), phase work-item, address dispatch 0, work-item 1, step 3, operation mul.checked.i128, operands I128 2^127 - 1 twice, exact (2^127 - 1)^2, limit I128 2^127 - 1; stack depth 1, stack 14:5; fuel 4 (entry, N = 3). Box 15, unit 1
+
+kernel square[n](in I128[n] a, out I128[n] b) over [i: n] {
+    b[i] = a[i] * a[i];
+}
+
+export Bool run() {
+    I128[3] x = [1, I128.max, 3];
+    I128[3] y;
+    square(x, y);
+    return y[0] != 0;
+}

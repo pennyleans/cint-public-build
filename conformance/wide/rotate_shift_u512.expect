@@ -1,0 +1,9 @@
+case wide/rotate_shift_u512
+clause SPEC-01 IM-6, IM-16, IM-45, IM-46 (rotl, rotr, logical >> and << on U512)
+format 5
+source reference
+outcome value
+stdout-bytes 468
+stdout-sha256 e09a145738ce1d14dd5398a71e8f41998906e9a9b4b23a8a4f9038c46ef1be3f
+return I64 0
+fuel-consumed 1

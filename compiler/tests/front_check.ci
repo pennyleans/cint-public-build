@@ -24,7 +24,8 @@ import scan;
 
 // The `.expect` lines of the diagnostic in row 1 of diag, for module path `path`.
 void lines[o, p](inout emit.Writer[_] w, inout U8[o] dst, in U8[p] path, in limits.CompilerDiag[_] diag,
-        in fold.Folded[_] fres, in U8[_] lits, inout fold.Work[_] z) {
+        in fold.Folded[_] fres, in U8[_] lits, inout fold.Work[_] z, inout fold.Wide[_] ws,
+        inout fold.WideVal[_] wv) {
     emit.w_text(w, dst, "diagnostic.code C");
     emit.w_i64(w, dst, diag[1].code);
     emit.w_nl(w, dst);
@@ -36,7 +37,7 @@ void lines[o, p](inout emit.Writer[_] w, inout U8[o] dst, in U8[p] path, in limi
     emit.w_i64(w, dst, diag[1].column);
     emit.w_nl(w, dst);
     if (diag[1].code == limits.C_CONST_FAULT) {
-        fold.render_fault(w, dst, fres, lits, z, "diagnostic.fault.");
+        fold.render_fault(w, dst, fres, lits, z, ws, wv, "diagnostic.fault.");
     }
 }
 
@@ -53,6 +54,8 @@ export I64 front_check[o, p](in U8[_] src, in U8[p] path, inout scan.Token[_] to
     }
     fold.Folded[1] fres;
     fold.Work[1] z;
+    fold.Wide[1] ws;
+    fold.WideVal[32] wv;
     stats[0] = 1;
     if (scan.check_text(src, diag, 0) == 0) {
         stats[0] = 2;
@@ -70,7 +73,7 @@ export I64 front_check[o, p](in U8[_] src, in U8[p] path, inout scan.Token[_] to
                 limits.Decl[1] decls;
                 decls[0].kind = 0;
                 I64 err = check.check_module(src, toks, nodes, ps[0].nn, root, sem, syms, names, wk, lits, diag,
-                    faults, fres, z, path, rs, cs, 0, decls);
+                    faults, fres, z, ws, wv, path, rs, cs, 0, decls);
                 stats[3] = rs[0].nsym;
                 stats[4] = rs[0].nname;
                 stats[5] = cs[0].max_sp;
@@ -90,13 +93,13 @@ export I64 front_check[o, p](in U8[_] src, in U8[p] path, inout scan.Token[_] to
     }
     emit.Writer[1] w;
     emit.w_measure(w);
-    lines(w, dst, path, diag, fres, lits, z);
+    lines(w, dst, path, diag, fres, lits, z, ws, wv);
     stats[7] = w[0].pos;
     if (w[0].pos > o) {
         return 2;
     }
     emit.w_emit(w, w[0].pos);
-    lines(w, dst, path, diag, fres, lits, z);
+    lines(w, dst, path, diag, fres, lits, z, ws, wv);
     return 1;
 }
 

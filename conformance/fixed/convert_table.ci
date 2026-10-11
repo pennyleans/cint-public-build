@@ -1,0 +1,15 @@
+// case: fixed/convert_table
+// clause: SPEC-01 IM-68, IM-69 (the rows of the 5.6 table that do not fault)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 0; prints `0 1 4294967296 -2147483648` and `-2 -3 -3` (the 5.6 rows that do not fault); fuel 1. Box 15, unit 1
+
+export I64 run() {
+    Q32.32 tiny = Q32.32.raw(1);
+    Q16.16 one = 1.0;
+    Q32.32 low = -32768.0;
+    Q16.16 x = -2.5;
+    "{(tiny as Q16.16)!raw} {(tiny as Q16.16 round ceil)!raw} {(one as Q32.32)!raw} {(low as Q16.16)!raw}\n";
+    "{x as I32} {x as I32 round floor} {x as I32 round half_away}\n";
+    return 0;
+}

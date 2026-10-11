@@ -1,0 +1,11 @@
+// case: fixed/mul_overflow_q16_16
+// clause: SPEC-01 IM-61, IM-106 (256.0 * 128.0 rounds to raw 2^31, outside Q16.16; exact is the rounded raw value)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 10:14 (the `*`), operation mul.checked.q16_16.half_even, operands Q16.16 raw 16777216 and Q16.16 raw 8388608, exact 2147483648, limit Q16.16 raw 2147483647; stack depth 0; fuel 1. Box 15, unit 1
+
+export Bool run() {
+    Q16.16 a = 256.0;
+    Q16.16 b = 128.0;
+    return a * b != 0;
+}

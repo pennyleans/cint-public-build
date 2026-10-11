@@ -1,0 +1,12 @@
+// case: wide/sum_i128_into_i256
+// clause: SPEC-01 IM-77, IM-80; SPEC-02 R-5 (sum of I128 contributions into a wider I256 result, exact)
+// subset: cint-core-1 (wide integers, built-in sum)
+// entry: run; args: none
+// spec outcome: value I64 -3, its low 64 bits (as%); prints the I256 value 3 * (2^127 - 1) and a line feed; fuel 2 (entry, one reduction charge). Box 15, unit 1
+
+export I64 run() {
+    I128[3] a = [I128.max, I128.max, I128.max];
+    I256 observed = sum(I256, a);
+    "{observed}\n";
+    return observed as% I64;
+}

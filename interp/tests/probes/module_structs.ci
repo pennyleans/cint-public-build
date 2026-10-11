@@ -1,0 +1,63 @@
+// case: probes/module_structs
+// clause: box 15 probe (OQ-260): module-level structs with nested structs, fields of rank 1 to 4 and arrays of structs, read and written by several functions, passed by place and as views, copied whole and assigned from a constructor
+// entry: run; args: none
+
+struct Cell { I64 count; Bool odd; }
+struct Track { I64[2, 2] grid; Cell[2] cells; U8 hits; I8 low; }
+struct Flags { Bool[2, 2] on; U8[2, 3, 2] code; I16[1, 2, 2, 3] four; }
+struct Mark { I64 count; Bool odd; }
+
+I64 calls = 0;
+Track track = Track([[1, 2], [3, 4]], [Cell(0, false), Cell(5, true)], 250, -3);
+Track spare;
+Flags flags;
+Mark last = Mark(odd = true, count = 7);
+
+void bump(inout Cell c, I64 v) {
+    c.count += v;
+    c.odd = !c.odd;
+}
+
+I64 corner(in I64[_, _] v) {
+    return v[extent(v, 0) - 1, extent(v, 1) - 1];
+}
+
+Cell first(in Track t) {
+    return t.cells[0];
+}
+
+I64 step(I64 k) {
+    calls += 1;
+    track.grid[calls % 2, 1] += calls + k;
+    bump(track.cells[calls % 2], calls);
+    track.hits += 1;
+    track.low -= 1;
+    spare = track;
+    spare.cells[1].count = 100;
+    last.count += first(spare).count;
+    last.odd = !last.odd;
+    flags.on[calls % 2, 1] = !flags.on[calls % 2, 1];
+    flags.code[1, 2, calls % 2] += 3;
+    flags.four[0, 1, 1, 2] -= 2;
+    I64 d = corner(track.grid) * 10000 + track.cells[1].count * 100 + (track.hits as I64) % 100;
+    if (last.odd) {
+        d = -d;
+    }
+    return d * 100 + track.low as I64 + last.count;
+}
+
+export I64 run() {
+    I64 a = step(0);
+    I64 b = step(5);
+    last = Mark(last.count * 2, false);
+    I64 t = 0;
+    for i in 0..2 {
+        for j in 0..2 {
+            if (flags.on[i, j]) {
+                t += 1 + i * 2 + j;
+            }
+        }
+    }
+    return (a % 1000000) * 7 + (b % 1000000) * 3 + last.count + t * 100000 + flags.code[1, 2, 1] as I64 +
+        flags.four[0, 1, 1, 2] as I64 + spare.cells[1].count;
+}

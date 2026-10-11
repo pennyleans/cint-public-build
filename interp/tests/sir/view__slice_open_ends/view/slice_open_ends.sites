@@ -1,0 +1,27 @@
+module view.slice_open_ends
+sites view/slice_open_ends.ci 1:7:12:fuel.charge 2:9:17:slice.checked.i64 3:9:24:mul.checked.i64 4:9:37:slice.checked.i64 5:9:44:mul.checked.i64 6:9:30:add.checked.i64 7:9:56:slice.checked.i64 8:9:49:add.checked.i64
+export func @view.slice_open_ends.run() -> I64 {
+  fuel.charge 1                                  #1 @view/slice_open_ends.ci:7:12
+  local $a.0: I64[10]
+  %t0 = const I64 4
+  view.begin $sc.1: I64[_], $a.0, 0, 0
+  slice.checked.i64 $sc.1, _, %t0, 128, 1        #2 @view/slice_open_ends.ci:9:17
+  view.end $sc.1, $a.0, 1, 0
+  %t1 = view.extent $sc.1, 0
+  %t2 = const I64 100
+  %t3 = mul.checked.i64 %t1, %t2                 #3 @view/slice_open_ends.ci:9:24
+  %t4 = const I64 6
+  view.begin $sc.2: I64[_], $a.0, 0, 0
+  slice.checked.i64 $sc.2, %t4, _, 64, 1         #4 @view/slice_open_ends.ci:9:37
+  view.end $sc.2, $a.0, 1, 0
+  %t5 = view.extent $sc.2, 0
+  %t6 = const I64 10
+  %t7 = mul.checked.i64 %t5, %t6                 #5 @view/slice_open_ends.ci:9:44
+  %t8 = add.checked.i64 %t3, %t7                 #6 @view/slice_open_ends.ci:9:30
+  view.begin $sc.3: I64[_], $a.0, 0, 0
+  slice.checked.i64 $sc.3, _, _, 0, 1            #7 @view/slice_open_ends.ci:9:56
+  view.end $sc.3, $a.0, 1, 0
+  %t9 = view.extent $sc.3, 0
+  %t10 = add.checked.i64 %t8, %t9                #8 @view/slice_open_ends.ci:9:49
+  return %t10
+}

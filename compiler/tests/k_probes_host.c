@@ -32,17 +32,19 @@
 typedef cint_view V;
 extern const cint_module_info cm_26_tests_x2Ftable_x5Fcapacity;
 cint_status cx_26_tests_x2Ftable_x5Fcapacity_3_run(cint_ctx *, int64_t, V, V, int64_t, uint8_t, V, V, V, V, V,
-                                                   V, V, V, V, V, V, V, V, V, V, V, V, V, int64_t *);
+                                                   V, V, V, V, V, V, V, V, V, V, V, V, V, V, int64_t *);
 
 enum { T_SRC, T_PATH, T_TEXT, T_TOKS, T_NODES, T_FRAMES, T_DIAG, T_SEM, T_SYMS, T_NAMES, T_WORK, T_LITS,
-       T_FAULTS, T_DECLS, T_SIR, T_FUNCS, T_SLOTS, T_LFRAMES, T_LSTATE, T_STATS, TABLES };
+       T_FAULTS, T_DECLS, T_SIR, T_FUNCS, T_SLOTS, T_LFRAMES, T_LSTATE, T_STATS, T_WIDE, TABLES };
 
 /* Element bytes and record index (into ids) of each table; -1 for no record. The three
- * frame views are Frame rows of the frame region's extent (KR-03). */
-static const int64_t elem[TABLES] = {1, 1, 1, 32, 48, 48, 64, 56, 80, 40, 48, 1, 1, 64, 48, 48, 16, 48, 160, 8};
-static const int record[TABLES] = {-1, -1, -1, 0, 1, 2, 3, 4, 5, 6, 2, -1, -1, 7, 8, 9, 10, 2, 11, -1};
+ * frame views are Frame rows of the frame region's extent (KR-03); T_WIDE is the wide
+ * value stack, row 5. */
+static const int64_t elem[TABLES] = {1, 1, 1, 32, 48, 48, 64, 56, 80, 40, 48, 1, 1, 64, 48, 48, 16, 48, 160, 8,
+                                       128};
+static const int record[TABLES] = {-1, -1, -1, 0, 1, 2, 3, 4, 5, 6, 2, -1, -1, 7, 8, 9, 10, 2, 11, -1, 12};
 
-static uint32_t ids[12];
+static uint32_t ids[13];
 
 static int64_t least(int64_t a, int64_t b)
 {
@@ -58,8 +60,8 @@ static void extents(int64_t n, int64_t path_bytes, int64_t *count)
     const int64_t stack = least(512 + t / 32, 131072);
     const int64_t region = nodes + 16 > stack ? nodes + 16 : stack;
     const int64_t c[TABLES] = {n, path_bytes, 2 * n + 64, t, nodes, region, 101, nodes, syms,
-                               2 * syms + 4096 + 2 * decls, region, (n + 1) / 2 + 64, 237200, decls,
-                               4 * t + 16, least(t / 4 + 1, 65536) + 1, syms, region, 1, 9};
+                               2 * syms + 4096 + 2 * decls, region, (n + 1) / 2 + 12 * n + 64, 237200, decls,
+                               4 * t + 16, least(t / 4 + 1, 65536) + 1, syms, region, 1, 9, 513};
     memcpy(count, c, sizeof c);
 }
 
@@ -153,7 +155,7 @@ static int one(const char *path, const uint8_t *src, int64_t n)
         cint_status st = cx_26_tests_x2Ftable_x5Fcapacity_3_run(
             ctx, CINT_FUEL_UNBOUNDED, v[T_SRC], v[T_PATH], 0, 1, v[T_TEXT], v[T_TOKS], v[T_NODES], v[T_FRAMES],
             v[T_DIAG], v[T_SEM], v[T_SYMS], v[T_NAMES], v[T_WORK], v[T_LITS], v[T_FAULTS], v[T_DECLS], v[T_SIR],
-            v[T_FUNCS], v[T_SLOTS], v[T_LFRAMES], v[T_LSTATE], v[T_STATS], &result);
+            v[T_FUNCS], v[T_SLOTS], v[T_LFRAMES], v[T_LSTATE], v[T_WIDE], v[T_STATS], &result);
         if (st != CINT_OK) {
             fprintf(stderr, "k-probes-host: %s: status %d\n", path, (int)st);
             ok = 0;
@@ -179,16 +181,16 @@ int main(int argc, char **argv)
 #if defined(_WIN32)
     (void)_setmode(_fileno(stdout), _O_BINARY);
 #endif
-    if (argc != 14) {
-        fprintf(stderr, "usage: k-probes-host <12 record ids> <list-file>\n");
+    if (argc != 15) {
+        fprintf(stderr, "usage: k-probes-host <13 record ids> <list-file>\n");
         return 2;
     }
-    for (int i = 0; i < 12; i++) {
+    for (int i = 0; i < 13; i++) {
         ids[i] = (uint32_t)strtoul(argv[1 + i], NULL, 10);
     }
-    FILE *list = fopen(argv[13], "rb");
+    FILE *list = fopen(argv[14], "rb");
     if (list == NULL) {
-        fprintf(stderr, "k-probes-host: cannot read %s\n", argv[13]);
+        fprintf(stderr, "k-probes-host: cannot read %s\n", argv[14]);
         return 3;
     }
     char line[8192];

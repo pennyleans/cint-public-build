@@ -32,7 +32,8 @@
  *      IM-188) against the checked forms on edge operands of every type.
  *  10. cint-rt-3 (box 10 unit 2): ABI 3.0, the T3 entry checks of a
  *      cint-abi-1 wrapper, and the registry of SPEC-03 5.3 (descriptor
- *      registration, created buffers, reads, export leases, max_buffers).
+ *      registration, created buffers, reads, export leases, max_buffers);
+ *      ABI 3.1 (box 11 unit 5): the device fields of cint_ctx_config.
  *
  * The JSON reading below handles only the CIF-1 line shape of SPEC-01 13.1
  * (keys in order, every integer a JSON string) and is confined to this test.
@@ -871,6 +872,31 @@ static void test_encoder(void)
         g_rec.address.phase = 1u;
         g_rec.address.has_work_item = 1u;
         CHECK(cint_fault_encode(&g_rec, got, sizeof got) > 0u, "a work item in phase 1 encodes");
+        /* The version is fixed by the operation (SPEC-01 IM-149; BX15-07 C): a record of
+         * dot.checked.i1024.<R> is version 3 with a Z of up to 264 bytes, every other is version 2
+         * with a Z of up to 257 bytes. */
+        {
+            static uint8_t big[1024];
+            static const char dot[] = "dot.checked.i1024.i1024", v3[] = "cint-core-1/fault/v3";
+            g_rec.has_address = 0u;
+            g_rec.exact.len = 5u + 264u;
+            g_rec.exact.bytes[0] = CINT_TAG_Z;
+            g_rec.exact.bytes[1] = 8u;  /* 264 = 0x108 */
+            g_rec.exact.bytes[2] = 1u;
+            g_rec.exact.bytes[3] = 0u;
+            g_rec.exact.bytes[4] = 0u;
+            memset(g_rec.exact.bytes + 5, 0x11, 264u);
+            memcpy(g_rec.operation, dot, sizeof dot - 1u);
+            g_rec.operation_len = (uint8_t)(sizeof dot - 1u);
+            len = cint_fault_encode(&g_rec, big, sizeof big);
+            CHECK(len > 0u && memcmp(big + 4, v3, sizeof v3 - 1u) == 0, "dot over I1024 encodes version 3");
+            g_rec.operation_len = 18u;  /* "dot.checked.i1024." names no result type */
+            CHECK(cint_fault_encode(&g_rec, big, sizeof big) == 0u, "a 264-byte Z does not encode in version 2");
+            g_rec.exact.len = 5u + 257u;
+            g_rec.exact.bytes[1] = 1u;  /* 257 = 0x101 */
+            len = cint_fault_encode(&g_rec, big, sizeof big);
+            CHECK(len > 0u && memcmp(big + 4, "cint-core-1/fault/v2", 20u) == 0, "a 257-byte Z encodes in version 2");
+        }
         cint_ctx_destroy(ctx);
     }
 }
@@ -959,6 +985,163 @@ static void test_entries(void)
 }
 
 /* ------------------------------------------------------------------------- */
+/* The inline call protocol (cint_rt.h 6e) against its slow path.             */
+/*                                                                            */
+/* Context `a` enters calls through the inline cint_rt_call_enter and `b`     */
+/* through cint_rt_call_enter_slow alone, the out-of-line function as it was  */
+/* before the protocol went inline. After every call the results and the      */
+/* visible heads must agree, and after the entry the status, the fuel         */
+/* consumed and the canonical fault bytes. Depth and fuel run to each limit   */
+/* and one call past it.                                                      */
+
+/* A record with CINT_RT_MAX_DEPTH - 1 positions of 37 bytes each fits. */
+static uint8_t g_proto_a[4096 + 64u * CINT_RT_MAX_DEPTH], g_proto_b[sizeof g_proto_a];
+
+static int proto_heads_agree(cint_ctx *a, cint_ctx *b)
+{
+    const cint_rt_head *x = cint_rt_head_of(a), *y = cint_rt_head_of(b);
+    return x->faulted == y->faulted && x->in_entry == y->in_entry && x->fuel_limit == y->fuel_limit &&
+           x->fuel_used == y->fuel_used && x->depth_limit == y->depth_limit && x->depth == y->depth &&
+           x->stack_count == y->stack_count && x->stack_count <= CINT_RT_MAX_DEPTH &&
+           memcmp(x->stack, y->stack, (size_t)x->stack_count * sizeof *x->stack) == 0;
+}
+
+/* Opens an entry on both contexts (with its fuel charge unless `open`), sets
+ * the fuel already used when `used` >= 0, then makes `calls` calls, each
+ * left at once when `leave`, and ends the entry; returns how many calls
+ * entered. The caller reads the record and clears both contexts. */
+static long proto_run(cint_ctx *a, cint_ctx *b, int open, int64_t fuel, int64_t depth, int64_t used,
+                      long calls, int leave, const char *what)
+{
+    long entered = 0, k;
+    int64_t fa = -1, fb = -2;
+    size_t la = 0u, lb = 1u;
+    cint_status sa, sb;
+    sa = open ? cint_rt_entry_open(a, S_FUEL, fuel, depth) : cint_rt_entry_begin(a, S_FUEL, fuel, depth);
+    sb = open ? cint_rt_entry_open(b, S_FUEL, fuel, depth) : cint_rt_entry_begin(b, S_FUEL, fuel, depth);
+    CHECK(sa == sb, what);
+    if (sa != CINT_OK) {
+        return -1;
+    }
+    if (used >= 0) {
+        cint_rt_head_of(a)->fuel_used = used;
+        cint_rt_head_of(b)->fuel_used = used;
+    }
+    for (k = 0; k < calls; k++) {
+        cint_site site = (k & 1) == 0 ? S_CALL : S_CALL2;
+        bool ra = cint_rt_call_enter(a, site), rb = cint_rt_call_enter_slow(b, site);
+        CHECK(ra == rb && proto_heads_agree(a, b), what);
+        entered += ra ? 1 : 0;
+        if (ra && leave) {
+            cint_rt_call_leave(a);
+            cint_rt_call_leave(b);
+            CHECK(proto_heads_agree(a, b), what);
+        }
+    }
+    sa = cint_rt_entry_end(a);
+    sb = cint_rt_entry_end(b);
+    CHECK(sa == sb && cint_fuel_consumed(a, &fa) == CINT_OK && cint_fuel_consumed(b, &fb) == CINT_OK && fa == fb,
+          what);
+    CHECK(cint_fault_get(a, g_proto_a, sizeof g_proto_a, &la) == CINT_OK &&
+              cint_fault_get(b, g_proto_b, sizeof g_proto_b, &lb) == CINT_OK && la == lb && la <= sizeof g_proto_a &&
+              memcmp(g_proto_a, g_proto_b, la) == 0,
+          what);
+    return entered;
+}
+
+/* The code of a's record (0 for none), read into g_rec; then both contexts are cleared. */
+static uint16_t proto_code(cint_ctx *a, cint_ctx *b)
+{
+    uint16_t code = (uint16_t)0xffffu;
+    if (cint_ctx_fault(a, &g_rec) == CINT_OK) {
+        code = g_rec.code;
+    }
+    cint_ctx_clear_fault(a);
+    cint_ctx_clear_fault(b);
+    return code;
+}
+
+static void test_call_protocol(void)
+{
+    static const int64_t depths[] = {1, 2, 3, 256, (int64_t)CINT_RT_MAX_DEPTH};
+    static const int64_t fuels[] = {1, 2, 3, 100};
+    cint_ctx *a = new_ctx(), *b = new_ctx();
+    size_t i;
+    long n;
+    if (a == NULL || b == NULL) {
+        CHECK(0, "cint_ctx_create");
+        cint_ctx_destroy(a);
+        cint_ctx_destroy(b);
+        return;
+    }
+    /* Depth D: D - 1 nested calls reach depth D, the limit; call D is one past it (E_DEPTH). */
+    for (i = 0; i < sizeof depths / sizeof depths[0]; i++) {
+        int64_t d = depths[i];
+        n = proto_run(a, b, 0, CINT_FUEL_UNBOUNDED, d, -1, (long)d - 1, 0, "nested calls to the depth limit");
+        CHECK(n == (long)d - 1 && proto_code(a, b) == 0u, "D - 1 nested calls enter");
+        n = proto_run(a, b, 0, CINT_FUEL_UNBOUNDED, d, -1, (long)d, 0, "one nested call past the depth limit");
+        CHECK(n == (long)d - 1, "call D faults");
+        CHECK(proto_code(a, b) == CINT_E_DEPTH && g_rec.stack_count == (uint32_t)d - 1u, "E_DEPTH, D - 1 sites");
+    }
+    /* Fuel F: the entry's charge and F - 1 calls use it all; call F is one past it (E_FUEL). An
+     * entry opened without its charge (a cint-abi-1 wrapper) admits F calls. */
+    for (i = 0; i < sizeof fuels / sizeof fuels[0]; i++) {
+        int64_t f = fuels[i];
+        n = proto_run(a, b, 0, f, 8, -1, (long)f - 1, 1, "calls to the fuel limit");
+        CHECK(n == (long)f - 1 && proto_code(a, b) == 0u, "F - 1 calls enter");
+        n = proto_run(a, b, 0, f, 8, -1, (long)f, 1, "one call past the fuel limit");
+        CHECK(n == (long)f - 1 && proto_code(a, b) == CINT_E_FUEL, "call F faults E_FUEL");
+        n = proto_run(a, b, 1, f, 8, -1, (long)f + 1, 1, "an open entry: one call past F");
+        CHECK(n == (long)f && proto_code(a, b) == CINT_E_FUEL, "call F + 1 faults E_FUEL");
+    }
+    /* No allowance: the count may reach INT64_MAX; the call past it faults E_FUEL (RT-OQ-04). */
+    n = proto_run(a, b, 0, CINT_FUEL_UNBOUNDED, 8, INT64_MAX - 2, 3, 1, "unbounded fuel past INT64_MAX");
+    CHECK(n == 2 && proto_code(a, b) == CINT_E_FUEL, "the count stops at INT64_MAX");
+    /* Depth and fuel at their limits together: E_DEPTH comes first and charges nothing. */
+    n = proto_run(a, b, 0, 2, 2, -1, 2, 0, "depth and fuel at their limits");
+    CHECK(n == 1 && proto_code(a, b) == CINT_E_DEPTH, "E_DEPTH before E_FUEL");
+    /* A faulted context: calls return false and the first record stays. */
+    n = proto_run(a, b, 0, 1, 8, -1, 4, 1, "calls on a faulted context");
+    CHECK(n == 0 && proto_code(a, b) == CINT_E_FUEL && g_rec.position.index == S_CALL.index,
+          "the first record stays");
+    /* A fault in an operation leaves depth and fuel room: calls return false and push nothing. */
+    {
+        int64_t r = 0;
+        CHECK(cint_rt_entry_begin(a, S_FUEL, CINT_FUEL_UNBOUNDED, 8) == CINT_OK &&
+                  cint_rt_entry_begin(b, S_FUEL, CINT_FUEL_UNBOUNDED, 8) == CINT_OK, "entry for an operation fault");
+        CHECK(cint_rt_call_enter(a, S_CALL) && cint_rt_call_enter_slow(b, S_CALL), "a call before the fault");
+        CHECK(!cint_add_i64(a, S_OP, INT64_MAX, 1, &r) && !cint_add_i64(b, S_OP, INT64_MAX, 1, &r), "the fault");
+        for (n = 0; n < 2; n++) {
+            bool ra = cint_rt_call_enter(a, S_CALL2), rb = cint_rt_call_enter_slow(b, S_CALL2);
+            CHECK(!ra && !rb && proto_heads_agree(a, b) && cint_rt_head_of(a)->stack_count == 1u,
+                  "calls after the fault");
+        }
+        CHECK(cint_rt_entry_end(a) == CINT_FAULT && cint_rt_entry_end(b) == CINT_FAULT, "the entry faulted");
+        CHECK(proto_code(a, b) == CINT_E_OVERFLOW && g_rec.position.index == S_OP.index && g_rec.stack_count == 1u,
+              "the operation's record stays");
+    }
+    /* Calls above a dispatch position, to the stack's last slot and one past D. */
+    CHECK(cint_rt_entry_begin(a, S_FUEL, CINT_FUEL_UNBOUNDED, 3) == CINT_OK &&
+              cint_rt_entry_begin(b, S_FUEL, CINT_FUEL_UNBOUNDED, 3) == CINT_OK, "entry for a dispatch position");
+    cint_rt_dispatch_push(a, S_OP);
+    cint_rt_dispatch_push(b, S_OP);
+    for (n = 0; n < 3; n++) {
+        bool ra = cint_rt_call_enter(a, S_CALL), rb = cint_rt_call_enter_slow(b, S_CALL);
+        CHECK(ra == rb && (ra ? n < 2 : n == 2) && proto_heads_agree(a, b), "calls above a dispatch position");
+    }
+    CHECK(cint_rt_entry_end(a) == CINT_FAULT && cint_rt_entry_end(b) == CINT_FAULT, "E_DEPTH above it");
+    CHECK(proto_code(a, b) == CINT_E_DEPTH && g_rec.stack_count == 3u && g_rec.stack[0].index == S_OP.index,
+          "the record holds the dispatch position and two calls");
+    /* Leaving with nothing on the stack changes nothing. */
+    CHECK(cint_rt_entry_begin(a, S_FUEL, CINT_FUEL_UNBOUNDED, 3) == CINT_OK, "entry for an empty leave");
+    cint_rt_call_leave(a);
+    CHECK(cint_rt_head_of(a)->stack_count == 0u && cint_rt_head_of(a)->depth == 1, "leave on an empty stack");
+    CHECK(cint_rt_entry_end(a) == CINT_OK, "the entry ends OK");
+    cint_ctx_destroy(a);
+    cint_ctx_destroy(b);
+}
+
+/* ------------------------------------------------------------------------- */
 /* Hand-checked cases outside the tables: count types, conversions (EMIT-11),  */
 /* shifts (EMIT-10), floor division (SPEC-01 4.4).                            */
 
@@ -1020,6 +1203,12 @@ static void test_hand(void)
         CHECK(cint_as_wrap_u64_from_i64(-1) == UINT64_MAX, "-1 as% U64");
         CHECK(cint_as_wrap_i64_from_u64((uint64_t)1 << 63) == INT64_MIN, "2^63 as% I64");
         CHECK(cint_as_wrap_i8_from_i64(-129) == 127, "-129 as% I8");
+        CHECK(cint_as_sat_i32_from_i64(2147483648LL) == INT32_MAX, "2^31 as| I32");
+        CHECK(cint_as_sat_u64_from_i64(-1) == 0u, "-1 as| U64");
+        CHECK(cint_as_sat_i64_from_u64((uint64_t)1 << 63) == INT64_MAX, "2^63 as| I64");
+        CHECK(cint_as_sat_i8_from_i64(-129) == -128, "-129 as| I8");
+        CHECK(cint_as_sat_u8_from_i16(-1) == 0u && cint_as_sat_u8_from_i16(300) == 255u, "as| U8 from I16");
+        CHECK(cint_as_sat_i16_from_u32(40000u) == INT16_MAX && cint_as_sat_i16_from_u32(7u) == 7, "as| I16 from U32");
         CHECK(cint_as_u8_from_i16(ctx, S_OP, 255, &u8) && u8 == 255u, "I16 255 as U8");
     }
     {
@@ -1143,14 +1332,30 @@ static void test_context(void)
     memset(&cfg, 0, sizeof cfg);
     cfg.size = (uint32_t)sizeof cfg;
     cfg.program = &t_program;
-    CHECK(strcmp(CINT_RT_CONTRACT, "cint-rt-3") == 0 && cint_abi_version() == 0x00030000u, "contract and ABI 3.0");
+    CHECK(strcmp(CINT_RT_CONTRACT, "cint-rt-3") == 0 && cint_abi_version() == 0x00030002u, "contract and ABI 3.2");
     CHECK(cint_ctx_create(NULL, &ctx) == CINT_REFUSED && ctx == sentinel, "NULL config refused, out unwritten");
     CHECK(cint_ctx_create(&cfg, NULL) == CINT_REFUSED, "NULL out refused");
     cfg.size = 40u;
     CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED && ctx == sentinel, "the cint-rt-1 config size is refused");
     cfg.size = 72u;
     CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED && ctx == sentinel, "the cint-rt-2 config size is refused");
+    cfg.size = 80u;
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED && ctx == sentinel, "the ABI 3.0 config size is refused");
     cfg.size = (uint32_t)sizeof cfg;
+    {
+        /* ABI 3.1 (OQ-216): reserved is 0, and a runtime without CINT_GPU_CUDA has no device (A-16a). */
+        static const int dev_stand_in = 0;
+        const void *devs[1] = {&dev_stand_in};
+        cfg.reserved = 1u;
+        CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED && ctx == sentinel, "a nonzero reserved field is refused");
+        cfg.reserved = 0u;
+        cfg.device_count = 1u;
+        CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED && ctx == sentinel, "a device with no devices refused");
+        cfg.devices = devs;
+        CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED && ctx == sentinel, "the CPU runtime refuses a device");
+        cfg.device_count = 0u;
+        cfg.devices = NULL;
+    }
     cfg.module = &t_module_old;
     CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED && ctx == sentinel, "a module of ABI 2 is refused");
     cfg.module = &t_module_other;
@@ -2502,6 +2707,10 @@ static void test_print_format(void)
         {CINT_TAG_BOOL, 1u, 1u | CINT_FORMAT_CENTER, 0xe9u, 7u, 0u, "\xc3\xa9true\xc3\xa9\xc3\xa9"},  /* U+00E9 */
         {CINT_TAG_BOOL, 0u, 1u | CINT_FORMAT_LEFT, 0x1f600u, 6u, 0u, "false\xf0\x9f\x98\x80"},  /* U+1F600 */
         {CINT_TAG_I8, (uint64_t)(int64_t)-128, 1u, ' ', 0u, 0u, "-128"},  /* {:} */
+        {CINT_TAG_I8, (uint64_t)(int64_t)-1, 2u | CINT_FORMAT_BITS, ' ', 0u, 0u, "ff"},  /* {n!bits:x}, LS-201 */
+        {CINT_TAG_I8, (uint64_t)(int64_t)-128, 5u | CINT_FORMAT_BITS | CINT_FORMAT_ALT, ' ', 0u, 0u, "0b10000000"},
+        {CINT_TAG_I64, (uint64_t)(int64_t)-1, 2u | CINT_FORMAT_BITS, ' ', 0u, 0u, "ffffffffffffffff"},
+        {CINT_TAG_U16, 255u, 2u | CINT_FORMAT_BITS, ' ', 0u, 0u, "00ff"},
     };
     /* Forms no compiled program passes: each faults E_UNSUPPORTED dispatch.admit. */
     static const struct {
@@ -2512,7 +2721,11 @@ static void test_print_format(void)
     } refused[] = {
         {CINT_TAG_I64, 1u, 0u, ' ', 0u, 0u},  /* no kind */
         {CINT_TAG_I64, 1u, 7u, ' ', 0u, 0u},
-        {CINT_TAG_I64, 1u, 4096u | 1u, ' ', 0u, 0u},
+        {CINT_TAG_I64, 1u, 16384u | 1u, ' ', 0u, 0u},  /* a bit no form has */
+        {CINT_TAG_I64, 1u, 1u | CINT_FORMAT_PRECISION, ' ', 0u, 2u},  /* a precision on an integer */
+        {CINT_TAG_I64, 1u, 6u | CINT_FORMAT_BITS, ' ', 0u, 0u},  /* `!bits` with `t` */
+        {CINT_TAG_I64, 1u, 1u | CINT_FORMAT_BITS, ' ', 0u, 2u},  /* `!bits` with a scale */
+        {CINT_TAG_BOOL, 1u, 1u | CINT_FORMAT_BITS, ' ', 0u, 0u},  /* a conversion of Bool */
         {CINT_TAG_I64, 1u, 1u | CINT_FORMAT_PLUS | CINT_FORMAT_SPACE, ' ', 0u, 0u},
         {CINT_TAG_I64, 1u, 1u | CINT_FORMAT_UNDERSCORE | CINT_FORMAT_COMMA, ' ', 0u, 0u},
         {CINT_TAG_I64, 1u, 1u | CINT_FORMAT_RIGHT | CINT_FORMAT_ZERO, ' ', 4u, 0u},  /* `0` with `>` */
@@ -2814,8 +3027,9 @@ static void test_result_forms(void)
     n += result_test_u8(ctx) + result_test_u16(ctx) + result_test_u32(ctx) + result_test_u64(ctx);
     CHECK(n == 8 * (7 * 7 * 5 + 7 * 9), "every pair of every type compared");
     /* The tags themselves (SPEC-01 IM-188): ArithError { overflow, div_zero, shift, narrow }. */
-    CHECK(CINT_ARITH_OVERFLOW == 1u && CINT_ARITH_DIV_ZERO == 2u && CINT_ARITH_SHIFT == 3u && CINT_ARITH_NARROW == 4u,
-          "ArithError tags 1 to 4");
+    _Static_assert(CINT_ARITH_OVERFLOW == 1u && CINT_ARITH_DIV_ZERO == 2u && CINT_ARITH_SHIFT == 3u &&
+                       CINT_ARITH_NARROW == 4u && CINT_ARITH_DOMAIN == 5u,
+                   "ArithError tags 1 to 5");
     CHECK(cint_div_result_i8(INT8_MIN, -1, &q8) == CINT_ARITH_OVERFLOW && q8 == 0, "I8 MIN / -1 is .overflow");
     CHECK(cint_rem_result_i64(INT64_MIN, -1, &q64) == 0u && q64 == 0, "I64 MIN % -1 is 0");
     CHECK(cint_div_result_i64(-7, 2, &q64) == 0u && q64 == -4, "floor division");
@@ -2945,13 +3159,13 @@ static const struct {
     uint8_t flag;
     uint8_t pad[7];
 } p_init = {5, 1u, {0u}};
-static const cint_state_var p_vars[2] = {{"count", 5u, CINT_TAG_I64, 0u, 0u}, {"flag", 4u, CINT_TAG_BOOL, 8u, 0u}};
+static const cint_state_var p_vars[2] = {{"count", 5u, CINT_TAG_I64, 0u, 0u, NULL, NULL}, {"flag", 4u, CINT_TAG_BOOL, 8u, 0u, NULL, NULL}};
 static const cint_state p_state = {0u, 2u, 16u, 0u, &p_init, p_vars};
 static const cint_state *const p_state_list[1] = {&p_state};
-static const cint_state_table p_states = {1u, 0u, p_state_list};
+static const cint_state_table p_states = {1u, 0u, p_state_list, NULL};
 static const cint_state p_state_bad = {7u, 2u, 16u, 0u, &p_init, p_vars};  /* no module 7 */
 static const cint_state *const p_state_bad_list[1] = {&p_state_bad};
-static const cint_state_table p_states_bad = {1u, 0u, p_state_bad_list};
+static const cint_state_table p_states_bad = {1u, 0u, p_state_bad_list, NULL};
 
 /* count = count + 1; then return IoError.closed, or, with `fault`, big + 1. */
 static cint_status p_state_body(cint_ctx *ctx, int64_t fuel, bool fault)
@@ -3133,6 +3347,67 @@ static void test_agreement(long pairs)
     printf("agreement: builtin bodies not available on this compiler; skipped\n");
 }
 #endif
+
+/* ------------------------------------------------------------------------- */
+/* An overflowing checked add or sub writes the record that cint_rt_fault_arith */
+/* writes for the operands it was given, at every width, though the helpers     */
+/* read a back from the wrapped result.                                         */
+
+#define OPERANDS(OP, OPC, T, CT, TAG, K)                                               \
+    do {                                                                               \
+        CT r = 0;                                                                      \
+        CT a = (CT)CINT_RT_NARROW_##K(x, (unsigned)sizeof(CT) * 8u);                   \
+        CT b = (CT)CINT_RT_NARROW_##K(y, (unsigned)sizeof(CT) * 8u);                   \
+        if (!cint_##OP##_##T(ctx, S_OP, a, b, &r)) {                                   \
+            faults++;                                                                  \
+            get_fault(ctx, &g_rec);                                                    \
+            (void)cint_rt_fault_arith(ref, S_OP, (OPC), (TAG), CINT_RT_BITS_##K(a),    \
+                                      CINT_RT_BITS_##K(b));                            \
+            get_fault(ref, &g_rec2);                                                   \
+            if (memcmp(&g_rec, &g_rec2, sizeof g_rec) != 0) {                          \
+                bad++;                                                                 \
+            }                                                                          \
+            cint_ctx_clear_fault(ctx);                                                 \
+            cint_ctx_clear_fault(ref);                                                 \
+        }                                                                              \
+    } while (0)
+
+static void test_fault_operands(void)
+{
+    long i, bad = 0, faults = 0;
+    cint_ctx *ctx = new_ctx();
+    cint_ctx *ref = new_ctx();
+    if (ctx == NULL || ref == NULL) {
+        CHECK(0, "cint_ctx_create");
+        cint_ctx_destroy(ctx);
+        cint_ctx_destroy(ref);
+        return;
+    }
+    for (i = 0; i < 20000; i++) {
+        uint64_t x = pick();
+        uint64_t y = pick();
+        OPERANDS(add, CINT_RT_OP_ADD, i64, int64_t, CINT_TAG_I64, S);
+        OPERANDS(sub, CINT_RT_OP_SUB, i64, int64_t, CINT_TAG_I64, S);
+        OPERANDS(add, CINT_RT_OP_ADD, u64, uint64_t, CINT_TAG_U64, U);
+        OPERANDS(sub, CINT_RT_OP_SUB, u64, uint64_t, CINT_TAG_U64, U);
+        OPERANDS(add, CINT_RT_OP_ADD, i32, int32_t, CINT_TAG_I32, S);
+        OPERANDS(sub, CINT_RT_OP_SUB, i32, int32_t, CINT_TAG_I32, S);
+        OPERANDS(add, CINT_RT_OP_ADD, u32, uint32_t, CINT_TAG_U32, U);
+        OPERANDS(sub, CINT_RT_OP_SUB, u32, uint32_t, CINT_TAG_U32, U);
+        OPERANDS(add, CINT_RT_OP_ADD, i16, int16_t, CINT_TAG_I16, S);
+        OPERANDS(sub, CINT_RT_OP_SUB, i16, int16_t, CINT_TAG_I16, S);
+        OPERANDS(add, CINT_RT_OP_ADD, u16, uint16_t, CINT_TAG_U16, U);
+        OPERANDS(sub, CINT_RT_OP_SUB, u16, uint16_t, CINT_TAG_U16, U);
+        OPERANDS(add, CINT_RT_OP_ADD, i8, int8_t, CINT_TAG_I8, S);
+        OPERANDS(sub, CINT_RT_OP_SUB, i8, int8_t, CINT_TAG_I8, S);
+        OPERANDS(add, CINT_RT_OP_ADD, u8, uint8_t, CINT_TAG_U8, U);
+        OPERANDS(sub, CINT_RT_OP_SUB, u8, uint8_t, CINT_TAG_U8, U);
+    }
+    CHECK(faults > 0 && bad == 0, "an overflowing add or sub records the operands it was given");
+    printf("fault operands: %ld overflows of add and sub, %ld records differ\n", faults, bad);
+    cint_ctx_destroy(ctx);
+    cint_ctx_destroy(ref);
+}
 
 /* ------------------------------------------------------------------------- */
 /* Box 09 (cint_rt.h section 14): views of rank 1 to 4, slices, copies,       */
@@ -3452,7 +3727,7 @@ static void test_copies(void)
 {
     static int32_t m[6], d[6], line[12];
     cint_ctx *ctx = new_ctx();
-    cint_vdesc dst, src, far;
+    cint_vdesc dst, src, away;
     int i;
     if (ctx == NULL) {
         CHECK(0, "copy context");
@@ -3473,6 +3748,21 @@ static void test_copies(void)
     CHECK(cint_rt_copy_view(ctx, S_OP, &src, &src, sizeof m[0]), "copy(a, a) is no copy (view/copy_same_view_noop)");
     for (i = 0; i < 12; i++) {
         line[i] = i;
+    }
+    /* Dense innermost dimensions are copied as blocks: two rows of three from a 2 x 4 matrix,
+     * a whole 2 x 3 matrix at once, and rows past a dimension of extent 1 whose stride is not dense. */
+    dst = vd2(d, 0, 2, 3, 3, 1);
+    src = vd2(line, 1, 2, 3, 4, 1);
+    CHECK(cint_rt_copy_view(ctx, S_OP, &dst, &src, sizeof d[0]) && d[0] == 1 && d[2] == 3 && d[3] == 5 &&
+          d[5] == 7, "rows of a sub-view, each copied whole");
+    src = vd2(line, 6, 2, 3, 3, 1);
+    CHECK(cint_rt_copy_view(ctx, S_OP, &dst, &src, sizeof d[0]) && d[0] == 6 && d[5] == 11, "a dense matrix at once");
+    {
+        int64_t shape[3] = {2, 1, 3}, sparse[3] = {6, 99, 1}, dense[3] = {3, 3, 1};
+        dst = vd(d, 0, 3, shape, dense);
+        src = vd(line, 0, 3, shape, sparse);
+        CHECK(cint_rt_copy_view(ctx, S_OP, &dst, &src, sizeof d[0]) && d[0] == 0 && d[2] == 2 && d[3] == 6 &&
+              d[5] == 8, "a dimension of extent 1 ends the block");
     }
     dst = vd1(line, 0, 6, 2);
     src = vd1(line, 1, 6, 2);
@@ -3503,9 +3793,9 @@ static void test_copies(void)
     CHECK_REC(ctx, "4 copy.shape | I64 0 | I64 3 | limit I64 4", "the shape check comes before the alias check");
     dst = vd1(line, 0, 0, 1);
     src = vd1(line, 3, 0, 1);
-    far = vd2(NULL, INT64_MIN, 0, 5, 1, 1);
+    away = vd2(NULL, INT64_MIN, 0, 5, 1, 1);
     CHECK(cint_rt_copy_view(ctx, S_OP, &dst, &src, sizeof line[0]) && line[0] == 0, "an empty copy");
-    CHECK(cint_rt_copy_view(ctx, S_OP, &far, &far, sizeof line[0]), "no pointer is formed for an empty view");
+    CHECK(cint_rt_copy_view(ctx, S_OP, &away, &away, sizeof line[0]), "no pointer is formed for an empty view");
     CHECK(cint_rt_copy_view(ctx, S_OP, &dst, &src, 0u), "elements of 0 bytes");
     src = vd2(m, 0, 4, 1, 1, 1);
     CHECK(!cint_rt_copy_view(ctx, S_OP, &dst, &src, sizeof m[0]), "ranks apart");
@@ -3519,9 +3809,9 @@ static void test_copies(void)
     /* The entry alias check of a call keeps the fuel (view/call_slices_runtime_alias). */
     dst = vd1(line, 0, 4, 1);
     src = vd1(line, 2, 4, 1);
-    far = vd1(line, 4, 4, 1);
+    away = vd1(line, 4, 4, 1);
     CHECK(cint_rt_entry_begin(ctx, S_FUEL, 10, 8) == CINT_OK && cint_fuel_charge(ctx, S_FUEL, 1u), "entry");
-    CHECK(cint_rt_call_alias(ctx, S_CALL, 0u, 1u, &dst, &far), "disjoint arguments");
+    CHECK(cint_rt_call_alias(ctx, S_CALL, 0u, 1u, &dst, &away), "disjoint arguments");
     CHECK(!cint_rt_call_alias(ctx, S_CALL, 0u, 1u, &dst, &src), "overlapping arguments");
     CHECK(cint_rt_entry_end(ctx) == CINT_FAULT && fuel_of(ctx) == 2, "the fuel consumed is kept");
     CHECK_REC(ctx, "7 bind.alias | I64 0 | I64 1", "bind.alias: the inout parameter, the other");
@@ -4112,7 +4402,9 @@ static void test_scratch(void)
 {
     cint_ctx_config cfg;
     cint_ctx *ctx = NULL;
-    int live = 0, base = 0;
+    cint_vdesc out, st;
+    int64_t grid[16] = {0}, kd = -1;
+    int live = 0, base = 0, ok = 1;
     void *p = NULL, *q = NULL;
     int64_t mark;
     size_t i, nonzero = 0u;
@@ -4164,6 +4456,36 @@ static void test_scratch(void)
     CHECK(cint_rt_entry_begin(ctx, S_FUEL, 100, 8) == CINT_OK && !cint_rt_scratch(ctx, S_OP, -1, 8u, &p), "count -1");
     CHECK(cint_rt_entry_end(ctx) == CINT_FAULT, "faulted");
     CHECK_REC(ctx, "10 dispatch.admit", "a negative count is refused");
+    /* A dispatch's staging is its own and the arena does not charge it (decision 2026-10-08 on
+     * OQ-237): a kernel writing a 4 by 4 output, 16 elements, runs in an arena of 10, as
+     * generated code runs it (rt/OPEN.md RT-OQ-34). */
+    out = vd2(grid, 0, 4, 4, 4, 1);
+    memset(&st, 0, sizeof st);
+    CHECK(cint_rt_entry_begin(ctx, S_FUEL, 100, 8) == CINT_OK && live == base, "entry");
+    mark = cint_rt_scratch_mark(ctx);
+    kd = cint_rt_dispatch_number(ctx);
+    CHECK(cint_rt_dispatch_stage(ctx, S_OP, &st, &out, sizeof grid[0], false) && st.base != NULL &&
+              live == base + 1,
+          "16 elements of staging in an arena of 10");
+    CHECK(cint_rt_scratch(ctx, S_OP, 10, 8u, &p) && live == base + 2, "the arena's 10 elements are still free");
+    for (i = 0; st.base != NULL && i < 16u; i++) {
+        ((int64_t *)st.base)[i] = (int64_t)i * 3;
+    }
+    CHECK(cint_rt_copy_view(ctx, S_OP, &out, &st, sizeof grid[0]), "the publication");
+    for (i = 0; i < 16u; i++) {
+        ok = ok && grid[i] == (int64_t)i * 3;
+    }
+    CHECK(ok, "every element published");
+    cint_rt_dispatch_end(ctx, kd);
+    cint_rt_scratch_release(ctx, mark);
+    CHECK(live == base && cint_rt_entry_end(ctx) == CINT_OK, "the kernel's return frees its staging; no fault");
+    g_fail_alloc = 1;
+    CHECK(cint_rt_entry_begin(ctx, S_FUEL, 100, 8) == CINT_OK &&
+              !cint_rt_dispatch_stage(ctx, S_OP, &st, &out, sizeof grid[0], false),
+          "the allocator fails");
+    g_fail_alloc = 0;
+    CHECK(cint_rt_entry_end(ctx) == CINT_FAULT, "faulted");
+    CHECK_REC(ctx, "10 arena.alloc | I64 16 | I64 0 | I64 10", "E_UNSUPPORTED arena.alloc, as cint_rt_scratch's");
     CHECK(cint_rt_entry_begin(ctx, S_FUEL, 100, 8) == CINT_OK && cint_rt_scratch(ctx, S_OP, 5, 8u, &p) &&
               live == base + 1,
           "an allocation left at the end of an entry");
@@ -4184,8 +4506,39 @@ static void test_scratch(void)
     CHECK(live == 0, "nothing leaked");
 }
 
+/* The seeded fuzz targets of test_state.c, test_record.c and test_density.c print one line each,
+ * which rt/tests/test_rt.py --fuzz-receipt reads into a cint-fuzz-1 receipt (OQ-14). The input
+ * digest starts as 32 zero bytes, and each mutated input in order makes it
+ * SHA-256(digest || SHA-256(input)). */
+void test_fuzz_input(uint8_t digest[32], const uint8_t *p, size_t n);
+void test_fuzz_line(const char *target, uint64_t seed, unsigned count, unsigned accepted, unsigned rejected,
+                    unsigned failures, const uint8_t digest[32]);
+
+void test_fuzz_input(uint8_t digest[32], const uint8_t *p, size_t n)
+{
+    uint8_t two[64];
+    memcpy(two, digest, 32u);
+    cint_sha256(p, n, two + 32);
+    cint_sha256(two, sizeof two, digest);
+}
+
+void test_fuzz_line(const char *target, uint64_t seed, unsigned count, unsigned accepted, unsigned rejected,
+                    unsigned failures, const uint8_t digest[32])
+{
+    printf("fuzz %s: seed %" PRIu64 ", count %u, accepted %u, rejected %u, failures %u, inputs-sha256 ", target, seed,
+           count, accepted, rejected, failures);
+    for (unsigned i = 0u; i < 32u; i++) {
+        printf("%02x", digest[i]);
+    }
+    printf("\n");
+}
+
 /* rt/tests/test_state.c: checkpoints (rt/cint_state.h; box 13 unit 4). */
 void test_state(long *pass, long *fail);
+/* rt/tests/test_record.c: recordings and replay (rt/cint_state.h; box 13 unit 5). */
+void test_record(long *pass, long *fail);
+/* rt/tests/test_density.c: recordings at dispatch density (SPEC-06 1.5; box 13 unit 7c). */
+void test_density(long *pass, long *fail);
 
 int main(int argc, char **argv)
 {
@@ -4243,6 +4596,7 @@ int main(int argc, char **argv)
     test_bad_args();
     test_encoder();
     test_entries();
+    test_call_protocol();
     test_context();
     test_buffers();
     test_logical_buffers();
@@ -4262,10 +4616,13 @@ int main(int argc, char **argv)
     test_host_dispatch();
     test_scratch();
     test_state(&g_pass, &g_fail);
+    test_record(&g_pass, &g_fail);
+    test_density(&g_pass, &g_fail);
     test_errors();
     test_result_forms();
     test_hand();
     test_agreement(pairs);
+    test_fault_operands();
     test_tables(argv[1], exh8);
     printf("checks: %ld passed, %ld failed; records skipped: %ld\n", g_pass, g_fail, g_skip);
     return g_fail == 0 ? 0 : 1;

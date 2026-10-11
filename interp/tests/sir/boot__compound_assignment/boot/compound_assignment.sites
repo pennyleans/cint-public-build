@@ -1,0 +1,93 @@
+module boot.compound_assignment
+sites boot/compound_assignment.ci 1:7:12:fuel.charge 2:9:7:add.checked.i64 3:10:7:sub.checked.i64 4:11:7:mul.checked.i64 5:12:7:div.checked.i64 6:13:7:rem.checked.i64 7:14:7:shl.checked.i64 8:15:7:shr.checked.i64 9:23:7:shl.wrap.u8 10:25:6:sub.checked.i64 11:26:6:add.checked.i64 12:27:6:sub.checked.i64 13:28:14:mul.checked.i64 14:28:26:as.checked.u8.i64 15:28:34:mul.checked.i64 16:28:21:add.checked.i64 17:28:39:add.checked.i64
+export func @boot.compound_assignment.run() -> I64 {
+  fuel.charge 1                                  #1 @boot/compound_assignment.ci:7:12
+  %t0 = const I64 100
+  local $x.0: I64
+  store.local $x.0, %t0
+  %t1 = load.local $x.0
+  %t2 = const I64 7
+  %t3 = add.checked.i64 %t1, %t2                 #2 @boot/compound_assignment.ci:9:7
+  store.local $x.0, %t3
+  %t4 = load.local $x.0
+  %t5 = const I64 3
+  %t6 = sub.checked.i64 %t4, %t5                 #3 @boot/compound_assignment.ci:10:7
+  store.local $x.0, %t6
+  %t7 = load.local $x.0
+  %t8 = const I64 5
+  %t9 = mul.checked.i64 %t7, %t8                 #4 @boot/compound_assignment.ci:11:7
+  store.local $x.0, %t9
+  %t10 = load.local $x.0
+  %t11 = const I64 3
+  %t12 = div.checked.i64 %t10, %t11              #5 @boot/compound_assignment.ci:12:7
+  store.local $x.0, %t12
+  %t13 = load.local $x.0
+  %t14 = const I64 50
+  %t15 = rem.checked.i64 %t13, %t14              #6 @boot/compound_assignment.ci:13:7
+  store.local $x.0, %t15
+  %t16 = load.local $x.0
+  %t17 = const I64 3
+  %t18 = shl.checked.i64 %t16, %t17              #7 @boot/compound_assignment.ci:14:7
+  store.local $x.0, %t18
+  %t19 = load.local $x.0
+  %t20 = const I64 1
+  %t21 = shr.checked.i64 %t19, %t20              #8 @boot/compound_assignment.ci:15:7
+  store.local $x.0, %t21
+  %t22 = load.local $x.0
+  %t23 = const I64 255
+  %t24 = and.i64 %t22, %t23
+  store.local $x.0, %t24
+  %t25 = load.local $x.0
+  %t26 = const I64 256
+  %t27 = or.i64 %t25, %t26
+  store.local $x.0, %t27
+  %t28 = load.local $x.0
+  %t29 = const I64 15
+  %t30 = xor.i64 %t28, %t29
+  store.local $x.0, %t30
+  %t31 = const U8 250
+  local $w.1: U8
+  store.local $w.1, %t31
+  %t32 = load.local $w.1
+  %t33 = const U8 10
+  %t34 = add.wrap.u8 %t32, %t33
+  store.local $w.1, %t34
+  %t35 = load.local $w.1
+  %t36 = const U8 20
+  %t37 = sub.wrap.u8 %t35, %t36
+  store.local $w.1, %t37
+  %t38 = load.local $w.1
+  %t39 = const U8 3
+  %t40 = mul.wrap.u8 %t38, %t39
+  store.local $w.1, %t40
+  %t41 = load.local $w.1
+  %t42 = const I64 2
+  %t43 = shl.wrap.u8 %t41, %t42                  #9 @boot/compound_assignment.ci:23:7
+  store.local $w.1, %t43
+  %t44 = const I64 2
+  local $k.2: I64
+  store.local $k.2, %t44
+  %t45 = load.local $k.2
+  %t46 = const I64 1
+  %t47 = sub.checked.i64 %t45, %t46              #10 @boot/compound_assignment.ci:25:6
+  store.local $k.2, %t47
+  %t48 = load.local $k.2
+  %t49 = const I64 1
+  %t50 = add.checked.i64 %t48, %t49              #11 @boot/compound_assignment.ci:26:6
+  store.local $k.2, %t50
+  %t51 = load.local $k.2
+  %t52 = const I64 1
+  %t53 = sub.checked.i64 %t51, %t52              #12 @boot/compound_assignment.ci:27:6
+  store.local $k.2, %t53
+  %t54 = load.local $x.0
+  %t55 = const I64 1000
+  %t56 = mul.checked.i64 %t54, %t55              #13 @boot/compound_assignment.ci:28:14
+  %t57 = load.local $w.1
+  %t58 = as.checked.u8.i64 %t57                  #14 @boot/compound_assignment.ci:28:26
+  %t59 = const I64 10
+  %t60 = mul.checked.i64 %t58, %t59              #15 @boot/compound_assignment.ci:28:34
+  %t61 = add.checked.i64 %t56, %t60              #16 @boot/compound_assignment.ci:28:21
+  %t62 = load.local $k.2
+  %t63 = add.checked.i64 %t61, %t62              #17 @boot/compound_assignment.ci:28:39
+  return %t63
+}

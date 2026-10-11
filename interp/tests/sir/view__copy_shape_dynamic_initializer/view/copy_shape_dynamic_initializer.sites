@@ -1,0 +1,21 @@
+module view.copy_shape_dynamic_initializer
+sites view/copy_shape_dynamic_initializer.ci 1:8:11:add.checked.i64 2:8:16:decl.shape 3:8:20:copy.shape 4:10:12:fuel.charge 5:12:5:call.enter 6:11:12:arena.alloc
+func @view.copy_shape_dynamic_initializer.move(%n: I64, %src: I64[%n]) {
+  frame.mark 0, 2
+  %t0 = const I64 1
+  %t1 = add.checked.i64 %n, %t0                  #1 @view/copy_shape_dynamic_initializer.ci:8:11
+  view.dim $dst.0: I64[_], %t1, 0
+  view.alloc $dst.0: I64[_], 1                   #2 @view/copy_shape_dynamic_initializer.ci:8:16
+  view.copy $dst.0, %src                         #3 @view/copy_shape_dynamic_initializer.ci:8:20
+  frame.release 0, 2
+}
+export func @view.copy_shape_dynamic_initializer.run() -> I64 {
+  fuel.charge 1                                  #4 @view/copy_shape_dynamic_initializer.ci:10:12
+  frame.mark 1, 1
+  frame.charge 3                                 #6 @view/copy_shape_dynamic_initializer.ci:11:12
+  local $src.0: I64[3]
+  call @view.copy_shape_dynamic_initializer.move(extent $src.0, $src.0) #5 @view/copy_shape_dynamic_initializer.ci:12:5
+  %t0 = const I64 0
+  return %t0
+  frame.release 1, 1
+}

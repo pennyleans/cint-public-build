@@ -1,0 +1,19 @@
+// case: probes/module_handle_fault
+// clause: box 13 OQ-242 probe: a module-level handle kept past a pool removal faults E_STALE_HANDLE at its next use, after the stores before it; a null one faults too
+// entry: run; args: none
+
+Pool(I64, 2) counts;
+Handle(I64) kept;
+I64 seen = 0;
+
+void keep() {
+    kept = counts.insert(41);
+}
+
+export I64 run() {
+    keep();
+    seen = counts[kept];
+    counts.remove(kept);
+    seen += 1;
+    return counts[kept];
+}

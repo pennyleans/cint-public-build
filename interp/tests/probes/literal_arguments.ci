@@ -1,0 +1,30 @@
+// case: probes/literal_arguments
+// clause: box 13 MLA (b) probe: array literal arguments of view parameters, of rank 1 and 2, their items evaluated in order
+// entry: run; args: none
+
+I64 seen = 0;
+
+I64 mark(I64 v) {
+    seen = seen * 10 + v;
+    return v;
+}
+
+I64 total[n](in I64[n] xs, I64 base) {
+    I64 t = base;
+    for i in 0..n {
+        t += xs[i];
+    }
+    return t;
+}
+
+I64 corner(in I64[_, _] m) {
+    return m[1, 0] * 10 + m[0, 1];
+}
+
+export I64 run() {
+    I64 t = 0;
+    for i in 0..2 {
+        t += total([mark(1), i, mark(2)], 0);
+    }
+    return (t * 100 + corner([[1, 2], [3, 4]])) * 10000 + seen;
+}

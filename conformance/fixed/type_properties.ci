@@ -1,0 +1,10 @@
+// case: fixed/type_properties
+// clause: SPEC-04 LS-51 (min, max and epsilon of a fixed-point type; epsilon has raw 1)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 1; prints `-32768.0 32767.9999847412109375 0.0000152587890625 -1.0 0.9921875`; fuel 1. Box 15, unit 1
+
+export I64 run() {
+    "{Q16.16.min} {Q16.16.max} {Q16.16.epsilon} {Q1.7.min} {Q1.7.max}\n";
+    return Q16.16.epsilon.raw as I64;
+}

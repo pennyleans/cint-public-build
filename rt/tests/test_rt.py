@@ -2,6 +2,7 @@
 
 Usage (from the repository root):
     python rt/tests/test_rt.py [--leg msvc|gcc|clang|apple-clang] [--out DIR] [--quick]
+                               [--fuzz-receipt FILE]
 
 Legs: `msvc` on Windows (MSVC 2022 through vcvars64.bat), `gcc` and `clang` on
 Linux (WSL Ubuntu 24.04), and `apple-clang` on macOS (the system `clang`, which
@@ -9,7 +10,9 @@ must report Apple clang; SPEC-09 CONF-09, plan task 2.2a). Each leg builds
 test_rt.c with the runtime at two optimization levels (-O0 and -O2, MSVC /Od
 and /O2) in both helper modes (CINT_RT_HELPERS_PORTABLE and
 CINT_RT_HELPERS_BUILTIN), with the warning flags of SPEC-09 EMIT-26 and
--Werror (/WX), and runs each build. The Linux legs also
+-Werror (/WX), and runs each build, and compiles rt/cint_rt.c, rt/cint_state.c, and
+rt/cint_rec.c as the one translation unit that the Python package and the workbench
+build (decision 2026-10-08 on OQ-240). The Linux legs also
 build and run with -fsanitize=address,undefined; the apple-clang leg, like its
 stage configurations (CONF-15), is unsanitized. Build outputs go under
 <build>/rt/<leg>/, never inside the repository, where <build> is the
@@ -29,11 +32,20 @@ from rt/cint_rt.h section 6d (rt/OPEN.md RT-OQ-33); with three destinations
 cint_program_run_state, and the fuel record and the `state.global` lines are
 checked too.
 
+The seeded fuzz targets of test_state.c (checkpoint), test_record.c (recording) and
+test_density.c (density) each print one line, `fuzz <target>: seed S, count N, accepted A,
+rejected R, failures F, inputs-sha256 H`, the form of conformance/tools/fuzz_decoders.py.
+`--fuzz-receipt FILE` checks that every build of the leg printed the same three lines and
+writes them as a cint-fuzz-1 receipt with the leg, its build configurations and the SHA-256 of
+the sources and headers built (OQ-14).
+
 The script is a unittest module; it uses only the Python standard library.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import pathlib
 import re
@@ -46,7 +58,17 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 RT = ROOT / "rt"
-SOURCES = [RT / "cint_rt.c", RT / "cint_state.c", RT / "tests" / "test_rt.c", RT / "tests" / "test_state.c"]
+SOURCES = [RT / "cint_rt.c", RT / "cint_state.c", RT / "cint_rec.c", RT / "tests" / "test_rt.c",
+           RT / "tests" / "test_state.c", RT / "tests" / "test_record.c", RT / "tests" / "test_density.c"]
+# The headers SOURCES include, which a fuzz receipt pins with them.
+HEADERS = [RT / name for name in ("cint_fixed.h", "cint_mem.h", "cint_rt.h", "cint_rt_host.h", "cint_rt_internal.h",
+                                  "cint_state.h", "cint_state_internal.h", "cint_wide.h")]
+FUZZ_TARGETS = ["checkpoint", "recording", "density"]
+FUZZ_LINE = re.compile(r"fuzz (\S+): seed (\d+), count (\d+), accepted (\d+), rejected (\d+), failures (\d+), "
+                       r"inputs-sha256 ([0-9a-f]{64})")
+# The one translation unit of the runtime, the canonical state code, and the recordings that the
+# Python package (python/cint/_build.py RUNTIME_UNIT) and the workbench (workbench/wb_c17.c) compile.
+UNIT = b'#define _CRT_SECURE_NO_WARNINGS 1\n#include "cint_rt.c"\n#include "cint_state.c"\n#include "cint_rec.c"\n'
 
 VCVARS = pathlib.Path(r"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools"
                       r"\VC\Auxiliary\Build\vcvars64.bat")
@@ -60,7 +82,7 @@ SANITIZE = ["-fsanitize=address,undefined", "-fno-sanitize-recover=all",
 MODES = ["portable", "builtin"]
 MIN_AVAILABLE_BYTES = 8 * 1024 ** 3
 
-ARGS = argparse.Namespace(leg=None, out=None, quick=False)
+ARGS = argparse.Namespace(leg=None, out=None, quick=False, fuzz_receipt=None)
 
 
 def lp(data: bytes) -> bytes:
@@ -205,14 +227,37 @@ class RuntimeLeg(unittest.TestCase):
         def lines(p):
             return p.read_bytes().count(b"\n")
         self.assertLessEqual(lines(RT / "cint_rt.h"), 2500)
+        self.assertLessEqual(lines(RT / "cint_rt_host.h"), 600)
         self.assertLessEqual(lines(RT / "cint_rt.c") + lines(RT / "cint_rt_internal.h"), 4000)
-        for p in (RT / "cint_rt.h", RT / "cint_rt.c", RT / "cint_rt_internal.h"):
+        for p in (RT / "cint_rt.h", RT / "cint_rt_host.h", RT / "cint_rt.c", RT / "cint_rt_internal.h"):
             self.assertNotIn(b"\r", p.read_bytes(), p.name)
+
+    def test_one_unit(self):
+        # No static name or macro of rt/cint_rec.c repeats one of cint_rt.c or cint_state.c with
+        # another meaning (decision 2026-10-08 on OQ-240), in either helper mode.
+        for mode in MODES:
+            with self.subTest(mode=mode):
+                outdir = self.out / f"unit-{mode}"
+                outdir.mkdir(parents=True, exist_ok=True)
+                (outdir / "cint_rt_state.c").write_bytes(UNIT)
+                define = "CINT_RT_HELPERS_" + mode.upper()
+                if self.leg == "msvc":
+                    cmd = [ENV_CL[0], "/nologo", "/std:c17", "/W4", "/WX", "/O2", f"/D{define}", "/DCINT_RT_LIBRARY",
+                           f"/I{RT}", "/c", "cint_rt_state.c", f"/Fo{outdir}{os.sep}"]
+                else:
+                    cmd = [compiler(self.leg), *GNU_WARNINGS, *(CLANG_EXTRA if self.leg != "gcc" else []), "-O2",
+                           f"-D{define}", "-DCINT_RT_LIBRARY", f"-I{RT}", "-c", "cint_rt_state.c", "-o",
+                           "cint_rt_state.o"]
+                build = subprocess.run(cmd, cwd=outdir, env=self.env, capture_output=True, text=True)
+                self.assertEqual(build.returncode, 0, f"the unit does not compile:\n{build.stdout}\n{build.stderr}")
+                if self.leg != "msvc":
+                    self.assertEqual(build.stderr.strip(), "", "the unit printed diagnostics")
 
     def test_builds_and_runs(self):
         avail = available_memory()
         self.assertGreaterEqual(avail, MIN_AVAILABLE_BYTES,
                                 f"only {avail / 1024 ** 3:.1f} GiB available; the plan needs 8 GiB")
+        fuzz = {}
         for name, opt, mode, sanitized in configurations(self.leg):
             with self.subTest(config=name):
                 outdir = self.out / name
@@ -233,8 +278,29 @@ class RuntimeLeg(unittest.TestCase):
                 self.assertNotIn("runtime error", run.stderr)
                 self.assertNotIn("AddressSanitizer", run.stderr)
                 self.assertIn(f"helper mode: {mode}", run.stdout)
+                fuzz[name] = [m.groups() for m in map(FUZZ_LINE.fullmatch, run.stdout.splitlines()) if m]
                 checked = self.check_program_run(exe, outdir, run_env)
                 print(f"[{self.leg} {name}] program scenarios: {checked} checked", flush=True)
+        if ARGS.fuzz_receipt:
+            self.write_fuzz_receipt(fuzz)
+
+    def write_fuzz_receipt(self, fuzz):
+        """The cint-fuzz-1 receipt of the seeded targets: the rows every build printed alike."""
+        names = [config[0] for config in configurations(self.leg)]
+        self.assertEqual(sorted(fuzz), sorted(names), "a build did not run clean; no fuzz receipt")
+        lines = fuzz[names[0]]
+        self.assertEqual([line[0] for line in lines], FUZZ_TARGETS)
+        for name in names:
+            self.assertEqual(fuzz[name], lines, f"{name} fuzzed differently from {names[0]}")
+        fields = ("seed", "count", "accepted", "rejected", "failures")
+        rows = [{"target": line[0], **dict(zip(fields, map(int, line[1:6]))), "inputs_sha256": line[6]}
+                for line in lines]
+        sources = {path.relative_to(ROOT).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+                   for path in [*SOURCES, *HEADERS, pathlib.Path(__file__).resolve()]}
+        receipt = {"schema": "cint-fuzz-1", "leg": self.leg, "configurations": names, "targets": rows,
+                   "sources_sha256": sources}
+        pathlib.Path(ARGS.fuzz_receipt).write_bytes(
+            (json.dumps(receipt, indent=2, sort_keys=True) + "\n").encode("ascii"))
 
     def run_scenario(self, exe, env, scenario, dest, *more, **kwargs):
         run = subprocess.run([str(exe), "--run", scenario, dest, *more], env=env, capture_output=True, **kwargs)
@@ -383,8 +449,9 @@ def main():
     parser.add_argument("--leg", choices=["msvc", "gcc", "clang", "apple-clang"])
     parser.add_argument("--out")
     parser.add_argument("--quick", action="store_true")
+    parser.add_argument("--fuzz-receipt", help="write the seeded fuzz targets' cint-fuzz-1 receipt to this file")
     known, rest = parser.parse_known_args()
-    ARGS.leg, ARGS.out, ARGS.quick = known.leg, known.out, known.quick
+    ARGS.leg, ARGS.out, ARGS.quick, ARGS.fuzz_receipt = known.leg, known.out, known.quick, known.fuzz_receipt
     unittest.main(argv=[sys.argv[0], "-v", *rest])
 
 

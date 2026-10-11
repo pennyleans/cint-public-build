@@ -1,0 +1,9 @@
+case fixed/round_modes_div
+clause SPEC-01 4.5, IM-65, IM-66 (rounding modes on the quotients 1/3 and -1/3, and every half mode on the ties raw 3 / 2.0 and raw -3 / 2.0, exact raw 1.5 and -1.5)
+format 5
+source reference
+outcome value
+stdout-bytes 58
+stdout-sha256 cbf4f3e202cc286099fa6ffdadc60dfde54c2c44617f55be21d470d5c2eda9d5
+return I64 0
+fuel-consumed 1

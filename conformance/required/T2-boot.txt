@@ -5,12 +5,12 @@
 # One case ID per program or table, including multi-entry programs; one per anchor.
 # Columns: <case> <compiler> <category> [<limit-or-open-item>].
 # The reference comment preceding each row gives its clause/limit derivation.
-# All 861 available IDs are accounted for. Imported library files are not case IDs.
+# All 1073 available IDs are accounted for. Imported library files are not case IDs.
 # B1 boot-scope requirements include held and the boot applicability of each listed anchor.
 # Unsupported seed limits become B1 comparison obligations under CINTC-02/LS-311.
 # Approval covers these rows and exclusions; a later change to either needs a new
 # approval. Stage acceptance still needs the fresh receipts of STAGE-01.
-# The following 371 core-only IDs (277 programs and tables, 18 saturating anchors,
+# The following 582 core-only IDs (488 programs and tables, 18 saturating anchors,
 # 76 built-in anchors) are explicitly outside this boot scope. We assign no
 # outside_subset category to B1. This is not full T2 coverage. B1 compares the 18
 # saturating anchors since task 2.14b and the 76 built-in anchors since box 07.
@@ -46,6 +46,33 @@
 # 2026-10-06 (OQ-210 = A; OQ-174 amendment): the other 37 memory lifetimes cases are
 # frozen from cint_ref, and their exclusions say so; no row or exclusion is added or
 # removed.
+# 2026-10-06, box 11 unit 6 (SPEC-09 CONF-17; approved 2026-10-08, OQ-220; OQ-174
+# amendment): 15 programs excluded, the BACK-09 case kernel/fuel_before_overflow and the
+# 14 kernel tables of the I64 boundary matrices, whose kernels are outside cint-boot-1; B1
+# compares them under T2; no other row or exclusion changes.
+# 2026-10-08 (OQ-232; OQ-174 amendment): 1 program excluded,
+# memory/arena_struct_element_store, the case of a B1 defect fix, whose arena is outside
+# cint-boot-1; B1 compares it under T2; no other row or exclusion changes.
+# 2026-10-09, box 15 unit 1 (OQ-252; OQ-174 amendment): 23 programs excluded, the
+# conformance/wide/ cases, whose wide integer types are outside cint-boot-1 (BOOT-01
+# INT_TYPE); B1 has them as unsupported under T2 until box 15 unit 4; no other row or
+# exclusion changes.
+# 2026-10-09, box 15 unit 1 (OQ-257; OQ-174 amendment): 56 tables excluded, the table programs
+# of the wide boundary matrices, whose wide integer types are outside cint-boot-1 (BOOT-01
+# INT_TYPE); B1 has them as unsupported under T2 until box 15 unit 4; no other row or
+# exclusion changes.
+# 2026-10-09, box 15 unit 1 (OQ-262; OQ-174 amendment): 69 programs excluded, 27 unsigned wide
+# cases and the 42 table programs of the unsigned boundary matrices, whose wide integer
+# types are outside cint-boot-1 (BOOT-01 INT_TYPE), and one cintc compared row,
+# wide/u1024_refused (C3006, an unknown type in either subset); B1 has the excluded ones as
+# unsupported under T2 until box 15 unit 4; no other row or exclusion changes.
+# 2026-10-09, box 15 unit 1 (OQ-264; OQ-174 amendment): 46 programs excluded, the fixed-point
+# cases of conformance/fixed/, whose fixed-point types and fraction literals are outside
+# cint-boot-1 (BOOT-01 FIXED_TYPE, DEC_FRAC); B1 has them as unsupported under T2 until
+# box 15 unit 4; no other row or exclusion changes.
+# 2026-10-10, box 15 unit 1 (OQ-266; OQ-174 amendment): fixed/literal_round_negative is
+# excluded the same way (BOOT-01 FIXED_TYPE, DEC_FRAC); B1 has it as unsupported under T2
+# until box 15 unit 4; no other row or exclusion changes.
 # Boot scope exclusion: anchors/abs.checked.i64.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
 # Boot scope exclusion: anchors/abs.checked.i64.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
 # Boot scope exclusion: anchors/abs.checked.i8.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
@@ -248,6 +275,53 @@
 # Boot scope exclusion: errors/test_try_any_set SPEC-09 BOOT-01 excludes error sets, error unions and `try`; held I-2 (box 12)
 # Boot scope exclusion: errors/underlying_type_u8 SPEC-09 BOOT-01 excludes error sets and error unions; held I-2 (box 12)
 # Boot scope exclusion: errors/widen_in_assignment_and_compare SPEC-09 BOOT-01 excludes error sets and combined error sets; held I-2 (box 12)
+# Boot scope exclusion: fixed/add_checked_overflow_raw SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/array_index_bounds_q16_16 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/constant_fold_overflow SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/convert_integer_narrow SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/convert_literal_c6001 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/convert_narrow_q32_32 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/convert_round_clause_c2009 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/convert_table SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/convert_wrap_and_result SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/div_overflow_q16_16 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/div_table_q16_16 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/div_zero_q16_16 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/dot_one_rounding SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/dot_overflow_q8_8 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/fraction_integer_context_c2004 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/kernel_mul_overflow SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/kernel_scale_reduce SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/literal_grid_q16_16 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/literal_off_grid_c2006 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/literal_out_of_range_c2003 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/literal_round_clause SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/literal_round_negative SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1 (OQ-266)
+# Boot scope exclusion: fixed/module_state_q16_16 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/mul_forms_q16_16 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/mul_int_overflow SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/mul_overflow_q16_16 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/mul_table_q16_16 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/print_kind_c1037 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/print_layout_raw_bits SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/print_ls215 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/qmul_formats SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/qmul_overflow SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/raw_and_constructor SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/raw_forms_q8_8 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/raw_not_assignable_c2058 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/reductions_q16_16 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/rem_c2103 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/round_modes_convert SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/round_modes_div SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/round_modes_mul SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/sqrt_negative_domain SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/sqrt_q1_15_ceil_overflow SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/sqrt_table SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/struct_field_q SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/sum_overflow_q8_8 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/type_name_c2005 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
+# Boot scope exclusion: fixed/type_properties SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
 # Boot scope exclusion: kernel/advance_element_form SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
 # Boot scope exclusion: kernel/alias_gcd_accepted SPEC-09 BOOT-01 excludes kernels and array slices; held I-2 (box 09, R0)
 # Boot scope exclusion: kernel/alias_same_view_c5010 SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
@@ -256,6 +330,7 @@
 # Boot scope exclusion: kernel/bounds_in_block SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
 # Boot scope exclusion: kernel/coverage_c5031 SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
 # Boot scope exclusion: kernel/dispatch_number_second SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/fuel_before_overflow SPEC-09 BOOT-01 excludes kernels; SPEC-09 BACK-09 case (box 11 unit 6)
 # Boot scope exclusion: kernel/fuel_entry_charge SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
 # Boot scope exclusion: kernel/fuel_in_body_located SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
 # Boot scope exclusion: kernel/heat_e1_overflow SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
@@ -292,6 +367,7 @@
 # Boot scope exclusion: memory/arena_reset_stale_generation SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
 # Boot scope exclusion: memory/arena_retired_alloc SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
 # Boot scope exclusion: memory/arena_stale_view_after_callee_reset SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: memory/arena_struct_element_store SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, OQ-232 (a B1 defect fix)
 # Boot scope exclusion: memory/arena_struct_elements SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
 # Boot scope exclusion: memory/c2001_arena_handle_into_pool SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
 # Boot scope exclusion: memory/c2051_arena_in_struct SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
@@ -363,15 +439,127 @@
 # Boot scope exclusion: struct/zero_field_bounds_order SPEC-09 BOOT-01 excludes module variables and struct results; cint-core-1 fixture
 # Boot scope exclusion: switch/fallthrough SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
 # Boot scope exclusion: switch/full_range_fallthrough_default SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: tables/add_checked_i1024 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/add_checked_i128 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/add_checked_i256 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/add_checked_i512 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/add_checked_u128 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/add_checked_u256 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/add_checked_u512 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/add_sat_i1024 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/add_sat_i128 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/add_sat_i256 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/add_sat_i512 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
 # Boot scope exclusion: tables/add_sat_i64 SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
 # Boot scope exclusion: tables/add_sat_i8 SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: tables/add_sat_u128 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/add_sat_u256 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/add_sat_u512 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
 # Boot scope exclusion: tables/add_sat_u8 SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: tables/add_wrap_i1024 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/add_wrap_i128 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/add_wrap_i256 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/add_wrap_i512 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/add_wrap_u128 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/add_wrap_u256 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/add_wrap_u512 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/div_checked_i1024 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/div_checked_i128 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/div_checked_i256 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/div_checked_i512 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/div_checked_u128 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/div_checked_u256 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/div_checked_u512 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/kernel_add_checked_i64 SPEC-09 BOOT-01 excludes kernels; kernel table, CONF-17 (box 11 unit 6)
+# Boot scope exclusion: tables/kernel_add_sat_i64 SPEC-09 BOOT-01 excludes kernels; kernel table, CONF-17 (box 11 unit 6)
+# Boot scope exclusion: tables/kernel_add_wrap_i64 SPEC-09 BOOT-01 excludes kernels; kernel table, CONF-17 (box 11 unit 6)
+# Boot scope exclusion: tables/kernel_div_checked_i64 SPEC-09 BOOT-01 excludes kernels; kernel table, CONF-17 (box 11 unit 6)
+# Boot scope exclusion: tables/kernel_mul_checked_i64 SPEC-09 BOOT-01 excludes kernels; kernel table, CONF-17 (box 11 unit 6)
+# Boot scope exclusion: tables/kernel_mul_sat_i64 SPEC-09 BOOT-01 excludes kernels; kernel table, CONF-17 (box 11 unit 6)
+# Boot scope exclusion: tables/kernel_mul_wrap_i64 SPEC-09 BOOT-01 excludes kernels; kernel table, CONF-17 (box 11 unit 6)
+# Boot scope exclusion: tables/kernel_rem_checked_i64 SPEC-09 BOOT-01 excludes kernels; kernel table, CONF-17 (box 11 unit 6)
+# Boot scope exclusion: tables/kernel_shl_checked_i64 SPEC-09 BOOT-01 excludes kernels; kernel table, CONF-17 (box 11 unit 6)
+# Boot scope exclusion: tables/kernel_shl_wrap_i64 SPEC-09 BOOT-01 excludes kernels; kernel table, CONF-17 (box 11 unit 6)
+# Boot scope exclusion: tables/kernel_shr_checked_i64 SPEC-09 BOOT-01 excludes kernels; kernel table, CONF-17 (box 11 unit 6)
+# Boot scope exclusion: tables/kernel_sub_checked_i64 SPEC-09 BOOT-01 excludes kernels; kernel table, CONF-17 (box 11 unit 6)
+# Boot scope exclusion: tables/kernel_sub_sat_i64 SPEC-09 BOOT-01 excludes kernels; kernel table, CONF-17 (box 11 unit 6)
+# Boot scope exclusion: tables/kernel_sub_wrap_i64 SPEC-09 BOOT-01 excludes kernels; kernel table, CONF-17 (box 11 unit 6)
+# Boot scope exclusion: tables/mul_checked_i1024 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/mul_checked_i128 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/mul_checked_i256 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/mul_checked_i512 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/mul_checked_u128 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/mul_checked_u256 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/mul_checked_u512 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/mul_sat_i1024 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/mul_sat_i128 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/mul_sat_i256 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/mul_sat_i512 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
 # Boot scope exclusion: tables/mul_sat_i64 SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
 # Boot scope exclusion: tables/mul_sat_i8 SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: tables/mul_sat_u128 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/mul_sat_u256 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/mul_sat_u512 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
 # Boot scope exclusion: tables/mul_sat_u8 SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: tables/mul_wrap_i1024 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/mul_wrap_i128 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/mul_wrap_i256 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/mul_wrap_i512 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/mul_wrap_u128 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/mul_wrap_u256 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/mul_wrap_u512 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/rem_checked_i1024 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/rem_checked_i128 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/rem_checked_i256 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/rem_checked_i512 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/rem_checked_u128 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/rem_checked_u256 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/rem_checked_u512 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/shl_checked_i1024 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/shl_checked_i128 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/shl_checked_i256 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/shl_checked_i512 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/shl_checked_u128 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/shl_checked_u256 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/shl_checked_u512 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/shl_wrap_i1024 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/shl_wrap_i128 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/shl_wrap_i256 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/shl_wrap_i512 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/shl_wrap_u128 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/shl_wrap_u256 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/shl_wrap_u512 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/shr_checked_i1024 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/shr_checked_i128 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/shr_checked_i256 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/shr_checked_i512 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/shr_checked_u128 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/shr_checked_u256 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/shr_checked_u512 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/sub_checked_i1024 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/sub_checked_i128 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/sub_checked_i256 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/sub_checked_i512 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/sub_checked_u128 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/sub_checked_u256 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/sub_checked_u512 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/sub_sat_i1024 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/sub_sat_i128 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/sub_sat_i256 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/sub_sat_i512 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
 # Boot scope exclusion: tables/sub_sat_i64 SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
 # Boot scope exclusion: tables/sub_sat_i8 SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: tables/sub_sat_u128 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/sub_sat_u256 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/sub_sat_u512 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
 # Boot scope exclusion: tables/sub_sat_u8 SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: tables/sub_wrap_i1024 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/sub_wrap_i128 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/sub_wrap_i256 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/sub_wrap_i512 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; generated, box 15 unit 1
+# Boot scope exclusion: tables/sub_wrap_u128 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/sub_wrap_u256 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
+# Boot scope exclusion: tables/sub_wrap_u512 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; generated, box 15 unit 1
 # Boot scope exclusion: ternary/planes_add27 SPEC-09 5.5; seed inventory outside_subset; t27 set 1, print statements
 # Boot scope exclusion: ternary/planes_adders SPEC-09 5.5; seed inventory outside_subset; t27 set 1, print statements
 # Boot scope exclusion: ternary/planes_digits SPEC-09 5.5; seed inventory outside_subset; t27 set 1, print statements
@@ -417,6 +605,56 @@
 # Boot scope exclusion: view/slice_reversed_inclusive SPEC-09 BOOT-01 excludes array slices and the by step; held I-2 (box 09, R0)
 # Boot scope exclusion: view/slice_strided SPEC-09 BOOT-01 excludes array slices and the by step; held I-2 (box 09, R0)
 # Boot scope exclusion: view/transpose_view SPEC-09 BOOT-01 excludes rank 2, local view variables and transpose; held I-2 (box 09, R0)
+# Boot scope exclusion: wide/add_checked_u512_overflow SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/arena_view_sum_i128 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/array_i1024_rank2_row_sum SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/array_i128_extremes SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/array_i128_index_bounds SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/convert_i256_to_u256_negative SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/convert_u512_to_u128_narrow SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/convert_wrap_u128 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/copy_reverse_reshape_i256 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/copy_shape_i256 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/div_rem_u512 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/div_zero_u512 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/dot_i256_into_i512 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/dot_i256_overflow SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/fold_checked_i1024_overflow SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/fold_constant_u512_overflow SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/kernel_add_overflow_u256 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/kernel_alias_descriptors_i256 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/kernel_alias_descriptors_u128 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/kernel_mul_overflow_i128 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/kernel_reduce_sum_i512 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/min_empty_i512 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/min_max_i512 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/module_state_i256 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/module_state_u512 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/mul_checked_u128_overflow SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/mul_full_u256 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/mul_full_u512_refused SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/mul_full_u64 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/return_u128_max SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/rotate_shift_u512 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/rotl_count_u128 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/shl_checked_u256_overflow SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/slice_bounds_i512 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/slice_reversed_i512 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/state_after_fault_u128 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/struct_array_field_i128 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/struct_field_u256 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/sub_checked_u256_underflow SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/sum_i1024_exact_accumulator SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/sum_i1024_into_i128_overflow SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/sum_i128_into_i256 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/sum_u128_overflow SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/sum_u256_into_u512 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/sum_wrap_sat_i256 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/uabs_i1024_refused SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/uabs_i128_min SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/view_params_i256 SPEC-09 BOOT-01 INT_TYPE excludes I128 to I1024; frozen, box 15 unit 1
+# Boot scope exclusion: wide/view_slice_u512 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
+# Boot scope exclusion: wide/wrap_sat_u256 SPEC-09 BOOT-01 INT_TYPE excludes U128 to U512; frozen, box 15 unit 1
 # Reference: anchors/add.checked.i128.001 cintc SPEC-09 CONF-14.5, 5.5; no cint-boot-1 operator form; add.checked.i128
 anchors/add.checked.i128.001 cintc not_applicable
 # Reference: anchors/add.checked.i16.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation add.checked.i16
@@ -1397,3 +1635,5 @@ view/size_parameter_two_views cintc compared
 view/struct_array_field cintc compared
 # Reference: view/struct_view_inout cintc SPEC-09 CONF-14.1; SPEC-04 LS-119; SPEC-09 BOOT-01 (params: a view whose element type is a struct)
 view/struct_view_inout cintc compared
+# Reference: wide/u1024_refused cintc SPEC-09 CONF-14.1; SPEC-01 IM-6; SPEC-04 17.2 (C3006 at 8:5, U1024 stays Proposed under BX15-02); frozen from cint_ref, box 15 unit 1
+wide/u1024_refused cintc compared

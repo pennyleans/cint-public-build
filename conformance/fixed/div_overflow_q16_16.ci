@@ -1,0 +1,11 @@
+// case: fixed/div_overflow_q16_16
+// clause: SPEC-01 IM-65, IM-66, IM-106 (-32768.0 / -1.0 is raw 2^31, outside Q16.16)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 10:14 (the `/`), operation div.checked.q16_16.half_even, operands Q16.16 raw -2147483648 and Q16.16 raw -65536, exact 2147483648, limit Q16.16 raw 2147483647; stack depth 0; fuel 1. Box 15, unit 1
+
+export Bool run() {
+    Q16.16 a = -32768.0;
+    Q16.16 b = -1.0;
+    return a / b != 0;
+}

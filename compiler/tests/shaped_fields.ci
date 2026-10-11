@@ -1,0 +1,139 @@
+// BX22-06: struct fields of rank 2 to 4, read and written by element, passed as views,
+// rows and slices, copied with their struct, assigned whole, constructed and imported.
+import shaped_field_lib as lib;
+
+struct Motion { I64[4, 3] pos; I64[4] gm; I64 tick; }
+struct Flags { Bool[2, 2] on; U8[2, 3, 2] code; I16[1, 2, 2, 3] four; }
+struct State { Motion m; Flags f; }
+export struct Plate { I64[2, 3] cells; Bool[2, 2] on; U8 tag; }
+
+I64 total[n](in I64[n, 3] v) {
+    I64 s = 0;
+    for i in 0..n {
+        for j in 0..3 { s += v[i, j] * (i * 3 + j + 1); }
+    }
+    return s;
+}
+void paint(inout I64[_, _] v, I64 base) {
+    for i in 0..4 {
+        for j in 0..3 { v[i, j] = base + i * 10 + j; }
+    }
+}
+I64 row_sum(in I64[_] r) { return r[0] + r[1] + r[2]; }
+I64 corner[r, c](in I64[r, c] m) { return m[r - 1, c - 1] * 100 + r * 10 + c; }
+void advance(inout Motion m) { m.pos[3, 2] += 5; m.tick += 1; }
+
+export Plate flipped(Plate a) {
+    Plate b = a;
+    b.cells[0, 0] = a.cells[1, 2];
+    b.on[0, 1] = !a.on[0, 1];
+    b.tag = a.tag + 1;
+    return b;
+}
+export I64 element(I64 i, I64 j) {
+    Motion m;
+    m.pos[i, j] = 7;
+    return m.pos[i, j] + m.pos[0, 0];
+}
+export I64 store_bounds(I64 i, I64 j) {
+    Motion m;
+    m.pos[i, j] = 7;
+    return 1;
+}
+export I64 view_arg() {
+    Motion m;
+    paint(m.pos, 100);
+    return total(m.pos);
+}
+export I64 partial(I64 i) {
+    Motion m;
+    paint(m.pos, 1);
+    return row_sum(m.pos[i]);
+}
+export I64 sliced(I64 lo) {
+    Motion m;
+    paint(m.pos, 1);
+    return corner(m.pos[lo.., ..2]);
+}
+export I64 copied() {
+    Motion m;
+    paint(m.pos, 3);
+    Motion n = m;
+    m.pos[1, 1] = 0;
+    Motion o;
+    o = n;
+    return o.pos[1, 1] * 1000 + m.pos[1, 1] + o.pos[3, 2];
+}
+export I64 inout_struct() {
+    Motion m;
+    m.pos[3, 2] = 1;
+    advance(m);
+    advance(m);
+    return m.pos[3, 2] * 10 + m.tick;
+}
+export I64 nested(I64 i) {
+    State s;
+    s.m.pos[2, 1] = 9;
+    s.f.on[1, i] = true;
+    s.f.code[1, 2, 1] = 200 as U8;
+    s.f.four[0, 1, 1, 2] = -3 as I16;
+    I64 r = s.m.pos[2, 1] + (s.f.code[1, 2, 1] as I64) + (s.f.four[0, 1, 1, 2] as I64);
+    if (s.f.on[1, 1]) { r += 1000; }
+    return r;
+}
+export I64 compound(I64 k) {
+    Motion m;
+    for i in 0..k { m.pos[i % 4, i % 3] += i; }
+    return total(m.pos);
+}
+export I64 elements(I64 i) {
+    Motion[2] ms;
+    ms[1].pos[2, 2] = 6;
+    ms[i].pos[0, 1] = 4;
+    return ms[1].pos[2, 2] * 10 + ms[1].pos[0, 1];
+}
+export I64 whole_from_local() {
+    Motion m;
+    I64[4, 3] a;
+    a[2, 1] = 8;
+    m.pos = a;
+    Motion n;
+    n.pos = m.pos;
+    return n.pos[2, 1];
+}
+export I64 whole_from_view(I64 rows) {
+    I64[5, 3] a;
+    a[3, 1] = 6;
+    Motion m;
+    m.pos = a[..rows, ..];
+    return m.pos[3, 1];
+}
+export I64 constructed() {
+    I64[4, 3] a;
+    I64[4] g;
+    a[2, 1] = 8;
+    g[3] = 4;
+    Motion m = Motion(a, g, 5);
+    a[2, 1] = 0;
+    return m.pos[2, 1] * 100 + m.gm[3] * 10 + m.tick;
+}
+export I64 constructed_shape(I64 rows) {
+    I64[5, 3] a;
+    I64[4] g;
+    Motion m = Motion(a[..rows, ..], g, 5);
+    return m.tick;
+}
+export I64 imported() {
+    lib.Grid g;
+    g.cells[1, 2] = 4;
+    lib.bump(g, 1, 2);
+    lib.Deep d;
+    d.g = g;
+    d.bytes[1, 0, 1] = 3 as U8;
+    return lib.corner(d.g) * 10 + (d.bytes[1, 0, 1] as I64);
+}
+export I64 imported_bounds(I64 i) {
+    lib.Grid g;
+    lib.bump(g, i, 0);
+    return g.cells[1, 0];
+}

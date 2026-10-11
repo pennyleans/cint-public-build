@@ -1,0 +1,30 @@
+// Module-level handles (decision on OQ-242) for python/tests/test_state.py: each `run` counts
+// its call, removes from `jobs` the slot `oldest` names from its third call on, moves `newest`
+// into `oldest`, inserts ten times its count as `newest`, and allocates its count of elements
+// in `trail` as `span`, filled with its count. It returns, as decimal digits, the value
+// `oldest` names (from its second call on), the value `newest` names and the sum of `span`.
+
+Pool(I64, 2) jobs;
+Arena(I64, 64) trail;
+I64 calls = 0;
+Handle(I64) oldest;
+Handle(I64) newest;
+Handle(I64[]) span;
+
+export I64 run() {
+    calls += 1;
+    if (calls > 2) {
+        jobs.remove(oldest);
+    }
+    oldest = newest;
+    newest = jobs.insert(calls * 10);
+    span = trail.alloc(calls);
+    for i in 0..calls {
+        trail[span][i] = calls;
+    }
+    I64 d = jobs[newest] * 100 + sum(trail[span]);
+    if (calls > 1) {
+        d += jobs[oldest] * 10000;
+    }
+    return d;
+}

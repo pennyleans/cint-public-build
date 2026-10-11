@@ -1,0 +1,16 @@
+// case: wide/copy_shape_i256
+// clause: SPEC-01 IM-187; SPEC-04 LS-145 (`copy` between I256 views of different extents faults before any element moves)
+// subset: cint-core-1 (wide integers, array built-ins)
+// entry: run; args: none
+// spec outcome: fault E_SHAPE at 8:5 (callee `copy`), operation copy.shape, as in view/copy_shape_assignment: operands I64 0 (dimension) and I64 3 (source extent), limit I64 2 (destination extent); stack depth 1, stack 14:5; fuel 2 (entry, call to move). Box 15, unit 1
+
+void move(inout I256[_] dst, in I256[_] src) {
+    copy(dst, src);
+}
+
+export Bool run() {
+    I256[2] dst;
+    I256[3] src = [1, 2, 3];
+    move(dst, src);
+    return dst[0] != 0;
+}

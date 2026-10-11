@@ -1,0 +1,9 @@
+case wide/struct_field_u256
+clause SPEC-04 LS-67, LS-73, LS-77; SPEC-01 IM-6, IM-46; SPEC-09 CONF-11 rule 14 (a struct with a U256 array field and a U128 field, returned by value)
+format 5
+source reference
+outcome value
+stdout-bytes 40
+stdout-sha256 3bc3fde07a7e00269961407c60338b21f1298a5fe24649e0c1f9855735213326
+return I64 6
+fuel-consumed 2

@@ -1,0 +1,7 @@
+case fixed/print_kind_c1037
+clause SPEC-04 LS-213, 17.2 (a kind does not apply to a fixed-point value)
+format 5
+source compile-error
+outcome compile-error
+diagnostic.code C1037
+diagnostic.position fixed/print_kind_c1037.ci:9:7

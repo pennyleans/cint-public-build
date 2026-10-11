@@ -1,0 +1,9 @@
+case fixed/mul_forms_q16_16
+clause SPEC-01 IM-61, IM-62 (`*|`, `mul_sat` and `mul_wrap` apply the form rule to the rounded raw product)
+format 5
+source reference
+outcome value
+stdout-bytes 58
+stdout-sha256 9e73f424faaddb2820924794b2cc4723a4932120823adfbb9da9f6ed7a5aca88
+return I64 0
+fuel-consumed 1

@@ -1,0 +1,18 @@
+case wide/rotl_count_u128
+clause SPEC-01 IM-6, IM-16, IM-45, IM-106; SPEC-09 CONF-11 rule 14 (a rotation count of 128 on U128 is outside 0 to 127)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_SHIFT
+fault.operation rotl.checked.u128
+fault.operand U128 1
+fault.operand I64 128
+fault.exact none
+fault.limit I64 127
+fault.position wide/rotl_count_u128.ci:10:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

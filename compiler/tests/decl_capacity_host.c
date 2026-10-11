@@ -77,7 +77,7 @@ static int one(int64_t k, int variant, const uint32_t *ids)
         {NULL, ns, 80, CINT_TAG_RECORD, ids[5], CINT_VIEW_WRITE, 0},
         {NULL, 2 * ns, 40, CINT_TAG_RECORD, ids[6], CINT_VIEW_WRITE, 0},
         {NULL, nn + 16, 48, CINT_TAG_RECORD, ids[2], CINT_VIEW_WRITE, 0},
-        {NULL, (n + 1) / 2 + 64, 1, CINT_TAG_U8, 0, CINT_VIEW_WRITE, 0},
+        {NULL, (n + 1) / 2 + 12 * n + 64, 1, CINT_TAG_U8, 0, CINT_VIEW_WRITE, 0},
         {NULL, 237200, 1, CINT_TAG_U8, 0, CINT_VIEW_WRITE, 0},
         {NULL, k, 64, CINT_TAG_RECORD, ids[7], CINT_VIEW_WRITE, 0},
     };

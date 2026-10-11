@@ -1,0 +1,17 @@
+// case: probes/rank2_param_slice
+// clause: box 13 unit 7 probe: a rank-2 slice passed to a rank-2 parameter (extent d, bind.shape)
+// entry: run; args: none
+
+I64 corner[r, c](in I64[r, c] m) {
+    return m[r - 1, c - 1] * 100 + r * 10 + c;
+}
+
+export I64 run() {
+    I64[4, 5] m;
+    for i in 0..4 {
+        for j in 0..5 {
+            m[i, j] = i * 5 + j;
+        }
+    }
+    return corner(m[1.., ..3]);
+}

@@ -1,0 +1,7 @@
+case fixed/literal_off_grid_c2006
+clause SPEC-04 LS-37, 17.2 (0.1 is not a multiple of 2^-16 and has no round clause)
+format 5
+source compile-error
+outcome compile-error
+diagnostic.code C2006
+diagnostic.position fixed/literal_off_grid_c2006.ci:8:16

@@ -39,6 +39,21 @@ built-ins over the built-in set `ArithError` (SPEC-01 IM-30, IM-188), and
 LS-322). A module parsed with `box12=False` is checked as before box 12, where
 `ArithError` is an ordinary name.
 
+Box 15 unit 1 (docs/design/notes/2026-10-05-box15-wide-integers-fixed-point.md,
+sections 4.2 and 4.3; defaults BX15-06 and BX15-07) admits `I128` to `I1024`
+wherever box 09 and box 12 admit an integer element: arrays and views of every
+rank, slices, struct fields, arenas, pools, kernel parameters and the
+reductions. `dot` over `I1024` elements is refused: its exact sum can exceed the
+run-time record bound of SPEC-01 IM-108, and BX15-07 proposes C2103 for it. The
+unsigned wide types `U128` to `U512` (ruling BX15-02) come with `uabs` of `I128`
+to `I512`, rotations, and `mul_full` of `U64` to `U256`. Fixed point (rulings
+BX15-03 to BX15-06; ref/OPEN.md REF-OQ-47) types `Q<i>.<f>` with storage of 8 to 64
+bits wherever an integer element is admitted, fraction literals with their `round`
+clause, `.raw` and `Q.raw(n)`, the operators and built-ins of SPEC-01 IM-60 to
+IM-67, `qmul` and `mul_int`, conversions with a `round` clause, the reductions at
+the element format and `dot` with one rounding. A module parsed with `fixed=False`
+is checked as before fixed point, where `qmul` and `mul_int` are ordinary names.
+
 Box 12's memory lifetimes group adds arenas and pools (SPEC-03 M-12 to M-20; the
 readings of ref/OPEN.md REF-OQ-45): module-level `Arena(T, capacity) name;` and
 `Pool(T, capacity) name;` with an `I64` constant capacity of at least 0 (C6004,
@@ -53,7 +68,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from . import fmt, views
+import re
+
+from . import fixed, fmt, views
 from . import parser as P
 from .arith import ROUND_MODES
 from .faults import CompileError, Diagnostic, Fault, FaultSignal, Position, Refused, error
@@ -67,12 +84,15 @@ PRELUDE = frozenset("""
 len extent size lower copy fill equal swap abs uabs min max clamp div_trunc rem_trunc
 div_euclid rem_euclid divmod div_round muldiv mul_full isqrt isqrt_round add_result
 sub_result mul_result div_result rem_result shl_result rotl rotr mul div mul_wrap mul_sat
-sqrt sum fold_checked sum_wrap sum_sat count wrap_bits rescale3 rescale3_rem shl3 sign
+sqrt qmul mul_int sum fold_checked sum_wrap sum_sat count wrap_bits rescale3 rescale3_rem shl3 sign
 tdot random format utf8 embed to_device to_host dot transpose reverse reshape
 """.split())
 # The names box 09 adds to the prelude (rulings R4 and R6); a module parsed without the
 # box 09 surface may still declare them.
 BOX09_PRELUDE = frozenset({"dot", "transpose", "reverse", "reshape"})
+# The names box 15 adds to the prelude (ruling BX15-05); a module parsed without fixed point may
+# still declare them.
+FIXED_PRELUDE = frozenset({"qmul", "mul_int"})
 BUILTIN_TYPES = frozenset({"Bool", "Str", "Round", "T1", "T27", "PT5", "PT4", "Arena", "Pool", "Handle"})
 # The built-in error set of SPEC-01 IM-188, a type name with the box 12 surface (SPEC-04 LS-21).
 BOX12_TYPES = frozenset({"ArithError"})
@@ -102,7 +122,17 @@ BUILTIN_SIGS = {
     "div_round": ("T", 2, False, True), "muldiv": ("R", 3, True, True),
     "mul_full": ("W", 2, False, False), "isqrt": ("T", 1, False, False),
     "isqrt_round": ("T", 1, False, True), "rotl": ("T", 2, False, False), "rotr": ("T", 2, False, False),
+    # Fixed point only (SPEC-01 IM-61 to IM-67, SPEC-04 LS-145); `sqrt` takes its mode or not.
+    "mul": ("T", 2, False, True), "div": ("T", 2, False, True), "mul_wrap": ("T", 2, False, True),
+    "mul_sat": ("T", 2, False, True), "sqrt": ("T", 1, False, "optional"),
 }
+# The scalar built-ins defined on fixed point (SPEC-01 IM-60 to IM-67), and those on fixed point only.
+Q_BUILTINS = frozenset({"abs", "min", "max", "mul", "div", "mul_wrap", "mul_sat", "sqrt"})
+Q_ONLY_BUILTINS = frozenset({"mul", "div", "mul_wrap", "mul_sat", "sqrt"})
+# The operators of SPEC-01 IM-60 to IM-62 and IM-65 on fixed point; `%` is not defined there (IM-66).
+Q_BIN_OPS = frozenset({"+", "-", "+%", "-%", "+|", "-|", "*", "*%", "*|", "/"})
+# The spelling of a fixed-point type name (SPEC-04 LS-36); `fixed.q_type` decides C2005.
+Q_SPELLING = re.compile(r"Q[0-9]+\.[0-9]+\Z")
 
 BIN_OPS = {
     "+": ("add", "checked"), "+%": ("add", "wrap"), "+|": ("add", "sat"),
@@ -294,6 +324,15 @@ class HandleType:
         return self.name
 
 
+def is_q(t) -> bool:
+    """A fixed-point type `Q<i>.<f>` (SPEC-01 IM-54)."""
+    return isinstance(t, str) and fixed.is_q_type(t)
+
+
+def is_num(t) -> bool:
+    return is_int_type(t) or is_q(t)
+
+
 def _same_elem(a, b) -> bool:
     return a is b or (isinstance(a, str) and a == b) or (isinstance(a, HandleType) and a == b)
 
@@ -328,6 +367,8 @@ def elem_ident(t) -> str:
     if isinstance(t, ErrorSet):
         raise Refused("an index or slice fault on an array of error values: SPEC-01 IM-130 names no error-set "
                       "element in the operation (ref/OPEN.md REF-OQ-44)")
+    if is_q(t):
+        return fixed.q_type(t).ident           # q16_16 (SPEC-01 IM-130)
     return "struct" if isinstance(t, StructType) else t.lower()
 
 
@@ -389,7 +430,10 @@ class Checker:
         self.is_script = False
         self.selected: dict = {}     # selected import name -> the Checker of its module
         self.box09 = getattr(module, "box09", True)
+        self.fixed = getattr(module, "fixed", True)
         self.prelude = PRELUDE if self.box09 else PRELUDE - BOX09_PRELUDE
+        if not self.fixed:
+            self.prelude = self.prelude - FIXED_PRELUDE
         self.kernel = None           # the KernelDecl being checked
         self.kreduce: dict = {}      # scalar `out` name -> its `reduce` statement, in the kernel checked
         self.box12 = getattr(module, "box12", True)
@@ -471,6 +515,8 @@ class Checker:
             elem = sym.type
         elif ref.name in INT_TYPES or ref.name == BOOL:
             elem = ref.name
+        elif Q_SPELLING.match(ref.name):
+            elem = self.q_name(ref.name, ref.pos)
         elif ref.name in self.structs:
             elem = self.structs[ref.name]
         elif ref.name in self.errsets:
@@ -485,9 +531,15 @@ class Checker:
             error("C3006", ref.pos, "unknown type `%s`" % ref.name)
         if ref.shape is None:
             return elem
-        if is_int_type(elem) and int_type(elem).width > 64:
-            raise Refused("arrays of wide integers are outside the surface cint_ref implements", ref.pos)
         return self.shape_type(elem, ref.dims or [ref.shape], where, ref)
+
+    def q_name(self, name, pos) -> str:
+        """`Q<i>.<f>` with `i + f` of 8, 16, 32 or 64 and `i >= 1`, else C2005 (SPEC-04 LS-36)."""
+        try:
+            return fixed.q_type(name).name
+        except ValueError:
+            error("C2005", pos, "`%s` is not a fixed-point type: i + f is 8, 16, 32 or 64, with i >= 1 and f >= 0 "
+                  "(SPEC-04 LS-36)" % name)
 
     def memory_type(self, ref: P.TypeRef, where):
         """`Arena(T)`, `Pool(T)`, `Handle(T)` or `Handle(T[])` (SPEC-03 3.2, spelling Proposed;
@@ -520,9 +572,10 @@ class Checker:
         return self.shape_type(t, ref.dims or [ref.shape], where, ref)
 
     def _memory_elem(self, elem, ref):
-        """The element type of an arena, a pool or a handle: an integer type, `Bool` or a struct
-        (SPEC-03 M-19; ref/OPEN.md REF-OQ-45)."""
-        if isinstance(elem, StructType) or elem == BOOL or (is_int_type(elem) and int_type(elem).width <= 64):
+        """The element type of an arena, a pool or a handle: an integer type, wide types
+        included (box 15 default BX15-06), `Bool` or a struct (SPEC-03 M-19; ref/OPEN.md
+        REF-OQ-45)."""
+        if isinstance(elem, StructType) or elem == BOOL or is_int_type(elem):
             return elem
         raise Refused("an arena or pool of %s: cint_ref implements integer, Bool and struct elements"
                       % type_name(elem), ref.pos)
@@ -901,16 +954,37 @@ class Checker:
                           "lines for integer and Bool variables only (ref/OPEN.md REF-OQ-44)", d.pos)
         if d.init is None:
             return (d.name, t, None)
-        if is_aggregate(t):
-            raise Refused("a module-level struct or array initializer is outside the surface cint_ref implements",
-                          d.pos)
         self.expect(d.init, t)
-        if not self.is_const(d.init):
+        leaves = self.const_items(d.init) if is_aggregate(t) else [d.init]
+        if leaves is None or not all(self.is_const(x) for x in leaves):
             error("C6004", d.init.start, "a module-level variable needs a constant initializer (SPEC-04 LS-113)",
                   notes=self.script_notes("give `%s` a constant initializer, or compute the value inside "
                                           "`void main() { ... }`" % d.name))
-        self.fold(d.init)
+        for x in leaves:
+            self.fold(x)
+        if is_aggregate(t):
+            from .exec import const_aggregate
+            return (d.name, t, const_aggregate(d.init))
         return (d.name, t, d.init.const.value)
+
+    def const_items(self, e):
+        """The scalar items of an array literal or struct constructor that initializes a
+        module-level variable, in source order, or None for any other form: such a literal
+        is a constant initializer when every item is constant (SPEC-04 LS-113; decision on
+        OQ-233)."""
+        if isinstance(e, P.ArrayLit):
+            parts = e.items
+        elif isinstance(e, P.Call) and e.kind == "struct":
+            parts = [a for _, a in e.order]
+        else:
+            return [e] if not is_aggregate(getattr(e, "ty", None)) else None
+        out = []
+        for x in parts:
+            items = self.const_items(x)
+            if items is None:
+                return None
+            out += items
+        return out
 
     def check_function(self, f: P.FuncDecl):
         params = [(name, pos, Sym("sizeparam", name, "I64", pos)) for name, pos in f.size_params]
@@ -945,7 +1019,7 @@ class Checker:
                 at = getattr(p, "start", p.pos)
                 t = self.resolve_type(p.type, "kparam")
                 if isinstance(t, ArrayType):
-                    if not is_int_type(t.elem):
+                    if not is_num(t.elem):
                         error("C5028", at, "a kernel array parameter has an integer element type, not %s "
                               "(SPEC-04 LS-246)" % type_name(t.elem))
                     for x in p.type.dims:
@@ -953,7 +1027,7 @@ class Checker:
                             raise Refused("an extent that is not a shape expression of SPEC-02 K-1", x.start)
                     t.writable = p.mode != "in"
                 else:
-                    if not is_int_type(t):
+                    if not is_num(t):
                         error("C5028", at, "a kernel scalar parameter has an integer type, not %s (SPEC-04 LS-246)"
                               % type_name(t))
                     if p.mode == "inout":
@@ -1295,6 +1369,15 @@ class Checker:
         if not is_int_type(t):
             error("C2103", e.start, "the operator is defined on integer types, not on %s" % type_name(t))
 
+    def require_op(self, op, t, e):
+        """A binary or unary operator `op` on type `t`: integers take every operator, and fixed
+        point the operators of SPEC-01 IM-60 to IM-62 and IM-65 (`%` is not defined, IM-66)."""
+        if is_q(t):
+            if op not in Q_BIN_OPS:
+                error("C2103", e.start, "`%s` is not defined on the fixed-point type %s (SPEC-01 IM-60, IM-66)" % (op, t))
+            return
+        self.require_int(t, e)
+
     def infer(self, e):
         t = getattr(self, "_infer_" + type(e).__name__)(e)
         if isinstance(t, ErrorUnion) and not getattr(e, "_consumed", False):
@@ -1470,6 +1553,12 @@ class Checker:
         if e.type_name in INT_TYPES and e.prop in ("min", "max"):
             e.ty = e.type_name
             return e.ty
+        if Q_SPELLING.match(e.type_name):
+            q = self.q_name(e.type_name, e.start)
+            if e.prop in ("min", "max", "epsilon"):
+                # SPEC-04 LS-51: `epsilon` is the value whose raw storage is 1.
+                e.ty = q
+                return q
         raise Refused("the property %s.%s is outside the scalar surface" % (e.type_name, e.prop), e.start)
 
     def _infer_Name(self, e):
@@ -1507,7 +1596,8 @@ class Checker:
         t = self.infer(e.operand)
         if t is None:
             return None
-        self.require_int(t, e.operand)
+        if not (is_q(t) and e.op == "-"):
+            self.require_int(t, e.operand)
         e.ty = t
         return t
 
@@ -1529,18 +1619,18 @@ class Checker:
         if tl is None and tr is None:
             return None
         if tl is None:
-            self.require_int(tr, e.right)
+            self.require_op(e.op, tr, e.right)
             self.settle_rule4(e.left, tr)
             t = tr
         elif tr is None:
-            self.require_int(tl, e.left)
+            self.require_op(e.op, tl, e.left)
             self.settle_rule4(e.right, tl)
             t = tl
         else:
             if tl != tr:
                 error("C2001", e.right.start, "operands of `%s` have types %s and %s" % (e.op, type_name(tl), type_name(tr)))
             t = tl
-        self.require_int(t, e)
+        self.require_op(e.op, t, e)
         e.ty = t
         return t
 
@@ -1618,7 +1708,11 @@ class Checker:
         src_lit = isinstance(e.operand, P.Lit)
         if src_lit:
             if e.operand.kind == "frac":
-                raise Refused("a fraction literal (fixed point) is outside the scalar surface", e.operand.start)
+                if not self.fixed:
+                    raise Refused("a fraction literal (fixed point) is outside the scalar surface", e.operand.start)
+                # OQ-162: a fraction literal has no rule as a conversion source (BX15-11 proposes C2004).
+                raise Refused("a fraction literal as the source of a conversion: cint_ref gives it no outcome yet",
+                              e.operand.start)
             e.operand.ty = Z
             src = Z
         else:
@@ -1626,8 +1720,18 @@ class Checker:
             if src is None:
                 self.settle(e.operand, "I64")
                 src = "I64"
+        # Fixed point to an integer, or to a fixed-point type of fewer fraction bits, rounds
+        # (SPEC-01 IM-68): by the `round` clause, `half_even` without one (IM-43, IM-69).
+        rounds = is_q(src) and (is_int_type(target) or
+                                (is_q(target) and fixed.q_type(target).f < fixed.q_type(src).f))
         if e.round_mode is not None:
-            error("C2009", e.pos, "a `round` clause is permitted only where the conversion rounds")
+            if not rounds:
+                error("C2009", e.pos, "a `round` clause is permitted only where the conversion rounds")
+            if e.round_mode not in ROUND_MODES:
+                error("C3007", e.pos, "expected a rounding-mode name after `round` (SPEC-01 4.5)")
+        e.mode = (e.round_mode or "half_even") if rounds else None
+        if (is_q(src) or is_q(target)) and (src == BOOL or target == BOOL):
+            error("C2008", e.start, "there is no conversion between %s and %s" % (type_name(src), type_name(target)))
         if target == BOOL:
             if is_int_type(src) or src == Z:
                 error("C2056", e.start, "there is no conversion from integers to Bool; write `x != 0`")
@@ -1701,6 +1805,11 @@ class Checker:
             e.ty = sym.type
             return e.ty
         t = self.infer(e.obj)
+        if is_q(t) and e.field == "raw":
+            # `x.raw`: the storage integer, exact (SPEC-01 IM-57, SPEC-04 LS-38).
+            e.raw = True
+            e.ty = fixed.q_type(t).storage.name
+            return e.ty
         if not isinstance(t, StructType):
             error("C2103", e.pos, "a field access needs a struct value, found %s" % type_name(t))
         if e.field not in t.fields:
@@ -1712,6 +1821,8 @@ class Checker:
         return e.ty
 
     def _infer_Call(self, e):
+        if getattr(e, "raw_type", None) is not None:
+            return self._raw_ctor(e)
         name = e.callee
         if e.qual is not None and self.memory and not self.is_alias(P.Name(e.start, e.start, e.qual)):
             recv = P.Name(e.start, e.start, e.qual)
@@ -1748,12 +1859,78 @@ class Checker:
                 return self._array_builtin(e)
         if not local and self.box12 and name in RESULT_BUILTINS:
             return self._result_builtin(e)
-        if not local and name in BUILTIN_SIGS:
+        if not local and self.fixed and name in FIXED_PRELUDE:
+            return self._mixed_fixed(e)
+        if not local and name in BUILTIN_SIGS and (self.fixed or name not in Q_ONLY_BUILTINS):
             return self._builtin(e)
         if not local and name in self.prelude:
             raise Refused("the built-in `%s` is outside the scalar surface that cint_ref implements" % name, e.start)
         sym = self.lookup(name, e.start)
         error("C3007", e.start, "`%s` is not a function" % name)
+
+    def _raw_ctor(self, e):
+        """`Q<i>.<f>.raw(n)`: the value whose storage integer is `n`, of exactly the storage
+        type; exact, never faults (SPEC-01 IM-57, SPEC-04 LS-38)."""
+        q = self.q_name(e.raw_type, e.start)
+        named = next((a for a in e.args if a.name is not None), None)
+        if named is not None:
+            error("C2063", named.pos, "`%s.raw` takes no named arguments" % q)
+        if len(e.args) != 1:
+            error("C2022", e.start, "`%s.raw` takes 1 argument" % q)
+        self.expect(e.args[0].value, fixed.q_type(q).storage.name)
+        e.kind = "rawctor"
+        e.values = [e.args[0].value]
+        e.ty = q
+        return q
+
+    def _mixed_fixed(self, e):
+        """`qmul(R, a, b[, mode])` and `mul_int(a, n)` (SPEC-01 IM-63, IM-64; SPEC-04 LS-145):
+        their operands have types of their own, so neither unifies one operand type."""
+        args = list(e.args)
+        named = next((a for a in args if a.name is not None), None)
+        if named is not None:
+            error("C2063", named.pos, "`%s` takes no named arguments" % e.callee)
+        target = mode = None
+        if e.callee == "qmul":
+            if len(args) not in (3, 4):
+                error("C2022", e.start, "`qmul` takes 3 or 4 arguments")
+            ta = args.pop(0).value
+            if not isinstance(ta, P.TypeArg) or not Q_SPELLING.match(ta.name):
+                error("C3007", ta.start, "the first argument of `qmul` is a fixed-point type")
+            target = self.q_name(ta.name, ta.start)
+            if len(args) == 3:
+                ma = args.pop().value
+                if not isinstance(ma, P.Name) or ma.name not in ROUND_MODES:
+                    error("C3007", ma.start, "expected a rounding-mode name (SPEC-01 4.5)")
+                mode = ma.name
+        elif len(args) != 2:
+            error("C2022", e.start, "`mul_int` takes 2 arguments")
+        values = [a.value for a in args]
+        types = []
+        for k, v in enumerate(values):
+            vt = self.infer(v)
+            if vt is None:
+                # No rule of LS-56 gives these operands a type from each other: rule 8 (I64).
+                self.settle(v, "I64")
+                vt = "I64"
+            want_q = e.callee == "qmul" or k == 0
+            if want_q and not is_q(vt):
+                error("C2103", v.start, "`%s` takes a fixed-point value here, found %s" % (e.callee, type_name(vt)))
+            if not want_q and not is_int_type(vt):
+                error("C2103", v.start, "`mul_int` multiplies by an integer, found %s" % type_name(vt))
+            types.append(vt)
+        if e.callee == "qmul":
+            rounds = fixed.q_type(types[0]).f + fixed.q_type(types[1]).f > fixed.q_type(target).f
+            mode = (mode or "half_even") if rounds else None
+            if not rounds and len(e.args) == 4:
+                raise Refused("a mode for a `qmul` that does not round: SPEC-01 IM-63 and IM-133 write no mode, and "
+                              "no clause gives the diagnostic", e.args[3].value.start)
+        e.kind = "builtin"
+        e.values, e.count, e.mode, e.target = values, None, mode, target
+        e.operand_type = types[0]
+        e.operand_types = types
+        e.ty = target or types[0]
+        return e.ty
 
     def _member(self, e, recv):
         """A member of an arena or a pool (SPEC-04 LS-145, LS-306; SPEC-03 M-14 to M-20;
@@ -1824,12 +2001,21 @@ class Checker:
         if named is not None:
             error("C2063", named.pos, "`%s` takes no named arguments" % name)
         args = [a.value for a in e.args]
-        target = None
+        target = mode = None
         if name in ("sum", "dot") and args and isinstance(args[0], P.TypeArg):
             ta = args.pop(0)
-            if ta.name not in INT_TYPES:
+            if Q_SPELLING.match(ta.name) and self.fixed:
+                target = self.q_name(ta.name, ta.start)
+                if name == "dot" and len(args) == 3:
+                    # `dot(R, a, b, mode)` of fixed point (SPEC-04 LS-145; SPEC-01 IM-87, BX15-04).
+                    ma = args.pop()
+                    if not isinstance(ma, P.Name) or ma.name not in ROUND_MODES:
+                        error("C3007", ma.start, "expected a rounding-mode name (SPEC-01 4.5)")
+                    mode = ma.name
+            elif ta.name not in INT_TYPES:
                 error("C3007", ta.start, "the type argument of `%s` is an integer type" % name)
-            target = ta.name
+            else:
+                target = ta.name
         elif name == "dot":
             error("C3007", args[0].start if args else e.start, "the first argument of `dot` is its result type "
                   "(SPEC-04 LS-145)")
@@ -1859,9 +2045,18 @@ class Checker:
                       % type_name(elem))
             result = "I64"
         else:
-            if not is_int_type(elem):
+            if not is_num(elem):
                 error("C2103", arrays[0].start, "`%s` is defined on integer elements, not on %s" % (name, type_name(elem)))
             result = target or elem
+            if target is not None and is_q(elem) != is_q(target):
+                raise Refused("`%s` of %s elements into %s: SPEC-02 R-4 and SPEC-01 IM-87 give no rule between an "
+                              "integer and a fixed-point type" % (name, type_name(elem), target), e.start)
+            if name == "sum" and is_q(elem) and target not in (None, elem):
+                raise Refused("`sum` of %s elements into %s: SPEC-02 R-4 keeps one format, and no clause gives the "
+                              "diagnostic" % (elem, target), e.start)
+            if name == "fold_checked" and op == "mul" and is_q(elem):
+                raise Refused("`fold_checked(mul, ...)` on fixed point: SPEC-02 R-4 admits no rounding in a reduction, "
+                              "and no clause gives the diagnostic", e.start)
         if name == "dot":
             if types[1].elem != elem:
                 error("C2001", arrays[1].start, "the arguments of `dot` have elements of types %s and %s"
@@ -1870,11 +2065,25 @@ class Checker:
                 if t.rank != 1:
                     raise Refused("`dot` of an array of rank %d: it is defined on rank 1 (SPEC-04 LS-145), and no "
                                   "clause gives the diagnostic" % t.rank, a.start)
+            if is_q(elem):
+                # One rounding of the exact sum, at scale 2^(2f), to R's g fraction bits (BX15-04).
+                rounds = fixed.q_type(elem).f * 2 > fixed.q_type(target).f
+                if mode is not None and not rounds:
+                    raise Refused("a mode for a `dot` that does not round: SPEC-01 IM-87 and IM-133 write no mode, "
+                                  "and no clause gives the diagnostic", e.start)
+                mode = (mode or "half_even") if rounds else None
+            elif int_type(elem).width > 512:
+                # SPEC-01 IM-87 admits any integer element, but one I1024 product reaches 2^2046, so the
+                # exact sum of 512 or more can pass the 2,056 bits IM-108 allows a run-time record. Box 15
+                # default BX15-07 makes this C2103; until the specification says so, no outcome is given.
+                raise Refused("`dot` over %s elements: its exact sum can exceed the run-time record bound of SPEC-01 "
+                              "IM-108, and cint_ref gives it no outcome yet" % elem, arrays[0].start)
         if init is not None:
             self.expect(init, elem)
         e.kind = "reduce"
         e.rname = {"min": "reduce_min", "max": "reduce_max"}.get(name, name)
         e.op = op
+        e.mode = mode
         e.init = init
         e.arrays = arrays
         e.values = ([init] if init is not None else []) + arrays
@@ -2227,6 +2436,11 @@ class Checker:
         named = next((a for a in args if a.name is not None), None)
         if named is not None:
             error("C2063", named.pos, "`%s` takes no named arguments" % e.callee)
+        if has_mode == "optional":
+            # `sqrt(a)` and `sqrt(a, mode)` (SPEC-04 LS-145).
+            if len(args) not in (n + has_type, n + has_type + 1):
+                error("C2022", e.start, "`%s` takes %d or %d arguments" % (e.callee, n + has_type, n + has_type + 1))
+            has_mode = len(args) == n + has_type + 1
         if len(args) != n + has_type + has_mode:
             error("C2022", e.start, "`%s` takes %d arguments" % (e.callee, n + has_type + has_mode))
         target = None
@@ -2305,6 +2519,9 @@ class Checker:
                 self.settle(values[1], "I64")
             else:
                 self.require_int(tk, values[1])
+        if is_q(op_t):
+            raise Refused("`%s` on fixed point: cint_ref does not implement the result forms on fixed point yet"
+                          % e.callee, e.start)
         if not is_int_type(op_t):
             error("C2103", e.start, "`%s` needs integer arguments" % e.callee)
         e.kind = "result"
@@ -2315,20 +2532,28 @@ class Checker:
         return e.ty
 
     def _builtin_result(self, e, op_t):
+        if is_q(op_t) and e.callee in Q_BUILTINS:
+            # SPEC-01 IM-60 to IM-67: a result of the operands' fixed-point type.
+            if e.callee == "sqrt" and e.mode is None:
+                e.mode = "half_even"             # IM-67: `sqrt(a)` uses half_even
+            e.operand_type = op_t
+            e.ty = op_t
+            return e.ty
+        if e.callee in Q_ONLY_BUILTINS and is_int_type(op_t):
+            error("C2103", e.start, "`%s` is defined on fixed point only; on integers write %s (SPEC-04 LS-145)"
+                  % (e.callee, "`isqrt`" if e.callee == "sqrt" else "`*` and `div_round`"))
         if not is_int_type(op_t):
             error("C2103", e.start, "`%s` needs integer arguments" % e.callee)
         kind = BUILTIN_SIGS[e.callee][0]
         t = int_type(op_t)
-        if e.callee == "uabs" and not (t.signed and t.width <= 64):
-            error("C2103", e.start, "`uabs` is defined on I8 to I64")
+        if e.callee == "uabs" and not (t.signed and t.width <= 512):
+            error("C2103", e.start, "`uabs` is defined on I8 to I512")
         if e.callee == "mul_full":
             # SPEC-01 2.4: Specified for I8..I512 and, with the same signedness (4.10),
-            # U8..U32; U64 to U128 is Proposed.
-            if not t.signed and t.width == 64:
-                raise Refused("`mul_full` on U64 (result U128) is Proposed (SPEC-01 2.4)", e.start)
-            if t.width > (512 if t.signed else 32):
-                error("C2103", e.start, "`mul_full` is defined on I8 to I512 and U8 to U32 in cint-core-1")
-        if e.callee in ("rotl", "rotr") and (t.signed or t.width > 64):
+            # U8..U256 (decision 2026-10-09, BX15-02); U512 has none while U1024 is Proposed.
+            if t.width > (512 if t.signed else 256):
+                error("C2103", e.start, "`mul_full` is defined on I8 to I512 and U8 to U256 in cint-core-1")
+        if e.callee in ("rotl", "rotr") and t.signed:
             error("C2103", e.start, "`%s` is defined on unsigned types only" % e.callee)
         e.operand_type = op_t
         e.ty = {"T": op_t, "U": "U%d" % t.width, "W": "%s%d" % ("I" if t.signed else "U", 2 * t.width), "R": e.target}[kind]
@@ -2357,16 +2582,27 @@ class Checker:
             if e.kind == "frac":
                 if is_int_type(t):
                     error("C2004", e.start, "a fraction literal cannot have the integer type %s" % t)
-                raise Refused("a fraction literal (fixed point) is outside the scalar surface", e.start)
-            if not is_int_type(t):
+                if not self.fixed:
+                    raise Refused("a fraction literal (fixed point) is outside the scalar surface", e.start)
+                if not is_q(t):
+                    error("C2001", e.start, "expected %s, found a fraction literal" % type_name(t))
+                if e.round_mode is not None and e.round_mode not in ROUND_MODES:
+                    error("C3007", e.start, "expected a rounding-mode name after `round` (SPEC-01 4.5)")
+            elif not is_num(t):
                 error("C2001", e.start, "expected %s, found an integer literal" % type_name(t))
-            e.ty = t            # the range check (C2003) runs when the literal is evaluated
+            # The range check (C2003), and C2006 for a fraction off the grid, run when the
+            # literal is evaluated (SPEC-04 LS-37, LS-53).
+            e.ty = t
         elif isinstance(e, P.Unary):
-            self.require_int(t, e)
+            if not (is_q(t) and e.op == "-"):
+                self.require_int(t, e)
             self.settle(e.operand, t)
             e.ty = t
         elif isinstance(e, P.Binary):
-            self.require_int(t, e)
+            if e.op in SHIFTS:
+                self.require_int(t, e)
+            else:
+                self.require_op(e.op, t, e)
             self.settle(e.left, t)
             if e.op not in SHIFTS:
                 self.settle(e.right, t)
@@ -2415,6 +2651,8 @@ class Checker:
             return e.op != "as?" and self.is_const(e.operand)
         if isinstance(e, P.Call) and e.kind == "builtin":
             return all(self.is_const(v) for v in e.values) and (e.count is None or self.is_const(e.count))
+        if isinstance(e, P.Call) and e.kind == "rawctor":
+            return self.is_const(e.values[0])
         return False
 
     def fold(self, e):
@@ -2450,7 +2688,7 @@ class Checker:
                     raise CompileError(Diagnostic("C6001", r.position, "%s during constant evaluation" % r.code,
                                                   Fault(r.code, r.operation, r.operands, r.exact, r.limit)))
             for x in walk(e):
-                if isinstance(x, P.Lit) and x.kind != "frac" and is_int_type(getattr(x, "ty", None)):
+                if isinstance(x, P.Lit) and is_num(getattr(x, "ty", None)):
                     _range_check(x)
                 elif isinstance(x, P.Convert) and getattr(x, "src_type", None) == Z:
                     _literal_conversion(x)
@@ -2518,10 +2756,10 @@ class Checker:
             raise Refused("an %s variable without an initializer: no clause gives the diagnostic (ref/OPEN.md "
                           "REF-OQ-45)" % t.name, s.name_pos)
         if self.ctx == "kernel" and is_aggregate(t):
-            if isinstance(t, StructType) or not (is_int_type(t.elem) or t.elem == BOOL):
+            if isinstance(t, StructType) or not (is_num(t.elem) or t.elem == BOOL):
                 raise Refused("a private struct in a kernel body is outside the surface cint_ref implements",
                               s.name_pos)
-            width = 8 if t.elem == BOOL else int_type(t.elem).width
+            width = 8 if t.elem == BOOL else fixed.q_type(t.elem).width if is_q(t.elem) else int_type(t.elem).width
             if views.count(t.extents) * width > 8 * KERNEL_PRIVATE_BYTES:
                 raise Refused("a private array of more than 4,096 bytes (SPEC-04 LS-110, C5029): no clause gives the "
                               "position", s.name_pos)
@@ -2574,6 +2812,9 @@ class Checker:
             error("C2058", target.start, "not an assignable place")
         root._write = True
         t = self.infer(target)
+        if getattr(target, "raw", False):
+            error("C2058", target.start, "`.raw` reads the storage integer and is not an assignable place "
+                  "(SPEC-01 IM-57)")
         sym = root.sym
         if self.ctx == "kernel" and sym.kind == "param" and sym.mode in ("out", "inout"):
             if not isinstance(sym.type, ArrayType):
@@ -2623,7 +2864,10 @@ class Checker:
                 self._static_copy_alias(s.target, s.value)
         else:
             op = s.op[:-1]
-            self.require_int(t, s.target)
+            if op in SHIFTS:
+                self.require_int(t, s.target)
+            else:
+                self.require_op(op, t, s.target)
             if op in SHIFTS:
                 tk = self.infer(s.value)
                 if tk is None:
@@ -2638,6 +2882,9 @@ class Checker:
 
     def _stmt_IncDec(self, s):
         t = self._place(s.target, compound=True)
+        if is_q(t):
+            raise Refused("`%s` on a fixed-point place: SPEC-04 LS-166 does not say whether it adds 1 or the raw "
+                          "unit" % s.op, s.target.start)
         self.require_int(t, s.target)
         s.ty = t
 
@@ -2725,8 +2972,11 @@ class Checker:
             if elem is None:
                 self.settle(x, rt)
                 elem = rt
-            if not is_int_type(elem):
+            if not is_num(elem):
                 error("C2103", x.start, "`sum` is defined on integer contributions, not on %s" % type_name(elem))
+            if (is_q(elem) or is_q(rt)) and elem != rt:
+                raise Refused("`sum` of %s contributions into %s: SPEC-02 R-4 keeps one format, and no clause gives "
+                              "the diagnostic" % (type_name(elem), type_name(rt)), x.start)
         else:
             self.expect(x, rt)
             elem = rt
@@ -3314,10 +3564,47 @@ def _literal_conversion(conv):
 
 
 def _range_check(lit):
-
+    if is_q(lit.ty):
+        literal_raw(lit)
+        return
     t = int_type(lit.ty)
     if not t.contains(lit.value):
         error("C2003", getattr(lit, "lit_start", lit.start), "constant %d does not fit %s (%d ..= %d)" % (lit.value, lit.ty, t.min, t.max))
+
+
+def literal_raw(lit) -> int:
+    """The raw value of a literal typed `Q<i>.<f>`: C2006 when it is off the grid without a
+    `round` clause, C2003 when it is outside the storage range (SPEC-04 LS-37, LS-53)."""
+    q = fixed.q_type(lit.ty)
+    pos = getattr(lit, "lit_start", lit.start)
+    raw = fixed.literal_raw(lit.value, lit.ty, getattr(lit, "round_mode", None))
+    if raw is None:
+        error("C2006", pos, "%s is not a multiple of 2^-%d, the resolution of %s; write a `round` clause, for "
+              "example `round half_even` (SPEC-04 LS-37)" % (_exact_text(lit.value), q.f, q.name))
+    if not q.storage.contains(raw):
+        error("C2003", pos, "constant %s does not fit %s (raw %d ..= %d)" % (_exact_text(lit.value), q.name,
+                                                                           q.storage.min, q.storage.max))
+    return raw
+
+
+def _exact_text(v) -> str:
+    """A literal's exact value: an integer, or a fraction literal's terminating decimal with at
+    least one fractional digit."""
+    if isinstance(v, int):
+        return "%d" % v
+    d = v.denominator
+    twos = fives = 0
+    while d % 2 == 0:
+        d //= 2
+        twos += 1
+    while d % 5 == 0:
+        d //= 5
+        fives += 1
+    k = max(twos, fives, 1)
+    scaled = v.numerator * 10 ** k // v.denominator
+    neg = scaled < 0
+    a = -scaled if neg else scaled
+    return ("-" if neg else "") + "%d.%0*d" % (a // 10 ** k, k, a % 10 ** k)
 
 
 def _item_pos(item):

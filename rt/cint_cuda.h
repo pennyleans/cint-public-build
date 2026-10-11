@@ -37,6 +37,11 @@
 
 #include "cint_rt.h"
 
+/* Hidden in a library build but for cint_ctx_device_stream (cint_rt.h, CINT_RT_LIBRARY). */
+#if defined(CINT_RT_LIBRARY) && !defined(_WIN32) && (defined(__GNUC__) || defined(__clang__))
+#pragma GCC visibility push(hidden)
+#endif
+
 /* The record that cint_ctx_config.devices[0] points at for a CUDA context (A-16a). `size`
  * must be sizeof(cint_cuda_device). */
 typedef struct cint_cuda_device {
@@ -128,6 +133,8 @@ cint_status cint_cuda_free(cint_cuda *cuda, uint64_t device);
 cint_status cint_cuda_copy_to_device(cint_cuda *cuda, uint64_t dst, const void *src, size_t bytes);
 cint_status cint_cuda_copy_to_host(cint_cuda *cuda, void *dst, uint64_t src, size_t bytes);
 cint_status cint_cuda_copy_on_device(cint_cuda *cuda, uint64_t dst, uint64_t src, size_t bytes);
+/* Queues zeros over `bytes` bytes at `dst`, a multiple of 4. */
+cint_status cint_cuda_zero(cint_cuda *cuda, uint64_t dst, size_t bytes);
 /* Orders work queued on `producer` (a CUstream of the same device, as a registered buffer's
  * cint_buffer_desc.sync gives it) before later work on the handle's stream, with an event. */
 cint_status cint_cuda_wait_stream(cint_cuda *cuda, uintptr_t producer);
@@ -169,7 +176,11 @@ cint_status cint_cuda_launch(cint_cuda *cuda, const cint_cuda_kernel *kernel, in
  * the context holding a boundary record (host.resource, CINT_RESOURCE) when the driver fails.
  *
  * cint_cuda_dispatch_end charges the charges of the items below `limit` (at most run->limit,
- * lowered by the host's fold for k_r) and releases the dispatch's device storage.
+ * lowered by the host's fold for k_r) and releases the dispatch's device storage. When item
+ * `limit` is left to the host (limit < n), it first reads each view argument in device memory
+ * back into a host copy and points the caller's descriptor of it there, so that the host's
+ * re-execution reads the pre-dispatch inputs (B-16b, fault-readback); the copies live until
+ * the context's next dispatch.
  * cint_cuda_dispatch_diverged records host.divergence: the item the host re-executed
  * completed (F-11). */
 typedef struct cint_cuda_arg {
@@ -193,6 +204,48 @@ bool cint_cuda_dispatch(cint_ctx *ctx, cint_site site, const char *const *ptx, c
 bool cint_cuda_dispatch_end(cint_ctx *ctx, cint_site site, cint_cuda_run *run, int64_t limit);
 bool cint_cuda_dispatch_diverged(cint_ctx *ctx, cint_site site);
 
+/* Placement device(1) (box 11 unit 5; SPEC-03 A-16a, M-28, M-28a; decision 2026-10-06 on
+ * OQ-216). A context created with device_count 1 registers CUDA memory of I8 to U64 with
+ * device 1 (cint_buffer_register), and a dispatch issued from the host binds such views only
+ * (SPEC-02 F-5 check 4). A dispatch passes them to its kernel as they are, and stages its
+ * outputs in device memory of the entry, zero-filled, published by copies on the device
+ * (B-16d). cint_rt.c, built with CINT_GPU_CUDA, calls the first three:
+ *   cint_cuda_placed: true when v's base lies in a live device(1) registration of ctx or in
+ *     the device staging of its current dispatch;
+ *   cint_cuda_stage: cint_rt_scratch's staging of `count` elements of `size` bytes in device
+ *     memory, freed when a later dispatch stages; false with host.resource;
+ *   cint_cuda_copy_view: cint_rt_copy_view of views either of which is device placed, one
+ *     driver copy per run of elements adjacent in both; false with host.resource.
+ * cint_ctx_device_stream writes the stream of placement `device` (1) of ctx as a cint_sync of
+ * kind CINT_MEM_CUDA, opening the context's handle: the stream a DLPack producer makes its
+ * data ready on (P-10). CINT_REFUSED for another placement or a context without a device,
+ * CINT_BUSY during an entry, CINT_RESOURCE when the handle cannot be opened. */
+bool cint_cuda_placed(cint_ctx *ctx, const cint_vdesc *v);
+bool cint_cuda_stage(cint_ctx *ctx, cint_site site, int64_t count, size_t size, void **out);
+bool cint_cuda_copy_view(cint_ctx *ctx, cint_site site, const cint_vdesc *dst, const cint_vdesc *src, size_t size);
+CINT_RT_API cint_status cint_ctx_device_stream(cint_ctx *ctx, uint32_t device, cint_sync *out);
+
+/* Device arrays in exported functions (box 11 unit 5b; SPEC-03 M-28, 5.3; SPEC-02 F-5 check 4;
+ * decision 2026-10-06 on OQ-217), both inside ABI 3.1. Generated code calls them only when
+ * compiled with CINT_GPU_CUDA, from a module whose kernels all have a device path.
+ *   cint_rt_bind_finish refuses a view of device(1) memory at every parameter of a function's
+ *     entry. cint_cuda_bind_finish is cint_rt_bind_finish with `marks`, bit j for parameter j
+ *     (from 0, in declaration order, j below 64): those parameters the body passes only,
+ *     whole, to dispatches (compiler/back_c.ci, passed_only). On a context with a device, a
+ *     marked parameter takes a device(1) view as well as a host one.
+ *   cint_cuda_dispatch_placed makes check 4 of a dispatch issued from `.ci`, at entry phase
+ *     before check 5, over `views`: count of them, one per parameter of the kernel in order,
+ *     NULL for a scalar. On a context with a device, the views must all be device(1) memory
+ *     (a registration or the entry's device staging), or all storage the context owns (module
+ *     variables, frame-arena arrays, arenas and pools; not a registration); otherwise it
+ *     records E_UNSUPPORTED bind.placement with the I64 index of the first parameter that
+ *     differs (a host registration differs from either) and returns false. A dispatch issued
+ *     from the host made check 4 in cint_rt_dispatch_host, and a context without a device
+ *     has host memory only, which the dispatch maps (M-28a): both pass. False on a faulted
+ *     context. */
+bool cint_cuda_bind_finish(cint_ctx *ctx, cint_site site, const cint_bind *b, uint32_t count, uint64_t marks);
+bool cint_cuda_dispatch_placed(cint_ctx *ctx, cint_site site, const cint_vdesc *const *views, uint32_t count);
+
 #if defined(CINT_CUDA_TESTING)
 /* Test builds only: open with the driver library at `path`, and lower the grid limit so that
  * a test dispatch is split into several launches. */
@@ -200,6 +253,10 @@ cint_status cint_cuda_open_driver(const char *path, const cint_cuda_device *devi
                                   const cint_allocator *allocator, cint_cuda **out,
                                   cint_cuda_error *err);
 cint_status cint_cuda_test_grid_limit(cint_cuda *cuda, int64_t max_blocks);
+#endif
+
+#if defined(CINT_RT_LIBRARY) && !defined(_WIN32) && (defined(__GNUC__) || defined(__clang__))
+#pragma GCC visibility pop
 #endif
 
 #endif

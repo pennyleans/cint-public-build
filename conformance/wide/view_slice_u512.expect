@@ -1,0 +1,9 @@
+case wide/view_slice_u512
+clause SPEC-04 LS-117, LS-145; SPEC-01 IM-6, IM-31; SPEC-09 CONF-11 rule 14 (U512 slices as `in` view parameters, with a wrapping sum)
+format 5
+source reference
+outcome value
+stdout-bytes 2
+stdout-sha256 aa67a169b0bba217aa0aa88a65346920c84c42447c36ba5f7ea65f422c1fe5d8
+return I64 8
+fuel-consumed 8

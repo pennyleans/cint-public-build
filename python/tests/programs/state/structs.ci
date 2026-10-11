@@ -1,0 +1,31 @@
+// Module-level structs (decision on OQ-260) for python/tests/test_state.py: each `run` counts
+// its call, shifts the count into `track.last`, flips the Bool of the cell of `track.cells` at
+// its remainder mod 2 and adds the count to that cell's count and to `track.grid` (rank 2) in
+// the row of its remainder mod 2. It returns, as decimal digits, `track.last` (three), the
+// cells' counts and Bools, and the corner of `track.grid`.
+
+struct Cell { I64 count; Bool odd; }
+struct Track { I64[3] last; Cell[2] cells; I16[2, 2] grid; }
+
+I64 calls = 0;
+Track track = Track([7, 8, 9], [Cell(0, false), Cell(0, true)], [[0, 0], [0, -1]]);
+
+export I64 run() {
+    calls += 1;
+    track.last[0] = track.last[1];
+    track.last[1] = track.last[2];
+    track.last[2] = calls;
+    Cell c = track.cells[calls % 2];
+    c.count += calls;
+    c.odd = !c.odd;
+    track.cells[calls % 2] = c;
+    track.grid[calls % 2, 1] += calls as I16;
+    I64 d = track.last[0] * 100 + track.last[1] * 10 + track.last[2];
+    for i in 0..2 {
+        d = d * 100 + track.cells[i].count * 10;
+        if (track.cells[i].odd) {
+            d += 1;
+        }
+    }
+    return d * 10 + track.grid[1, 1] as I64;
+}

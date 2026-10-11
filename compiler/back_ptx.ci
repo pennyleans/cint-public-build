@@ -69,6 +69,8 @@
 //   local arrays, structs, view           every                every              unsupported (array, struct,
 //     construction, reduction of a view,                                            view.make, reduce.view,
 //     call, print, assert, module state                                             call, print, assert, state)
+//   every family                          every                I128 to I1024,     unsupported (wide; box 15
+//                                                                views of them      BX15-01)
 // A body that writes a value it does not define is refused (outer.write), as is an entry
 // past PTX's 4,096 bytes of parameters or rt/cint_cuda.h's 61 parameters (params).
 //
@@ -113,6 +115,7 @@ export const I64 CAP_STATE = 18;
 export const I64 CAP_OUTER = 19;
 export const I64 CAP_PARAMS = 20;
 export const I64 CAP_NODE = 21;
+export const I64 CAP_WIDE = 22;
 
 // The rows of `why` that check_ptx fills when it refuses: the capability, the node, its
 // site (lowering.KSITE when none), the kernel function, and the line and column of the
@@ -150,6 +153,7 @@ export void cap_name[b](inout emit.Writer[_] w, inout U8[b] dst, I64 cap) {
         case CAP_STATE: w_str(w, dst, "state");
         case CAP_OUTER: w_str(w, dst, "outer.write");
         case CAP_PARAMS: w_str(w, dst, "params");
+        case CAP_WIDE: w_str(w, dst, "wide");
         default: w_str(w, dst, "node");
     }
 }
@@ -303,7 +307,13 @@ export I64 reductions(in lowering.Sir[_] sir, I64 ki, I64 ke, I64 below) {
 }
 
 Bool scalar_type(I32 ty) {
-    return ty == lowering.T_BOOL || lowering.is_int(ty);
+    return ty == lowering.T_BOOL || (lowering.is_int(ty) && !lowering.is_wide(ty));
+}
+
+// Whether slot k holds a wide value or is a view of wide elements (CAP_WIDE).
+Bool wide_slot(in lowering.SirSlot[_] slots, I64 k) {
+    return lowering.is_wide(slots[k].ty) ||
+        (slots[k].kind == lowering.SK_NVIEW && lowering.is_wide(lowering.array_elem(slots[k].ty)));
 }
 
 // A slot whose value lives in a register: a parameter, a local, or a hidden Bool.
@@ -331,6 +341,15 @@ Bool scalar_view(in lowering.SirSlot[_] slots, I64 k) {
 // The capability node i of the body ki..ke of kernel fn needs, or CAP_NATIVE.
 I64 cap_of(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I64 ki,
         I64 ke, I64 i) {
+    if (lowering.is_wide(sir[i].ty)) {
+        return CAP_WIDE;
+    }
+    for j in 0..noperands(sir, i) {
+        I64 v = operand(sir, i, j);
+        if (v >= 0 && lowering.is_wide(lowering.value_type(sir, funcs, slots, fn, v))) {
+            return CAP_WIDE;
+        }
+    }
     for j in 0..noperands(sir, i) {
         I64 v = operand(sir, i, j);
         if (v >= 0 && (v <= ki || v >= ke)) {
@@ -416,7 +435,7 @@ I64 cap_of(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.Sir
             return CAP_ARRAY;
         case lowering.SO_VBEGIN, lowering.SO_VPICK, lowering.SO_VSLICE, lowering.SO_VEND, lowering.SO_VTRANS,
                 lowering.SO_VREV, lowering.SO_VCOPY, lowering.SO_VEXT, lowering.SO_CALIAS, lowering.SO_VDIM,
-                lowering.SO_VALLOC, lowering.SO_AINIT:
+                lowering.SO_VALLOC, lowering.SO_AINIT, lowering.SO_VFILL, lowering.SO_VRESHAPE:
             return CAP_VIEW;
         case lowering.SO_REDUCE:
             return CAP_REDUCE;
@@ -452,6 +471,11 @@ I64 check_kernel(in scan.Token[_] toks, in lowering.Sir[_] sir, in lowering.SirF
         return refuse(sir, toks, fn, funcs[fn].first as I64, CAP_NODE, why);
     }
     I64 ke = body_end(sir, funcs, fn, ki);
+    for k in funcs[fn].pslot0 as I64..funcs[fn].lslot_end as I64 {
+        if (wide_slot(slots, k)) {
+            return refuse(sir, toks, fn, ki, CAP_WIDE, why);
+        }
+    }
     for i in ki + 1..ke {
         if (live(sir, i)) {
             I64 cap = cap_of(sir, funcs, slots, fn, ki, ke, i);

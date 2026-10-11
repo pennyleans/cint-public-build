@@ -1,0 +1,149 @@
+cint workbench   profile cint-core-1   backend cpu-sir-interp   new session
+ci[1]> kernel diffuse[h, w](in I32[h, w] u, in I64 kn, in I64 kd,
+..>                      out I32[h, w] v, out I64 total) over [y: h, x: w] {
+..>     I64 c = u[y, x] as I64;
+..>     I32 r = u[y, x];
+..>     if (y > 0 && y < h - 1 && x > 0 && x < w - 1) {
+..>         I64 lap = (u[y - 1, x] as I64) + (u[y + 1, x] as I64)
+..>                 + (u[y, x - 1] as I64) + (u[y, x + 1] as I64) - 4 * c;
+..>         r = (c + div_round(kn * lap, kd, half_even)) as I32;
+..>     }
+..>     v[y, x] = r;
+..>     reduce total = sum(r);
+..> }
+diffuse   revision session@r1
+ci[2]> I32[64, 64] density;
+density : I32[64, 64]   4096 elements   host
+  [0, 0] = 0
+  [0, 1] = 0
+  [0, 2] = 0
+  [0, 3] = 0
+  [0, 4] = 0
+  [0, 5] = 0
+  [0, 6] = 0
+  [0, 7] = 0
+  ... 4088 more; /grid and /stats show them
+ci[3]> I32[64, 64] scratch;
+scratch : I32[64, 64]   4096 elements   host
+  [0, 0] = 0
+  [0, 1] = 0
+  [0, 2] = 0
+  [0, 3] = 0
+  [0, 4] = 0
+  [0, 5] = 0
+  [0, 6] = 0
+  [0, 7] = 0
+  ... 4088 more; /grid and /stats show them
+ci[4]> I64 rate_num = 1;
+rate_num = 1 : I64
+ci[5]> I64 rate_den = 8;
+rate_den = 8 : I64
+ci[6]> I64 heat = 0;
+heat = 0 : I64
+ci[7]> export void init() {
+..>     density[32, 32] = 65_536;
+..> }
+init : () -> void   revision session@r7
+ci[8]> export void step() {
+..>     diffuse(density, rate_num, rate_den, scratch, heat);
+..>     density = scratch;
+..> }
+step : () -> void   revision session@r8
+ci[9]> init();
+ci[10]> :checkpoint baseline
+checkpoint baseline   #1   bindings 5   revisions: session@r8
+ci[10]> :watch density[32, 32]
+watch 1   density[32, 32] = 65536 : I32
+ci[10]> :backend cpu-c17
+backend: cpu-c17; each revision is built as a library, entries on it are not recorded, and :inspect and the watches stay on cpu-sir-interp
+ci[10]> :run step() 240 --check cpu-sir-interp
+cpu-c17: revision <h> built as a library in <n> ms
+watch 1   entry 10   density[32, 32] = 32768
+watch 1   entry 11   density[32, 32] = 20480
+watch 1   entry 12   density[32, 32] = 14336
+watch 1   entry 13   density[32, 32] = 10816
+watch 1   entry 14   density[32, 32] = 8608
+watch 1   entry 15   density[32, 32] = 7124
+watch 1   entry 16   density[32, 32] = 6070
+watch 1   entry 17   density[32, 32] = 5287
+watch 1   entry 18   density[32, 32] = 4684
+watch 1   entry 19   density[32, 32] = 4206
+watch 1   entry 20   density[32, 32] = 3817
+watch 1   entry 21   density[32, 32] = 3495
+watch 1   entry 22   density[32, 32] = 3223
+watch 1   entry 23   density[32, 32] = 2991
+watch 1   entry 24   density[32, 32] = 2789
+watch 1   entry 25   density[32, 32] = 2613
+watch 1   entry 26   density[32, 32] = 2459
+watch 1   entry 27   density[32, 32] = 2321
+watch 1   entry 28   density[32, 32] = 2199
+watch 1   entry 29   density[32, 32] = 2089
+check: cpu-c17 and cpu-sir-interp agree at 240 boundaries
+  ... 217 more changes of watch 1 recorded (:watch log 1)
+ci[250]> :backend cpu-sir-interp
+backend: cpu-sir-interp
+ci[250]> :inspect density /grid [30..35, 30..35]
+density : I32[64, 64]   4096 elements   host
+  grid   rows 30 to 34 of 0 to 63, columns 30 to 34 of 0 to 63
+       30   31   32   33   34
+  30  163  167  169  167  163
+  31  167  172  173  172  167
+  32  169  173  175  173  169
+  33  167  172  173  172  167
+  34  163  167  169  167  163
+ci[250]> :inspect density /stats
+density : I32[64, 64]   4096 elements   host
+  count    4096
+  sum      42319   accumulator I44 (SPEC-01 IM-80)
+  min      0       first at [0, 0]
+  max      175     first at [32, 32]
+  nonzero  705
+ci[250]> heat
+= 42319 : I64
+ci[251]> :checkpoint k125-240
+checkpoint k125-240   #2   bindings 5   revisions: session@r8
+ci[251]> :restore baseline
+current state equals checkpoint k125-240; no automatic checkpoint
+restored baseline   #1
+ci[251]> :branch faster
+current state equals checkpoint baseline; no automatic checkpoint
+branch faster from baseline
+ci[251]> rate_num = 3;
+ci[252]> rate_den = 16;
+ci[253]> :run step() 240
+watch 1   entry 253   density[32, 32] = 16384
+watch 1   entry 254   density[32, 32] = 13312
+watch 1   entry 255   density[32, 32] = 7936
+watch 1   entry 256   density[32, 32] = 6628
+watch 1   entry 257   density[32, 32] = 5149
+watch 1   entry 258   density[32, 32] = 4429
+watch 1   entry 259   density[32, 32] = 3781
+watch 1   entry 260   density[32, 32] = 3345
+watch 1   entry 261   density[32, 32] = 2978
+watch 1   entry 262   density[32, 32] = 2694
+watch 1   entry 263   density[32, 32] = 2454
+watch 1   entry 264   density[32, 32] = 2256
+watch 1   entry 265   density[32, 32] = 2086
+watch 1   entry 266   density[32, 32] = 1941
+watch 1   entry 267   density[32, 32] = 1814
+watch 1   entry 268   density[32, 32] = 1703
+watch 1   entry 269   density[32, 32] = 1605
+watch 1   entry 270   density[32, 32] = 1517
+watch 1   entry 271   density[32, 32] = 1439
+watch 1   entry 272   density[32, 32] = 1369
+  ... 194 more changes of watch 1 recorded (:watch log 1)
+ci[493]> :diff k125-240
+binding    status      differing   first canonical difference
+density    differs     1097        [14, 25]: 1 here, 0 in k125-240
+heat       differs     1           44842 here, 42319 in k125-240
+rate_den   differs     1           16 here, 8 in k125-240
+rate_num   differs     1           3 here, 1 in k125-240
+scratch    differs     1097        [14, 25]: 1 here, 0 in k125-240
+ci[493]> density[32, 32]
+= 118 : I32
+ci[494]> :save-case faster.cicase
+note: the case includes every recorded observe result verbatim; this case has none
+case faster.cicase   checkpoint baseline   entries 251..493   effects 0   density entry
+ci[494]> :save session-b
+saved session to session-b   entries 493   checkpoints 2   objects 1037
+ci[494]> :quit

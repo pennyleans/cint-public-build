@@ -4,7 +4,7 @@ The scanner and parser take their tables as views, which cint-harness cannot pas
 part builds compiler/tests/front_host.c with the C that cint-seed emits for
 compiler/tests/front.ci and runs it over a list of sources in one process per
 configuration. Each source is one case. A case passes when cintc's outcome is `cint_ref`'s
-on the surface of boxes 09 and 12 (front_ref.py):
+on the surface of boxes 09 and 12 and the fixed-point syntax of box 15 (front_ref.py):
 
   - `cint_ref` parses it: cintc parses it and its tree text is the same, byte for byte;
   - `cint_ref` reports a diagnostic: cintc's first diagnostic (SPEC-04 LS-282 order) has

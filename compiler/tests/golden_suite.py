@@ -18,6 +18,9 @@ is equal byte for byte:
     the same files on every leg, and run.py prints the digest of each generated file;
   - brace depth: the function bodies in the C of control/nest_blocks_256 have brace
     depth at most 2 (D-5);
+  - fuel local: in the C of flow.ci, `loops` and `to_max`, whose loops call nothing, keep
+    their fuel count in a local, and `loop_calls`, whose loop makes a call, charges the
+    context (back_c.ci fuel_local; SPEC-01 IM-142);
   - checked: a frozen compile-error case inside the checker's subset, built through
     main.ci, stops with the diagnostic code and position of its `.expect` file, so
     compile runs compiler/check.ci between parse and lower (CINTC-OQ-30); the C3004 case
@@ -40,7 +43,18 @@ is equal byte for byte:
     with cint_ref's IM-149 reader) and fuel consumed (the fuel record of
     cint_program_run_fuel) are compared with cint_ref's outcome, and a fault
     record's revision with the program's SIR-17 revision (CONF-01 `fault.revision self`).
-    The run of hello.ci is also compared with the 23 bytes of M1;
+    The run of hello.ci is also compared with the 23 bytes of M1. kernel_loops.ci, whose
+    kernels fault at later work items and whose sums cross the int64_t partial of back_c.ci
+    ksum_add, runs in format 4, the format of a kernel dispatch fault (CONF-11 rule 13);
+    wide_transitive.ci names no wide type and imports only a module that imports records of
+    wide fields, which its catalog writes all the same (box 15 unit 4c); wide_reductions.ci,
+    reductions with a wide element or result, runs in format 4 for its kernels' faults;
+    wide_print.ci prints wide values under format specifications, and wide_assert.ci fails
+    an assert of an I512 comparison (box 15 unit 4c, rt/OPEN.md RT-OQ-55); fill_reshape.ci
+    fills arrays of every integer type, Bool and wide types and reshapes local and
+    module-level arrays, then faults at an index past a reshaped extent (box 15);
+    wide_unsigned.ci takes U128 to U512 through every form of box 15 unit 4d and ends at a
+    checked fault of U128 operands, compared in format 5 (CONF-11 rule 14);
   - type signatures (SPEC-09 CONF-16, box 10 default BX10-29): the five examples of SPEC-03
     5.6 are golden bytes in compiler/tests/golden/type_signatures.txt, each line with the
     length and SHA-256 its bytes have; cint_ref writes each of them (advance from the 5.4
@@ -97,6 +111,7 @@ PROGRAMS = [
     ("field_views", TESTS, "field_views.ci", None),
     ("array_constructors", TESTS, "array_constructors.ci", None),
     ("zero_records", TESTS, "zero_records.ci", None),
+    ("shaped_fields", TESTS, "shaped_fields.ci", None),
     ("switch_gate", TESTS, "switch_gate.ci", None),
     ("nest_blocks_256", CONF, "control/nest_blocks_256.ci", None),
     ("chain", TESTS, "chain.ci", None),
@@ -105,7 +120,19 @@ PROGRAMS = [
     ("print_holes", TESTS, "print_holes.ci", None),
     ("nest_cap", GOLDEN, "nest_cap.ci", ("nest_cap.c", "nest_cap.sir", "nest_cap.program.c")),
     ("nesting", TESTS, "nesting.ci", None),
+    ("kernel_loops", TESTS, "kernel_loops.ci", None),
+    ("wide_transitive", TESTS, "wide_transitive.ci", None),
+    ("wide_reductions", TESTS, "wide_reductions.ci", None),
+    ("wide_print", TESTS, "wide_print.ci", None),
+    ("wide_assert", TESTS, "wide_assert.ci", None),
+    ("fill_reshape", TESTS, "fill_reshape.ci", None),
+    ("wide_unsigned", TESTS, "wide_unsigned.ci", None),
 ]
+
+# The CONF-11 format of a program's calls or script, when not 1: a fault raised by a kernel
+# dispatch is written in format 4 only (rule 13), and a U128 to U512 value in format 5 only
+# (rule 14), by cint_ref and by cint-harness alike.
+FORMATS = {"kernel_loops": 4, "wide_reductions": 4, "wide_unsigned": 5}
 
 DEPENDENCIES = {"public_records": ["record_lib.ci", "record_mid.ci"],
                 "record_arrays": ["record_array_lib.ci"],
@@ -113,8 +140,11 @@ DEPENDENCIES = {"public_records": ["record_lib.ci", "record_mid.ci"],
                 "constructed_fields": ["named_constructor_lib.ci"],
                 "zero_fields": ["zero_field_lib.ci"],
                 "field_views": ["field_views_lib.ci"],
-                "zero_records": ["zero_record_lib.ci"]}
-PUBLIC_HOSTS = ("public_views", "public_records", "nested_public", "record_arrays", "zero_fields", "zero_records")
+                "zero_records": ["zero_record_lib.ci"],
+                "shaped_fields": ["shaped_field_lib.ci"],
+                "wide_transitive": ["wide_transitive_lib.ci", "wide_transitive_mid.ci"]}
+PUBLIC_HOSTS = ("public_views", "public_records", "nested_public", "record_arrays", "zero_fields", "zero_records",
+                "shaped_fields")
 
 # Compile errors that check.ci reports through main.compile: a frozen case under
 # conformance/, and the detail[0..1] it must carry (None when not compared).
@@ -148,6 +178,7 @@ CALLS = [("add", "add3", a) for a in (["I64 1", "I64 2", "I64 3"], ["I64 -5", "I
                                       ["I64 1", "I64 9223372036854775807", "I64 -9223372036854775807"])]
 CALLS += [("flow", "chain", ["I64 %d" % v]) for v in (-5, 0, 3, 10, 19, 20)]
 CALLS += [("flow", "loops", ["I64 %d" % v]) for v in (0, 1, 7, 60)]
+CALLS += [("flow", "loop_calls", ["I64 %d" % v]) for v in (0, 1, 5, 40)]
 CALLS += [("flow", "to_max", ["I64 %d" % v]) for v in (9223372036854775805, 9223372036854775807)]
 CALLS += [("flow", "bytes", ["U8 %d" % a, "U8 %d" % b]) for a, b in ((200, 100), (0, 0), (255, 255))]
 CALLS += [("flow", "logic", ["I64 %d" % a, "I64 %d" % b]) for a, b in ((3, 4), (3, 3), (-1, 5), (0, 0))]
@@ -218,6 +249,19 @@ CALLS += [("zero_records", name, [])
                        "repeated", "positive_inout", "bounds_order", "inner_bounds", "nested_bounds")]
 CALLS += [("zero_records", name, ["I64 %d" % index])
           for name in ("element_read", "element_write", "empty_read") for index in (-1, 0, 1, 2)]
+# BX22-06: struct fields of rank 2 to 4 (shaped_fields.ci).
+CALLS += [("shaped_fields", name, [])
+          for name in ("view_arg", "copied", "inout_struct", "whole_from_local", "constructed", "imported")]
+CALLS += [("shaped_fields", "element", ["I64 %d" % i, "I64 %d" % j]) for i, j in ((1, 2), (4, 0), (0, 3), (-1, 0))]
+CALLS += [("shaped_fields", "store_bounds", ["I64 %d" % i, "I64 %d" % j]) for i, j in ((3, 3), (4, 2))]
+CALLS += [("shaped_fields", "partial", ["I64 %d" % i]) for i in (2, 4)]
+CALLS += [("shaped_fields", "sliced", ["I64 %d" % lo]) for lo in (1, 3, 4, 5)]
+CALLS += [("shaped_fields", "nested", ["I64 %d" % i]) for i in (0, 1, 2)]
+CALLS += [("shaped_fields", "compound", ["I64 20"])]
+CALLS += [("shaped_fields", "elements", ["I64 %d" % i]) for i in (1, 2)]
+CALLS += [("shaped_fields", name, ["I64 %d" % rows]) for name in ("whole_from_view", "constructed_shape")
+          for rows in (4, 3, 6)]
+CALLS += [("shaped_fields", "imported_bounds", ["I64 %d" % i]) for i in (1, 2)]
 CALLS += [("switch_gate", "run", ["I64 %d" % index]) for index in (0, 1)]
 # OQ-205: a SIR golden nested past 16 levels (nest_cap.ci), and expressions nested 256
 # levels (nesting.ci), which B1 refused with C9001 before the indentation cap.
@@ -225,6 +269,25 @@ CALLS += [("nest_cap", "run", ["Bool %s" % c, "I64 7"]) for c in ("true", "false
 CALLS += [("nesting", fn, ["Bool %s" % c, "I64 7"]) for fn in ("cond_256", "then_256") for c in ("true", "false")]
 CALLS += [("nesting", fn, ["Bool %s" % a, "Bool %s" % b]) for fn in ("or_256", "and_256")
           for a, b in (("true", "true"), ("true", "false"), ("false", "true"), ("false", "false"))]
+# Kernel work-item loops (back_c.ci kitem_counters): carries in ranks 1, 3 and 4, a fault at
+# the first, a middle and the last item, and sums whose int64_t partial spills (ksum_add).
+CALLS += [("kernel_loops", "block", ["I64 %d" % k]) for k in (1, -2, 0)]
+CALLS += [("kernel_loops", "fault_at", ["I64 %d" % at]) for at in (0, 7, 19, 20)]
+CALLS += [("kernel_loops", "fault_at3", ["I64 %d" % at]) for at in (11, 12, 23)]
+CALLS += [("kernel_loops", name, []) for name in ("block4", "line", "spill_fits", "spill_min", "spill_overflows",
+                                                   "narrow_i8", "narrow_u32", "wide_u64")]
+# Box 15 unit 4c: a root that reaches records of wide fields only through another module's
+# imports (wide_transitive.ci), whose catalog (back_c.ci catalog_wide) needs rt/cint_wide.h.
+CALLS += [("wide_transitive", "run", ["I64 %d" % k])
+          for k in (0, 7, -3, 4611686018427387903, 4611686018427387904)]
+# Box 15 unit 4c, part 2: reductions with a wide element or result, sequential and in kernels
+# (wide_reductions.ci; rt/OPEN.md RT-OQ-54).
+CALLS += [("wide_reductions", fn, ["I64 %d" % v]) for fn, values in
+          (("mixed", (5, -3)), ("narrow_result", (2, -9223372036854775808)), ("fold_at", (0, 3)),
+           ("dot_shape", (3, 2)), ("kernels", (4, -9223372036854775807, -9223372036854775808)),
+           ("kernel_empty", (0, 2)), ("kernel_faults", (0, 1, 2))) for v in values]
+CALLS += [("wide_reductions", "bounds", ["I64 %d" % lo, "I64 %d" % hi]) for lo, hi in ((0, 3), (1, 1), (2, 1))]
+CALLS += [("wide_reductions", "wrap_sat", [])]
 
 # SPEC-03 5.6: the five examples of the canonical type signature (A-20 to A-22), the golden
 # bytes of SPEC-09 CONF-16, and the programs whose cintc rows hold two of them.
@@ -294,7 +357,8 @@ def fuel_line(path: pathlib.Path) -> str:
 
 # Scripts run as programs: name, and the M1 bytes when the stdout is pinned.
 SCRIPTS = [("hello", M1_STDOUT), ("prints", None), ("mainfn", None), ("print_no_newline_then_fault", None),
-           ("print_hole_fault_partial", None), ("print_holes", None)]
+           ("print_hole_fault_partial", None), ("print_holes", None), ("wide_print", None), ("wide_assert", None),
+           ("fill_reshape", None), ("wide_unsigned", None)]
 
 
 def module_name(rel: str) -> str:
@@ -305,10 +369,12 @@ def program(name):
     return next(p for p in PROGRAMS if p[0] == name)
 
 
-def ref_run(root: pathlib.Path, rel: str, gen: pathlib.Path, entry=None, args=()):
+def ref_run(root: pathlib.Path, rel: str, gen: pathlib.Path, entry=None, args=(), fmt=1):
     """cint_ref's `.expect` lines from `outcome` on, and the program's stdout bytes."""
     out = gen / ("ref-%s.stdout" % hashlib.sha256(("%s %s %s" % (rel, entry, args)).encode()).hexdigest()[:16])
     cmd = [sys.executable, "-m", "cint_ref", "run", "--path", rel, "--stdout", str(out)]
+    if fmt != 1:
+        cmd += ["--format", str(fmt)]
     if entry:
         cmd += ["--entry", entry]
     for a in args:
@@ -425,18 +491,27 @@ def prepare(gen: pathlib.Path) -> dict:
         if root == CONF:
             want = frozen_body(rel)
         else:
-            want, _ = ref_run(root, rel, gen, fn, args)
+            want, _ = ref_run(root, rel, gen, fn, args, FORMATS.get(name, 1))
         calls.append((name, fn, args, want))
     scripts = []
     for name, pinned in SCRIPTS:
         _, root, rel, _ = program(name)
-        want, stdout = ref_run(root, rel, gen)
+        want, stdout = ref_run(root, rel, gen, fmt=FORMATS.get(name, 1))
         if root == CONF and want != frozen_body(rel):
             raise SystemExit("cint_ref differs from the frozen %s" % rel)
         if pinned is not None and stdout != pinned:
             raise SystemExit("cint_ref's stdout of %s is not the M1 bytes" % rel)
         scripts.append((name, want, stdout))
     return {"calls": calls, "scripts": scripts, "signatures": ref_signatures(), "exports": ref_exports()}
+
+
+def fuel_local(text: bytes, function: str):
+    """Whether the C definition of export `function` holds its fuel count in the local `fu`
+    (back_c.ci fuel_local), or None when the text has no such definition. EMIT-22 writes
+    `_` in a name as `_x5F`."""
+    name = function.replace("_", "_x5F").encode("ascii")
+    m = re.search(rb"^static bool ci_\w*_" + name + rb"\([^;{]*\)\n\{\n(.*?)\n\}\n", text, re.M | re.S)
+    return None if m is None else b"    int64_t fu = fh->fuel_used;" in m.group(1)
 
 
 def brace_depth(text: bytes) -> int:
@@ -503,7 +578,8 @@ def check_records(c_text: str) -> str:
     seed = records(c_text)
     main = (ROOT / "compiler" / "main.ci").read_text(encoding="ascii")
     names = {"TOKEN": "Token", "NODE": "Node", "FRAME": "Frame", "PMOD": "PMod", "SIR": "Sir", "FUNC": "SirFunc",
-             "SLOT": "SirSlot", "LSTATE": "LState", "SEM": "Sem", "SYM": "Sym", "NAME": "Name", "DECL": "Decl"}
+             "SLOT": "SirSlot", "LSTATE": "LState", "SEM": "Sem", "SYM": "Sym", "NAME": "Name", "DECL": "Decl",
+             "WIDEVAL": "WideVal"}
     bad = []
     for key, value in re.findall(r"const U32 R_(\w+) = (\d+);", main):
         if seed.get(names[key]) != int(value):
@@ -585,6 +661,10 @@ def run(tc, tools, work: pathlib.Path, emitted: dict, prepared: dict, cc) -> tup
         if name == "nest_blocks_256":
             depth = brace_depth(files["control/nest_blocks_256.c"])
             item("brace depth", "" if depth <= 2 else "brace depth %d" % depth)
+        if name == "flow":
+            local = {f: fuel_local(files["flow.c"], f) for f in ("loops", "to_max", "loop_calls")}
+            item("fuel local", "" if local == {"loops": True, "to_max": True, "loop_calls": False}
+                 else "fuel count in a local: %r" % local)
         have = program_revision(files.get("cint-program.c", b""))
         try:
             want = sir17_revision([(path, files[path[:-3] + ".sites"])
@@ -752,7 +832,8 @@ def run(tc, tools, work: pathlib.Path, emitted: dict, prepared: dict, cc) -> tup
         cases = work / name / "build" / "cases.txt"
         cases.write_bytes("".join(" ".join([module_name(rel), fn] + list(args)) + "\n"
                                   for _, fn, args, _ in calls).encode("ascii"))
-        r = subprocess.run([str(tools["harness"]), str(lib), "--cases", str(cases), "--format", "1"],
+        fmt = str(FORMATS.get(name, 1))
+        r = subprocess.run([str(tools["harness"]), str(lib), "--cases", str(cases), "--format", fmt],
                            cwd=work / name / "build", env=env, capture_output=True)
         stderr = r.stderr.decode("utf-8", "replace")
         blocks = cc.parse_harness(r.stdout, len(calls))

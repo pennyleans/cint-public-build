@@ -8,13 +8,13 @@ import subprocess
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 TESTS = ROOT / "compiler" / "tests"
 REQUIRES = ["compiler/scan.ci", "compiler/parse.ci", "compiler/resolve.ci", "compiler/check.ci",
-            "compiler/decl.ci", "compiler/lowering.ci", "compiler/tests/table_capacity.ci",
+            "compiler/fold.ci", "compiler/decl.ci", "compiler/lowering.ci", "compiler/tests/table_capacity.ci",
             "compiler/tests/table_capacity_host.c"]
 RECORDS = ("scan_5_Token", "parse_4_Node", "parse_5_Frame", "limits_12_CompilerDiag",
            "resolve_3_Sem", "resolve_3_Sym", "resolve_4_Name", "limits_4_Decl",
            "lowering_3_Sir", "lowering_7_SirFunc", "lowering_7_SirSlot", "lowering_6_LState",
-           "back_x5Fc_4_PMod")
-CASES = 79
+           "back_x5Fc_4_PMod", "fold_7_WideVal")
+CASES = 90
 
 
 def prepare(_):

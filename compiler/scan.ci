@@ -204,6 +204,11 @@ export const I32 IDC_HANDLE = 21;
 export const I32 IDC_UNDERSCORE = 22;
 export const I32 IDC_ROUND = 23;
 export const I32 IDC_AT = 24;
+// The unsigned wide types of SPEC-01 IM-6 (BX15-02): scalar type names, as I128 to I1024,
+// that check.ci refuses with C9102 (compiler/OPEN.md CINTC-OQ-15).
+export const I32 IDC_U128 = 25;
+export const I32 IDC_U256 = 26;
+export const I32 IDC_U512 = 27;
 export const I32 IDC_RESERVED_BIT = 256;
 
 // Keeps contextual token classes for parsing; elsewhere these names are ordinary.
@@ -834,6 +839,9 @@ export I32 ident_class[n](in U8[n] src, I64 s, I64 blen) {
     else if (spells(src, s, blen, "U16")) { cls = IDC_U16; }
     else if (spells(src, s, blen, "U32")) { cls = IDC_U32; }
     else if (spells(src, s, blen, "U64")) { cls = IDC_U64; }
+    else if (spells(src, s, blen, "U128")) { cls = IDC_U128; }
+    else if (spells(src, s, blen, "U256")) { cls = IDC_U256; }
+    else if (spells(src, s, blen, "U512")) { cls = IDC_U512; }
     else if (spells(src, s, blen, "Bool")) { cls = IDC_BOOL; }
     else if (spells(src, s, blen, "Str")) { cls = IDC_STR; }
     else if (spells(src, s, blen, "T1")) { cls = IDC_T1; }

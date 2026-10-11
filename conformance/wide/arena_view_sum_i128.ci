@@ -1,0 +1,21 @@
+// case: wide/arena_view_sum_i128
+// clause: SPEC-03 M-14, M-14a, M-19; SPEC-04 LS-145; decision 2026-10-05, BX12-06 (an arena of I128 elements: allocations, element writes and sums over the views)
+// subset: cint-core-1 (wide integers, arena, handles, reductions)
+// entry: run; args: none
+// spec outcome: value I64 99, its low 64 bits (as%); prints the I128 value 99 (the first allocation, I128.max - 6 then 1, 2 and 3, sums to I128.max; the second, I128.min then 0 then 100, sums to I128.min + 100) and a line feed; fuel 6 (entry, 3 iterations, two reduction charges). Box 15, unit 1
+
+Arena(I128, 8) scratch;
+
+export I64 run() {
+    Handle(I128[]) a = scratch.alloc(4);
+    Handle(I128[]) b = scratch.alloc(3);
+    scratch[a][0] = I128.max - 6;
+    for i in 1..4 {
+        scratch[a][i] = i as I128;
+    }
+    scratch[b][0] = I128.min;
+    scratch[b][2] = 100;
+    I128 observed = sum(scratch[a]) + sum(scratch[b]);
+    "{observed}\n";
+    return observed as% I64;
+}

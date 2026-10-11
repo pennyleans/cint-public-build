@@ -1,0 +1,18 @@
+case fixed/mul_overflow_q16_16
+clause SPEC-01 IM-61, IM-106 (256.0 * 128.0 rounds to raw 2^31, outside Q16.16; exact is the rounded raw value)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_OVERFLOW
+fault.operation mul.checked.q16_16.half_even
+fault.operand Q16.16 raw 16777216
+fault.operand Q16.16 raw 8388608
+fault.exact 2147483648
+fault.limit Q16.16 raw 2147483647
+fault.position fixed/mul_overflow_q16_16.ci:10:14
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

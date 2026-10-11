@@ -1,0 +1,11 @@
+// case: fixed/array_index_bounds_q16_16
+// clause: SPEC-01 IM-130, IM-186 (an index fault names the fixed-point element type)
+// subset: cint-core-1 (fixed point, arrays)
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 10:13 (the `[`), operation index.checked.q16_16, operand I64 3, no exact, limit I64 3; stack depth 0; fuel 1. Box 15, unit 1
+
+export Bool run() {
+    Q16.16[3] a = [0.5, 1.5, 2.5];
+    I64 i = 3;
+    return a[i] != 0;
+}

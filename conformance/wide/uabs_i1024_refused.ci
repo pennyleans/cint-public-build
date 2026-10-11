@@ -1,0 +1,11 @@
+// case: wide/uabs_i1024_refused
+// clause: SPEC-01 IM-6, IM-16 (uabs of I1024 would need U1024, which stays Proposed under BX15-02)
+// subset: cint-core-1 (wide integers, built-in uabs)
+// entry: run; args: none
+// spec outcome: compile-error C2103 at 9:9 (callee `uabs`). Box 15, unit 1
+
+export I64 run() {
+    I1024 a = -1;
+    _ = uabs(a);
+    return 0;
+}

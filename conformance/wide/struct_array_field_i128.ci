@@ -1,0 +1,27 @@
+// case: wide/struct_array_field_i128
+// clause: SPEC-04 LS-67, LS-73, LS-77; SPEC-01 IM-50 (a struct with an I128 array field and an I512 field, returned by value, and an array of such structs)
+// subset: cint-core-1 (wide integers)
+// entry: run; args: none
+// spec outcome: value I64 5, its low 64 bits (as%); prints the I512 value (2^127 - 1)^2 - (2^127 - 1) + 3 (the field k holds a squared, v[1] holds -a, and ws[1].k is 3) and a line feed; fuel 2 (entry, call to make). Box 15, unit 1
+
+struct W {
+    I128[2] v;
+    I512 k;
+}
+
+W make(I128 a) {
+    W w;
+    w.v[0] = a;
+    w.v[1] = -a;
+    w.k = (a as I512) * (a as I512);
+    return w;
+}
+
+export I64 run() {
+    W w = make(I128.max);
+    W[2] ws;
+    ws[1].k = 3;
+    I512 observed = w.k + (w.v[1] as I512) + ws[1].k;
+    "{observed}\n";
+    return observed as% I64;
+}

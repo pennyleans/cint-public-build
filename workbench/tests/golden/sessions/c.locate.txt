@@ -1,0 +1,53 @@
+case       overflow.cicase   23 boundaries
+target     boundary 23 of 23, step(): the first fault, reproduced by replay
+bracket    boundary 22, step(): done; then boundary 23
+fault[E_NARROW]: the value does not fit the destination type
+  --> session.ci:8:54
+   |
+ 8 |         r = (c + div_round(kn * lap, kd, half_even)) as I32;
+   |                                                      ^ as.checked.i64.i32
+   |
+   = operation: as.checked.i64.i32
+   = operand-count: 1
+   = operand: I64 -2417121562
+   = exact:   -2417121562
+   = limit:   I32 -2147483648
+   = revision: <revision>
+   = source-map: none
+   = address: session.diffuse, dispatch 0, phase 1, work-item 2015, step 25
+   = stack-depth: 1
+   = called from: session.ci:22:5
+   = fuel-consumed: 4097 (not part of the fault record)
+   = state: the post-fault state of SPEC-01 IM-121, reached by replay
+   = noncanonical: not part of the fault record
+   = stack-source: session.ci:22:5
+   |
+22 |     diffuse(density, rate_num, rate_den, scratch, heat);
+   |     ^
+   |
+   = work-item-tuple: [31, 31]
+   = workbench-position: boundary 23
+   = site: diffuse#32
+   = backend: cpu-sir-interp, by replay; the dispatch ran in F-3 order and stopped at its first fault (SPEC-02 B-5)
+the last 20 counted operations of boundary 23, of 53662 trace events (:trace shows them all)
+  ord  position           operation              operands                 value
+53642  session.ci:6:21    index.checked.i32      30
+53643  session.ci:6:32    as.checked.i32.i64     -1037802955              -1037802955
+53644  session.ci:6:47    add.checked.i64        31, 1                    32
+53645  session.ci:6:44    index.checked.i32      32
+53646  session.ci:6:55    as.checked.i32.i64     -1344739080              -1344739080
+53647  session.ci:6:40    add.checked.i64        -1037802955, -1344739080 -2382542035
+53648  session.ci:7:27    sub.checked.i64        31, 1                    30
+53649  session.ci:7:21    index.checked.i32      31
+53650  session.ci:7:32    as.checked.i32.i64     -1037802955              -1037802955
+53651  session.ci:7:17    add.checked.i64        -2382542035, -1037802955 -3420344990
+53652  session.ci:7:50    add.checked.i64        31, 1                    32
+53653  session.ci:7:44    index.checked.i32      31
+53654  session.ci:7:55    as.checked.i32.i64     -1344739080              -1344739080
+53655  session.ci:7:40    add.checked.i64        -3420344990, -1344739080 -4765084070
+53656  session.ci:7:67    mul.checked.i64        4, 1260430071            5041720284
+53657  session.ci:7:63    sub.checked.i64        -4765084070, 5041720284  -9806804354
+53658  session.ci:8:31    mul.checked.i64        3, -9806804354           -29420413062
+53659  session.ci:8:18    div_round.checked.i64.half_even -29420413062, 8          -3677551633
+53660  session.ci:8:16    add.checked.i64        1260430071, -3677551633  -2417121562
+53661  session.ci:8:54    as.checked.i64.i32     -2417121562              E_NARROW

@@ -1,0 +1,9 @@
+case fixed/literal_grid_q16_16
+clause SPEC-04 LS-33, LS-35, LS-37; SPEC-01 IM-27; SPEC-09 CONF-11 rule 14 (literals on the grid, an integer literal in a fixed-point context, a fixed-point return value)
+format 5
+source reference
+outcome value
+stdout-bytes 7
+stdout-sha256 cf7758c516b070340046b66703629c552676b4cfe9b2ca3584a6ae86a70cefc1
+return I64 278528
+fuel-consumed 1

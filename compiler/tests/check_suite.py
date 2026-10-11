@@ -59,10 +59,10 @@ PRELUDE = ref_check.PRELUDE   # cintc's prelude: boxes 09 and 12
 # no type argument and no mode.
 BUILTIN_SIGS = dict(ref_check.BUILTIN_SIGS)
 BUILTIN_SIGS.update({name: ("E", 2, False, False) for name in ref_check.RESULT_BUILTINS})
-# The array built-ins of box 09 that check.ci's gate admits (check.ci mark_arrayfn); `fill`
-# and `reshape` stay outside (compiler/OPEN.md CINTC-OQ-15), `min` and `max` are BUILTIN_SIGS'.
-ARRAY_FNS = frozenset({"len", "extent", "size", "copy", "transpose", "reverse", "sum", "fold_checked", "sum_wrap",
-                       "sum_sat", "count", "dot"})
+# The array built-ins of box 09 that check.ci's gate admits (check.ci mark_arrayfn); `min`
+# and `max` are BUILTIN_SIGS'. check.ci h_reshape refuses the `reshape`s of reshape_out.
+ARRAY_FNS = frozenset({"len", "extent", "size", "copy", "fill", "transpose", "reverse", "reshape", "sum",
+                       "fold_checked", "sum_wrap", "sum_sat", "count", "dot"})
 BUILTIN_TYPES = ref_check.BUILTIN_TYPES | ref_check.BOX12_TYPES
 # The built-in type names that check.ci's gate refuses, each a scanner class of its own.
 # compiler/scan.ci classes only the contextual `round`, so B1 takes `Round` for an ordinary
@@ -72,6 +72,11 @@ BUILTIN_TYPES = ref_check.BUILTIN_TYPES | ref_check.BOX12_TYPES
 GATED_TYPES = BUILTIN_TYPES - {"Round", "ArithError"}
 BOOT_INTS = ("I8", "I16", "I32", "I64", "U8", "U16", "U32", "U64")
 CHECKED_TYPES = BOOT_INTS + ("Bool",)
+# Box 15 (unit 4): the wide integer types. A module that names one is judged against
+# `cint_ref` with them admitted wherever an integer type is; B1 may instead refuse it with
+# C9102, as it does the forms of later units (compiler/OPEN.md CINTC-OQ-15), which
+# conformance/unsupported.txt lists case by case.
+WIDE_TYPES = ("I128", "I256", "I512", "I1024", "U128", "U256", "U512")
 # Box 12 memory lifetimes: the positions where check.ci's gate admits an arena, pool or handle
 # type (mem_admit): a function's parameter, its result or the value of an `AllocError!`
 # result, a local variable that is neither a view nor a constant, a struct field, a
@@ -124,6 +129,8 @@ class Subset:
         self.local_extents = []
         self.nd_extents = []
         self.in_function = True
+        self.ints = BOOT_INTS
+        self.checked = CHECKED_TYPES
         try:
             self.literals = [((t.line, t.col), t.text) for t in lexer.tokenize(text, path)
                              if t.kind in ("int", "char", "frac")]
@@ -138,9 +145,10 @@ class Subset:
         dims = t.dims or [t.shape]
         if t.shape is not None and len(dims) > 1:
             # Box 09: ranks 2 to 4 with an integer or Bool element, in a parameter or a local
-            # variable (check.ci shape_ok); an extent is `_` or an expression.
-            if len(dims) > 4 or t.module is not None or t.name not in CHECKED_TYPES or where not in (
-                    "local", "view", "param"):
+            # variable (check.ci shape_ok), and (BX22-06) a struct field; an extent is `_` or
+            # an expression.
+            if len(dims) > 4 or t.module is not None or t.name not in self.checked or where not in (
+                    "local", "view", "param", "field"):
                 return False
             for d in dims:
                 if d == "_":
@@ -156,13 +164,13 @@ class Subset:
                 return True
             if not self.expr(t.shape):
                 return False
-            if t.name in CHECKED_TYPES or t.name in self.structs or (
+            if t.name in self.checked or t.name in self.structs or (
                     t.name not in INT_TYPES and t.name not in GATED_TYPES and t.name != "_"):
                 self.local_extents.append((t.shape, where == "local" and self.in_function))
                 return True
         if t.shape is not None or t.module is not None:
             return False
-        if t.name in CHECKED_TYPES:
+        if t.name in self.checked:
             return True
         if t.name in self.structs:
             return where != "modvar"
@@ -183,7 +191,7 @@ class Subset:
             if getattr(y, "capacity", None) is not None and not self.expr(y.capacity):
                 return False
             parent, y = y, y.inner
-        if y.module is not None or (y.name not in CHECKED_TYPES and (y.name in INT_TYPES or y.name in GATED_TYPES)):
+        if y.module is not None or (y.name not in self.checked and (y.name in INT_TYPES or y.name in GATED_TYPES)):
             return False
         return y.shape is None or (parent.name == "Handle" and (y.dims or [y.shape]) == ["_"])
 
@@ -226,7 +234,7 @@ class Subset:
                 if x.name in PRELUDE and x.name not in self.declared:
                     return False
             elif isinstance(x, T.TypeProp):
-                if x.type_name not in BOOT_INTS or x.prop not in ("min", "max"):
+                if x.type_name not in self.ints or x.prop not in ("min", "max"):
                     return False
             elif isinstance(x, T.Unary):
                 stack.append(x.operand)
@@ -419,7 +427,7 @@ class Subset:
                     if not self.mem_ok(ft, "field"):
                         return False
                     continue
-                if ft.name not in CHECKED_TYPES and ft.name not in self.structs:
+                if ft.name not in self.checked and ft.name not in self.structs:
                     continue
                 if ft.module is not None:
                     return False   # Exercises imported fields through the multi-module driver.
@@ -473,9 +481,14 @@ class Subset:
             if not all(self.expr(c) for c in k.where) or not self.stmts(k.body.stmts):
                 return False
         self.sizes = ()
-        if any(s.type is not None and (s.type.shape is not None or s.type.name in self.structs)
+        if any(s.type is not None and (s.type.shape is not None or s.type.name in self.structs) and not (
+                self.checked is not CHECKED_TYPES and s.type.shape is not None and not s.is_const and
+                s.type.name in self.checked and len(s.type.dims or [s.type.shape]) <= 4)
                for s in list(m.consts) + list(m.statements) if isinstance(s, T.VarDecl)):
-            return False   # arrays and structs at module level or in a script: C9102 (task 2.13)
+            # Arrays and structs at module level or in a script: C9102 (task 2.13); in a
+            # module that names a wide type, a module-level array of rank 1 to 4 (box 13 MLA;
+            # check.ci shape_ok) is in.
+            return False
         self.in_function = True
         if not all(self.stmts(t.body.stmts) for t in m.tests):
             return False   # test blocks are in the subset since task 2.14 part (c)
@@ -531,12 +544,16 @@ def outcome(data: bytes, path: str) -> dict:
     try:
         try:
             text = lexer.decode_source(data, path)
-            module = parser.parse_module(text, path, box09=True, box12=True)   # cintc's surface: boxes 09 and 12
+            module = parser.parse_module(text, path, box09=True, box12=True, fixed=False)   # cintc's surface: boxes 09 and 12
         except CompileError as e:
             return {"kind": "front", "lines": e.diagnostic.to_expect_lines()}
         except Refused:
             return {"kind": "refused"}
         subset = Subset(text, path)
+        wide = names_wide(text)
+        if wide:
+            subset.ints = BOOT_INTS + WIDE_TYPES
+            subset.checked = CHECKED_TYPES + WIDE_TYPES
         if not subset.module(module):
             return {"kind": "out"}
         try:
@@ -550,19 +567,22 @@ def outcome(data: bytes, path: str) -> dict:
                 checker.check()
                 ref_check._check_module_state_args([checker])
         except CompileError as e:
-            if wide_mul_full(module):
-                return {"kind": "out"}
             d = e.diagnostic
             want = {"kind": "error", "lines": d.to_expect_lines(), "code": d.code}
             if d.code in NOTE_CODES:
                 want["note"] = note_of(d)
             if d.fault is not None:
                 want["record"] = encode_fault_record(d.record(), COMPILE_TIME).hex()
+            if wide or wide_mul_full(module):
+                want["wide"] = True
             return want
         except Refused as e:
-            # check.ci gives C9102 at a format width past I64, after the rules of LS-213.
+            # check.ci gives C9102 at a format width past I64, after the rules of LS-213, at a
+            # `reshape` to rank 5 or to a negative extent (h_reshape), and at a dimension of
+            # `extent` or `reverse` past the rank.
             if e.message == "a negative extent: no clause gives its diagnostic" or e.message.startswith(
-                    ("`mul_full` on U64", "a format width of 2^63")):
+                    ("`mul_full` on U64", "a format width of 2^63", "`reshape` to rank",
+                     "`reshape` to a negative extent", "dimension ")):
                 return {"kind": "out"}
             if any(r in e.message for r in MEMORY_REFUSALS):
                 return {"kind": "out"}   # box 12: resolve.ci mem_type_ref and check.ci h_member give C9102
@@ -572,22 +592,33 @@ def outcome(data: bytes, path: str) -> dict:
             if m and m.group(1) in subset.declared:
                 return {"kind": "out"}   # declared elsewhere, so past the gate: resolve.lookup's C9102
             return {"kind": "ref-refused", "why": e.message}
-        if wide_mul_full(module):
-            return {"kind": "out"}
         if any(e.const is not None and e.const.value > (2 ** 32 if big else 65534)
                for e, big in subset.local_extents) or any(
                 e.const is not None and e.const.value > 3070 for e in subset.nd_extents):
             # resolve.ARRAY_EXTENT_MAX at rank 1, BIG_EXTENT_MAX for a function's local array
             # (decision 2026-10-06 on OQ-213), NARRAY_EXTENT_MAX above
             return {"kind": "out"}
+        if reshape_out(module):
+            return {"kind": "out"}
+        if wide or wide_mul_full(module):
+            return {"kind": "ok", "wide": True}
         return {"kind": "ok"}
     finally:
         sys.setrecursionlimit(old)
 
 
+WIDE_RE = re.compile(r"\b(?:%s)\b" % "|".join(WIDE_TYPES))
+
+
+def names_wide(text: str) -> bool:
+    """Whether the module's text names a wide integer type (WIDE_TYPES), in an interpolation
+    hole included."""
+    return WIDE_RE.search(text) is not None
+
+
 def wide_mul_full(module) -> bool:
-    """Whether `cint_ref` typed a `mul_full` of a 64-bit operand type: its 128-bit result is
-    outside cintc, which refuses it with C9102 where `cint_ref` goes on."""
+    """Whether `cint_ref` typed a `mul_full` of a 64-bit operand type: its result is a wide
+    type, `I128` or `U128` (box 15 unit 4d)."""
     stack, seen = [module], set()
     while stack:
         x = stack.pop()
@@ -598,6 +629,64 @@ def wide_mul_full(module) -> bool:
             stack += list(x)
         elif type(x).__module__ == T.__name__:
             if isinstance(x, T.Call) and x.callee == "mul_full" and getattr(x, "operand_type", None) in ("I64", "U64"):
+                return True
+            stack += [v for v in vars(x).values() if isinstance(v, (list, tuple)) or type(v).__module__ == T.__name__]
+    return False
+
+
+def reshape_count(e):
+    """The element count of the array that a `reshape` views when check.ci h_reshape takes it
+    (reshape_count there): an owned variable of static extents or another such reshape;
+    else None."""
+    if isinstance(e, T.Name):
+        sym = getattr(e, "sym", None)
+        if sym is None or sym.kind not in ("var", "modvar") or not isinstance(sym.type, ref_check.ArrayType):
+            return None
+        extents = sym.type.extents
+    elif isinstance(e, T.Call) and getattr(e, "kind", None) == "view" and e.callee == "reshape":
+        extents = reshape_extents(e)
+    else:
+        return None
+    if extents is None:
+        return None
+    n = 1
+    for v in extents:
+        n *= v
+    return n
+
+
+def reshape_extents(e):
+    """The extents of `reshape` call e when check.ci h_reshape takes it: each one constant,
+    within resolve.ARRAY_EXTENT_MAX at rank 1 and NARRAY_EXTENT_MAX above, and their product
+    the element count of its array (reshape_count); else None."""
+    values = e.values[1:]
+    if any(getattr(v, "const", None) is None for v in values):
+        return None
+    extents = [v.const.value for v in values]
+    if any(v > (65534 if len(extents) == 1 else 3070) for v in extents):
+        return None
+    n = 1
+    for v in extents:
+        n *= v
+    return extents if reshape_count(e.view_of) == n else None
+
+
+def reshape_out(module) -> bool:
+    """Whether `cint_ref` typed a `reshape` that check.ci h_reshape refuses with C9102: an
+    extent that is not constant or past B1's limits, an array that is not an owned variable
+    of static extents or such a reshape (whose layout can be other than row-major, which
+    `cint_ref` refuses at run time), or an element count that differs (refused at run time)."""
+    stack, seen = [module], set()
+    while stack:
+        x = stack.pop()
+        if id(x) in seen:
+            continue
+        seen.add(id(x))
+        if isinstance(x, (list, tuple)):
+            stack += list(x)
+        elif type(x).__module__ == T.__name__:
+            if isinstance(x, T.Call) and getattr(x, "kind", None) == "view" and x.callee == "reshape" and \
+                    reshape_extents(x) is None:
                 return True
             stack += [v for v in vars(x).values() if isinstance(v, (list, tuple)) or type(v).__module__ == T.__name__]
     return False
@@ -631,7 +720,8 @@ def prepare(gen: pathlib.Path) -> list:
     for name, data in front_cases.frozen():
         add(name, data)
     written = check_cases.written() + check_cases.grid() + check_cases.consts() + check_cases.widths()
-    written += check_cases.nesting() + check_cases.prelude_names()
+    written += check_cases.wide_consts()
+    written += check_cases.nesting() + check_cases.prelude_names() + check_cases.big_extents()
     for name, data in written:
         add(name, data)
     for name, data in check_cases.mutants(MUTANTS_PER_FILE, MUTANT_SEED, check_cases.written()):
@@ -675,6 +765,8 @@ def judge(want: dict, got) -> str:
     diags = [x.split()[1:] for x in got if x.startswith("diag ")]
     record = next((x[7:] for x in got if x.startswith("record ")), None)
     kind = want["kind"]
+    if want.get("wide") and phase == 5 and lines[:1] == ["diagnostic.code C9102"]:
+        return ""   # a wide form that a later unit of box 15 lifts (WIDE_TYPES)
     if kind == "ok":
         if want.get("c9004") and phase in (1, 2, 3) and status == "status 0 1" and                 lines[:1] == ["diagnostic.code C9004"]:
             return ""   # beyond LS-311's 256 levels: cintc's own nesting limit (check_cases.beyond_ls311)

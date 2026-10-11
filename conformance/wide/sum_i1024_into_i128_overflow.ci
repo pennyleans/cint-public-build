@@ -1,0 +1,10 @@
+// case: wide/sum_i1024_into_i128_overflow
+// clause: SPEC-01 IM-77, IM-81; SPEC-02 R-5 (a sum of I1024 contributions narrowed once to I128, with the exact total in the record)
+// subset: cint-core-1 (wide integers, built-in sum)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 9:12 (callee `sum`), operation sum.checked.i1024.i128, operands I64 3 (n), exact 2^1024 + 1, limit I128 2^127 - 1; stack depth 0; fuel 2. Box 15, unit 1
+
+export Bool run() {
+    I1024[3] a = [I1024.max, I1024.max, 3];
+    return sum(I128, a) != 0;
+}

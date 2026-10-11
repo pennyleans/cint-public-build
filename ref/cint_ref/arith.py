@@ -183,8 +183,6 @@ def op(name: str, form: str, type_: str, *operands, mode: str | None = None,
     if name in ("rotl", "rotr"):
         _need(form == "checked", "rotations have only the checked form")
         _need(not t.signed, "rotations are defined on unsigned types only (SPEC-01 2.4, 4.6)")
-        if t.width > 64:
-            raise OpenCase("rotations above U64 are Proposed (SPEC-01 2.4)")
         a_raw, k_raw = _arity(operands, 2)
         a = _typed(a_raw, type_)
         k = _typed(k_raw, "I64")
@@ -213,8 +211,7 @@ def op(name: str, form: str, type_: str, *operands, mode: str | None = None,
 
     if name == "uabs":
         _need(t.signed, "uabs is defined on signed types only (SPEC-01 2.4, 4.3)")
-        if t.width > 64:
-            raise OpenCase("uabs above I64 is Proposed: it needs U128 and wider (SPEC-01 2.4)")
+        _need(t.width <= 512, "uabs of I1024 needs U1024, which is Proposed (SPEC-01 IM-34)")
         (a,) = (_typed(x, type_) for x in _arity(operands, 1))
         return Value(unsigned_of(t).name, abs(a.value))
 
@@ -233,10 +230,8 @@ def op(name: str, form: str, type_: str, *operands, mode: str | None = None,
 
     if name == "mul_full":
         # SPEC-01 2.4 and 4.10: Specified for I8..I512 and, with the same signedness,
-        # U8..U32; U64 to U128 is Proposed.
-        if not t.signed and t.width == 64:
-            raise OpenCase("mul_full on U64 (result U128) is Proposed (SPEC-01 2.4)")
-        _need(t.width <= (512 if t.signed else 32), "mul_full is Specified for I8..I512 and U8..U32 (SPEC-01 2.4)")
+        # U8..U256 (decision 2026-10-09, BX15-02); U512 has none while U1024 is Proposed.
+        _need(t.width <= (512 if t.signed else 256), "mul_full is Specified for I8..I512 and U8..U256 (SPEC-01 2.4)")
         a, b = (_typed(x, type_) for x in _arity(operands, 2))
         _same(t, a, b)
         return Value("%s%d" % ("I" if t.signed else "U", 2 * t.width), a.value * b.value)

@@ -1,0 +1,12 @@
+// case: wide/uabs_i128_min
+// clause: SPEC-01 IM-6, IM-16, IM-34; SPEC-09 CONF-11 rule 14 (uabs of I128.min is 2^127 in U128)
+// subset: cint-core-1 (unsigned wide integers, built-in uabs)
+// entry: run; args: none
+// spec outcome: value I64 0, its low 64 bits (as%); prints the U128 value 2^127 and a line feed; fuel 1. Box 15, unit 1
+
+export I64 run() {
+    I128 a = I128.min;
+    U128 observed = uabs(a);
+    "{observed}\n";
+    return observed as% I64;
+}

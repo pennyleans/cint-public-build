@@ -1,0 +1,12 @@
+module module.lib.tally
+sites module/lib/tally.ci 1:6:12:fuel.charge 2:7:11:add.checked.i64
+global @calls: I64 = 0
+export func @module.lib.tally.tick() -> I64 {
+  fuel.charge 1                                  #1 @module/lib/tally.ci:6:12
+  %t0 = load.global @calls
+  %t1 = const I64 1
+  %t2 = add.checked.i64 %t0, %t1                 #2 @module/lib/tally.ci:7:11
+  store.global @calls, %t2
+  %t3 = load.global @calls
+  return %t3
+}

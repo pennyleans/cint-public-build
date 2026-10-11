@@ -1,0 +1,17 @@
+// case: fixed/dot_one_rounding
+// clause: SPEC-01 IM-87 (BX15-04 A: the IM-87 example gives raw 1; a dot into Q32.32 is exact)
+// subset: cint-core-1 (fixed point, arrays)
+// entry: run; args: none
+// spec outcome: value I64 1; prints `1 1.5 1`; fuel 4 (the entry and three dot products). Box 15, unit 1
+
+export I64 run() {
+    Q16.16[2] a = [Q16.16.raw(1), Q16.16.raw(1)];
+    Q16.16[2] b = [0.5, 0.5];
+    Q16.16 d = dot(Q16.16, a, b);
+    Q16.16[2] c = [1.5, 0.25];
+    Q16.16[2] e = [0.5, 3.0];
+    Q32.32 f = dot(Q32.32, c, e);
+    Q16.16 g = dot(Q16.16, a, b, floor);
+    "{d!raw} {f} {g!raw}\n";
+    return d.raw as I64;
+}

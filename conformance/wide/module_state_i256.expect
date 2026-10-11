@@ -1,0 +1,10 @@
+case wide/module_state_i256
+clause SPEC-04 LS-213; SPEC-09 CONF-11 rule 10 (a module-level I256 array and an I256 scalar: one state.global line, for the scalar only)
+format 2
+source reference
+outcome value
+stdout-bytes 3
+stdout-sha256 a1fb50e6c86fae1679ef3351296fd6713411a08cf8dd1790a4fd05fae8688164
+return I64 12
+fuel-consumed 1
+state.global wide.module_state_i256 s I256 12

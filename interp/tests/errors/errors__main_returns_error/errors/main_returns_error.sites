@@ -1,0 +1,11 @@
+module errors.main_returns_error
+sites errors/main_returns_error.ci 1:8:14:fuel.charge 2:9:5:print
+error E0: errors.main_returns_error.IoError U16 closed, full
+func @errors.main_returns_error.main() -> U16!void error E0 {
+  fuel.charge 1                                  #1 @errors/main_returns_error.ci:8:14
+  print.begin                                    #2 @errors/main_returns_error.ci:9:5
+  print.bytes "partial\n"
+  print.end
+  %t0 = const U16 2
+  return.error %t0
+}

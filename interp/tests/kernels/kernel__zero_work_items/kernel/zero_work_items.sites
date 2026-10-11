@@ -1,0 +1,222 @@
+module kernel.zero_work_items
+sites kernel/zero_work_items.ci 1:7:15:dispatch.entry 2:14:14:index.checked.i32 3:14:14:index.checked.i32 4:14:21:as.checked.i32.i64 5:15:14:index.checked.i32 6:15:14:index.checked.i32 7:16:24:sub.checked.i64 8:16:46:sub.checked.i64 9:17:24:sub.checked.i64 10:17:21:index.checked.i32 11:17:21:index.checked.i32 12:17:32:as.checked.i32.i64 13:17:47:add.checked.i64 14:17:44:index.checked.i32 15:17:44:index.checked.i32 16:17:55:as.checked.i32.i64 17:17:40:add.checked.i64 18:18:27:sub.checked.i64 19:18:21:index.checked.i32 20:18:21:index.checked.i32 21:18:32:as.checked.i32.i64 22:18:17:add.checked.i64 23:18:50:add.checked.i64 24:18:44:index.checked.i32 25:18:44:index.checked.i32 26:18:55:as.checked.i32.i64 27:18:40:add.checked.i64 28:18:67:mul.checked.i64 29:18:63:sub.checked.i64 30:19:33:mul.checked.i64 31:19:20:div_round.checked.i64.half_even 32:20:16:add.checked.i64 33:20:24:as.checked.i64.i32 34:22:6:index.checked.i32 35:22:6:index.checked.i32 36:23:20:sum.checked.i32.i64 37:26:12:fuel.charge 38:30:5:dispatch
+export kernel @kernel.zero_work_items.diffuse(%u: I32[_, _], %kn: I64, %kd: I64, %v: I32[_, _], %total: out I64) {
+  dispatch.entry                                 #1 @kernel/zero_work_items.ci:7:15
+  local $h.0: I64
+  local $w.1: I64
+  %t0 = view.extent %u, 0
+  store.local $h.0, %t0
+  %t1 = view.extent %u, 1
+  store.local $w.1, %t1
+  %t2 = load.local $h.0
+  bind.shape %v, 3, 0, %t2
+  %t3 = load.local $w.1
+  bind.shape %v, 3, 1, %t3
+  %t4 = load.local $h.0
+  store.local $sc.2, %t4
+  %t5 = load.local $w.1
+  store.local $sc.3, %t5
+  bind.alias %v, %u
+  dispatch.charge $sc.4, 2, $sc.2, $sc.3
+  dispatch.stage $sc.5, %v, 1
+  dispatch.push
+  %t6 = const I64 0
+  store.local $sc.6, %t6
+  loop L21 {
+    %t7 = load.local $sc.6
+    %t8 = load.local $sc.4
+    %t9 = cmp.lt.i64 %t7, %t8
+    while %t9
+    %t10 = load.local $sc.6
+    dispatch.item %t10, 2, $y.7, $x.8, $sc.2, $sc.3
+    %t11 = load.local $y.7
+    %t12 = load.local $x.8
+    index.checked.i32 %u, %t11, 0                #2 @kernel/zero_work_items.ci:14:14
+    index.checked.i32 %u, %t12, 1                #3 @kernel/zero_work_items.ci:14:14
+    %t13 = view.offset %u, %t11, 0
+    %t14 = view.offset %u, %t12, %t13, 1
+    dispatch.step
+    %t15 = index.load %u, %t14
+    %t16 = as.checked.i32.i64 %t15               #4 @kernel/zero_work_items.ci:14:21
+    dispatch.step
+    local $c.9: I64
+    store.local $c.9, %t16
+    %t17 = load.local $y.7
+    %t18 = load.local $x.8
+    index.checked.i32 %u, %t17, 0                #5 @kernel/zero_work_items.ci:15:14
+    index.checked.i32 %u, %t18, 1                #6 @kernel/zero_work_items.ci:15:14
+    %t19 = view.offset %u, %t17, 0
+    %t20 = view.offset %u, %t18, %t19, 1
+    dispatch.step
+    %t21 = index.load %u, %t20
+    local $r.10: I32
+    store.local $r.10, %t21
+    if {
+      arm {
+        %t22 = load.local $y.7
+        %t23 = const I64 0
+        %t24 = cmp.gt.i64 %t22, %t23
+        local $sc.11: Bool
+        store.local $sc.11, %t24
+        if {
+          arm {
+          } then %t24 {
+            %t25 = load.local $y.7
+            %t26 = load.local $h.0
+            %t27 = const I64 1
+            %t28 = sub.checked.i64 %t26, %t27    #7 @kernel/zero_work_items.ci:16:24
+            dispatch.step
+            %t29 = cmp.lt.i64 %t25, %t28
+            store.local $sc.11, %t29
+          }
+        }
+        %t30 = load.local $sc.11
+        local $sc.12: Bool
+        store.local $sc.12, %t30
+        if {
+          arm {
+          } then %t30 {
+            %t31 = load.local $x.8
+            %t32 = const I64 0
+            %t33 = cmp.gt.i64 %t31, %t32
+            store.local $sc.12, %t33
+          }
+        }
+        %t34 = load.local $sc.12
+        local $sc.13: Bool
+        store.local $sc.13, %t34
+        if {
+          arm {
+          } then %t34 {
+            %t35 = load.local $x.8
+            %t36 = load.local $w.1
+            %t37 = const I64 1
+            %t38 = sub.checked.i64 %t36, %t37    #8 @kernel/zero_work_items.ci:16:46
+            dispatch.step
+            %t39 = cmp.lt.i64 %t35, %t38
+            store.local $sc.13, %t39
+          }
+        }
+        %t40 = load.local $sc.13
+      } then %t40 {
+        %t41 = load.local $y.7
+        %t42 = const I64 1
+        %t43 = sub.checked.i64 %t41, %t42        #9 @kernel/zero_work_items.ci:17:24
+        dispatch.step
+        %t44 = load.local $x.8
+        index.checked.i32 %u, %t43, 0            #10 @kernel/zero_work_items.ci:17:21
+        index.checked.i32 %u, %t44, 1            #11 @kernel/zero_work_items.ci:17:21
+        %t45 = view.offset %u, %t43, 0
+        %t46 = view.offset %u, %t44, %t45, 1
+        dispatch.step
+        %t47 = index.load %u, %t46
+        %t48 = as.checked.i32.i64 %t47           #12 @kernel/zero_work_items.ci:17:32
+        dispatch.step
+        %t49 = load.local $y.7
+        %t50 = const I64 1
+        %t51 = add.checked.i64 %t49, %t50        #13 @kernel/zero_work_items.ci:17:47
+        dispatch.step
+        %t52 = load.local $x.8
+        index.checked.i32 %u, %t51, 0            #14 @kernel/zero_work_items.ci:17:44
+        index.checked.i32 %u, %t52, 1            #15 @kernel/zero_work_items.ci:17:44
+        %t53 = view.offset %u, %t51, 0
+        %t54 = view.offset %u, %t52, %t53, 1
+        dispatch.step
+        %t55 = index.load %u, %t54
+        %t56 = as.checked.i32.i64 %t55           #16 @kernel/zero_work_items.ci:17:55
+        dispatch.step
+        %t57 = add.checked.i64 %t48, %t56        #17 @kernel/zero_work_items.ci:17:40
+        dispatch.step
+        %t58 = load.local $y.7
+        %t59 = load.local $x.8
+        %t60 = const I64 1
+        %t61 = sub.checked.i64 %t59, %t60        #18 @kernel/zero_work_items.ci:18:27
+        dispatch.step
+        index.checked.i32 %u, %t58, 0            #19 @kernel/zero_work_items.ci:18:21
+        index.checked.i32 %u, %t61, 1            #20 @kernel/zero_work_items.ci:18:21
+        %t62 = view.offset %u, %t58, 0
+        %t63 = view.offset %u, %t61, %t62, 1
+        dispatch.step
+        %t64 = index.load %u, %t63
+        %t65 = as.checked.i32.i64 %t64           #21 @kernel/zero_work_items.ci:18:32
+        dispatch.step
+        %t66 = add.checked.i64 %t57, %t65        #22 @kernel/zero_work_items.ci:18:17
+        dispatch.step
+        %t67 = load.local $y.7
+        %t68 = load.local $x.8
+        %t69 = const I64 1
+        %t70 = add.checked.i64 %t68, %t69        #23 @kernel/zero_work_items.ci:18:50
+        dispatch.step
+        index.checked.i32 %u, %t67, 0            #24 @kernel/zero_work_items.ci:18:44
+        index.checked.i32 %u, %t70, 1            #25 @kernel/zero_work_items.ci:18:44
+        %t71 = view.offset %u, %t67, 0
+        %t72 = view.offset %u, %t70, %t71, 1
+        dispatch.step
+        %t73 = index.load %u, %t72
+        %t74 = as.checked.i32.i64 %t73           #26 @kernel/zero_work_items.ci:18:55
+        dispatch.step
+        %t75 = add.checked.i64 %t66, %t74        #27 @kernel/zero_work_items.ci:18:40
+        dispatch.step
+        %t76 = const I64 4
+        %t77 = load.local $c.9
+        %t78 = mul.checked.i64 %t76, %t77        #28 @kernel/zero_work_items.ci:18:67
+        dispatch.step
+        %t79 = sub.checked.i64 %t75, %t78        #29 @kernel/zero_work_items.ci:18:63
+        dispatch.step
+        local $lap.14: I64
+        store.local $lap.14, %t79
+        %t80 = load.local $lap.14
+        %t81 = mul.checked.i64 %kn, %t80         #30 @kernel/zero_work_items.ci:19:33
+        dispatch.step
+        %t82 = div_round.checked.i64.half_even %t81, %kd #31 @kernel/zero_work_items.ci:19:20
+        dispatch.step
+        local $flux.15: I64
+        store.local $flux.15, %t82
+        %t83 = load.local $c.9
+        %t84 = load.local $flux.15
+        %t85 = add.checked.i64 %t83, %t84        #32 @kernel/zero_work_items.ci:20:16
+        dispatch.step
+        %t86 = as.checked.i64.i32 %t85           #33 @kernel/zero_work_items.ci:20:24
+        dispatch.step
+        store.local $r.10, %t86
+      }
+    }
+    %t87 = load.local $y.7
+    %t88 = load.local $x.8
+    index.checked.i32 $sc.5, %t87, 0             #34 @kernel/zero_work_items.ci:22:6
+    index.checked.i32 $sc.5, %t88, 1             #35 @kernel/zero_work_items.ci:22:6
+    %t89 = view.offset $sc.5, %t87, 0
+    %t90 = view.offset $sc.5, %t88, %t89, 1
+    dispatch.step
+    %t91 = load.local $r.10
+    index.store $sc.5, %t90, %t91
+    %t92 = load.local $r.10
+    reduce.add sum.checked.i32.i64 %total, %t92
+    dispatch.step
+    next
+    %t93 = load.local $sc.6
+    %t94 = const I64 1
+    %t95 = add.wrap.i64 %t93, %t94
+    store.local $sc.6, %t95
+  }
+  dispatch.phase 2
+  reduce.final sum.checked.i32.i64 %total        #36 @kernel/zero_work_items.ci:23:20
+  dispatch.pop
+  dispatch.publish %v, $sc.5
+  dispatch.publish %total
+}
+export func @kernel.zero_work_items.run() -> I64 {
+  fuel.charge 1                                  #37 @kernel/zero_work_items.ci:26:12
+  local $sc.0: I32[0]
+  view.begin $a.1: I32[_, _], $sc.0, 0, 32768
+  local $sc.2: I32[0]
+  view.begin $b.3: I32[_, _], $sc.2, 0, 32768
+  %t0 = const I64 5
+  local $total.4: I64
+  store.local $total.4, %t0
+  %t1 = const I64 1
+  %t2 = const I64 8
+  dispatch @kernel.zero_work_items.diffuse($a.1, %t1, %t2, $b.3, out $total.4), 9 #38 @kernel/zero_work_items.ci:30:5
+  %t3 = load.local $total.4
+  return %t3
+}

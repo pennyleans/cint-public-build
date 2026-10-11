@@ -28,85 +28,77 @@ export struct Sha256 {
     I64 total;
 }
 
-// The round constants K0 to K63 (FIPS 180-4 4.2.2).
-U32 round_k(I64 t) {
-    switch (t) {
-        case 0: return 0x428a2f98;
-        case 1: return 0x71374491;
-        case 2: return 0xb5c0fbcf;
-        case 3: return 0xe9b5dba5;
-        case 4: return 0x3956c25b;
-        case 5: return 0x59f111f1;
-        case 6: return 0x923f82a4;
-        case 7: return 0xab1c5ed5;
-        case 8: return 0xd807aa98;
-        case 9: return 0x12835b01;
-        case 10: return 0x243185be;
-        case 11: return 0x550c7dc3;
-        case 12: return 0x72be5d74;
-        case 13: return 0x80deb1fe;
-        case 14: return 0x9bdc06a7;
-        case 15: return 0xc19bf174;
-        case 16: return 0xe49b69c1;
-        case 17: return 0xefbe4786;
-        case 18: return 0x0fc19dc6;
-        case 19: return 0x240ca1cc;
-        case 20: return 0x2de92c6f;
-        case 21: return 0x4a7484aa;
-        case 22: return 0x5cb0a9dc;
-        case 23: return 0x76f988da;
-        case 24: return 0x983e5152;
-        case 25: return 0xa831c66d;
-        case 26: return 0xb00327c8;
-        case 27: return 0xbf597fc7;
-        case 28: return 0xc6e00bf3;
-        case 29: return 0xd5a79147;
-        case 30: return 0x06ca6351;
-        case 31: return 0x14292967;
-        case 32: return 0x27b70a85;
-        case 33: return 0x2e1b2138;
-        case 34: return 0x4d2c6dfc;
-        case 35: return 0x53380d13;
-        case 36: return 0x650a7354;
-        case 37: return 0x766a0abb;
-        case 38: return 0x81c2c92e;
-        case 39: return 0x92722c85;
-        case 40: return 0xa2bfe8a1;
-        case 41: return 0xa81a664b;
-        case 42: return 0xc24b8b70;
-        case 43: return 0xc76c51a3;
-        case 44: return 0xd192e819;
-        case 45: return 0xd6990624;
-        case 46: return 0xf40e3585;
-        case 47: return 0x106aa070;
-        case 48: return 0x19a4c116;
-        case 49: return 0x1e376c08;
-        case 50: return 0x2748774c;
-        case 51: return 0x34b0bcb5;
-        case 52: return 0x391c0cb3;
-        case 53: return 0x4ed8aa4a;
-        case 54: return 0x5b9cca4f;
-        case 55: return 0x682e6ff3;
-        case 56: return 0x748f82ee;
-        case 57: return 0x78a5636f;
-        case 58: return 0x84c87814;
-        case 59: return 0x8cc70208;
-        case 60: return 0x90befffa;
-        case 61: return 0xa4506ceb;
-        case 62: return 0xbef9a3f7;
-        case 63: return 0xc67178f2;
-        default: return 0;
-    }
-}
-
-// ROTR^n(x) for 1 <= n <= 31 (FIPS 180-4 3.2).
-U32 ror(U32 x, I64 n) {
-    return (x >> n) | (x <<% (32 - n));
-}
-
-// The compression function on s[0].block (FIPS 180-4 6.2.2).
+// The compression function on s[0].block (FIPS 180-4 6.2.2). It makes no call per block:
+// each ROTR^n(x) of sections 3.2 and 4.1.2 is written inline as (x >> n) | (x <<% (32 - n))
+// with constant counts, and the round constants K0 to K63 (4.2.2) are a local table, since
+// cint-boot-1 has no array literals and no module variables (SPEC-09 BOOT-01).
 void compress(inout Sha256[_] s) {
     U32[64] w;
+    U32[64] k;
+    k[0] = 0x428a2f98;
+    k[1] = 0x71374491;
+    k[2] = 0xb5c0fbcf;
+    k[3] = 0xe9b5dba5;
+    k[4] = 0x3956c25b;
+    k[5] = 0x59f111f1;
+    k[6] = 0x923f82a4;
+    k[7] = 0xab1c5ed5;
+    k[8] = 0xd807aa98;
+    k[9] = 0x12835b01;
+    k[10] = 0x243185be;
+    k[11] = 0x550c7dc3;
+    k[12] = 0x72be5d74;
+    k[13] = 0x80deb1fe;
+    k[14] = 0x9bdc06a7;
+    k[15] = 0xc19bf174;
+    k[16] = 0xe49b69c1;
+    k[17] = 0xefbe4786;
+    k[18] = 0x0fc19dc6;
+    k[19] = 0x240ca1cc;
+    k[20] = 0x2de92c6f;
+    k[21] = 0x4a7484aa;
+    k[22] = 0x5cb0a9dc;
+    k[23] = 0x76f988da;
+    k[24] = 0x983e5152;
+    k[25] = 0xa831c66d;
+    k[26] = 0xb00327c8;
+    k[27] = 0xbf597fc7;
+    k[28] = 0xc6e00bf3;
+    k[29] = 0xd5a79147;
+    k[30] = 0x06ca6351;
+    k[31] = 0x14292967;
+    k[32] = 0x27b70a85;
+    k[33] = 0x2e1b2138;
+    k[34] = 0x4d2c6dfc;
+    k[35] = 0x53380d13;
+    k[36] = 0x650a7354;
+    k[37] = 0x766a0abb;
+    k[38] = 0x81c2c92e;
+    k[39] = 0x92722c85;
+    k[40] = 0xa2bfe8a1;
+    k[41] = 0xa81a664b;
+    k[42] = 0xc24b8b70;
+    k[43] = 0xc76c51a3;
+    k[44] = 0xd192e819;
+    k[45] = 0xd6990624;
+    k[46] = 0xf40e3585;
+    k[47] = 0x106aa070;
+    k[48] = 0x19a4c116;
+    k[49] = 0x1e376c08;
+    k[50] = 0x2748774c;
+    k[51] = 0x34b0bcb5;
+    k[52] = 0x391c0cb3;
+    k[53] = 0x4ed8aa4a;
+    k[54] = 0x5b9cca4f;
+    k[55] = 0x682e6ff3;
+    k[56] = 0x748f82ee;
+    k[57] = 0x78a5636f;
+    k[58] = 0x84c87814;
+    k[59] = 0x8cc70208;
+    k[60] = 0x90befffa;
+    k[61] = 0xa4506ceb;
+    k[62] = 0xbef9a3f7;
+    k[63] = 0xc67178f2;
     for t in 0..16 {
         I64 j = 4 * t;
         w[t] = ((s[0].block[j] as U32) << 24) | ((s[0].block[j + 1] as U32) << 16)
@@ -115,8 +107,8 @@ void compress(inout Sha256[_] s) {
     for t in 16..64 {
         U32 x = w[t - 15];
         U32 y = w[t - 2];
-        U32 s0 = ror(x, 7) ^ ror(x, 18) ^ (x >> 3);
-        U32 s1 = ror(y, 17) ^ ror(y, 19) ^ (y >> 10);
+        U32 s0 = ((x >> 7) | (x <<% 25)) ^ ((x >> 18) | (x <<% 14)) ^ (x >> 3);
+        U32 s1 = ((y >> 17) | (y <<% 15)) ^ ((y >> 19) | (y <<% 13)) ^ (y >> 10);
         w[t] = w[t - 16] +% s0 +% w[t - 7] +% s1;
     }
     U32 a = s[0].h[0];
@@ -128,10 +120,10 @@ void compress(inout Sha256[_] s) {
     U32 g = s[0].h[6];
     U32 h = s[0].h[7];
     for t in 0..64 {
-        U32 big1 = ror(e, 6) ^ ror(e, 11) ^ ror(e, 25);
+        U32 big1 = ((e >> 6) | (e <<% 26)) ^ ((e >> 11) | (e <<% 21)) ^ ((e >> 25) | (e <<% 7));
         U32 ch = (e & f) ^ (~e & g);
-        U32 t1 = h +% big1 +% ch +% round_k(t) +% w[t];
-        U32 big0 = ror(a, 2) ^ ror(a, 13) ^ ror(a, 22);
+        U32 t1 = h +% big1 +% ch +% k[t] +% w[t];
+        U32 big0 = ((a >> 2) | (a <<% 30)) ^ ((a >> 13) | (a <<% 19)) ^ ((a >> 22) | (a <<% 10));
         U32 maj = (a & b) ^ (a & c) ^ (b & c);
         U32 t2 = big0 +% maj;
         h = g;

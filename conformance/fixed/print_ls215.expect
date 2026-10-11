@@ -1,0 +1,9 @@
+case fixed/print_ls215
+clause SPEC-04 LS-207, LS-208, LS-215 (the fixed-point rows of the 9.5 table, but `!ratio`, which is Proposed)
+format 5
+source reference
+outcome value
+stdout-bytes 74
+stdout-sha256 783d41fc969c071600f82ad2fbe02e1f17a576f22c2f38843349bccbc1fedbe5
+return I64 0
+fuel-consumed 1

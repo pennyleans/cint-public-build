@@ -42,7 +42,7 @@ typedef struct state0 {
     int64_t g_calls;
 } state0;
 static const state0 state0_init = {INT64_C(0)};
-static const cint_state_var state0_vars[1] = {{"calls", 5u, CINT_TAG_I64, (uint32_t)offsetof(state0, g_calls), 0u}};
+static const cint_state_var state0_vars[1] = {{"calls", 5u, CINT_TAG_I64, (uint32_t)offsetof(state0, g_calls), 0u, NULL, NULL}};
 static const cint_state state0_desc = {0u, 1u, (uint32_t)sizeof(state0), 0u, &state0_init, state0_vars};
 static const cint_state *const states[1] = {&state0_desc};
 
@@ -158,5 +158,5 @@ static const cint_observer_entry entries[5] = {
     {0u, 7u, "bad_set", sig_bad_set, entry_bad_set},
 };
 FIXTURE_EXPORT const cint_observer cint_observer_desc = {5u, 0u, &program, entries};
-FIXTURE_EXPORT const cint_state_table cint_observer_state = {1u, 0u, states};
+FIXTURE_EXPORT const cint_state_table cint_observer_state = {1u, 0u, states, NULL};
 FIXTURE_EXPORT const uint32_t cint_program_abi = CINT_ABI_VERSION;

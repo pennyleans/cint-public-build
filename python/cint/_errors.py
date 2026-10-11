@@ -114,11 +114,12 @@ class Fault(Exception):
         and `fault.source-map` read `self` when the record's digest is absent
         or equals `revision`. A fault that carries a kernel address takes the
         kernel form of format 4 (CONF-11 rule 13, box 09 ruling R9), so it
-        raises ValueError in formats 1 and 2."""
+        raises ValueError in formats 1 and 2. Format 5 writes the lines of
+        format 4 and adds the values of `U128` to `U512` and of fixed point (rule 14)."""
         from ._record import render_value
-        if fmt not in (1, 2, 4):
-            raise ValueError("an .expect file is format 1, 2 or 4, not %r" % (fmt,))
-        if self.kernel is not None and fmt != 4:
+        if fmt not in (1, 2, 4, 5):
+            raise ValueError("an .expect file is format 1, 2, 4 or 5, not %r" % (fmt,))
+        if self.kernel is not None and fmt < 4:
             raise ValueError("a fault raised by a kernel dispatch is written in format 4 (CONF-11 rule 13)")
         lines = ["fault.code " + self.code, "fault.operation " + self.operation]
         lines += ["fault.operand " + render_value(t, v) for t, v in zip(self.operand_types, self.operands)]
@@ -323,16 +324,29 @@ class Unpublished(Exception):
 
 
 class StaleHandle(Exception):
-    """Using a `View` or `Buffer` after its release, or a `View` whose
-    registration a `restore` removed (SPEC-03 M-11a)."""
+    """Using a `View` or `Buffer` after its release (SPEC-03 P-19). A `View`
+    or `Buffer` whose registration a `restore` removed (M-11a) is not stale:
+    it is registered again on its next use (P-20; box 13 ruling BX13-04)."""
 
 
 class ReplayDivergence(Exception):
-    """`CINT_DIVERGED`: a replay mismatch (SPEC-03 H-17)."""
+    """`CINT_DIVERGED`: a replay mismatch (SPEC-03 H-17). `result` is the
+    `cint.ReplayResult` of the replay, which names the event and what
+    differed, when `cint.replay` raised it."""
+
+    def __init__(self, message: str = "replay diverged", result=None):
+        super().__init__(message)
+        self.result = result
 
 
 class Unreplayable(Exception):
-    """`CINT_UNREPLAYABLE`: replay reached an `unrestricted` occurrence (SPEC-03 H-17)."""
+    """`CINT_UNREPLAYABLE`: replay cannot go past an event (SPEC-03 H-17):
+    an `unrestricted` occurrence, or an entry that ended its recording with
+    `CINT_RESOURCE` (H-17a). `result` is as for `ReplayDivergence`."""
+
+    def __init__(self, message: str = "replay reached an unrestricted occurrence", result=None):
+        super().__init__(message)
+        self.result = result
 
 
 class ErrorResult(Exception):

@@ -1,0 +1,18 @@
+case wide/shl_checked_u256_overflow
+clause SPEC-01 IM-6, IM-45, IM-106; SPEC-09 CONF-11 rule 14 (3 << 255 leaves U256; the count is an I64 operand)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_OVERFLOW
+fault.operation shl.checked.u256
+fault.operand U256 3
+fault.operand I64 255
+fault.exact 173688133855974293135356477513031861779904976998460846059186376011869694459904
+fault.limit U256 115792089237316195423570985008687907853269984665640564039457584007913129639935
+fault.position wide/shl_checked_u256_overflow.ci:10:14
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

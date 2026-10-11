@@ -56,6 +56,9 @@ CASES = ("12a", "13", "16", "16a", "16b", "17", "17a", "19", "20", "20a", "21", 
 OPTIONAL = {
     "tests.test_borrow.Case16b.test_torch_cpu_int64": "PyTorch, where it is installed (case 16b)",
     "tests.test_borrow.Arguments.test_flags_seen_by_the_exporter": "CPython 3.12 or later",
+    **{"tests.test_device.%s.%s" % (package, test): "%s and the GPU, with CINT_TEST_CUDA=device (box 11)" % name
+       for package, name in (("CuPy", "CuPy"), ("Torch", "PyTorch"))
+       for test in ("test_example_67", "test_case_18", "test_matmul", "test_open_question_17")},
     "tests.test_examples.NewcomerTask3P.test_answers": "the newcomer check's script, where it is in the tree",
 }
 DEMO = ("examples/matmul_i8.ci", "examples/matmul_i8.py", "examples/matmul_i8.stdout",
@@ -251,9 +254,11 @@ def identity_of() -> dict:
     suite, suite_files = cc.tree_digest("conformance/", "conformance/")
     return {"profile": "cint-core-1", "runtime_contract_version": cc.runtime_contract(),
             "compiler_source_identity": cc.sha256(boot.source_manifest(boot.compiler_closure(sources))),
-            "runtime_header_sha256": cc.sha256((rt / "cint_rt.h").read_bytes()),
+            "runtime_header_sha256": cc.runtime_header_digest(),
             "runtime_library_sha256": cc.files_digest([rt / "cint_rt.c", rt / "cint_rt_internal.h",
-                                                         rt / "cint_mem.c", rt / "cint_mem.h"]),
+                                                         rt / "cint_mem.c", rt / "cint_mem.h",
+                                                         rt / "cint_wide.c", rt / "cint_wide.h",
+                                                         rt / "cint_fixed.c", rt / "cint_fixed.h"]),
             "bridge_sha256": cc.files_digest([rt / "cint_bridge.c", rt / "cint_bridge.h",
                                               rt / "cint_bridge_internal.h", rt / "cint_build.c"]),
             "cli_sha256": cc.files_digest(sorted((ROOT / "cli").glob("*.c")) + sorted((ROOT / "cli").glob("*.h"))),

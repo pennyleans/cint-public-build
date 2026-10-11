@@ -35,6 +35,7 @@ import sys
 from . import cif1, expect, sig
 from .exec import DEFAULT_DEPTH, run_program
 from .faults import UNASSIGNED, CompileError, Refused
+from .fixed import is_q_type
 from .types import BOOL, Value, is_int_type
 
 
@@ -72,7 +73,14 @@ def parse_arg(text: str) -> Value:
             return Value(t, int(v, 10))
         except ValueError:
             pass
-    raise argparse.ArgumentTypeError("an argument is `<Type> <decimal>` or `Bool true|false`: %r" % text)
+    if is_q_type(t) and v.startswith("raw "):
+        # A fixed-point value by its storage integer, as `.expect` writes it (SPEC-09 CONF-11 rule 14).
+        try:
+            return Value(t, int(v[4:].strip(), 10))
+        except ValueError:
+            pass
+    raise argparse.ArgumentTypeError("an argument is `<Type> <decimal>`, `Q<i>.<f> raw <decimal>` or "
+                                     "`Bool true|false`: %r" % text)
 
 
 def _int(text):
@@ -93,7 +101,7 @@ def _add_run_options(p, with_names):
         p.add_argument("--case")
         p.add_argument("--clause")
         p.add_argument("--stdout", metavar="FILE", help="also write the program's output bytes to FILE")
-        p.add_argument("--format", type=int, choices=(1, 2, 3, 4), default=1, help="the .expect format (CONF-11)")
+        p.add_argument("--format", type=int, choices=(1, 2, 3, 4, 5), default=1, help="the .expect format (CONF-11)")
 
 
 def _outcome(ns):

@@ -59,9 +59,8 @@ static size_t g_input_count;
 
 static bool is_input(file_id id)
 {
-    for (size_t i = 0; i < g_input_count; i++) {
+    for (size_t i = 0; i < g_input_count; i++)
         if (g_inputs[i].volume == id.volume && g_inputs[i].high == id.high && g_inputs[i].low == id.low) return true;
-    }
     return false;
 }
 
@@ -79,8 +78,7 @@ void cint_bridge_free_input(uint8_t *bytes) { free(bytes); }
 /* Strict UTF-8 (RFC 3629): no overlong forms, no surrogates, at most U+10FFFF. */
 static bool utf8_valid(const uint8_t *s, size_t n)
 {
-    size_t i = 0;
-    while (i < n) {
+    for (size_t i = 0; i < n;) {
         uint32_t c = s[i], min;
         size_t extra;
         if (c < 0x80u) { i++; continue; }
@@ -90,9 +88,8 @@ static bool utf8_valid(const uint8_t *s, size_t n)
         else return false;
         if (n - i <= extra) return false;
         for (size_t j = 1; j <= extra; j++) {
-            uint32_t b = s[i + j];
-            if ((b & 0xC0u) != 0x80u) return false;
-            c = (c << 6) | (b & 0x3Fu);
+            if ((s[i + j] & 0xC0u) != 0x80u) return false;
+            c = (c << 6) | (s[i + j] & 0x3Fu);
         }
         if (c < min || c > 0x10FFFFu || (c >= 0xD800u && c <= 0xDFFFu)) return false;
         i += extra + 1;
@@ -134,10 +131,9 @@ bool cint_bridge_rel_ok(const char *rel)
         size_t len = i - seg, stem = 0;
         while (stem < len && g[stem] != '.') stem++;
         if (len == 0 || g[len - 1] == '.') return false;
-        for (int k = 0; k < 6 && (stem == 3 || stem == 4); k++) {
+        for (int k = 0; k < 6 && (stem == 3 || stem == 4); k++)
             if ((g[0] & ~0x20) == dev[k][0] && (g[1] & ~0x20) == dev[k][1] && (g[2] & ~0x20) == dev[k][2]
                 && (stem == 3 ? k < 4 : k >= 4 && g[3] >= '1' && g[3] <= '9')) return false;
-        }
         seg = i + 1;
     }
     return n > 0;
@@ -178,9 +174,8 @@ static wchar_t *widen(const char *s)
     int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s, -1, NULL, 0);
     wchar_t *w = n > 0 ? malloc((size_t)n * sizeof *w) : NULL;
     if (w != NULL && MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s, -1, w, n) != n) { free(w); w = NULL; }
-    for (int i = 4; w != NULL && wcsncmp(w, L"\\\\?\\", 4) == 0 && i < n; i++) {
+    for (int i = 4; w != NULL && wcsncmp(w, L"\\\\?\\", 4) == 0 && i < n; i++)
         if (w[i] == L'/') w[i] = L'\\';   /* Windows keeps '/' literal after a \\?\ prefix */
-    }
     return w;
 }
 
@@ -188,9 +183,7 @@ static bool handle_id(HANDLE h, file_id *id, DWORD *attributes)
 {
     FILE_ID_INFO fi;
     BY_HANDLE_FILE_INFORMATION info;
-    if (!GetFileInformationByHandleEx(h, FileIdInfo, &fi, sizeof fi) || !GetFileInformationByHandle(h, &info)) {
-        return false;
-    }
+    if (!GetFileInformationByHandleEx(h, FileIdInfo, &fi, sizeof fi) || !GetFileInformationByHandle(h, &info)) return false;
     id->volume = fi.VolumeSerialNumber;
     memcpy(&id->high, fi.FileId.Identifier, 8);
     memcpy(&id->low, fi.FileId.Identifier + 8, 8);
@@ -237,9 +230,8 @@ int cint_bridge_write_new(const char *path, const uint8_t *p, size_t len)
         return r;
     }
     bool ok = true;
-    for (DWORD done = 0; ok && len > 0; p += done, len -= done) {
+    for (DWORD done = 0; ok && len > 0; p += done, len -= done)
         ok = WriteFile(h, p, len > ((size_t)1 << 20) ? (DWORD)1 << 20 : (DWORD)len, &done, NULL) && done > 0;
-    }
     ok = ok && !fail_at(STEP_WRITE) && FlushFileBuffers(h) && !fail_at(STEP_FLUSH);
     if (!CloseHandle(h) || fail_at(STEP_CLOSE)) ok = false;
     if (!ok) DeleteFileW(w);
@@ -302,13 +294,10 @@ bool cint_bridge_root_open(const char *dir, cint_bridge_root **out)
         r->h = h;
         r->path = final_path(h);
     }
-    if (r == NULL || r->path == NULL) {
-        if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
-        free(r);
-        return false;
-    }
-    *out = r;
-    return true;
+    if (r != NULL && r->path != NULL) { *out = r; return true; }
+    if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
+    free(r);
+    return false;
 }
 
 void cint_bridge_root_close(cint_bridge_root *root)
@@ -359,8 +348,7 @@ struct cint_bridge_root { int fd; };
 
 static file_id identity_of(const struct stat *st)
 {
-    file_id id = {(uint64_t)st->st_dev, 0, (uint64_t)st->st_ino};
-    return id;
+    return (file_id){(uint64_t)st->st_dev, 0, (uint64_t)st->st_ino};
 }
 
 static bool target_ok(const char *path)
@@ -379,8 +367,7 @@ int cint_bridge_write_new(const char *path, const uint8_t *p, size_t len)
         ssize_t w = write(fd, p, len > ((size_t)1 << 20) ? (size_t)1 << 20 : len);
         if (w < 0 && errno == EINTR) continue;
         ok = w > 0;
-        p += ok ? (size_t)w : 0;
-        len -= ok ? (size_t)w : 0;
+        if (ok) { p += (size_t)w; len -= (size_t)w; }
     }
     ok = ok && !fail_at(STEP_WRITE) && fsync(fd) == 0 && !fail_at(STEP_FLUSH);
     if (close(fd) != 0 || fail_at(STEP_CLOSE)) ok = false;
@@ -401,50 +388,47 @@ static bool replace_file(const char *from, const char *to)
     char *dir = slash == NULL ? cint_bridge_join(".", "", "") : cint_bridge_join(to, "", "");
     if (dir != NULL && slash != NULL) dir[slash == to ? 1 : (size_t)(slash - to)] = '\0';
     int fd = dir != NULL ? open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC) : -1;
-    if (fd >= 0) {
-        (void)fsync(fd);
-        (void)close(fd);
-    }
+    if (fd >= 0) { (void)fsync(fd); (void)close(fd); }
     free(dir);
     return true;
 }
 
-bool cint_bridge_read_file(const char *path, size_t limit, uint8_t **bytes, size_t *len)
+/* Reads the regular file at fd (-1: none), at most `limit` bytes, into a new buffer of len + 1 bytes,
+ * and closes fd. An input is recorded and read to its end, so one that grew is refused. */
+static bool read_fd(int fd, size_t limit, bool input, uint8_t **bytes, size_t *len)
 {
-    int fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK);
     struct stat st;
     uint8_t *buf = NULL;
     size_t got = 0;
     bool ok = fd >= 0 && fstat(fd, &st) == 0 && S_ISREG(st.st_mode) && (uint64_t)st.st_size <= limit
-              && (buf = malloc((size_t)st.st_size + 1)) != NULL;
-    for (ssize_t r = 1; ok && got < (size_t)st.st_size && r != 0;) {
-        r = read(fd, buf + got, (size_t)st.st_size - got);
-        ok = r >= 0 ? (got += (size_t)r, true) : errno == EINTR;
+              && (!input || remember_input(identity_of(&st))) && (buf = malloc((size_t)st.st_size + 1)) != NULL;
+    for (ssize_t r = 1; ok && r != 0 && (input || got < (size_t)st.st_size);) {
+        r = read(fd, buf + got, (size_t)st.st_size + (input ? 1 : 0) - got);
+        ok = r >= 0 ? (got += (size_t)r) <= (size_t)st.st_size : errno == EINTR;
     }
     if (fd >= 0) (void)close(fd);
-    if (!ok || got != (size_t)st.st_size) { free(buf); return false; }
-    *bytes = buf;
-    *len = got;
-    return true;
+    if (ok && got == (size_t)st.st_size) { *bytes = buf; *len = got; return true; }
+    free(buf);
+    return false;
+}
+
+bool cint_bridge_read_file(const char *path, size_t limit, uint8_t **bytes, size_t *len)
+{
+    return read_fd(open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK), limit, false, bytes, len);
 }
 
 bool cint_bridge_root_open(const char *dir, cint_bridge_root **out)
 {
     int fd = dir != NULL && out != NULL ? open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC) : -1;
     cint_bridge_root *r = fd >= 0 ? malloc(sizeof *r) : NULL;
-    if (r == NULL) {
-        if (fd >= 0) (void)close(fd);
-        return false;
-    }
-    r->fd = fd;
-    *out = r;
-    return true;
+    if (r != NULL) { r->fd = fd; *out = r; return true; }
+    if (fd >= 0) (void)close(fd);
+    return false;
 }
 
 void cint_bridge_root_close(cint_bridge_root *root)
 {
-    if (root == NULL) return;
-    (void)close(root->fd);
+    if (root != NULL) (void)close(root->fd);
     free(root);
 }
 
@@ -458,10 +442,8 @@ static bool entry_exact(int dir, const char *name)
     DIR *ds = d >= 0 ? fdopendir(d) : NULL;
     struct dirent *e;
     bool found = false;
-    if (ds == NULL) {
-        if (d >= 0) (void)close(d);
-        return false;
-    }
+    if (ds == NULL && d >= 0) (void)close(d);
+    if (ds == NULL) return false;
     rewinddir(ds);   /* the duplicate shares the offset of earlier scans */
     while (!found && (e = readdir(ds)) != NULL) found = strcmp(e->d_name, name) == 0;
     (void)closedir(ds);
@@ -476,32 +458,13 @@ static bool read_handle(cint_bridge_root *root, const char *rel, size_t limit, u
         char *slash = strchr(s, '/');
         if (slash != NULL) *slash = '\0';
         fd = openat(dir, s, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | (slash != NULL ? O_DIRECTORY : O_NONBLOCK));
-        if (fd >= 0 && !entry_exact(dir, s)) {
-            (void)close(fd);
-            fd = -1;
-        }
+        if (fd >= 0 && !entry_exact(dir, s)) { (void)close(fd); fd = -1; }
         if (dir != root->fd) (void)close(dir);
         dir = fd;
         s = fd >= 0 && slash != NULL ? slash + 1 : NULL;
     }
     free(p);
-    struct stat st;
-    uint8_t *buf = NULL;
-    bool ok = fd >= 0 && fstat(fd, &st) == 0 && S_ISREG(st.st_mode) && (uint64_t)st.st_size <= limit
-              && remember_input(identity_of(&st)) && (buf = malloc((size_t)st.st_size + 1)) != NULL;
-    size_t got = 0;
-    for (ssize_t r = 1; ok && r != 0;) {   /* to end of file: a file that grew is refused */
-        r = read(fd, buf + got, (size_t)st.st_size + 1 - got);
-        ok = r >= 0 ? (got += (size_t)r) <= (size_t)st.st_size : errno == EINTR;
-    }
-    if (fd >= 0) (void)close(fd);
-    if (ok && got == (size_t)st.st_size) {
-        *bytes = buf;
-        *len = got;
-        return true;
-    }
-    free(buf);
-    return false;
+    return read_fd(fd, limit, true, bytes, len);
 }
 #endif
 

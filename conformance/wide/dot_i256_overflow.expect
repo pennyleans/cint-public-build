@@ -1,0 +1,17 @@
+case wide/dot_i256_overflow
+clause SPEC-01 IM-81, IM-87 (dot over I256 into an I256 result: 2 times I256.max plus 2 is one past I256.max; one range check on the exact sum)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 2
+fault.code E_OVERFLOW
+fault.operation dot.checked.i256.i256
+fault.operand I64 2
+fault.exact 115792089237316195423570985008687907853269984665640564039457584007913129639936
+fault.limit I256 57896044618658097711785492504343953926634992332820282019728792003956564819967
+fault.position wide/dot_i256_overflow.ci:10:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

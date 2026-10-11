@@ -1,0 +1,83 @@
+cint workbench   profile cint-core-1   backend cpu-sir-interp   new session
+ci[1]> "hello, world\n";
+hello, world
+ci[2]> I64 answer = 6 * 7;
+answer = 42 : I64
+ci[3]> "answer={answer}\n";
+answer=42
+ci[4]> I64[3] cents = [1999, 425, 10];
+cents : I64[3]   3 elements   host
+  [0] = 1999
+  [1] = 425
+  [2] = 10
+ci[5]> I64 subtotal = sum(cents);
+subtotal = 2434 : I64
+ci[6]> :inspect subtotal /scale 100
+subtotal : I64   shown with scale 100
+  exact   24.34
+  raw     2434
+ci[6]> I64 tax = div_round(subtotal * 825, 10000, half_even);   // 8.25 percent
+tax = 201 : I64   inexact: div_round half_even (exact quotient 200.805)
+ci[7]> div_round(200 * 825, 10000, half_even)
+= 16 : I64   inexact: div_round half_even (exact quotient 16.5)
+ci[8]> div_round(200 * 825, 10000, half_up)
+= 17 : I64   inexact: div_round half_up (exact quotient 16.5)
+ci[9]> I64 big = 9223372036854775800;
+big = 9223372036854775800 : I64
+ci[10]> big + 12
+fault[E_OVERFLOW]: the exact result is outside the type's range
+  --> entry 10:1:5
+   |
+ 1 | big + 12
+   |     ^ add.checked.i64
+   |
+   = operation: add.checked.i64
+   = operand-count: 2
+   = operand: I64 9223372036854775800
+   = operand: I64 12
+   = exact:   9223372036854775812
+   = limit:   I64 9223372036854775807
+   = revision: <revision>
+   = source-map: none
+   = address: none
+   = stack-depth: 0
+   = fuel-consumed: 1 (not part of the fault record)
+   = state: no store completed in this entry; context reset
+   = noncanonical: not part of the fault record
+   = workbench-position: entry 10
+   = site: wb_entry#2
+   = backend: cpu-sir-interp
+ci[11]> big +| 12
+= 9223372036854775807 : I64
+ci[12]> big +% 12
+= -9223372036854775804 : I64
+ci[13]> I64 total_with_tax[n](in I64[n] c, I64 rate_bp) {
+..>     I64 s = sum(c);
+..>     return s + div_round(s * rate_bp, 10000, half_even);
+..> }
+total_with_tax : (I64, view I64[%n], I64) -> I64   revision session@r6
+ci[14]> total_with_tax(cents, 825)
+= 2635 : I64
+ci[15]> :checkpoint priced
+checkpoint priced   #1   bindings 5   revisions: session@r6
+ci[15]> I64 total_with_tax[n](in I64[n] c, I64 rate_bp) {
+..>     I64 s = sum(c);
+..>     return s + div_round(s * rate_bp, 10000, half_up);
+..> }
+total_with_tax : (I64, view I64[%n], I64) -> I64   revision session@r7 (replaces r6)
+ci[16]> total_with_tax([200], 825)
+= 217 : I64
+ci[17]> :restore priced
+saved current state as auto-1
+restored priced   #1   total_with_tax is revision session@r6
+ci[17]> total_with_tax([200], 825)
+= 216 : I64
+ci[18]> :history total_with_tax
+r6  entry 13   in checkpoints: priced
+r7  entry 15   in checkpoints: auto-1
+ci[18]> :save-case priced.cicase
+note: the case includes every recorded observe result verbatim; this case has none
+case priced.cicase   checkpoint priced   entry 17   effects 0   density entry
+ci[18]> :save session-a
+saved session to session-a   entries 17   checkpoints 2   objects 92
+ci[18]> :quit

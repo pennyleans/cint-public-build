@@ -1,0 +1,38 @@
+module view/index_checked_before_value.ci   revision 928ced46971bd59a1163c95f413def7e871642505dd0f0ca76ac396de85cabd3
+program   1 module, 1 function, 17 nodes
+compile fuel   per phase: k x input bytes + c, k = 21524, c = 19876 (rt/cint_bridge.h; SPEC-09 CINTC-09)
+  plan                                 400 bytes in all modules   8629476 units
+  view/index_checked_before_value.ci   400 bytes   8629476 units for each of compile, measure, and emit
+memory   K x source bytes + 1 MiB + 80 B x program declarations per module (SPEC-09 CINTC-02); K is measured by tools/cint_measure.py
+
+function run   view/index_checked_before_value.sites:3   pure
+  signature  () -> I64
+  fault sites (3): 3 possible, 0 statically excluded
+    run#1  view/index_checked_before_value.ci:7:12   fuel.charge        E_FUEL possible
+    run#2  view/index_checked_before_value.ci:11:6   index.checked.i64  E_BOUNDS possible
+    run#3  view/index_checked_before_value.ci:11:14  div.checked.i64    E_OVERFLOW E_DIV_ZERO possible
+  hint       not analyzed: excluding a possible site needs range analysis, which no component performs yet
+  fuel       fuel-v1 charge points (SPEC-01 IM-139, SPEC-09 SIR-07)
+    run#1  fuel.charge 1   at the start of the body
+  lowering
+    cpu-sir-interp    supported   the workbench evaluator runs this text (SPEC-09 BACK-01a)
+    cpu-c17 (ref-c)   supported   cintc emits C17 from the same SIR (SPEC-09 BACK-03)
+  sir
+export func @view.index_checked_before_value.run() -> I64 {
+  fuel.charge 1                                  #1 @view/index_checked_before_value.ci:7:12
+  local $a.0: I64[4]
+  %t0 = const I64 0
+  local $z.1: I64
+  store.local $z.1, %t0
+  %t1 = const I64 -1
+  local $i.2: I64
+  store.local $i.2, %t1
+  %t2 = load.local $i.2
+  index.checked.i64 $a.0, %t2                    #2 @view/index_checked_before_value.ci:11:6
+  %t3 = const I64 1
+  %t4 = load.local $z.1
+  %t5 = div.checked.i64 %t3, %t4                 #3 @view/index_checked_before_value.ci:11:14
+  index.store $a.0, %t2, %t5
+  %t6 = const I64 0
+  return %t6
+}

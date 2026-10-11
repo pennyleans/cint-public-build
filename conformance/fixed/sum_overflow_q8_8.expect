@@ -1,0 +1,17 @@
+case fixed/sum_overflow_q8_8
+clause SPEC-02 R-4; SPEC-01 IM-78, IM-81 (the exact raw sum, checked once against the element format)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 2
+fault.code E_OVERFLOW
+fault.operation sum.checked.q8_8.q8_8
+fault.operand I64 2
+fault.exact 51200
+fault.limit Q8.8 raw 32767
+fault.position fixed/sum_overflow_q8_8.ci:9:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

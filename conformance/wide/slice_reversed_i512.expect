@@ -1,0 +1,9 @@
+case wide/slice_reversed_i512
+clause SPEC-01 IM-74; SPEC-04 LS-161 (a reversed strided slice of an I512 array reads its logical elements in order)
+format 2
+source reference
+outcome value
+stdout-bytes 2
+stdout-sha256 2e6d31a5983a91251bfae5aefa1c0a19d8ba3cf601d0e8a706b4cfa9661a6b8a
+return I64 9
+fuel-consumed 8

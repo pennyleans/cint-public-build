@@ -1,0 +1,12 @@
+case fixed/convert_literal_c6001
+clause SPEC-01 IM-23, IM-106, IM-184 (an integer literal converted to fixed point is decided at compile time; operation unassigned, exact the raw value)
+format 5
+source compile-error
+outcome compile-error
+diagnostic.code C6001
+diagnostic.position fixed/convert_literal_c6001.ci:8:18
+diagnostic.fault.code E_NARROW
+diagnostic.fault.operation unassigned
+diagnostic.fault.operand Z 40000
+diagnostic.fault.exact 2621440000
+diagnostic.fault.limit Q16.16 raw 2147483647

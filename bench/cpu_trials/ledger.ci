@@ -1,0 +1,24 @@
+export I64 ledger(I64 n, I64 initial) {
+    I64 balance = initial;
+    I64 i = 0;
+    while (i < n) {
+        balance = balance + (i % 97);
+        balance = balance - 48;
+        i = i + 1;
+    }
+    return balance;
+}
+
+// Synthetic transactions generated from a caller-supplied seed, not real ledger data.
+// Local-array initialization is included in each timed call.
+export I64 transactions(I64 n, I64 initial, I64 seed) {
+    I64[256] amounts;
+    for (I64 j = 0; j < 256; j++) {
+        amounts[j] = (seed + j * 17) % 201 - 100;
+    }
+    I64 balance = initial;
+    for (I64 i = 0; i < n; i++) {
+        balance = balance + amounts[i % 256];
+    }
+    return balance;
+}

@@ -1,8 +1,8 @@
 """Lints the CINT trees: float tokens, CR bytes, and the SPEC-09 4.2 size targets.
 
 This is a token lint, not a proof. It refuses binary floating-point types and
-literals in the C sources of rt/, seed/, harness/, cli/, interp/ and workbench/ (tests
-included) and in the Python of ref/cint_ref/ and python/cint/; it refuses any CR byte in
+literals in the C sources of rt/, seed/, harness/, cli/, interp/, workbench/ and flight/abi/
+(tests included) and in the Python of ref/cint_ref/ and python/cint/; it refuses any CR byte in
 conformance/, compiler/, cli/, interp/, workbench/ and rt/*.h; it fails a component over its
 SPEC-09 4.2 ceiling and reports one over its target. The CLI size rows count cli/*.c, with
 cli/cint_receipt.c in its own row (decision 26); the CLI headers are reported separately. The
@@ -23,7 +23,7 @@ import tokenize
 
 ROOT = Path(__file__).resolve().parents[1]
 
-C_TREES = ("rt", "seed", "harness", "cli", "interp", "workbench")
+C_TREES = ("rt", "seed", "harness", "cli", "interp", "workbench", "flight/abi")
 PY_TREES = ("ref/cint_ref", "python/cint")
 PY_NAMES_EXEMPT = ("python/cint/_floats.py",)   # SPEC-03 section 8 host boundary (BX10-18)
 CR_TREES = ("conformance", "compiler", "cli", "interp", "workbench")  # compiler/: SPEC-09 CINTC-07
@@ -53,20 +53,28 @@ PY_FLOAT_OPS = {"/", "/="}
 SIZE_ROWS = (
     ("seed (seed/*.c, seed/*.h)", ("seed/*.c", "seed/*.h"), 6000, 8000),
     ("cint_rt.h", ("rt/cint_rt.h",), 1500, 2500),
+    ("cint_rt_host.h", ("rt/cint_rt_host.h",), 450, 600),   # decision 2026-10-08 on OQ-229, Proposed
     ("cint_rt library (cint_rt.c, cint_rt_internal.h)", ("rt/cint_rt.c", "rt/cint_rt_internal.h"), 2500, 4000),
     ("cint_bridge.c (cint_bridge.c, cint_bridge_internal.h)", ("rt/cint_bridge.c", "rt/cint_bridge_internal.h"), 400, 600),
     ("cint_build.c", ("rt/cint_build.c",), 400, 600),
     ("cint_cuda.c", ("rt/cint_cuda.c",), 800, 1200),   # box 11 default BX11-08
     ("cint_cuda_dispatch.c", ("rt/cint_cuda_dispatch.c",), 500, 750),   # box 11 unit 4, Proposed
-    ("cint_state.c", ("rt/cint_state.c",), 1000, 1500),  # box 13 default BX13-16
+    ("cint_state.c", ("rt/cint_state.c",), 2500, 4000),  # decisions 2026-10-06 on OQ-218, 2026-10-08 on OQ-235
+    # Decision 2026-10-08 on OQ-240: recordings and replay, split from rt/cint_state.c.
+    ("cint_rec.c", ("rt/cint_rec.c", "rt/cint_state_internal.h"), 1500, 2000),
     # Decision 2026-10-06 on OQ-212: arenas, pools and handles, outside the cint_rt row.
     ("cint_mem (rt/cint_mem.c, rt/cint_mem.h)", ("rt/cint_mem.c", "rt/cint_mem.h"), 600, 900),
+    # Box 15 default BX15-15: the wide integers, outside the cint_rt rows; set again after unit 3.
+    ("cint_wide (rt/cint_wide.c, rt/cint_wide.h)", ("rt/cint_wide.c", "rt/cint_wide.h"), 2000, 3000),
+    # Box 15 default BX15-15: fixed point, outside the cint_rt rows; its record writer counts here.
+    ("cint_fixed (rt/cint_fixed.c, rt/cint_fixed.h)", ("rt/cint_fixed.c", "rt/cint_fixed.h"), 600, 1000),
     ("cint-harness (harness/*.c, harness/*.h)", ("harness/*.c", "harness/*.h"), 600, 1000),
     ("cint CLI (cli/*.c except cli/cint_receipt.c)", ("cli/*.c", "!cli/cint_receipt.c"), 1500, 2500),
     ("cint CLI receipts (cli/cint_receipt.c)", ("cli/cint_receipt.c",), 400, 600),
-    # Box 13 default BX13-16: an estimate, checked once the interpreter runs the suite.
-    ("cint-interp (interp/*.c, interp/*.h)", ("interp/*.c", "interp/*.h"), 3000, 4500),
-    ("cint workbench (workbench/*.c, workbench/*.h)", ("workbench/*.c", "workbench/*.h"), 8000, 12000),
+    # Decisions 2026-10-06 on OQ-218 (BX13-21) and 2026-10-10 on OQ-279: set again from measured counts.
+    ("cint-interp (interp/*.c, interp/*.h)", ("interp/*.c", "interp/*.h"), 8000, 10000),
+    # Decision 2026-10-08 on OQ-231 (BX14-S1): set again from the counts of box 14's units.
+    ("cint workbench (workbench/*.c, workbench/*.h)", ("workbench/*.c", "workbench/*.h"), 12000, 15000),
 )
 
 

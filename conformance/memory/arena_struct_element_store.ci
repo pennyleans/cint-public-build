@@ -1,0 +1,21 @@
+// case: memory/arena_struct_element_store
+// clause: SPEC-03 M-14a, M-20, M-20a; SPEC-04 4.4; ref/OPEN.md REF-OQ-45
+// subset: cint-core-1 (arena of structs, handles, whole-struct assignment)
+// entry: run; args: none
+// spec outcome: value I64 1234 (element 0 from a constructor, element 1 copied from `b` before `b` changes); fuel 1 (the entry)
+
+struct Body {
+    I64 tag;
+    I64 mass;
+}
+
+Arena(Body, 4) scratch;
+
+export I64 run() {
+    Handle(Body[]) h = scratch.alloc(2);
+    Body b = Body(tag = 3, mass = 4);
+    scratch[h][0] = Body(tag = 1, mass = 2);
+    scratch[h][1] = b;
+    b.mass = 9;
+    return scratch[h][0].tag * 1000 + scratch[h][0].mass * 100 + scratch[h][1].tag * 10 + scratch[h][1].mass;
+}

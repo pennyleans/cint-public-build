@@ -1,0 +1,10 @@
+case wide/module_state_u512
+clause SPEC-04 LS-213; SPEC-09 CONF-11 rules 10 and 14 (a module-level U512 array and a U512 scalar: one state.global line, for the scalar only)
+format 5
+source reference
+outcome value
+stdout-bytes 156
+stdout-sha256 6ae9eb11dcfdae5aa1a0b01d694e08d00c2880e33b5acd4575ae64b513741837
+return I64 -6
+fuel-consumed 1
+state.global wide.module_state_u512 s U512 13407807929942597099574024998205846127479365820592393377723561443721764030073546976801874298166903427690031858186486050853753882811946569946433649006084090

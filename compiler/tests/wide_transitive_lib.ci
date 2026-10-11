@@ -1,0 +1,5 @@
+export struct Limbs { I128[2] lo; I64 n; }
+export struct Wide { Limbs l; I512 big; }
+struct Unused { I256 x; Bool on; }
+
+export I64 one() { return 1; }

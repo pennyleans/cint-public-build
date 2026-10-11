@@ -1,0 +1,17 @@
+import wide_transitive_lib;
+
+export struct Holder { wide_transitive_lib.Wide w; I64 tick; }
+Holder keep;
+
+export I64 weigh(in wide_transitive_lib.Wide w) {
+    return ((w.l.lo[1] >> 65) + w.l.lo[0]) as I64 + w.l.n;
+}
+
+export I64 load(I64 k) {
+    keep.w.l.lo[0] = k as I128;
+    keep.w.l.lo[1] = (k as I128) << 65;
+    keep.w.l.n = k;
+    keep.w.big = (k as I512) << 300;
+    keep.tick = k + 1;
+    return weigh(keep.w) + (keep.w.big >> 300) as I64 + keep.tick + wide_transitive_lib.one();
+}

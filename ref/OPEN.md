@@ -162,7 +162,7 @@ Status: Recorded, 2026-10-04.
 
 Status: Closed, 2026-10-05.
 
-### REF-OQ-41. Box 09 forms with no specified diagnostic or record
+### REF-OQ-41. Kernel and view forms with no specified diagnostic or record
 
 Status: Refused, 2026-10-05.
 
@@ -170,11 +170,11 @@ Status: Refused, 2026-10-05.
 
 Status: Refused, 2026-10-05.
 
-### REF-OQ-43. Readings the box 12 build chose
+### REF-OQ-43. Readings the build of error unions, `defer` and lifetimes chose
 
 Status: Provisional, 2026-10-05.
 
-### REF-OQ-44. Box 12 forms with no specified diagnostic, record or meaning
+### REF-OQ-44. Error union, `defer` and lifetime forms with no specified diagnostic, record or meaning
 
 Status: Refused, 2026-10-05.
 
@@ -185,6 +185,10 @@ Status: Resolved in part, 2026-10-06.
 ### REF-OQ-46. Readings of the type signature encoder
 
 Status: Provisional, 2026-10-05.
+
+### REF-OQ-47. Fixed point in programs: readings and refusals
+
+Status: Provisional, 2026-10-09.
 
 ### O-1. CIF-1 has no `derivation` key
 
@@ -270,10 +274,10 @@ Status: Recorded.
 
 Status: Open, 2026-10-03.
 
-### I-7. Box 09 cases that a compiler rejects with another diagnostic
+### I-7. Kernel and view cases that a compiler rejects with another diagnostic
 
 Status: Closed, 2026-10-06.
 
-### I-8. Box 12 cases that a compiler rejects with another diagnostic
+### I-8. Error union and `defer` cases that a compiler rejects with another diagnostic
 
 Status: Closed, 2026-10-05.

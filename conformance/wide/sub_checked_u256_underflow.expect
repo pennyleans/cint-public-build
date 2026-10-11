@@ -1,0 +1,18 @@
+case wide/sub_checked_u256_underflow
+clause SPEC-01 IM-6, IM-32, IM-106; SPEC-09 CONF-11 rule 14 (unsigned subtraction below zero overflows in the checked form; U256 operands and limit in the record)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_OVERFLOW
+fault.operation sub.checked.u256
+fault.operand U256 1
+fault.operand U256 2
+fault.exact -1
+fault.limit U256 0
+fault.position wide/sub_checked_u256_underflow.ci:9:16
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

@@ -1,10 +1,14 @@
-"""`cint.borrow` and `View`: host memory used without a copy (SPEC-03 P-1 to P-14, A-8a).
+"""`cint.borrow` and `View`: memory used without a copy (SPEC-03 P-1 to P-14, A-8a).
 
 A borrow never copies, under any argument combination (P-9). Every condition
 it cannot meet raises `BorrowRefused`, naming the condition and the
 alternative, which is usually `cint.copy`. The `View` holds the `Py_buffer`
 or the DLPack tensor, and with it a reference to the exporter, until it is
-released (P-2, P-14).
+released (P-2, P-14). A CUDA array is borrowed through DLPack (box 11,
+BX11-16): its first exchange, which reads the tensor's description, asks
+for no synchronization (stream -1) unless `context=` names the context it
+is for, and each entry exchanges it again on that context's stream (P-10).
+The host never reads it: `cint.copy(view)` copies it to host memory.
 """
 from __future__ import annotations
 
@@ -54,7 +58,7 @@ def classify_format(fmt: str, itemsize: int, refusal=BorrowRefused, copying: boo
         f = Format("int", integer_elem(body in _SIGNED_CHARS, itemsize), swap=big)
     elif body == "?":
         if itemsize != 1:
-            raise refusal("element format '?' with item size %d: Bool elements are one byte (BX10-15)" % itemsize)
+            raise refusal("element format '?' with item size %d: Bool elements are one byte" % itemsize)
         f = Format("bool", parse_elem("Bool"), swap=big)
     elif body == "c":
         raise refusal("element format 'c' (char) is not borrowed or copied: use format 'B', or pass elem=\"U8\" "
@@ -111,9 +115,9 @@ def check_elem(mapped: Elem, want: Elem | None, refusal=BorrowRefused) -> Elem:
         return want
     if mapped.kind == "bool":
         raise refusal("elem=%r over Bool data: booleans are borrowed only as Bool, never as integers "
-                      "(SPEC-03 P-3, BX10-15)" % want.name)
+                      "(SPEC-03 P-3)" % want.name)
     if want.kind == "bool":
-        raise refusal("elem=\"Bool\" over %s data: only format '?' or kDLBool is borrowed as Bool (BX10-15)"
+        raise refusal("elem=\"Bool\" over %s data: only format '?' or kDLBool is borrowed as Bool"
                       % mapped)
     hint = ""
     if want.kind == "fixed":
@@ -127,7 +131,9 @@ class Region:
     """What a registration of this memory records (SPEC-03 A-8, A-8a): the
     lowest reachable byte, the reachable span in elements (`hi - lo + 1`, 0
     when there are no elements), and the element offset of the first logical
-    element from that base, with the view's shape and element strides."""
+    element from that base, with the view's shape and element strides.
+    `device` is None for host memory, or the spec of the CUDA device whose
+    memory `address` is, such as "cuda:0" (SPEC-03 A-16a)."""
     address: int
     extent: int
     origin: int
@@ -135,14 +141,21 @@ class Region:
     strides: tuple
     elem: str
     writable: bool
+    device: str | None = None
 
 
-def region(address: int, e: Elem, shape: tuple, strides: tuple, writable: bool) -> Region:
+def region(address: int, e: Elem, shape: tuple, strides: tuple, writable: bool, device: str | None = None) -> Region:
     reach = _memory.reachable(shape, strides)
     if reach is None:
-        return Region(address, 0, 0, shape, strides, e.name, writable)
+        return Region(address, 0, 0, shape, strides, e.name, writable, device)
     lo, hi = reach
-    return Region(address + lo * e.size, hi - lo + 1, -lo, shape, strides, e.name, writable)
+    return Region(address + lo * e.size, hi - lo + 1, -lo, shape, strides, e.name, writable, device)
+
+
+def device_refusal(spec: str, what: str) -> Refused:
+    """The refusal of a host read of device memory (SPEC-03 M-28, P-11)."""
+    return Refused("this %s is of %s memory, which the host does not read (SPEC-03 M-28), and the bridge makes no "
+                   "implicit transfer (P-11): cint.copy(x) copies it to host memory" % (what, spec))
 
 
 def _contiguous(shape: tuple, strides: tuple, order: str) -> bool:
@@ -180,7 +193,7 @@ def _values(e: Elem, raws: list, refusal=BorrowRefused, shape: tuple = ()):
                       operands=(raw,), operand_types=("U8",), index=index, count=len(bad))
     carrier = "I8" if e.kind == "t1" else "I64"
     byte = (" (byte %02x)" % (raw & 0xFF)) if e.kind == "t1" else ""
-    raise refusal("element %s holds %d%s, not a %s value (SPEC-05 TR-VAL-2); %d invalid element%s"
+    raise refusal("element %s holds %d%s, not a %s value; %d invalid element%s"
                   % (index, raw, byte, e, len(bad), "s" if len(bad) > 1 else ""), code="E_NARROW",
                   operation="decode.checked.%s" % e.token, operands=(raw if e.kind == "t27" else raw & 0xFF,),
                   operand_types=(carrier if e.kind == "t27" else "U8",), reason="unused value", index=index,
@@ -188,8 +201,8 @@ def _values(e: Elem, raws: list, refusal=BorrowRefused, shape: tuple = ()):
 
 
 class View:
-    """A lease over host memory, borrowed without a copy (SPEC-03 6.1). It is
-    read-only unless borrowed with `writable=True`. Use it as a context
+    """A lease over host or CUDA memory, borrowed without a copy (SPEC-03 6.1).
+    It is read-only unless borrowed with `writable=True`. Use it as a context
     manager to bound the lease; after `release()` every use raises
     `cint.StaleHandle`. Made by `cint.borrow`."""
 
@@ -199,7 +212,7 @@ class View:
     @classmethod
     def _make(cls, *, elem: Elem, shape: tuple, strides: tuple, address: int, writable: bool, publish,
               protocol: str, held: HeldBuffer | None = None, tensor=None, exporter=None, notes: tuple = (),
-              exchange: dict | None = None) -> "View":
+              exchange: dict | None = None, device: tuple | None = None) -> "View":
         v = object.__new__(cls)
         v._elem = elem
         v.shape = shape
@@ -213,6 +226,7 @@ class View:
         v._tensor = tensor
         v._exporter = exporter
         v._exchange_args = exchange
+        v._dl_device = device
         v._registrations = {}
         v._finalizer = weakref.finalize(v, _end_lease, held, tensor)
         return v
@@ -235,11 +249,23 @@ class View:
         return not self._finalizer.alive
 
     @property
+    def device(self):
+        """The `cint.Device` of the borrowed memory: the CPU, or a CUDA device,
+        which this opens (SPEC-03 P-11)."""
+        from ._cuda import device
+        return device(self._placement or "cpu")
+
+    @property
+    def _placement(self) -> str | None:
+        """None for host memory, or the spec of the CUDA device, such as "cuda:0"."""
+        return None if self._dl_device is None else "cuda:%d" % self._dl_device[1]
+
+    @property
     def region(self) -> Region:
         """The registration this view's memory gets on first use with a
         context (SPEC-03 P-20, A-8a)."""
         self._check_live()
-        return region(self._address, self._elem, self.shape, self.strides, self.writable)
+        return region(self._address, self._elem, self.shape, self.strides, self.writable, self._placement)
 
     def release(self):
         """End the lease: release the `Py_buffer`, or call the DLPack deleter
@@ -264,8 +290,10 @@ class View:
             raise StaleHandle("this View was released; borrow the array again (SPEC-03 6.1)")
 
     def _raw_values(self) -> list:
-        """The raw stored values, in row-major order."""
+        """The raw stored values, in row-major order, of host memory."""
         self._check_live()
+        if self._placement is not None:
+            raise device_refusal(self._placement, "View")
         e = self._elem
         data = _memory.gather(self._address, e.size, self.shape, tuple(s * e.size for s in self.strides))
         return _memory.unpack(data, e.signed, e.size)
@@ -276,23 +304,38 @@ class View:
         refusal: no fuel, no fault, and no state change."""
         _values(self._elem, self._raw_values(), BorrowRefused, self.shape)
 
+    def _host_raws(self) -> list:
+        """The raw values in row-major order, read back to the host when the
+        memory is a device's, after an exchange on the bridge's stream, so the
+        producer's writes come first (P-10): the explicit copy of BX11-16."""
+        if self._placement is None:
+            return self._raw_values()
+        from . import _cuda
+        dev, e = self.device, self._elem
+        with self._entry_exchange(dev._gpu.stream):
+            data = _cuda.gather(dev, self._address, e.size, self.shape, tuple(s * e.size for s in self.strides))
+        return _memory.unpack(data, e.signed, e.size)
+
     def tolist(self) -> list:
-        """The current values as nested lists: `int`, `cint.Fixed`, or `bool`."""
+        """The current values as nested lists: `int`, `cint.Fixed`, or `bool`.
+        Device memory is not read: `cint.copy(view).tolist()` reads a copy."""
         raws = self._raw_values()
         _values(self._elem, raws, BorrowRefused, self.shape)
         return _memory.nest([from_raw(r, self._elem) for r in raws], self.shape)
 
     @contextmanager
-    def _entry_exchange(self):
+    def _entry_exchange(self, stream: int | None = None):
         """The DLPack exchange of one entry (SPEC-03 P-10): the producer is
-        asked again, and the data pointer, shape, strides, and data type must
-        equal those of the first exchange. The capsule of the entry is released
-        when the entry ends (P-14). A buffer-protocol view needs no exchange."""
+        asked again, on `stream` for CUDA memory (the context's), and the data
+        pointer, shape, strides, and data type must equal those of the first
+        exchange. The capsule of the entry is released when the entry ends
+        (P-14). A buffer-protocol view needs no exchange."""
         self._check_live()
         if self._tensor is None:
             yield None
             return
-        t = _dlpack.Tensor(_call_dlpack(self._exporter, self._exchange_args))
+        args = self._exchange_args if stream is None else dict(self._exchange_args, stream=stream)
+        t = _dlpack.Tensor(_call_dlpack(self._exporter, args))
         try:
             first = self._tensor
             same = (t.data + t.byte_offset == first.data + first.byte_offset and t.shape == first.shape
@@ -307,9 +350,10 @@ class View:
 
     def __repr__(self) -> str:
         state = "released" if self.released else ("writable" if self.writable else "read-only")
-        return "<cint.View %s%s %s, %s via %s>" % (self.elem, list(self.shape), state,
-                                                   "publish=copy" if self.publish else "no publish",
-                                                   self.protocol)
+        return "<cint.View %s%s %s, %s via %s%s>" % (self.elem, list(self.shape), state,
+                                                     "publish=copy" if self.publish else "no publish",
+                                                     self.protocol, "" if self._dl_device is None else
+                                                     " on " + self._placement)
 
 
 def _end_lease(held, tensor):
@@ -330,8 +374,8 @@ def _call_dlpack(obj, args: dict):
 def _refuse_object(obj, refusal=BorrowRefused):
     """The refusal for an object with neither the buffer protocol nor DLPack."""
     if isinstance(obj, str):
-        return refusal("a str has no elements to borrow; text crosses as bytes, for example s.encode(\"utf-8\") "
-                       "(BX10-15)", reason="protocol")
+        return refusal("a str has no elements to borrow; text crosses as bytes, for example s.encode(\"utf-8\")",
+                       reason="protocol")
     if isinstance(obj, (list, tuple, range)):
         return refusal("a %s has neither the buffer protocol nor __dlpack__, and cint.borrow never copies "
                        "(SPEC-03 P-1, P-9): cint.copy(seq, elem=\"I64\") copies it exactly" % type(obj).__name__,
@@ -350,9 +394,13 @@ def borrow(obj, *, elem: str | None = None, writable: bool = False, publish: str
     DLPack. `elem` may name the mapped element, or a fixed-point type over it
     (P-4). `publish="copy"` (with `writable=True`) lets the view be a kernel
     output, staged and copied on success (P-15). `layout` is "any", "C", or
-    "F" (P-8). `context=` takes a `Context` and makes the DLPack and device
-    checks at the borrow rather than at the first entry (P-10, P-11): this
-    bridge borrows host memory only, so they are the checks made here."""
+    "F" (P-8). An object whose `__dlpack_device__` is a CUDA device is
+    borrowed through DLPack as device memory, of `I8` to `U64` elements, for
+    the kernels of a context on that device (BX11-16). `context=` takes a
+    `Context` and makes the DLPack and device checks at the borrow rather
+    than at the first entry (P-10, P-11): a CUDA array for a context on
+    another device, or on none, is refused, and its first exchange is on the
+    context's stream."""
     from ._buffer import Buffer
     if context is not None:
         from ._module import Context
@@ -373,9 +421,12 @@ def borrow(obj, *, elem: str | None = None, writable: bool = False, publish: str
     device = getattr(obj, "__dlpack_device__", None)
     if device is not None:
         kind, index = (int(x) for x in device())
+        if kind == _dlpack.kDLCUDA:
+            stream = context._exchange_stream("cuda:%d" % index) if context is not None else -1
+            return _from_dlpack(obj, want, writable, publish, layout, stream=stream, cuda=(kind, index))
         if kind != _dlpack.kDLCPU:
-            raise BorrowRefused("the array is on %s:%d, and cint.borrow takes CPU memory only (SPEC-03 P-1, P-11); "
-                                "there is no implicit transfer, so copy it to host memory first"
+            raise BorrowRefused("the array is on %s:%d, and cint.borrow takes CPU and CUDA memory (SPEC-03 P-1, "
+                                "P-11); there is no implicit transfer, so copy it to host memory first"
                                 % (_dlpack.DEVICE_NAMES.get(kind, "device type %d" % kind), index))
     held = _get_buffer(obj, writable)
     if held is not None:
@@ -434,12 +485,15 @@ def _from_buffer(held: HeldBuffer, want, writable: bool, publish, layout: str) -
     return view
 
 
-def _from_dlpack(obj, want, writable: bool, publish, layout: str) -> View:
+def _from_dlpack(obj, want, writable: bool, publish, layout: str, stream=None, cuda: tuple | None = None) -> View:
     notes = []
-    args = {"stream": None, "max_version": (1, 0), "dl_device": None, "copy": False}
+    args = {"stream": stream, "max_version": (1, 0), "dl_device": None, "copy": False}
     try:
         capsule = obj.__dlpack__(**args)
     except TypeError:
+        if cuda is not None:
+            raise BorrowRefused("the DLPack producer takes no max_version, so its CUDA capsule could not say whether "
+                                "it copied the data or is read-only (SPEC-03 P-10a)") from None
         args = {"stream": None}
         try:
             capsule = obj.__dlpack__(**args)
@@ -456,6 +510,9 @@ def _from_dlpack(obj, want, writable: bool, publish, layout: str) -> View:
     try:
         if t.versioned and t.version[0] != _dlpack.MAJOR_VERSION:
             raise BorrowRefused("DLPack version %d.%d: this bridge reads major version 1" % t.version)
+        if cuda is not None and not t.versioned:
+            raise BorrowRefused("an unversioned DLPack capsule of CUDA memory cannot say whether the producer copied "
+                                "the data, so it is not borrowed (SPEC-03 P-10a)")
         if not t.versioned:
             if len(args) > 1:
                 notes.append("unversioned DLPack capsule: read-only status cannot be expressed (SPEC-03 P-10a)")
@@ -465,10 +522,10 @@ def _from_dlpack(obj, want, writable: bool, publish, layout: str) -> View:
         if t.flags & _dlpack.FLAG_IS_COPIED:
             raise BorrowRefused("the DLPack producer copied the data (DLPACK_FLAG_BITMASK_IS_COPIED), and a borrow "
                                 "never copies (SPEC-03 P-10)")
-        if t.device[0] != _dlpack.kDLCPU:
-            raise BorrowRefused("the DLPack tensor is on %s:%d, and cint.borrow takes CPU memory only (SPEC-03 P-1, "
-                                "P-11)" % (_dlpack.DEVICE_NAMES.get(t.device[0], "device type %d" % t.device[0]),
-                                           t.device[1]))
+        if t.device != (cuda or (_dlpack.kDLCPU, t.device[1])):
+            raise BorrowRefused("the DLPack tensor is on %s:%d, and this borrow takes %s memory (SPEC-03 P-1, P-11)"
+                                % (_dlpack.DEVICE_NAMES.get(t.device[0], "device type %d" % t.device[0]),
+                                   t.device[1], "kDLCUDA:%d" % cuda[1] if cuda else "CPU"))
         if t.shape is None or t.ndim == 0 or t.ndim > MAX_RANK:
             raise BorrowRefused("rank %d is not borrowed: ranks 1 to %d are (SPEC-03 P-6)%s"
                                 % (t.ndim, MAX_RANK, "; pass a scalar as a Python int" if t.ndim == 0 else ""))
@@ -476,6 +533,9 @@ def _from_dlpack(obj, want, writable: bool, publish, layout: str) -> View:
             raise BorrowRefused("negative extent in DLPack shape %s" % (list(t.shape),))
         f = classify_dtype(t.dtype)
         e = check_elem(f.elem, want)
+        if cuda is not None and (e.kind != "int" or e.wide):
+            raise BorrowRefused("CUDA memory is borrowed as I8 to U64 elements, the device data a context registers "
+                                "(SPEC-03 A-16a), not as %s: copy it to host memory with its own package" % e)
         if t.byte_offset % e.size:
             raise BorrowRefused("DLPack byte_offset %d is not a multiple of the element size %d (SPEC-03 P-13)"
                                 % (t.byte_offset, e.size))
@@ -484,7 +544,7 @@ def _from_dlpack(obj, want, writable: bool, publish, layout: str) -> View:
                                 "SPEC-03 P-13)")
         strides = t.strides if t.strides is not None else c_strides(t.shape, 1)
         view = _finish(e, t.shape, strides, t.data + t.byte_offset, writable, publish, layout, "DLPack",
-                       tensor=t, exporter=obj, notes=tuple(notes), exchange=args)
+                       tensor=t, exporter=obj, notes=tuple(notes), exchange=args, device=cuda)
     except BaseException:
         t.delete()
         raise

@@ -69,7 +69,7 @@ typedef struct state0 {
     int64_t g_balance;
 } state0;
 static const state0 state0_init = {INT64_C(5)};
-static const cint_state_var state0_vars[1] = {{"balance", 7u, 0x14u, (uint32_t)offsetof(state0, g_balance), 0u}};
+static const cint_state_var state0_vars[1] = {{"balance", 7u, 0x14u, (uint32_t)offsetof(state0, g_balance), 0u, NULL, NULL}};
 static const cint_state state0_desc = {0u, 1u, (uint32_t)sizeof(state0), 0u, &state0_init, state0_vars};
 static const cint_module *const modules[1] = {&module0};
 static const cint_program program = {1u, 0u, modules, NULL};

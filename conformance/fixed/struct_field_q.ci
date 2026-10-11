@@ -1,0 +1,17 @@
+// case: fixed/struct_field_q
+// clause: SPEC-04 3.6, LS-213; SPEC-01 IM-54 (fixed-point struct fields of two formats)
+// subset: cint-core-1 (fixed point, structs)
+// entry: run; args: none
+// spec outcome: value I64 196608 (3.0); prints `3.0 -0.25`; fuel 1. Box 15, unit 1
+
+struct Body {
+    Q16.16 mass;
+    Q1.15 k;
+}
+
+export I64 run() {
+    Body b = Body(mass = 1.5, k = -0.25);
+    b.mass = b.mass * 2.0;
+    "{b.mass} {b.k}\n";
+    return b.mass.raw as I64;
+}

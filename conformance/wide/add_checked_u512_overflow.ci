@@ -1,0 +1,10 @@
+// case: wide/add_checked_u512_overflow
+// clause: SPEC-01 IM-6, IM-32, IM-106; SPEC-09 CONF-11 rule 14 (U512.max + 1 overflows; the exact result is 2^512)
+// subset: cint-core-1 (unsigned wide integers)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 9:14 (the `+`), operation add.checked.u512, operands U512 2^512 - 1 and U512 1, exact 2^512, limit U512 2^512 - 1; stack depth 0; fuel 1. Box 15, unit 1
+
+export Bool run() {
+    U512 a = U512.max;
+    return a + 1 != 0;
+}

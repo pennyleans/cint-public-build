@@ -97,7 +97,7 @@ def bind_argument(arg, param: Param) -> Bound:
             alternatives = "cint.borrow(a, writable=True), or a Buffer from cint.copy(a)"
         else:
             alternatives = "a Buffer from cint.empty(shape, %r), or cint.borrow(a, writable=True, publish=\"copy\")" % param.elem
-        raise Refused("%s is written by the entry, so it takes a View or a Buffer, never a bare argument (BX10-04): "
+        raise Refused("%s is written by the entry, so it takes a View or a Buffer, never a bare argument: "
                       "pass %s" % (what, alternatives))
     if is_float_like(arg):
         raise float_refusal(arg, what)
@@ -110,9 +110,9 @@ def bind_argument(arg, param: Param) -> Bound:
         if failure.reason != "protocol":
             raise
         if isinstance(arg, str):
-            raise Refused("%s takes text as bytes: pass s.encode(\"utf-8\") (BX10-15)" % what) from None
-        raise Refused("%s: a %s is not borrowed, and the bridge copies nothing it was not asked to (SPEC-03 P-9, "
-                      "BX10-04): cint.copy(seq, elem=%r) copies it exactly"
+            raise Refused("%s takes text as bytes: pass s.encode(\"utf-8\")" % what) from None
+        raise Refused("%s: a %s is not borrowed, and the bridge copies nothing it was not asked to (SPEC-03 P-9): "
+                      "cint.copy(seq, elem=%r) copies it exactly"
                       % (what, type(arg).__name__, param.elem)) from None
     return Bound(param, view, borrowed=True)
 
@@ -160,7 +160,7 @@ def bind_arguments(params, args: tuple, kwargs: dict) -> CallArguments:
         if p.name not in given:
             if p.written and p.rank:
                 raise Refused("parameter %s is written by the entry and was not supplied: pass it by name, for "
-                              "example %s=cint.empty(shape, %r) (BX10-14)" % (p.name, p.name, p.elem))
+                              "example %s=cint.empty(shape, %r)" % (p.name, p.name, p.elem))
             raise TypeError("missing argument for parameter %s" % p.describe())
     bounds = []
     try:

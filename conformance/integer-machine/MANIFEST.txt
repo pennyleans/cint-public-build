@@ -1,10 +1,22 @@
 # SHA-256 (FIPS 180-4) of every generated conformance file: <sha256>  <bytes>  <path relative to conformance/>.
 # Generated 2026-10-02 by conformance/tools with Python 3.14.7 on Windows 11 x86-64. LF endings; paths sorted by bytes.
+# The 28 kernel tables (tables/kernel_*) were added 2026-10-06 (box 11 unit 6) with Python 3.11.15 on Linux x86-64.
 # Regenerate from the repository root:
 #   python conformance/tools/gen_exhaustive8.py --batch all --out conformance/integer-machine/exh8
 #   python conformance/tools/gen_boundary64.py --batch all --out conformance/integer-machine/bnd64
 #   python conformance/tools/gen_tables.py conformance/integer-machine/exh8/*.cif1.jsonl conformance/integer-machine/bnd64/*.cif1.jsonl --out conformance/tables
+#   python conformance/tools/gen_tables.py --kernel conformance/integer-machine/bnd64/*.cif1.jsonl --out conformance/tables
 # No file exceeds 20 MB, so every file listed here is committed.
+# The wide boundary matrices (bnd128, bnd256, bnd512 and bnd1024) and their 56 table programs
+# (tables/*_i128 to *_i1024), added 2026-10-09 (box 15 unit 1), and the unsigned ones (U128,
+# U256 and U512 in bnd128, bnd256 and bnd512) with their 42 table programs (tables/*_u128 to
+# *_u512), are not listed here, since
+# tools/cint_check.py --verify-tables regenerates the 8-bit and I64 files only;
+# conformance/tools/test_generators.py compares them with a fresh generation. Regenerate:
+#   python conformance/tools/gen_boundary64.py --type I128 --batch all --out conformance/integer-machine/bnd128
+#   (and I256, I512 and I1024 into bnd256, bnd512 and bnd1024, and U128, U256 and U512 into
+#   bnd128, bnd256 and bnd512)
+#   python conformance/tools/gen_tables.py conformance/integer-machine/bnd128/*.cif1.jsonl [...] --out conformance/tables
 8a88647650c0a60ddc6d8f38f575dffe526cc5ebbc69f210fa9b4806e866ac99  48805  integer-machine/bnd64/add.checked.i64.cif1.jsonl
 e8e790275d71651f6fe7a04defda03e2c39e4a1845e54d1fabbc065c73fe00cc  44619  integer-machine/bnd64/add.sat.i64.cif1.jsonl
 d6c012e7f1cef1401c76dddc8e7d143399113a6472237a9a0f1b4284af49b4bb  44999  integer-machine/bnd64/add.wrap.i64.cif1.jsonl
@@ -71,6 +83,34 @@ df660d4cf5a32aff92348327389dd8600cc9dfeadd47d1abc49b9ec45ff034f4  3296256  table
 53db7f1e168b9946be30d65cec962d923f1bdaae5cb9ca1b9132a20033f12323  486  tables/div_checked_i8.ci
 d4a9249bebaba5df76ae1be68156deb7f5856f9a4afe8c8c922faa9c8147555a  3286016  tables/div_checked_u8.cases
 a9b4804c2d1aeeb43fcfaefc3e9ad42a49ca0773de0dbecc6e345255831729d0  486  tables/div_checked_u8.ci
+a45ad640233fd17e2cdb6cc32a7beca0a7829b1e2625308161816e788b89bf47  10872  tables/kernel_add_checked_i64.cases
+46b112564341b269ea31c8678e736e1b75009c6556990db0363dca0fa5717a91  7627  tables/kernel_add_checked_i64.ci
+3a23a2551e73cd5081fc7b92cbe301de6d41a2e7d8e31338a32ffce8842167e9  9618  tables/kernel_add_sat_i64.cases
+143b08025b7c3b7eaa36319054f7dd71c27a1c8704b66fef2f96de16a4fdbc1c  7437  tables/kernel_add_sat_i64.ci
+af0cca7e383c299304aa5597ef16ee47b6777c60a9079b62f64acb8dd691629a  9874  tables/kernel_add_wrap_i64.cases
+3645fbb2f63617c13b216dbbb74819b52a1772cc3d4d883488e1058aaade3f9f  7440  tables/kernel_add_wrap_i64.ci
+37e8c75b161e9c7489ebdb7ee2f3434f957d2e774bad18bc66dfd8f7750a6d17  10717  tables/kernel_div_checked_i64.cases
+f616d7ad8cccef845345d14b2ee0482efd403be81c49371e1f6431f583164583  7643  tables/kernel_div_checked_i64.ci
+ded30f07ec0f8417886ad8ccc3803e9608f713a39ce534ea1dc35941a1feb355  11174  tables/kernel_mul_checked_i64.cases
+aee8e0ceb6a3d04413ae0774c2e59c32d06cadd1238e12bc30b36c054616425d  7646  tables/kernel_mul_checked_i64.ci
+747442bfe0082316e4cfed9538f3a86b33bb0938cb35a27e23679ed62ded3acb  9618  tables/kernel_mul_sat_i64.cases
+e535ea8a160974928c6523275c8c6b37ba2565201a3bcf94a78b6edcc40a2172  7437  tables/kernel_mul_sat_i64.ci
+18285940ab62c4ab441e6731a68e00612ff5a58a82071c5004000746d0b6f49b  9874  tables/kernel_mul_wrap_i64.cases
+1d16805ff726e0e3eb7a7f69449e7c40b5e53bf3472dc230540985568c7c62e4  7440  tables/kernel_mul_wrap_i64.ci
+1eedf2b6bac4072167bc9ed416d6e058d15e233bc3d709bd37fc6b6197afdfe0  10712  tables/kernel_rem_checked_i64.cases
+b2a26a367baeaa1befd3f3577837fa3e044621a4fbb790c4f169625ffdbf37a8  7627  tables/kernel_rem_checked_i64.ci
+5403a0c71609e5d822d232b39c9b6304cb21a18ac2d1d23df09967c60ec38021  11888  tables/kernel_shl_checked_i64.cases
+84d60baaa9a282bbc790de211c54137a640f7204c5266ab027de09e7c9a2a76d  7628  tables/kernel_shl_checked_i64.ci
+a81b06f354fc1b2a3f2aa5df818a7355a4ae43a5e76f1b2bcd41634ab037ebc4  11064  tables/kernel_shl_wrap_i64.cases
+70956ce41c2d7750367f2799dfe893f67c60516d6d05184c5e3c288b5fe0a266  7620  tables/kernel_shl_wrap_i64.ci
+aae08017f779f247352c577c49283d5e906328b0aec1744281934e3a6e4fd1b7  11832  tables/kernel_shr_checked_i64.cases
+637b4afcbcfaf066c5770712ca3b125dc51b0692894102c08a93c9fba3c86f72  7628  tables/kernel_shr_checked_i64.ci
+f4bcf3564a668e449109be73f7dc9a7f83b05fc7380d91d9944788cbe18eb85d  10872  tables/kernel_sub_checked_i64.cases
+7c3772750a69be91e96081c2f72cbdb903d2bb23021c077a925957f3edcad1ac  7627  tables/kernel_sub_checked_i64.ci
+324bc5ca0af0fb19efb5e4bb0896705571abff36824b687bafb3e6cdcbe556b8  9618  tables/kernel_sub_sat_i64.cases
+491a2a2b26742213ed85b04219b889952dd57c5664018442cfde72ac4a4a9262  7437  tables/kernel_sub_sat_i64.ci
+62798b8f6ed07572a19fe8dc935266ce242beec6d3316ffcc56b8a814ec95d7a  9874  tables/kernel_sub_wrap_i64.cases
+619aad4ca994bfd82c1fe179ae5d88eb2de71058f247df51da9252ed6f82e708  7440  tables/kernel_sub_wrap_i64.ci
 5e6768c2daa789deae06d1bff536671350692d399d8a987202296c0eac216814  17568  tables/mul_checked_i64.cases
 b7059122f2fb5f1306244980cdbb587576be00dad18dd885b8739aabb60feda8  492  tables/mul_checked_i64.ci
 90b4a2c65e1d26b28e427bc63b686a123a232134b8124e5aaf2b68e2bcd36140  3296256  tables/mul_checked_i8.cases

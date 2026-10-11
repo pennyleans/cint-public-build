@@ -1,0 +1,23 @@
+// case: probes/runtime_array_loop
+// clause: box 13 unit 7 probe: a run-time-sized local array in a loop left by break (view.dim, view.alloc, frame.release)
+// entry: run; args: none
+
+I64 tally[n](in I64[n] xs) {
+    I64 total = 0;
+    for k in 0..10 {
+        I64[n + 1] buf;
+        for i in 0..n {
+            buf[i] = xs[i] + k;
+        }
+        total = total + sum(buf);
+        if (k == 6) {
+            break;
+        }
+    }
+    return total;
+}
+
+export I64 run() {
+    I64[4] a = [1, 2, 3, 4];
+    return tally(a);
+}

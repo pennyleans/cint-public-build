@@ -1,0 +1,16 @@
+// case: fixed/round_modes_div
+// clause: SPEC-01 4.5, IM-65, IM-66 (rounding modes on the quotients 1/3 and -1/3, and every half mode on the ties raw 3 / 2.0 and raw -3 / 2.0, exact raw 1.5 and -1.5)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 0; prints `21845 21846 -21845 -21846 -21845`, `2 2 1 2 1` and `-2 -2 -1 -1 -2`; fuel 1. Box 15, unit 1
+
+export I64 run() {
+    Q16.16 one = 1.0;
+    Q16.16 three = 3.0;
+    Q16.16 t = Q16.16.raw(3);
+    Q16.16 two = 2.0;
+    "{div(one, three, floor)!raw} {div(one, three, ceil)!raw} {div(-one, three, trunc)!raw} {div(-one, three, away)!raw} {div(-one, three, half_even)!raw}\n";
+    "{div(t, two, half_even)!raw} {div(t, two, half_away)!raw} {div(t, two, half_trunc)!raw} {div(t, two, half_up)!raw} {div(t, two, half_down)!raw}\n";
+    "{div(-t, two, half_even)!raw} {div(-t, two, half_away)!raw} {div(-t, two, half_trunc)!raw} {div(-t, two, half_up)!raw} {div(-t, two, half_down)!raw}\n";
+    return 0;
+}

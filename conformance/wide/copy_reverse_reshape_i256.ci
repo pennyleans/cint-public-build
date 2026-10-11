@@ -1,0 +1,16 @@
+// case: wide/copy_reverse_reshape_i256
+// clause: SPEC-04 LS-145, LS-161 (`copy` from a reversed slice, `fill`, `reshape` and `transpose` of I256 views)
+// subset: cint-core-1 (wide integers, array slices, array built-ins)
+// entry: run; args: none
+// spec outcome: value I64 1, its low 64 bits (as%); prints the I256 value 1 (b is 4, 3, 2, 1; reshaped to 2 by 2 and transposed, element (0, 1) is b[2] = 2; a filled with -1 adds -1) and a line feed; fuel 1 (the entry). Box 15, unit 1
+
+export I64 run() {
+    I256[4] a = [1, 2, 3, 4];
+    I256[4] b;
+    copy(b, a[3..=0 by -1]);
+    fill(a, -1);
+    I256[2, 2] m = reshape(b, 2, 2);
+    I256 observed = transpose(m)[0, 1] + a[2];
+    "{observed}\n";
+    return observed as% I64;
+}

@@ -1,0 +1,9 @@
+case wide/dot_i256_into_i512
+clause SPEC-01 IM-87 (dot over I256 elements: the exact sum of products, then one range check against an I512 result)
+format 2
+source reference
+outcome value
+stdout-bytes 155
+stdout-sha256 2525440eb4126669ab767df827fbbd45b4ee1da5882e3d39fed56c76c5f945a9
+return I64 -1
+fuel-consumed 2

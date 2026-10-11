@@ -1,0 +1,12 @@
+// case: wide/div_rem_u512
+// clause: SPEC-01 IM-6, IM-35 (floor division and remainder of U512.max by 10)
+// subset: cint-core-1 (unsigned wide integers, print statements)
+// entry: run; args: none
+// spec outcome: value I64 0; output floor((2^512 - 1) / 10), a space, 5 and a line feed (2^512 ends in the digit 6); fuel 1. Box 15, unit 1
+
+export I64 run() {
+    U512 a = U512.max;
+    U512 b = 10;
+    "{a / b} {a % b}\n";
+    return 0;
+}

@@ -96,6 +96,9 @@ export const U8 DK_NAME = 8;
 // type, `rank` 0; `a` its index among the module's variables in declaration order, the
 // index of its entry in the module's cint_state table; `b` 0.
 export const U8 DK_VAR = 9;
+// The limbs of a constant of a wide type after its record and name rows (box 15 unit 4b;
+// SPEC-09 CINTC-16): six to a row from limb 1, `a` and `b` then four in `name`, little-endian.
+export const U8 DK_LIMBS = 10;
 // Decl.ext_kind of a rank-1 type.
 export const U8 DX_LITERAL = 1;
 export const U8 DX_SIZE = 2;
@@ -203,7 +206,7 @@ export I64 capacity(I64 lim, I64 n) {
         case LIM_TYPES: return least(256 + tokens / 8, TYPES_MAX);
         case LIM_SIR: return 4 * tokens + 16;
         case LIM_STACK: return least(512 + tokens / 32, STACK_MAX);
-        case LIM_LITERALS: return (n + 1) / 2 + 64;
+        case LIM_LITERALS: return (n + 1) / 2 + 12 * n + 64;
         case LIM_ARMS: return ARMS_MAX;
         case LIM_DECLS: return least(n / 4 + n / 32 + 1, DECLS_MAX);
         default: return -1;

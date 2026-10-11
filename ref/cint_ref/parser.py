@@ -13,17 +13,23 @@ context-typed error value `.name`, `defer` and `errdefer`
 (docs/design/notes/2026-10-05-box12-errors-cleanup-lifetimes.md), and its memory
 lifetimes group adds the types `Arena(T)`, `Pool(T)` and `Handle(T)` and the
 declarations `Arena(T, capacity) name;` and `Pool(T, capacity) name;` (SPEC-03
-M-20, spelling Proposed; ref/OPEN.md REF-OQ-45). Constructs
-outside it (fixed point, enums, declared lower bounds and the like) raise
-`Refused`: cint_ref does not decide them.
+M-20, spelling Proposed; ref/OPEN.md REF-OQ-45). Box 15 adds
+fixed point: the types `Q<i>.<f>`, a fraction literal's `round` clause, `Q.raw(n)`
+and the type properties of a fixed-point type
+(docs/design/notes/2026-10-05-box15-wide-integers-fixed-point.md). Constructs
+outside it (enums, declared lower bounds and the like) raise `Refused`: cint_ref
+does not decide them.
 
 `parse_module(text, path, box09=False)` parses the surface as it was before box
 09 and refuses the box 09 constructs at the same tokens as then;
 `box12=False` does the same for the box 12 constructs, and lexes `errdefer` as
 an identifier, as before box 12; `memory=False` refuses the arena and pool forms
-at the same tokens as before them. The `front` and check suites of compiler/tests
-judge cintc, which implements box 09 after roadmap box 08 and box 12 with its
-compiler step, against that surface.
+at the same tokens as before them; `fixed=False` refuses the box 15 fixed-point
+forms at the same tokens as before them. The `front` and check suites of
+compiler/tests judge cintc, which implements box 09 after roadmap box 08 and box 12
+with its compiler step, against that surface: the check suite without fixed point,
+which cintc's checker refuses until box 15 unit 4, and the `front` suite with it,
+since cintc's parser takes the fixed-point syntax.
 """
 from __future__ import annotations
 
@@ -113,12 +119,14 @@ class _LazyStream(_ListStream):
 # ---------------------------------------------------------------------------
 
 class Parser:
-    def __init__(self, stream, path: str, box09: bool = True, box12: bool = True, memory: bool = True):
+    def __init__(self, stream, path: str, box09: bool = True, box12: bool = True, memory: bool = True,
+                 fixed: bool = True):
         self.s = stream
         self.path = path
         self.box09 = box09
         self.box12 = box12
         self.memory = memory
+        self.fixed = fixed
 
     # helpers ------------------------------------------------------------
     def peek(self, k=0) -> Token:
@@ -271,7 +279,17 @@ class Parser:
     def parse_type(self) -> TypeRef:
         t = self.peek()
         if t.kind == "fixed_type":
-            self.refuse(t, "fixed point")
+            # `Q<i>.<f>` (SPEC-04 LS-36); the checker decides C2005.
+            if not self.fixed:
+                self.refuse(t, "fixed point")
+            self.next()
+            ref = TypeRef(t.text, self.pos(t))
+            if self.is_op("!"):
+                self.refuse(self.peek(), "an error union")
+            if self.is_op("["):
+                ref.dims = self.parse_shape()
+                ref.shape = ref.dims[0]
+            return ref
         if t.kind == "op" and t.text == "(":
             self.refuse(t, "a tuple type")
         if t.kind != "ident":
@@ -1046,7 +1064,7 @@ class Parser:
     def parse_hole(self, h: Hole) -> HoleExpr:
         hpos = Position(self.path, h.line, h.col)
         stream = _LazyStream(h.text, self.path, h.line, h.col, BOX12_KEYWORDS if self.box12 else KEYWORDS)
-        sub = Parser(stream, self.path, box12=self.box12, memory=self.memory)
+        sub = Parser(stream, self.path, box12=self.box12, memory=self.memory, fixed=self.fixed)
         if stream.peek().kind in ("eof", "error"):
             error("C1035", hpos, "empty interpolation hole")
         e = sub.parse_or()
@@ -1218,7 +1236,8 @@ class Parser:
             # decision 2026-10-03, slice 2 patch D-21 option 1).
             if t.text == "-" and nt.kind in ("int", "char", "frac"):
                 self.next()
-                lit = Lit(self.pos(t), self.pos(t), -nt.value, nt.kind)
+                # A fraction's `round` clause rounds the negative value (SPEC-04 LS-37, OQ-265).
+                lit = self.round_clause(Lit(self.pos(t), self.pos(t), -nt.value, nt.kind))
                 return self.parse_postfix_after(lit)
             self._enter(t)
             operand = self.parse_unary()
@@ -1322,12 +1341,19 @@ class Parser:
         self.next()
         return args
 
+    def round_clause(self, lit):
+        """A fraction literal's `round` clause (SPEC-04 LS-37): `0.1 round half_even`."""
+        if lit.kind == "frac" and self.fixed and self.peek().kind == "ident" and self.peek().text == "round":
+            self.next()
+            lit.round_mode = self.expect_ident().text
+        return lit
+
     def parse_primary(self):
         t = self.peek()
         p = self.pos(t)
         if t.kind in ("int", "char", "frac"):
             self.next()
-            return Lit(p, p, t.value, t.kind)
+            return self.round_clause(Lit(p, p, t.value, t.kind))
         if t.kind == "string":
             # A string literal outside a print statement or assert message has no holes
             # (SPEC-04 LS-44, C1033); adjacent literals are one (LS-45).
@@ -1348,7 +1374,19 @@ class Parser:
                 return TypeArg(p, p, t.text)
             return Name(p, p, t.text)
         if t.kind == "fixed_type":
-            self.refuse(t, "fixed point")
+            # `Q16.16.raw(n)` (SPEC-04 LS-38), `Q16.16.min` and `.max`, or a type argument.
+            if not self.fixed:
+                self.refuse(t, "fixed point")
+            self.next()
+            if self.is_op(".") and self.peek(1).kind == "ident":
+                self.next()
+                prop = self.next()
+                if prop.text == "raw" and self.is_op("("):
+                    call = Call(self.pos(prop), p, "raw", self.parse_args())
+                    call.raw_type = t.text
+                    return call
+                return TypeProp(p, p, t.text, prop.text)
+            return TypeArg(p, p, t.text)
         if t.kind == "op" and t.text == "(":
             self.next()
             e = self.parse_expr()
@@ -1395,12 +1433,15 @@ def _chain_operands(e, cls, op):
     return out
 
 
-def parse_module(text: str, path: str, box09: bool = True, box12: bool = True, memory: bool = True) -> Module:
+def parse_module(text: str, path: str, box09: bool = True, box12: bool = True, memory: bool = True,
+                 fixed: bool = True) -> Module:
     memory = memory and box12
     keywords = BOX12_KEYWORDS if box12 else KEYWORDS
-    m = Parser(_ListStream(tokenize(text, path, keywords=keywords)), path, box09, box12, memory).parse_module(text)
+    m = Parser(_ListStream(tokenize(text, path, keywords=keywords)), path, box09, box12, memory,
+               fixed).parse_module(text)
     m.memory = memory
     m.box09 = box09
     m.box12 = box12
+    m.fixed = fixed
     return m
 

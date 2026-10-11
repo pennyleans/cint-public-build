@@ -1,0 +1,17 @@
+// A division by zero three calls deep: the stack holds the calls of outer, middle and inner.
+I64 inner(I64 d) {
+    return 100 / d;
+}
+
+I64 middle(I64 d) {
+    return inner(d - 1);
+}
+
+I64 outer(I64 d) {
+    return middle(d - 1);
+}
+
+void main() {
+    I64 r = outer(2);
+    "r={r}\n";
+}

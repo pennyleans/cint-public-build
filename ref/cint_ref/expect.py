@@ -10,12 +10,16 @@ line per scalar module-level variable (CONF-11 rules 5 and 10). Format 3
 that returns an error, with its `error.set`, `error.value` and `error.tag` lines
 after `fuel-consumed` (rule 12). Format 4 (decision 2026-10-05, box 09 ruling
 R9) adds the kernel form of a fault record: `fault.descriptor`, `fault.phase`
-and `fault.kernel` lines and the kernel address (rule 13). A file without the
-`format` line is format 1 and is compared in format 1.
+and `fault.kernel` lines and the kernel address (rule 13). Format 5 (decision
+2026-10-09, box 15 ruling BX15-03) adds the value types `U128` to `U512` and
+the fixed-point form `Q16.16 raw 98304` (rule 14); `cint_ref` writes the
+unsigned wide types, and its reader takes both. A file without the `format`
+line is format 1 and is compared in format 1.
 """
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass, field
 
 # Keys in canonical order. A key marked repeatable may occur several times in a row.
@@ -33,7 +37,7 @@ REPEATABLE = {"fault.operand", "fault.descriptor", "diagnostic.fault.operand", "
 FORMAT2_KEYS = ("format", "fault.source-map", "fault.stack", "state.global")
 FORMAT3_KEYS = ("error.set", "error.value", "error.tag")
 FORMAT4_KEYS = ("fault.descriptor", "fault.phase", "fault.kernel")
-FORMATS = (1, 2, 3, 4)
+FORMATS = (1, 2, 3, 4, 5)
 PHASES = ("entry", "work-item", "epilogue")
 _RANK = {k: i for i, k in enumerate(KEY_ORDER)}
 OUTCOMES = ("value", "fault", "error", "compile-error", "refused")
@@ -55,10 +59,9 @@ class Expect:
 
     @property
     def format(self) -> int:
-        """2, 3 or 4 for a file with the line `format 2`, `format 3` or `format 4`, else 1 (SPEC-09
-        CONF-11)."""
+        """2 to 5 for a file with the line `format 2` to `format 5`, else 1 (SPEC-09 CONF-11)."""
         f = self.get("format")
-        return int(f) if f in ("2", "3", "4") else 1
+        return int(f) if f in ("2", "3", "4", "5") else 1
 
 
 def parse(text: str) -> Expect:
@@ -90,9 +93,10 @@ def parse(text: str) -> Expect:
 
 
 def _check_format(e: Expect):
-    """CONF-11: `format 2`, `format 3` or `format 4` is the third line; a format 1 file has
-    no line of a later format, a file below format 3 no `error` outcome (rule 12), and a
-    file below format 4 no format 4 line; a fault record of format 2 or later has
+    """CONF-11: `format 2` to `format 5` is the third line; a format 1 file has no line of a
+    later format, a file below format 3 no `error` outcome (rule 12), a file below format 4
+    no format 4 line, and a file below format 5 no value of a `U128` to `U512` or fixed-point
+    type (rule 14); a fault record of format 2 or later has
     `fault.source-map` and `fault.stack-depth` stack lines (rule 5); in format 4 a kernel
     fault has its phase, kernel and address, with a work-item and step exactly in phase
     `work-item`, and any other fault has none of these (rule 13). An `error` outcome has
@@ -108,15 +112,22 @@ def _check_format(e: Expect):
         late = [k for k in keys if k in FORMAT2_KEYS or k in FORMAT4_KEYS]
         if late:
             raise ValueError("a format 1 file has no %s line" % late[0])
+        late = _format5_line(e.lines)
+        if late:
+            raise ValueError("`%s %s`: a value of this type is written in format 5 or later (CONF-11 rule 14)" % late)
         if e.get("outcome") == "error":
             raise ValueError("an error outcome appears only in a file of format 3 or later (CONF-11 rule 12)")
         return
-    if keys.index("format") != 2 or e.get("format") not in ("2", "3", "4"):
-        raise ValueError("the third line of a format 2, 3 or 4 file is `format 2`, `format 3` or `format 4`")
+    if keys.index("format") != 2 or e.get("format") not in ("2", "3", "4", "5"):
+        raise ValueError("the third line of a format 2 to 5 file is `format 2` to `format 5`")
     if e.format < 3 and e.get("outcome") == "error":
         raise ValueError("an error outcome appears only in a file of format 3 or later (CONF-11 rule 12)")
     if e.format < 4 and any(k in FORMAT4_KEYS for k in keys):
         raise ValueError("a format %d file has no %s line" % (e.format, next(k for k in keys if k in FORMAT4_KEYS)))
+    if e.format < 5:
+        late = _format5_line(e.lines)
+        if late:
+            raise ValueError("`%s %s`: a value of this type is written in format 5 or later (CONF-11 rule 14)" % late)
     if e.get("outcome") == "fault":
         depth = e.get("fault.stack-depth")
         if e.get("fault.source-map") != "self" or depth is None or not depth.isdigit() \
@@ -153,12 +164,25 @@ def _pairs(lines):
     return out
 
 
+# CONF-11 rule 14: the types of format 5, where a typed value or a descriptor's element type is written.
+_FORMAT5_TYPE = re.compile(r"(?:^|\s)(?:U(?:128|256|512)|Q[0-9]+\.[0-9]+)\s")
+
+
+def _format5_line(lines):
+    """The first (key, value) that holds a type of format 5, or None."""
+    for k, v in lines:
+        if (k in ("return", "state.global", "error.tag") or k.startswith(("fault.", "diagnostic.fault."))) \
+                and _FORMAT5_TYPE.search(v):
+            return (k, v)
+    return None
+
+
 def from_outcome(o, case: str, clause: str | None = None, source: str | None = None,
                  fmt: int = 1) -> Expect:
     """The `.expect` text of an `exec.Outcome` in format `fmt` (SPEC-09 CONF-11). An `error`
     outcome has no text below format 3 (rule 12)."""
     if fmt not in FORMATS:
-        raise ValueError("cint_ref writes .expect formats 1 to 4, not %r" % (fmt,))
+        raise ValueError("cint_ref writes .expect formats 1 to 5, not %r" % (fmt,))
     if o.kind == "error" and fmt < 3:
         raise ValueError("an error outcome is written in format 3 or later (SPEC-09 CONF-11 rule 12), not %d" % fmt)
     e = Expect()
@@ -188,6 +212,11 @@ def from_outcome(o, case: str, clause: str | None = None, source: str | None = N
         e.lines += _pairs(o.diagnostic.to_expect_lines())
     else:
         e.lines.append(("refused.reason", _ascii(o.message) or "unspecified"))
+    late = _format5_line(e.lines) if fmt < 5 else None
+    if late:
+        # CONF-11 rule 14 (BX15-03): formats 1 to 4 have int-type U8 to U64 only, and no fixed point.
+        raise ValueError("`%s %s`: U128 to U512 and fixed-point values are written in .expect format 5 (SPEC-09 "
+                         "CONF-11 rule 14), not %d" % (late + (fmt,)))
     return e
 
 

@@ -10,6 +10,12 @@ The compiler's CISRC001 manifest covers main.ci's actual import closure.
 B1's digest export and hashlib independently verify retained source bytes.
 S1 and native executable digests are observations (SPEC-09 RCPT-04, FIX-05).
 The receipt covers this bootstrap only, through B1.
+
+Two toolchain files go beside cint. cint.toolchain, which cint run, cint build, cint build
+--lib and the Python loader read by default, is the release toolchain (decision 2026-10-08 on
+OQ-236): user programs and their runtime objects at -O2 (/O2) with the builtin helpers.
+cint-bootstrap.toolchain is the configuration B1 and cint were built with, -O0 (/Od) with the
+portable helpers, which `--toolchain` selects.
 """
 from __future__ import annotations
 
@@ -81,8 +87,26 @@ def snapshot_inputs(root: pathlib.Path, dest: pathlib.Path) -> dict:
     return groups
 
 
+_CLOSURE_PATHS: dict[bytes, tuple[str, ...]] = {}
+
+
 def compiler_closure(sources: dict[str, bytes]) -> dict[str, bytes]:
-    """Follows imports using the source lexer so comments cannot name inputs."""
+    """Follows imports using the source lexer so comments cannot name inputs.
+
+    The result depends only on the given paths and bytes, so the closure's paths are kept per
+    process, keyed by a digest of every path and its bytes; any changed byte rescans.
+    """
+    key = hashlib.sha256()
+    for path in sorted(sources, key=lambda p: p.encode("utf-8")):
+        encoded = path.encode("utf-8")
+        key.update(struct.pack("<Q", len(encoded)) + encoded + hashlib.sha256(sources[path]).digest())
+    key = key.digest()
+    if key not in _CLOSURE_PATHS:
+        _CLOSURE_PATHS[key] = tuple(_scan_closure(sources))
+    return {path: sources[path] for path in _CLOSURE_PATHS[key]}
+
+
+def _scan_closure(sources: dict[str, bytes]) -> dict[str, bytes]:
     closure, pending = {}, ["compiler/main.ci"]
     while pending:
         path = pending.pop()
@@ -141,6 +165,17 @@ def executable_toolchain_bytes(executable: pathlib.Path, values: dict, flags: li
                            flags, runtime_sources, environment)
 
 
+def release_flags(flags: list[str]) -> list[str]:
+    """The release toolchain's flags: the bootstrap's at -O2 (/O2) with the builtin helpers, as
+    the -O2 builtin agreement configuration builds programs (OQ-236)."""
+    raise_to = {"-O0": "-O2", "/Od": "/O2", "-DCINT_RT_HELPERS_PORTABLE": "-DCINT_RT_HELPERS_BUILTIN",
+                "/DCINT_RT_HELPERS_PORTABLE": "/DCINT_RT_HELPERS_BUILTIN"}
+    raised = [raise_to.get(f, f) for f in flags]
+    if sum(a != b for a, b in zip(flags, raised)) != 2:
+        raise ValueError("the bootstrap flags need one optimization flag and one helper flag to raise")
+    return raised
+
+
 def validate_output_root(root: pathlib.Path, out: pathlib.Path) -> None:
     root, out = root.resolve(), out.resolve()
     if out == root or out in root.parents or root in out.parents:
@@ -193,8 +228,9 @@ def bootstrap(leg: str, out: pathlib.Path) -> pathlib.Path:
     tc = LoggedToolchain(leg, work / "logs")
     # Toolchain.compile uses this include root; every header is a retained input.
     cc.RT = inputs / "rt"
-    rt_dir, rt_lib_dir, b0_dir, s1_dir, b1_dir, cli_dir = [work / p for p in ("rt", "rt-lib", "b0", "s1", "b1", "cli")]
-    for directory in (rt_dir, rt_lib_dir, b0_dir, s1_dir, b1_dir, cli_dir):
+    rt_dir, rt_lib_dir, rel_dir, rel_lib_dir, b0_dir, s1_dir, b1_dir, cli_dir = [
+        work / p for p in ("rt", "rt-lib", "rt-release", "rt-release-lib", "b0", "s1", "b1", "cli")]
+    for directory in (rt_dir, rt_lib_dir, rel_dir, rel_lib_dir, b0_dir, s1_dir, b1_dir, cli_dir):
         directory.mkdir()
     times = {}
     t0 = time.monotonic_ns()
@@ -204,9 +240,16 @@ def bootstrap(leg: str, out: pathlib.Path) -> pathlib.Path:
     # The runtime object of `cint build --lib`, which exports the host functions and no other
     # runtime symbol (SPEC-09 EMIT-31; box 10 default BX10-07).
     program_flags = tc.flags
-    tc.flags = program_flags + [("/D" if leg == "msvc" else "-D") + "CINT_RT_LIBRARY"]
+    library = [("/D" if leg == "msvc" else "-D") + "CINT_RT_LIBRARY"]
+    rel_flags = release_flags(program_flags)
     try:
+        tc.flags = program_flags + library
         rt_lib_obj = tc.compile([inputs / "rt" / "cint_rt.c"], rt_lib_dir, "library runtime")[0]
+        # The release toolchain's runtime objects, for programs and for libraries (OQ-236).
+        tc.flags = rel_flags
+        rel_obj = tc.compile([inputs / "rt" / "cint_rt.c"], rel_dir, "release runtime")[0]
+        tc.flags = rel_flags + library
+        rel_lib_obj = tc.compile([inputs / "rt" / "cint_rt.c"], rel_lib_dir, "release library runtime")[0]
     finally:
         tc.flags = program_flags
     seed_sources = [inputs / p for p in groups["seed"] if p.endswith(".c")]
@@ -250,9 +293,11 @@ def bootstrap(leg: str, out: pathlib.Path) -> pathlib.Path:
               "runtime_library_object": rt_lib_obj,
               "cache": cache.resolve(), "host": cc.host_os(), "compiler_sources": manifests["compiler"]}
     environment = {k: v for k, v in tc.env.items() if k.upper() in ("PATH", "INCLUDE", "LIB", "LIBPATH")}
-    config = executable_toolchain_bytes(cint, values, tc.flags, rt_sources, environment)
-    config_path = work / "cint.toolchain"
-    config_path.write_bytes(config)
+    bootstrap_config = executable_toolchain_bytes(cint, values, tc.flags, rt_sources, environment)
+    config = executable_toolchain_bytes(cint, dict(values, runtime_object=rel_obj, runtime_library_object=rel_lib_obj),
+                                        rel_flags, rt_sources, environment)
+    (work / "cint-bootstrap.toolchain").write_bytes(bootstrap_config)
+    (work / "cint.toolchain").write_bytes(config)
     source_files = lambda group: [{"path": p, "bytes": len(data), "sha256": sha256(data)}
                                   for p, data in groups[group].items()]
     identity = {"compiler_source_identity": checked[str(manifests["compiler"])],
@@ -280,9 +325,10 @@ def bootstrap(leg: str, out: pathlib.Path) -> pathlib.Path:
     pending = out / ("cint" + tc.exe + ".new-" + work.name)
     shutil.copy2(cint, pending)
     pending.replace(executable)
-    config_pending = out / ("cint.toolchain.new-" + work.name)
-    config_pending.write_bytes(config)
-    config_pending.replace(out / "cint.toolchain")
+    for name, data in (("cint-bootstrap.toolchain", bootstrap_config), ("cint.toolchain", config)):
+        config_pending = out / (name + ".new-" + work.name)
+        config_pending.write_bytes(data)
+        config_pending.replace(out / name)
     receipt_pending = out / ("bootstrap.json.new-" + work.name)
     receipt_pending.write_bytes(receipt_path.read_bytes())
     receipt_pending.replace(out / "bootstrap.json")

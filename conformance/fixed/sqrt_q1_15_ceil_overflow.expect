@@ -1,0 +1,17 @@
+case fixed/sqrt_q1_15_ceil_overflow
+clause SPEC-01 IM-67, IM-106 (Q1.15 raw 32767 with ceil rounds up to 2^15, outside Q1.15)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_OVERFLOW
+fault.operation sqrt.checked.q1_15.ceil
+fault.operand Q1.15 raw 32767
+fault.exact 32768
+fault.limit Q1.15 raw 32767
+fault.position fixed/sqrt_q1_15_ceil_overflow.ci:9:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

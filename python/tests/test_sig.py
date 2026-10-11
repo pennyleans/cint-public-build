@@ -88,7 +88,7 @@ class Examples(unittest.TestCase):
         self.assertEqual(_sig.render(sig, "both", (), ("a", "b", "divisor")),
                          "public_records.Simple both(inout public_records.Simple a, public_records.Simple b, "
                          "I64 divisor)")
-        with self.assertRaisesRegex(_sig.NoPythonForm, r"parameter a is struct public_records\.Simple.*BX10-27"):
+        with self.assertRaisesRegex(_sig.NoPythonForm, r"parameter a is struct public_records\.Simple.*no Python form yet"):
             _sig.python_forms(sig, ("a", "b", "divisor"))
 
     def test_read_number(self):
@@ -314,7 +314,7 @@ class Forms(unittest.TestCase):
         for sig, pattern in cases:
             sig = _sig.decode(_sig.encode(sig))
             with self.subTest(pattern):
-                with self.assertRaisesRegex(_sig.NoPythonForm, pattern + ".*BX10-27"):
+                with self.assertRaisesRegex(_sig.NoPythonForm, pattern + ".*no Python form yet"):
                     _sig.python_forms(sig, ("p",) * len(sig.params))
 
     def test_render_shapes(self):

@@ -1,0 +1,51 @@
+module errors.as_question_try_narrow
+sites errors/as_question_try_narrow.ci 1:11:23:fuel.charge 2:12:12:call.enter 3:15:15:as.checked.i8.i64 4:15:32:as.checked.i8.i64 5:15:23:add.checked.i64
+error E2: ArithError U16 overflow, div_zero, shift, narrow
+func @errors.as_question_try_narrow.narrow_or(%v: I64, %fallback: I8) -> I8 {
+  %t0 = as.result.i64.i8 %v
+  %t1 = error.tag
+  local $sc.0: I8
+  %t2 = const U16 0
+  %t3 = cmp.ne.u16 %t1, %t2
+  if {
+    arm {
+    } then %t3 {
+      store.local $sc.0, %fallback
+    }
+    else {
+      store.local $sc.0, %t0
+    }
+  }
+  %t4 = load.local $sc.0
+  return %t4
+}
+export func @errors.as_question_try_narrow.run() -> U16!I64 error E2 {
+  fuel.charge 1                                  #1 @errors/as_question_try_narrow.ci:11:23
+  %t0 = const I64 300
+  %t1 = const I8 -1
+  %t2 = call @errors.as_question_try_narrow.narrow_or(%t0, %t1) #2 @errors/as_question_try_narrow.ci:12:12
+  local $a.0: I8
+  store.local $a.0, %t2
+  %t3 = const I64 300
+  local $big.1: I64
+  store.local $big.1, %t3
+  %t4 = load.local $big.1
+  %t5 = as.result.i64.i8 %t4
+  %t6 = error.tag
+  %t7 = const U16 0
+  %t8 = cmp.ne.u16 %t6, %t7
+  if {
+    arm {
+    } then %t8 {
+      return.error %t6
+    }
+  }
+  local $small.2: I8
+  store.local $small.2, %t5
+  %t9 = load.local $a.0
+  %t10 = as.checked.i8.i64 %t9                   #3 @errors/as_question_try_narrow.ci:15:15
+  %t11 = load.local $small.2
+  %t12 = as.checked.i8.i64 %t11                  #4 @errors/as_question_try_narrow.ci:15:32
+  %t13 = add.checked.i64 %t10, %t12              #5 @errors/as_question_try_narrow.ci:15:23
+  return %t13
+}

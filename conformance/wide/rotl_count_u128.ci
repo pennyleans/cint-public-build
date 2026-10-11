@@ -1,0 +1,11 @@
+// case: wide/rotl_count_u128
+// clause: SPEC-01 IM-6, IM-16, IM-45, IM-106; SPEC-09 CONF-11 rule 14 (a rotation count of 128 on U128 is outside 0 to 127)
+// subset: cint-core-1 (unsigned wide integers, built-in rotl)
+// entry: run; args: none
+// spec outcome: fault E_SHIFT at 10:12 (callee `rotl`), operation rotl.checked.u128, operands U128 1 and I64 128, exact none, limit I64 127; stack depth 0; fuel 1. Box 15, unit 1
+
+export Bool run() {
+    U128 a = 1;
+    I64 k = 128;
+    return rotl(a, k) != 0;
+}

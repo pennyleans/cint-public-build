@@ -1,0 +1,15 @@
+// case: probes/copy_rank2
+// clause: box 13 unit 7 probe: copy between rank-2 slices of two arrays (view.copy of rank 2)
+// entry: run; args: none
+
+export I64 run() {
+    I64[3, 3] src;
+    I64[3, 3] dst;
+    for i in 0..3 {
+        for j in 0..3 {
+            src[i, j] = i * 3 + j + 1;
+        }
+    }
+    copy(dst[1.., ..2], src[..2, 1..]);
+    return dst[1, 0] * 1000 + dst[1, 1] * 100 + dst[2, 0] * 10 + dst[2, 1];
+}

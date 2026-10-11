@@ -1,0 +1,42 @@
+module reduce.dot_i8_into_i16_fits
+sites reduce/dot_i8_into_i16_fits.ci 1:7:12:fuel.charge 2:11:5:fuel.charge 3:12:10:index.checked.i8 4:12:17:index.checked.i8 5:13:10:index.checked.i8 6:13:17:index.checked.i8 7:15:12:dot.checked.i8.i16 8:15:27:as.checked.i16.i64
+export func @reduce.dot_i8_into_i16_fits.run() -> I64 {
+  fuel.charge 1                                  #1 @reduce/dot_i8_into_i16_fits.ci:7:12
+  local $v.0: I8[2]
+  %t0 = const I8 -1
+  array.init $v.0, %t0, 0, 0
+  %t1 = const I8 -128
+  array.init $v.0, %t1, 0, 1
+  local $w.1: I8[255]
+  local $x.2: I8[255]
+  %t2 = const I64 0
+  %t3 = const I64 255
+  local $i.3: I64
+  store.local $i.3, %t2
+  loop L16 {
+    %t4 = load.local $i.3
+    %t5 = cmp.lt.i64 %t4, %t3
+    while %t5
+    fuel.charge 1                                #2 @reduce/dot_i8_into_i16_fits.ci:11:5
+    %t6 = load.local $i.3
+    index.checked.i8 $w.1, %t6                   #3 @reduce/dot_i8_into_i16_fits.ci:12:10
+    %t7 = const I64 0
+    index.checked.i8 $v.0, %t7                   #4 @reduce/dot_i8_into_i16_fits.ci:12:17
+    %t8 = index.load $v.0, %t7
+    index.store $w.1, %t6, %t8
+    %t9 = load.local $i.3
+    index.checked.i8 $x.2, %t9                   #5 @reduce/dot_i8_into_i16_fits.ci:13:10
+    %t10 = const I64 1
+    index.checked.i8 $v.0, %t10                  #6 @reduce/dot_i8_into_i16_fits.ci:13:17
+    %t11 = index.load $v.0, %t10
+    index.store $x.2, %t9, %t11
+    next
+    %t12 = load.local $i.3
+    %t13 = const I64 1
+    %t14 = add.wrap.i64 %t12, %t13
+    store.local $i.3, %t14
+  }
+  %t15 = dot.checked.i8.i16 $w.1, $x.2           #7 @reduce/dot_i8_into_i16_fits.ci:15:12
+  %t16 = as.checked.i16.i64 %t15                 #8 @reduce/dot_i8_into_i16_fits.ci:15:27
+  return %t16
+}

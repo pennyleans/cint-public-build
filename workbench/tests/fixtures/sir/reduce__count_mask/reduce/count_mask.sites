@@ -1,0 +1,18 @@
+module reduce.count_mask
+sites reduce/count_mask.ci 1:7:12:fuel.charge 2:9:12:count.bool
+export func @reduce.count_mask.run() -> I64 {
+  fuel.charge 1                                  #1 @reduce/count_mask.ci:7:12
+  local $m.0: Bool[5]
+  %t0 = const Bool true
+  array.init $m.0, %t0, 0, 0
+  %t1 = const Bool false
+  array.init $m.0, %t1, 0, 1
+  %t2 = const Bool true
+  array.init $m.0, %t2, 0, 2
+  %t3 = const Bool true
+  array.init $m.0, %t3, 0, 3
+  %t4 = const Bool false
+  array.init $m.0, %t4, 0, 4
+  %t5 = count.bool $m.0                          #2 @reduce/count_mask.ci:9:12
+  return %t5
+}

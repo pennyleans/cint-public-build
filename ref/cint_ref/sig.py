@@ -42,6 +42,7 @@ DOMAIN = b"cint-core-1/type-signature/v1"
 # The scalar tags of SPEC-01 IM-146 that A-20 admits, by type name.
 SCALAR_TAGS = {"Bool": 0x01, "I8": 0x11, "I16": 0x12, "I32": 0x13, "I64": 0x14, "I128": 0x15, "I256": 0x16,
                "I512": 0x17, "I1024": 0x18, "U8": 0x21, "U16": 0x22, "U32": 0x23, "U64": 0x24,
+               "U128": 0x25, "U256": 0x26, "U512": 0x27,
                "T1": 0x41, "T27": 0x42}
 TAG_FIXED, TAG_ARRAY, TAG_STRUCT, TAG_ENUM, TAG_ERROR, TAG_UNION, TAG_TUPLE = (
     0x31, 0x52, 0x71, 0x72, 0x73, 0x74, 0x76)
@@ -57,7 +58,7 @@ I64_MIN, I64_MAX = -(1 << 63), (1 << 63) - 1
 
 
 # --------------------------------------------------------------------------- the type model
-# A scalar is its type name: "Bool", "I8" to "I1024", "U8" to "U64", "T1" or "T27".
+# A scalar is its type name: "Bool", "I8" to "I1024", "U8" to "U512", "T1" or "T27".
 
 @dataclass
 class Fixed:

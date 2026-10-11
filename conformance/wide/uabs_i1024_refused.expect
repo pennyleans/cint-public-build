@@ -1,0 +1,7 @@
+case wide/uabs_i1024_refused
+clause SPEC-01 IM-6, IM-16 (uabs of I1024 would need U1024, which stays Proposed under BX15-02)
+format 5
+source compile-error
+outcome compile-error
+diagnostic.code C2103
+diagnostic.position wide/uabs_i1024_refused.ci:9:9

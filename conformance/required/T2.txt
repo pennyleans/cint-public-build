@@ -5,14 +5,25 @@
 # (OQ-206), the box 12 freeze: 86 rows of the box 12 cases and of the
 # boot/refuse_defer and boot/refuse_error_union cintc expectations change category
 # or Open item; amended 2026-10-06 (OQ-197), after B1's box 09 support: the 28 rows
-# of the 14 box 09 cases held under I-7.
+# of the 14 box 09 cases held under I-7; amended 2026-10-08 (OQ-220): the 30 rows of
+# the 15 cases of box 11 unit 6; amended 2026-10-08 (OQ-232): the 2 rows of
+# memory/arena_struct_element_store; amended 2026-10-09 (OQ-252): the 46 rows of the 23
+# conformance/wide/ cases of box 15 unit 1; amended 2026-10-09 (OQ-257): the 112 rows of
+# its 56 wide table programs; amended 2026-10-09 (OQ-262): the 140 rows of its 28 unsigned
+# wide cases and 42 unsigned table programs; amended 2026-10-09 (OQ-264): the 92 rows of its
+# 46 fixed-point cases; amended 2026-10-10 (OQ-266): the 2 rows of fixed/literal_round_negative;
+# amended 2026-10-10 (OQ-268): the 44 cintc rows of its 44 signed wide table programs, with
+# the 7 cintc rows of 7 wide cases B1 compiles (CONF-14); amended 2026-10-10 (OQ-274): the 29
+# cintc rows of its 12 wide shift table programs and 17 wide cases B1 compiles; amended
+# 2026-10-10 (OQ-277): the 68 cintc rows of its 42 unsigned wide table programs and 26
+# wide cases of the unsigned types B1 compiles.
 # SPEC-09 CONF-14, CONF-15, STAGE-01; D-15; plan tasks 2.12b, 2.13, 2.14, 2.18.
 # Requirements only. These categories are obligations, not new measured outcomes.
 # Seed requirements retain the reviewed T1 classifications of the available suite.
 # One case ID per program or table, including multi-entry programs; one per anchor.
 # Columns: <case> <compiler> <category> [<limit-or-open-item>].
 # The reference comment preceding each row gives its clause/limit derivation.
-# All 861 available IDs have cintc requirements. Imported library files are not case IDs.
+# All 1073 available IDs have cintc requirements. Imported library files are not case IDs.
 # The dynamic initializer seed row retains measured outside_subset classification
 # from core-initializer measure-01, seed 7ef4b191a6abcbd8.
 # B1 requirements cover the T2 scalar surface, including saturation and scalar built-ins.
@@ -114,6 +125,99 @@
 # arena cases change from unsupported to compared and leave conformance/unsupported.txt;
 # no other row changes. B1: 783 compared, 11 held, 67 not_applicable, 0 unsupported;
 # seed: 402 compared, 3 held, 161 not_applicable, 275 outside_subset, 20 unsupported.
+# 2026-10-06, box 11 unit 6 (SPEC-09 CONF-17; approved 2026-10-08, OQ-220; OQ-193
+# amendment): 30 rows for 15 new cases: the BACK-09 case kernel/fuel_before_overflow,
+# frozen from cint_ref (seed outside_subset, C9100 at 7:1, `kernel` at module level), and
+# the 14 kernel tables of the I64 boundary matrices, whose expectations cint_ref computes
+# (seed outside_subset, no cint-boot-1 marker); B1 compares all 15; no other row
+# changes. B1: 798 compared, 11 held, 67 not_applicable, 0 unsupported; seed: 402
+# compared, 3 held, 161 not_applicable, 290 outside_subset, 20 unsupported.
+# 2026-10-08 (OQ-232; OQ-193 amendment): 2 rows for memory/arena_struct_element_store, the
+# case of a B1 defect fix (a whole-struct store into an element of an arena allocation of
+# structs made cintc's SIR verifier refuse the function), frozen from cint_ref (seed
+# outside_subset, C9100 at 12:1, `Arena` at module level); B1 compares it; no other row
+# changes. B1: 799 compared, 11 held, 67 not_applicable, 0 unsupported; seed: 402
+# compared, 3 held, 161 not_applicable, 291 outside_subset, 20 unsupported.
+# 2026-10-09, box 15 unit 1 (OQ-252; OQ-193 amendment): 46 rows for the 23 conformance/wide/
+# cases, whose wide integer elements (I128 to I1024; ruling BX15-01, default BX15-06) are
+# frozen from cint_ref: the seed outside_subset (C9100, at a module-level form or the first
+# wide type), B1 unsupported under CINTC-OQ-15 (C9102 at the first wide type, listed in
+# conformance/unsupported.txt) until box 15 unit 4; no other row changes. B1: 799
+# compared, 11 held, 67 not_applicable, 23 unsupported; seed: 402 compared, 3 held, 161
+# not_applicable, 314 outside_subset, 20 unsupported.
+# 2026-10-09, box 15 unit 1 (OQ-257; OQ-193 amendment): 112 rows for the 56 table programs of
+# the wide boundary matrices (I128 to I1024, 14 operator forms each; the value sets of
+# ref/OPEN.md O-3), whose expectations cint_ref computes: the seed outside_subset (no
+# cint-boot-1 marker), B1 unsupported under CINTC-OQ-15 (C9102 at 11:1, listed in
+# conformance/unsupported.txt) until box 15 unit 4; no other row changes. B1: 799
+# compared, 11 held, 67 not_applicable, 79 unsupported; seed: 402 compared, 3 held, 161
+# not_applicable, 370 outside_subset, 20 unsupported.
+# 2026-10-09, box 15 unit 1 (OQ-262; OQ-193 amendment): 140 rows for the 28 unsigned wide
+# cases (U128, U256 and U512; ruling BX15-02, .expect format 5) and the 42 table programs
+# of the unsigned boundary matrices (the signed sets' bit patterns read as unsigned,
+# ref/OPEN.md O-3), whose expectations cint_ref computes: the seed outside_subset (C9100
+# at a module-level form or the first wide type, or no cint-boot-1 marker), B1 unsupported
+# under CINTC-OQ-15 (C9102 at the first wide type, listed in conformance/unsupported.txt)
+# until box 15 unit 4, and wide/u1024_refused compared on both (C3006); no other row
+# changes. B1: 800 compared, 11 held, 67 not_applicable, 148 unsupported; seed: 403
+# compared, 3 held, 161 not_applicable, 439 outside_subset, 20 unsupported.
+# 2026-10-09, box 15 unit 1 (OQ-264; OQ-193 amendment): 92 rows for the 46 fixed-point cases
+# (conformance/fixed/; rulings BX15-03 to BX15-06, .expect format 5), whose expectations
+# cint_ref computes: the seed outside_subset (C9100 at the first fixed-point type or
+# fraction literal), B1 unsupported under CINTC-OQ-15 (C9102 at the same kind of token,
+# listed in conformance/unsupported.txt) until box 15 unit 4; no other row changes. B1: 800 compared, 11 held, 67 not_applicable, 194 unsupported; seed: 403
+# compared, 3 held, 161 not_applicable, 485 outside_subset, 20 unsupported.
+# 2026-10-10, box 15 unit 1 (OQ-266; OQ-193 amendment): 2 rows for fixed/literal_round_negative
+# (a round clause after a negative fraction literal, SPEC-04I.12 LS-37, OQ-265): the seed
+# outside_subset (C9100 at 8:5), B1 unsupported under CINTC-OQ-15 with C9102 at 8:5, its
+# first fixed-point type, as for the 46 (listed in conformance/unsupported.txt), until
+# box 15 unit 4; no other row changes. B1: 800 compared, 11 held, 67 not_applicable, 195
+# unsupported; seed: 403 compared, 3 held, 161 not_applicable, 486 outside_subset, 20
+# unsupported.
+# 2026-10-10, box 15 (OQ-267): the entries of 55 cases under conformance/wide/ and
+# conformance/fixed/ return Bool (33 faults) or I64 (22 values, re-frozen from cint_ref),
+# so that cint-observe-1 (SPEC-09 CONF-13 X-3) can call them on B1; no row changes. The
+# positions in their reference comments are measured again; the seed now refuses
+# wide/mul_full_u64 at the type property `U64.max` (8:13), before its first wide type.
+# 2026-10-10, box 15 unit 4a (OQ-268 A; OQ-193 amendment): B1 compiles I128 to I1024, and
+# cpu-sir-interp runs them since its wide unit (PR #353), so the cintc rows of the 44 signed
+# table programs of add, sub and mul (checked, wrap and sat) and of div and rem
+# (tables/*_i128 to tables/*_i1024) change from unsupported CINTC-OQ-15 to compared. CONF-14
+# lists a case unsupported only where the implementation does not support it, so the cintc
+# rows of 7 cases that B1 compiles since unit 4a change the same way: wide/array_i128_extremes, wide/array_i128_index_bounds, wide/copy_shape_i256,
+# wide/module_state_i256, wide/struct_array_field_i128 and wide/view_params_i256,
+# whose entries OQ-267 rewrote, and wide/uabs_i1024_refused, which compares as its expected
+# compile error (C2103). The seed rows stay outside_subset; no other row changes. Measured on
+# Linux with a fresh B1 (compiler source identity e2d2a433; gcc -O0, portable helpers):
+# every seed and B1 row in its category, 1,854,199 records compared, none disagreeing. B1:
+# 851 compared, 11 held, 67 not_applicable, 144 unsupported; seed: 403 compared, 3 held,
+# 161 not_applicable, 486 outside_subset, 20 unsupported.
+# 2026-10-10, box 15 units 4c and fill and reshape (OQ-274 A; OQ-193 amendment): B1 compiles
+# wide shift counts, wide kernels on cpu-c17, arenas of wide elements and every reduction
+# over wide values (PRs #374 and #376) and copy, reverse and reshape of wide arrays (PR
+# #382), and cpu-sir-interp runs these forms since PR #379, so the cintc rows of 29 cases
+# change from unsupported CINTC-OQ-15 to compared: the 12 shift table programs
+# tables/shl_checked_*, tables/shl_wrap_* and tables/shr_checked_* of I128 to I1024, the
+# kernel cases wide/kernel_alias_descriptors_i256, wide/kernel_mul_overflow_i128 and
+# wide/kernel_reduce_sum_i512, the arena case wide/arena_view_sum_i128, the view case
+# wide/copy_reverse_reshape_i256, and 12 reduction cases under conformance/wide/. The seed
+# rows stay outside_subset; no other row changes. Measured on Linux with --required T2.txt
+# and --only for the 29 (B1 of compiler source identity 1c39258a; clang -O0, portable
+# helpers): 29 programs, 3,089 records compared, none disagreeing, every row in its
+# category. B1: 880 compared, 11 held, 67 not_applicable, 115 unsupported; the seed's rows
+# are unchanged.
+# 2026-10-10, box 15 unit 4d (OQ-277 A; OQ-193 amendment): B1 compiles the unsigned wide
+# types U128, U256 and U512 (PR #401), and cpu-sir-interp runs them since PR #388, so the
+# cintc rows of 68 cases change from unsupported CINTC-OQ-15 to compared: the 42 table
+# programs of U128 to U512 (add, sub and mul checked, wrap and sat; div and rem checked;
+# shl checked and wrap; shr checked) and 26 cases under conformance/wide/, among them
+# wide/fold_constant_u512_overflow and wide/mul_full_u512_refused, whose outcome is the
+# compile error cint_ref gives. The seed rows stay outside_subset; no other row changes.
+# Measured on Linux with --required T2.txt and --only for the 68 (B1 of compiler source
+# identity 266635ef; clang -O0, portable helpers): 66 programs, 10,776 records compared and
+# the 2 compile errors as cint_ref gives them, none disagreeing, every row in its category.
+# B1: 948 compared, 11 held, 67 not_applicable, 47 unsupported; the seed's rows are
+# unchanged.
 # Rehearsed on Linux before approval (gcc -O2, builtin helpers, --verify-tables): every
 # seed and B1 row in its category. The Draft blockers are closed: tools/cint_accept.py
 # checks the B1 producer and source binding (2.12a), B1 compares the frozen print,
@@ -2294,6 +2398,194 @@ errors/underlying_type_u8 cintc compared
 errors/widen_in_assignment_and_compare cint-seed outside_subset
 # Reference: errors/widen_in_assignment_and_compare cintc SPEC-09 CONF-14.1; OQ-206; compiler/OPEN.md CINTC-OQ-63; SPEC-04 LS-97, LS-314; decision 2026-10-05, BX12-09, BX12-28
 errors/widen_in_assignment_and_compare cintc compared
+# Reference: fixed/add_checked_overflow_raw cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/add_checked_overflow_raw cint-seed outside_subset
+# Reference: fixed/add_checked_overflow_raw cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/add_checked_overflow_raw cintc unsupported CINTC-OQ-15
+# Reference: fixed/array_index_bounds_q16_16 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/array_index_bounds_q16_16 cint-seed outside_subset
+# Reference: fixed/array_index_bounds_q16_16 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/array_index_bounds_q16_16 cintc unsupported CINTC-OQ-15
+# Reference: fixed/constant_fold_overflow cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:7 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/constant_fold_overflow cint-seed outside_subset
+# Reference: fixed/constant_fold_overflow cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 7:7; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/constant_fold_overflow cintc unsupported CINTC-OQ-15
+# Reference: fixed/convert_integer_narrow cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 9:17 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/convert_integer_narrow cint-seed outside_subset
+# Reference: fixed/convert_integer_narrow cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 9:17; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/convert_integer_narrow cintc unsupported CINTC-OQ-15
+# Reference: fixed/convert_literal_c6001 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:8 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/convert_literal_c6001 cint-seed outside_subset
+# Reference: fixed/convert_literal_c6001 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 7:8; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/convert_literal_c6001 cintc unsupported CINTC-OQ-15
+# Reference: fixed/convert_narrow_q32_32 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/convert_narrow_q32_32 cint-seed outside_subset
+# Reference: fixed/convert_narrow_q32_32 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/convert_narrow_q32_32 cintc unsupported CINTC-OQ-15
+# Reference: fixed/convert_round_clause_c2009 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 9:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/convert_round_clause_c2009 cint-seed outside_subset
+# Reference: fixed/convert_round_clause_c2009 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 9:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/convert_round_clause_c2009 cintc unsupported CINTC-OQ-15
+# Reference: fixed/convert_table cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/convert_table cint-seed outside_subset
+# Reference: fixed/convert_table cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/convert_table cintc unsupported CINTC-OQ-15
+# Reference: fixed/convert_wrap_and_result cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/convert_wrap_and_result cint-seed outside_subset
+# Reference: fixed/convert_wrap_and_result cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/convert_wrap_and_result cintc unsupported CINTC-OQ-15
+# Reference: fixed/div_overflow_q16_16 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/div_overflow_q16_16 cint-seed outside_subset
+# Reference: fixed/div_overflow_q16_16 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/div_overflow_q16_16 cintc unsupported CINTC-OQ-15
+# Reference: fixed/div_table_q16_16 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/div_table_q16_16 cint-seed outside_subset
+# Reference: fixed/div_table_q16_16 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/div_table_q16_16 cintc unsupported CINTC-OQ-15
+# Reference: fixed/div_zero_q16_16 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/div_zero_q16_16 cint-seed outside_subset
+# Reference: fixed/div_zero_q16_16 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/div_zero_q16_16 cintc unsupported CINTC-OQ-15
+# Reference: fixed/dot_one_rounding cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/dot_one_rounding cint-seed outside_subset
+# Reference: fixed/dot_one_rounding cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/dot_one_rounding cintc unsupported CINTC-OQ-15
+# Reference: fixed/dot_overflow_q8_8 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/dot_overflow_q8_8 cint-seed outside_subset
+# Reference: fixed/dot_overflow_q8_8 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/dot_overflow_q8_8 cintc unsupported CINTC-OQ-15
+# Reference: fixed/fraction_integer_context_c2004 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:13 (a fraction literal); frozen from cint_ref, box 15 unit 1
+fixed/fraction_integer_context_c2004 cint-seed outside_subset
+# Reference: fixed/fraction_integer_context_c2004 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:13; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/fraction_integer_context_c2004 cintc unsupported CINTC-OQ-15
+# Reference: fixed/kernel_mul_overflow cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:21 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/kernel_mul_overflow cint-seed outside_subset
+# Reference: fixed/kernel_mul_overflow cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 7:21; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/kernel_mul_overflow cintc unsupported CINTC-OQ-15
+# Reference: fixed/kernel_scale_reduce cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:20 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/kernel_scale_reduce cint-seed outside_subset
+# Reference: fixed/kernel_scale_reduce cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 7:20; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/kernel_scale_reduce cintc unsupported CINTC-OQ-15
+# Reference: fixed/literal_grid_q16_16 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/literal_grid_q16_16 cint-seed outside_subset
+# Reference: fixed/literal_grid_q16_16 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/literal_grid_q16_16 cintc unsupported CINTC-OQ-15
+# Reference: fixed/literal_off_grid_c2006 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/literal_off_grid_c2006 cint-seed outside_subset
+# Reference: fixed/literal_off_grid_c2006 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/literal_off_grid_c2006 cintc unsupported CINTC-OQ-15
+# Reference: fixed/literal_out_of_range_c2003 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/literal_out_of_range_c2003 cint-seed outside_subset
+# Reference: fixed/literal_out_of_range_c2003 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/literal_out_of_range_c2003 cintc unsupported CINTC-OQ-15
+# Reference: fixed/literal_round_clause cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/literal_round_clause cint-seed outside_subset
+# Reference: fixed/literal_round_clause cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/literal_round_clause cintc unsupported CINTC-OQ-15
+# Reference: fixed/literal_round_negative cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1 (OQ-266)
+fixed/literal_round_negative cint-seed outside_subset
+# Reference: fixed/literal_round_negative cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1 (OQ-266)
+fixed/literal_round_negative cintc unsupported CINTC-OQ-15
+# Reference: fixed/module_state_q16_16 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/module_state_q16_16 cint-seed outside_subset
+# Reference: fixed/module_state_q16_16 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 7:1; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/module_state_q16_16 cintc unsupported CINTC-OQ-15
+# Reference: fixed/mul_forms_q16_16 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/mul_forms_q16_16 cint-seed outside_subset
+# Reference: fixed/mul_forms_q16_16 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/mul_forms_q16_16 cintc unsupported CINTC-OQ-15
+# Reference: fixed/mul_int_overflow cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/mul_int_overflow cint-seed outside_subset
+# Reference: fixed/mul_int_overflow cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/mul_int_overflow cintc unsupported CINTC-OQ-15
+# Reference: fixed/mul_overflow_q16_16 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/mul_overflow_q16_16 cint-seed outside_subset
+# Reference: fixed/mul_overflow_q16_16 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/mul_overflow_q16_16 cintc unsupported CINTC-OQ-15
+# Reference: fixed/mul_table_q16_16 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/mul_table_q16_16 cint-seed outside_subset
+# Reference: fixed/mul_table_q16_16 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/mul_table_q16_16 cintc unsupported CINTC-OQ-15
+# Reference: fixed/print_kind_c1037 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/print_kind_c1037 cint-seed outside_subset
+# Reference: fixed/print_kind_c1037 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/print_kind_c1037 cintc unsupported CINTC-OQ-15
+# Reference: fixed/print_layout_raw_bits cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/print_layout_raw_bits cint-seed outside_subset
+# Reference: fixed/print_layout_raw_bits cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/print_layout_raw_bits cintc unsupported CINTC-OQ-15
+# Reference: fixed/print_ls215 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/print_ls215 cint-seed outside_subset
+# Reference: fixed/print_ls215 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/print_ls215 cintc unsupported CINTC-OQ-15
+# Reference: fixed/qmul_formats cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/qmul_formats cint-seed outside_subset
+# Reference: fixed/qmul_formats cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/qmul_formats cintc unsupported CINTC-OQ-15
+# Reference: fixed/qmul_overflow cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/qmul_overflow cint-seed outside_subset
+# Reference: fixed/qmul_overflow cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/qmul_overflow cintc unsupported CINTC-OQ-15
+# Reference: fixed/raw_and_constructor cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/raw_and_constructor cint-seed outside_subset
+# Reference: fixed/raw_and_constructor cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/raw_and_constructor cintc unsupported CINTC-OQ-15
+# Reference: fixed/raw_forms_q8_8 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/raw_forms_q8_8 cint-seed outside_subset
+# Reference: fixed/raw_forms_q8_8 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/raw_forms_q8_8 cintc unsupported CINTC-OQ-15
+# Reference: fixed/raw_not_assignable_c2058 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/raw_not_assignable_c2058 cint-seed outside_subset
+# Reference: fixed/raw_not_assignable_c2058 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/raw_not_assignable_c2058 cintc unsupported CINTC-OQ-15
+# Reference: fixed/reductions_q16_16 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/reductions_q16_16 cint-seed outside_subset
+# Reference: fixed/reductions_q16_16 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/reductions_q16_16 cintc unsupported CINTC-OQ-15
+# Reference: fixed/rem_c2103 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/rem_c2103 cint-seed outside_subset
+# Reference: fixed/rem_c2103 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/rem_c2103 cintc unsupported CINTC-OQ-15
+# Reference: fixed/round_modes_convert cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/round_modes_convert cint-seed outside_subset
+# Reference: fixed/round_modes_convert cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/round_modes_convert cintc unsupported CINTC-OQ-15
+# Reference: fixed/round_modes_div cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/round_modes_div cint-seed outside_subset
+# Reference: fixed/round_modes_div cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/round_modes_div cintc unsupported CINTC-OQ-15
+# Reference: fixed/round_modes_mul cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/round_modes_mul cint-seed outside_subset
+# Reference: fixed/round_modes_mul cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/round_modes_mul cintc unsupported CINTC-OQ-15
+# Reference: fixed/sqrt_negative_domain cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/sqrt_negative_domain cint-seed outside_subset
+# Reference: fixed/sqrt_negative_domain cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/sqrt_negative_domain cintc unsupported CINTC-OQ-15
+# Reference: fixed/sqrt_q1_15_ceil_overflow cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/sqrt_q1_15_ceil_overflow cint-seed outside_subset
+# Reference: fixed/sqrt_q1_15_ceil_overflow cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/sqrt_q1_15_ceil_overflow cintc unsupported CINTC-OQ-15
+# Reference: fixed/sqrt_table cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/sqrt_table cint-seed outside_subset
+# Reference: fixed/sqrt_table cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/sqrt_table cintc unsupported CINTC-OQ-15
+# Reference: fixed/struct_field_q cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/struct_field_q cint-seed outside_subset
+# Reference: fixed/struct_field_q cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/struct_field_q cintc unsupported CINTC-OQ-15
+# Reference: fixed/sum_overflow_q8_8 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/sum_overflow_q8_8 cint-seed outside_subset
+# Reference: fixed/sum_overflow_q8_8 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/sum_overflow_q8_8 cintc unsupported CINTC-OQ-15
+# Reference: fixed/type_name_c2005 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/type_name_c2005 cint-seed outside_subset
+# Reference: fixed/type_name_c2005 cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:5; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/type_name_c2005 cintc unsupported CINTC-OQ-15
+# Reference: fixed/type_properties cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 9:12 (a fixed-point type); frozen from cint_ref, box 15 unit 1
+fixed/type_properties cint-seed outside_subset
+# Reference: fixed/type_properties cintc SPEC-09 CONF-14.2; compiler/OPEN.md CINTC-OQ-15; measured C9102 at 8:7; B1 has no fixed-point type until box 15 unit 4; frozen from cint_ref, box 15 unit 1
+fixed/type_properties cintc unsupported CINTC-OQ-15
 # Reference: kernel/advance_element_form cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (`kernel` at module level); box 09 freeze OQ-197
 kernel/advance_element_form cint-seed outside_subset
 # Reference: kernel/advance_element_form cintc SPEC-09 CONF-14.1; OQ-197; compiler/OPEN.md CINTC-OQ-42 (box 09 forms); SPEC-02 K-1, K-12, P-1, X-8
@@ -2326,6 +2618,10 @@ kernel/coverage_c5031 cintc compared
 kernel/dispatch_number_second cint-seed outside_subset
 # Reference: kernel/dispatch_number_second cintc SPEC-09 CONF-14.1; box 09 freeze OQ-197, after B1's box 09 support; SPEC-02 F-1, F-3 (the second dispatch of an entry has number 1)
 kernel/dispatch_number_second cintc compared
+# Reference: kernel/fuel_before_overflow cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (`kernel` at module level); box 11 unit 6
+kernel/fuel_before_overflow cint-seed outside_subset
+# Reference: kernel/fuel_before_overflow cintc SPEC-09 CONF-14.1, BACK-09 (its conformance case); SPEC-02 X-8, F-6a; box 11 unit 6
+kernel/fuel_before_overflow cintc compared
 # Reference: kernel/fuel_entry_charge cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (`kernel` at module level); box 09 freeze OQ-197
 kernel/fuel_entry_charge cint-seed outside_subset
 # Reference: kernel/fuel_entry_charge cintc SPEC-09 CONF-14.1; OQ-197; compiler/OPEN.md CINTC-OQ-42 (box 09 forms); SPEC-02 X-8 item 1, F-5 check 9, 15.4 E-11
@@ -2470,6 +2766,10 @@ memory/arena_retired_alloc cintc compared
 memory/arena_stale_view_after_callee_reset cint-seed outside_subset
 # Reference: memory/arena_stale_view_after_callee_reset cintc SPEC-09 CONF-14.1; OQ-210; compiler/OPEN.md CINTC-OQ-64; SPEC-03 M-14a, M-23; SPEC-02 V-14; ref/OPEN.md REF-OQ-45
 memory/arena_stale_view_after_callee_reset cintc compared
+# Reference: memory/arena_struct_element_store cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 12:1 (`Arena` at module level, read as a top-level statement); frozen from cint_ref, OQ-232 (ref/OPEN.md REF-OQ-45)
+memory/arena_struct_element_store cint-seed outside_subset
+# Reference: memory/arena_struct_element_store cintc SPEC-09 CONF-14.1; OQ-232; compiler/OPEN.md CINTC-OQ-64; SPEC-03 M-14a, M-20; SPEC-04 4.4; ref/OPEN.md REF-OQ-45
+memory/arena_struct_element_store cintc compared
 # Reference: memory/arena_struct_elements cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 9:1 (`Arena` at module level, read as a top-level statement); frozen from cint_ref, decision 2026-10-06 on OQ-210 (ref/OPEN.md REF-OQ-45)
 memory/arena_struct_elements cint-seed outside_subset
 # Reference: memory/arena_struct_elements cintc SPEC-09 CONF-14.1; OQ-210; compiler/OPEN.md CINTC-OQ-64; SPEC-03 M-12, M-19; decision 2026-10-05, BX12-06; ref/OPEN.md REF-OQ-45
@@ -3106,6 +3406,22 @@ switch/non_exhaustive_c4020 cintc compared
 switch/overlap_c4021 cint-seed compared
 # Reference: switch/overlap_c4021 cintc SPEC-09 CONF-14.1; SPEC-04 8.5
 switch/overlap_c4021 cintc compared
+# Reference: tables/add_checked_i1024 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/add_checked_i1024 cint-seed outside_subset
+# Reference: tables/add_checked_i1024 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/add_checked_i1024 cintc compared
+# Reference: tables/add_checked_i128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/add_checked_i128 cint-seed outside_subset
+# Reference: tables/add_checked_i128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/add_checked_i128 cintc compared
+# Reference: tables/add_checked_i256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/add_checked_i256 cint-seed outside_subset
+# Reference: tables/add_checked_i256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/add_checked_i256 cintc compared
+# Reference: tables/add_checked_i512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/add_checked_i512 cint-seed outside_subset
+# Reference: tables/add_checked_i512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/add_checked_i512 cintc compared
 # Reference: tables/add_checked_i64 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/add_checked_i64 cint-seed compared
 # Reference: tables/add_checked_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
@@ -3114,10 +3430,38 @@ tables/add_checked_i64 cintc compared
 tables/add_checked_i8 cint-seed compared
 # Reference: tables/add_checked_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/add_checked_i8 cintc compared
+# Reference: tables/add_checked_u128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/add_checked_u128 cint-seed outside_subset
+# Reference: tables/add_checked_u128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/add_checked_u128 cintc compared
+# Reference: tables/add_checked_u256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/add_checked_u256 cint-seed outside_subset
+# Reference: tables/add_checked_u256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/add_checked_u256 cintc compared
+# Reference: tables/add_checked_u512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/add_checked_u512 cint-seed outside_subset
+# Reference: tables/add_checked_u512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/add_checked_u512 cintc compared
 # Reference: tables/add_checked_u8 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/add_checked_u8 cint-seed compared
 # Reference: tables/add_checked_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/add_checked_u8 cintc compared
+# Reference: tables/add_sat_i1024 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/add_sat_i1024 cint-seed outside_subset
+# Reference: tables/add_sat_i1024 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/add_sat_i1024 cintc compared
+# Reference: tables/add_sat_i128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/add_sat_i128 cint-seed outside_subset
+# Reference: tables/add_sat_i128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/add_sat_i128 cintc compared
+# Reference: tables/add_sat_i256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/add_sat_i256 cint-seed outside_subset
+# Reference: tables/add_sat_i256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/add_sat_i256 cintc compared
+# Reference: tables/add_sat_i512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/add_sat_i512 cint-seed outside_subset
+# Reference: tables/add_sat_i512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/add_sat_i512 cintc compared
 # Reference: tables/add_sat_i64 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker
 tables/add_sat_i64 cint-seed outside_subset
 # Reference: tables/add_sat_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
@@ -3126,10 +3470,38 @@ tables/add_sat_i64 cintc compared
 tables/add_sat_i8 cint-seed outside_subset
 # Reference: tables/add_sat_i8 cintc SPEC-09 CONF-14.1; SPEC-09 CONF-02, 9.3; SPEC-01 IM-30, IM-31, IM-32; exhaustive 8-bit table program
 tables/add_sat_i8 cintc compared
+# Reference: tables/add_sat_u128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/add_sat_u128 cint-seed outside_subset
+# Reference: tables/add_sat_u128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/add_sat_u128 cintc compared
+# Reference: tables/add_sat_u256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/add_sat_u256 cint-seed outside_subset
+# Reference: tables/add_sat_u256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/add_sat_u256 cintc compared
+# Reference: tables/add_sat_u512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/add_sat_u512 cint-seed outside_subset
+# Reference: tables/add_sat_u512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/add_sat_u512 cintc compared
 # Reference: tables/add_sat_u8 cint-seed SPEC-09 CONF-14.4; no cint-boot-1 marker; SPEC-09 CONF-02, 9.3; SPEC-01 IM-30, IM-31, IM-32; exhaustive 8-bit table program
 tables/add_sat_u8 cint-seed outside_subset
 # Reference: tables/add_sat_u8 cintc SPEC-09 CONF-14.1; SPEC-09 CONF-02, 9.3; SPEC-01 IM-30, IM-31, IM-32; exhaustive 8-bit table program
 tables/add_sat_u8 cintc compared
+# Reference: tables/add_wrap_i1024 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/add_wrap_i1024 cint-seed outside_subset
+# Reference: tables/add_wrap_i1024 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/add_wrap_i1024 cintc compared
+# Reference: tables/add_wrap_i128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/add_wrap_i128 cint-seed outside_subset
+# Reference: tables/add_wrap_i128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/add_wrap_i128 cintc compared
+# Reference: tables/add_wrap_i256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/add_wrap_i256 cint-seed outside_subset
+# Reference: tables/add_wrap_i256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/add_wrap_i256 cintc compared
+# Reference: tables/add_wrap_i512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/add_wrap_i512 cint-seed outside_subset
+# Reference: tables/add_wrap_i512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/add_wrap_i512 cintc compared
 # Reference: tables/add_wrap_i64 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/add_wrap_i64 cint-seed compared
 # Reference: tables/add_wrap_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
@@ -3138,10 +3510,38 @@ tables/add_wrap_i64 cintc compared
 tables/add_wrap_i8 cint-seed compared
 # Reference: tables/add_wrap_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/add_wrap_i8 cintc compared
+# Reference: tables/add_wrap_u128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/add_wrap_u128 cint-seed outside_subset
+# Reference: tables/add_wrap_u128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/add_wrap_u128 cintc compared
+# Reference: tables/add_wrap_u256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/add_wrap_u256 cint-seed outside_subset
+# Reference: tables/add_wrap_u256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/add_wrap_u256 cintc compared
+# Reference: tables/add_wrap_u512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/add_wrap_u512 cint-seed outside_subset
+# Reference: tables/add_wrap_u512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/add_wrap_u512 cintc compared
 # Reference: tables/add_wrap_u8 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/add_wrap_u8 cint-seed compared
 # Reference: tables/add_wrap_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/add_wrap_u8 cintc compared
+# Reference: tables/div_checked_i1024 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/div_checked_i1024 cint-seed outside_subset
+# Reference: tables/div_checked_i1024 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/div_checked_i1024 cintc compared
+# Reference: tables/div_checked_i128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/div_checked_i128 cint-seed outside_subset
+# Reference: tables/div_checked_i128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/div_checked_i128 cintc compared
+# Reference: tables/div_checked_i256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/div_checked_i256 cint-seed outside_subset
+# Reference: tables/div_checked_i256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/div_checked_i256 cintc compared
+# Reference: tables/div_checked_i512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/div_checked_i512 cint-seed outside_subset
+# Reference: tables/div_checked_i512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/div_checked_i512 cintc compared
 # Reference: tables/div_checked_i64 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/div_checked_i64 cint-seed compared
 # Reference: tables/div_checked_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
@@ -3150,10 +3550,94 @@ tables/div_checked_i64 cintc compared
 tables/div_checked_i8 cint-seed compared
 # Reference: tables/div_checked_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/div_checked_i8 cintc compared
+# Reference: tables/div_checked_u128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/div_checked_u128 cint-seed outside_subset
+# Reference: tables/div_checked_u128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/div_checked_u128 cintc compared
+# Reference: tables/div_checked_u256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/div_checked_u256 cint-seed outside_subset
+# Reference: tables/div_checked_u256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/div_checked_u256 cintc compared
+# Reference: tables/div_checked_u512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/div_checked_u512 cint-seed outside_subset
+# Reference: tables/div_checked_u512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/div_checked_u512 cintc compared
 # Reference: tables/div_checked_u8 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/div_checked_u8 cint-seed compared
 # Reference: tables/div_checked_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/div_checked_u8 cintc compared
+# Reference: tables/kernel_add_checked_i64 cint-seed SPEC-09 CONF-02, CONF-14.4, CONF-17; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker
+tables/kernel_add_checked_i64 cint-seed outside_subset
+# Reference: tables/kernel_add_checked_i64 cintc SPEC-09 CONF-02, CONF-14.1, CONF-17; SPEC-01 IM-30, IM-31, IM-32; kernel table program
+tables/kernel_add_checked_i64 cintc compared
+# Reference: tables/kernel_add_sat_i64 cint-seed SPEC-09 CONF-02, CONF-14.4, CONF-17; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker
+tables/kernel_add_sat_i64 cint-seed outside_subset
+# Reference: tables/kernel_add_sat_i64 cintc SPEC-09 CONF-02, CONF-14.1, CONF-17; SPEC-01 IM-30, IM-31, IM-32; kernel table program
+tables/kernel_add_sat_i64 cintc compared
+# Reference: tables/kernel_add_wrap_i64 cint-seed SPEC-09 CONF-02, CONF-14.4, CONF-17; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker
+tables/kernel_add_wrap_i64 cint-seed outside_subset
+# Reference: tables/kernel_add_wrap_i64 cintc SPEC-09 CONF-02, CONF-14.1, CONF-17; SPEC-01 IM-30, IM-31, IM-32; kernel table program
+tables/kernel_add_wrap_i64 cintc compared
+# Reference: tables/kernel_div_checked_i64 cint-seed SPEC-09 CONF-02, CONF-14.4, CONF-17; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker
+tables/kernel_div_checked_i64 cint-seed outside_subset
+# Reference: tables/kernel_div_checked_i64 cintc SPEC-09 CONF-02, CONF-14.1, CONF-17; SPEC-01 IM-30, IM-31, IM-32; kernel table program
+tables/kernel_div_checked_i64 cintc compared
+# Reference: tables/kernel_mul_checked_i64 cint-seed SPEC-09 CONF-02, CONF-14.4, CONF-17; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker
+tables/kernel_mul_checked_i64 cint-seed outside_subset
+# Reference: tables/kernel_mul_checked_i64 cintc SPEC-09 CONF-02, CONF-14.1, CONF-17; SPEC-01 IM-30, IM-31, IM-32; kernel table program
+tables/kernel_mul_checked_i64 cintc compared
+# Reference: tables/kernel_mul_sat_i64 cint-seed SPEC-09 CONF-02, CONF-14.4, CONF-17; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker
+tables/kernel_mul_sat_i64 cint-seed outside_subset
+# Reference: tables/kernel_mul_sat_i64 cintc SPEC-09 CONF-02, CONF-14.1, CONF-17; SPEC-01 IM-30, IM-31, IM-32; kernel table program
+tables/kernel_mul_sat_i64 cintc compared
+# Reference: tables/kernel_mul_wrap_i64 cint-seed SPEC-09 CONF-02, CONF-14.4, CONF-17; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker
+tables/kernel_mul_wrap_i64 cint-seed outside_subset
+# Reference: tables/kernel_mul_wrap_i64 cintc SPEC-09 CONF-02, CONF-14.1, CONF-17; SPEC-01 IM-30, IM-31, IM-32; kernel table program
+tables/kernel_mul_wrap_i64 cintc compared
+# Reference: tables/kernel_rem_checked_i64 cint-seed SPEC-09 CONF-02, CONF-14.4, CONF-17; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker
+tables/kernel_rem_checked_i64 cint-seed outside_subset
+# Reference: tables/kernel_rem_checked_i64 cintc SPEC-09 CONF-02, CONF-14.1, CONF-17; SPEC-01 IM-30, IM-31, IM-32; kernel table program
+tables/kernel_rem_checked_i64 cintc compared
+# Reference: tables/kernel_shl_checked_i64 cint-seed SPEC-09 CONF-02, CONF-14.4, CONF-17; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker
+tables/kernel_shl_checked_i64 cint-seed outside_subset
+# Reference: tables/kernel_shl_checked_i64 cintc SPEC-09 CONF-02, CONF-14.1, CONF-17; SPEC-01 IM-30, IM-31, IM-32; kernel table program
+tables/kernel_shl_checked_i64 cintc compared
+# Reference: tables/kernel_shl_wrap_i64 cint-seed SPEC-09 CONF-02, CONF-14.4, CONF-17; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker
+tables/kernel_shl_wrap_i64 cint-seed outside_subset
+# Reference: tables/kernel_shl_wrap_i64 cintc SPEC-09 CONF-02, CONF-14.1, CONF-17; SPEC-01 IM-30, IM-31, IM-32; kernel table program
+tables/kernel_shl_wrap_i64 cintc compared
+# Reference: tables/kernel_shr_checked_i64 cint-seed SPEC-09 CONF-02, CONF-14.4, CONF-17; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker
+tables/kernel_shr_checked_i64 cint-seed outside_subset
+# Reference: tables/kernel_shr_checked_i64 cintc SPEC-09 CONF-02, CONF-14.1, CONF-17; SPEC-01 IM-30, IM-31, IM-32; kernel table program
+tables/kernel_shr_checked_i64 cintc compared
+# Reference: tables/kernel_sub_checked_i64 cint-seed SPEC-09 CONF-02, CONF-14.4, CONF-17; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker
+tables/kernel_sub_checked_i64 cint-seed outside_subset
+# Reference: tables/kernel_sub_checked_i64 cintc SPEC-09 CONF-02, CONF-14.1, CONF-17; SPEC-01 IM-30, IM-31, IM-32; kernel table program
+tables/kernel_sub_checked_i64 cintc compared
+# Reference: tables/kernel_sub_sat_i64 cint-seed SPEC-09 CONF-02, CONF-14.4, CONF-17; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker
+tables/kernel_sub_sat_i64 cint-seed outside_subset
+# Reference: tables/kernel_sub_sat_i64 cintc SPEC-09 CONF-02, CONF-14.1, CONF-17; SPEC-01 IM-30, IM-31, IM-32; kernel table program
+tables/kernel_sub_sat_i64 cintc compared
+# Reference: tables/kernel_sub_wrap_i64 cint-seed SPEC-09 CONF-02, CONF-14.4, CONF-17; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker
+tables/kernel_sub_wrap_i64 cint-seed outside_subset
+# Reference: tables/kernel_sub_wrap_i64 cintc SPEC-09 CONF-02, CONF-14.1, CONF-17; SPEC-01 IM-30, IM-31, IM-32; kernel table program
+tables/kernel_sub_wrap_i64 cintc compared
+# Reference: tables/mul_checked_i1024 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/mul_checked_i1024 cint-seed outside_subset
+# Reference: tables/mul_checked_i1024 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/mul_checked_i1024 cintc compared
+# Reference: tables/mul_checked_i128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/mul_checked_i128 cint-seed outside_subset
+# Reference: tables/mul_checked_i128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/mul_checked_i128 cintc compared
+# Reference: tables/mul_checked_i256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/mul_checked_i256 cint-seed outside_subset
+# Reference: tables/mul_checked_i256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/mul_checked_i256 cintc compared
+# Reference: tables/mul_checked_i512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/mul_checked_i512 cint-seed outside_subset
+# Reference: tables/mul_checked_i512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/mul_checked_i512 cintc compared
 # Reference: tables/mul_checked_i64 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/mul_checked_i64 cint-seed compared
 # Reference: tables/mul_checked_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
@@ -3162,10 +3646,38 @@ tables/mul_checked_i64 cintc compared
 tables/mul_checked_i8 cint-seed compared
 # Reference: tables/mul_checked_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/mul_checked_i8 cintc compared
+# Reference: tables/mul_checked_u128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/mul_checked_u128 cint-seed outside_subset
+# Reference: tables/mul_checked_u128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/mul_checked_u128 cintc compared
+# Reference: tables/mul_checked_u256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/mul_checked_u256 cint-seed outside_subset
+# Reference: tables/mul_checked_u256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/mul_checked_u256 cintc compared
+# Reference: tables/mul_checked_u512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/mul_checked_u512 cint-seed outside_subset
+# Reference: tables/mul_checked_u512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/mul_checked_u512 cintc compared
 # Reference: tables/mul_checked_u8 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/mul_checked_u8 cint-seed compared
 # Reference: tables/mul_checked_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/mul_checked_u8 cintc compared
+# Reference: tables/mul_sat_i1024 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/mul_sat_i1024 cint-seed outside_subset
+# Reference: tables/mul_sat_i1024 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/mul_sat_i1024 cintc compared
+# Reference: tables/mul_sat_i128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/mul_sat_i128 cint-seed outside_subset
+# Reference: tables/mul_sat_i128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/mul_sat_i128 cintc compared
+# Reference: tables/mul_sat_i256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/mul_sat_i256 cint-seed outside_subset
+# Reference: tables/mul_sat_i256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/mul_sat_i256 cintc compared
+# Reference: tables/mul_sat_i512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/mul_sat_i512 cint-seed outside_subset
+# Reference: tables/mul_sat_i512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/mul_sat_i512 cintc compared
 # Reference: tables/mul_sat_i64 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker
 tables/mul_sat_i64 cint-seed outside_subset
 # Reference: tables/mul_sat_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
@@ -3174,10 +3686,38 @@ tables/mul_sat_i64 cintc compared
 tables/mul_sat_i8 cint-seed outside_subset
 # Reference: tables/mul_sat_i8 cintc SPEC-09 CONF-14.1; SPEC-09 CONF-02, 9.3; SPEC-01 IM-30, IM-31, IM-32; exhaustive 8-bit table program
 tables/mul_sat_i8 cintc compared
+# Reference: tables/mul_sat_u128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/mul_sat_u128 cint-seed outside_subset
+# Reference: tables/mul_sat_u128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/mul_sat_u128 cintc compared
+# Reference: tables/mul_sat_u256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/mul_sat_u256 cint-seed outside_subset
+# Reference: tables/mul_sat_u256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/mul_sat_u256 cintc compared
+# Reference: tables/mul_sat_u512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/mul_sat_u512 cint-seed outside_subset
+# Reference: tables/mul_sat_u512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/mul_sat_u512 cintc compared
 # Reference: tables/mul_sat_u8 cint-seed SPEC-09 CONF-14.4; no cint-boot-1 marker; SPEC-09 CONF-02, 9.3; SPEC-01 IM-30, IM-31, IM-32; exhaustive 8-bit table program
 tables/mul_sat_u8 cint-seed outside_subset
 # Reference: tables/mul_sat_u8 cintc SPEC-09 CONF-14.1; SPEC-09 CONF-02, 9.3; SPEC-01 IM-30, IM-31, IM-32; exhaustive 8-bit table program
 tables/mul_sat_u8 cintc compared
+# Reference: tables/mul_wrap_i1024 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/mul_wrap_i1024 cint-seed outside_subset
+# Reference: tables/mul_wrap_i1024 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/mul_wrap_i1024 cintc compared
+# Reference: tables/mul_wrap_i128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/mul_wrap_i128 cint-seed outside_subset
+# Reference: tables/mul_wrap_i128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/mul_wrap_i128 cintc compared
+# Reference: tables/mul_wrap_i256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/mul_wrap_i256 cint-seed outside_subset
+# Reference: tables/mul_wrap_i256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/mul_wrap_i256 cintc compared
+# Reference: tables/mul_wrap_i512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/mul_wrap_i512 cint-seed outside_subset
+# Reference: tables/mul_wrap_i512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/mul_wrap_i512 cintc compared
 # Reference: tables/mul_wrap_i64 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/mul_wrap_i64 cint-seed compared
 # Reference: tables/mul_wrap_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
@@ -3186,10 +3726,38 @@ tables/mul_wrap_i64 cintc compared
 tables/mul_wrap_i8 cint-seed compared
 # Reference: tables/mul_wrap_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/mul_wrap_i8 cintc compared
+# Reference: tables/mul_wrap_u128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/mul_wrap_u128 cint-seed outside_subset
+# Reference: tables/mul_wrap_u128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/mul_wrap_u128 cintc compared
+# Reference: tables/mul_wrap_u256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/mul_wrap_u256 cint-seed outside_subset
+# Reference: tables/mul_wrap_u256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/mul_wrap_u256 cintc compared
+# Reference: tables/mul_wrap_u512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/mul_wrap_u512 cint-seed outside_subset
+# Reference: tables/mul_wrap_u512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/mul_wrap_u512 cintc compared
 # Reference: tables/mul_wrap_u8 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/mul_wrap_u8 cint-seed compared
 # Reference: tables/mul_wrap_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/mul_wrap_u8 cintc compared
+# Reference: tables/rem_checked_i1024 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/rem_checked_i1024 cint-seed outside_subset
+# Reference: tables/rem_checked_i1024 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/rem_checked_i1024 cintc compared
+# Reference: tables/rem_checked_i128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/rem_checked_i128 cint-seed outside_subset
+# Reference: tables/rem_checked_i128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/rem_checked_i128 cintc compared
+# Reference: tables/rem_checked_i256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/rem_checked_i256 cint-seed outside_subset
+# Reference: tables/rem_checked_i256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/rem_checked_i256 cintc compared
+# Reference: tables/rem_checked_i512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/rem_checked_i512 cint-seed outside_subset
+# Reference: tables/rem_checked_i512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/rem_checked_i512 cintc compared
 # Reference: tables/rem_checked_i64 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/rem_checked_i64 cint-seed compared
 # Reference: tables/rem_checked_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
@@ -3198,10 +3766,38 @@ tables/rem_checked_i64 cintc compared
 tables/rem_checked_i8 cint-seed compared
 # Reference: tables/rem_checked_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/rem_checked_i8 cintc compared
+# Reference: tables/rem_checked_u128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/rem_checked_u128 cint-seed outside_subset
+# Reference: tables/rem_checked_u128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/rem_checked_u128 cintc compared
+# Reference: tables/rem_checked_u256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/rem_checked_u256 cint-seed outside_subset
+# Reference: tables/rem_checked_u256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/rem_checked_u256 cintc compared
+# Reference: tables/rem_checked_u512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/rem_checked_u512 cint-seed outside_subset
+# Reference: tables/rem_checked_u512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/rem_checked_u512 cintc compared
 # Reference: tables/rem_checked_u8 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/rem_checked_u8 cint-seed compared
 # Reference: tables/rem_checked_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/rem_checked_u8 cintc compared
+# Reference: tables/shl_checked_i1024 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/shl_checked_i1024 cint-seed outside_subset
+# Reference: tables/shl_checked_i1024 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4c (OQ-274)
+tables/shl_checked_i1024 cintc compared
+# Reference: tables/shl_checked_i128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/shl_checked_i128 cint-seed outside_subset
+# Reference: tables/shl_checked_i128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4c (OQ-274)
+tables/shl_checked_i128 cintc compared
+# Reference: tables/shl_checked_i256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/shl_checked_i256 cint-seed outside_subset
+# Reference: tables/shl_checked_i256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4c (OQ-274)
+tables/shl_checked_i256 cintc compared
+# Reference: tables/shl_checked_i512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/shl_checked_i512 cint-seed outside_subset
+# Reference: tables/shl_checked_i512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4c (OQ-274)
+tables/shl_checked_i512 cintc compared
 # Reference: tables/shl_checked_i64 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/shl_checked_i64 cint-seed compared
 # Reference: tables/shl_checked_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
@@ -3210,10 +3806,38 @@ tables/shl_checked_i64 cintc compared
 tables/shl_checked_i8 cint-seed compared
 # Reference: tables/shl_checked_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/shl_checked_i8 cintc compared
+# Reference: tables/shl_checked_u128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/shl_checked_u128 cint-seed outside_subset
+# Reference: tables/shl_checked_u128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/shl_checked_u128 cintc compared
+# Reference: tables/shl_checked_u256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/shl_checked_u256 cint-seed outside_subset
+# Reference: tables/shl_checked_u256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/shl_checked_u256 cintc compared
+# Reference: tables/shl_checked_u512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/shl_checked_u512 cint-seed outside_subset
+# Reference: tables/shl_checked_u512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/shl_checked_u512 cintc compared
 # Reference: tables/shl_checked_u8 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/shl_checked_u8 cint-seed compared
 # Reference: tables/shl_checked_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/shl_checked_u8 cintc compared
+# Reference: tables/shl_wrap_i1024 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/shl_wrap_i1024 cint-seed outside_subset
+# Reference: tables/shl_wrap_i1024 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4c (OQ-274)
+tables/shl_wrap_i1024 cintc compared
+# Reference: tables/shl_wrap_i128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/shl_wrap_i128 cint-seed outside_subset
+# Reference: tables/shl_wrap_i128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4c (OQ-274)
+tables/shl_wrap_i128 cintc compared
+# Reference: tables/shl_wrap_i256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/shl_wrap_i256 cint-seed outside_subset
+# Reference: tables/shl_wrap_i256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4c (OQ-274)
+tables/shl_wrap_i256 cintc compared
+# Reference: tables/shl_wrap_i512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/shl_wrap_i512 cint-seed outside_subset
+# Reference: tables/shl_wrap_i512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4c (OQ-274)
+tables/shl_wrap_i512 cintc compared
 # Reference: tables/shl_wrap_i64 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/shl_wrap_i64 cint-seed compared
 # Reference: tables/shl_wrap_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
@@ -3222,10 +3846,38 @@ tables/shl_wrap_i64 cintc compared
 tables/shl_wrap_i8 cint-seed compared
 # Reference: tables/shl_wrap_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/shl_wrap_i8 cintc compared
+# Reference: tables/shl_wrap_u128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/shl_wrap_u128 cint-seed outside_subset
+# Reference: tables/shl_wrap_u128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/shl_wrap_u128 cintc compared
+# Reference: tables/shl_wrap_u256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/shl_wrap_u256 cint-seed outside_subset
+# Reference: tables/shl_wrap_u256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/shl_wrap_u256 cintc compared
+# Reference: tables/shl_wrap_u512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/shl_wrap_u512 cint-seed outside_subset
+# Reference: tables/shl_wrap_u512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/shl_wrap_u512 cintc compared
 # Reference: tables/shl_wrap_u8 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/shl_wrap_u8 cint-seed compared
 # Reference: tables/shl_wrap_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/shl_wrap_u8 cintc compared
+# Reference: tables/shr_checked_i1024 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/shr_checked_i1024 cint-seed outside_subset
+# Reference: tables/shr_checked_i1024 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4c (OQ-274)
+tables/shr_checked_i1024 cintc compared
+# Reference: tables/shr_checked_i128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/shr_checked_i128 cint-seed outside_subset
+# Reference: tables/shr_checked_i128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4c (OQ-274)
+tables/shr_checked_i128 cintc compared
+# Reference: tables/shr_checked_i256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/shr_checked_i256 cint-seed outside_subset
+# Reference: tables/shr_checked_i256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4c (OQ-274)
+tables/shr_checked_i256 cintc compared
+# Reference: tables/shr_checked_i512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/shr_checked_i512 cint-seed outside_subset
+# Reference: tables/shr_checked_i512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4c (OQ-274)
+tables/shr_checked_i512 cintc compared
 # Reference: tables/shr_checked_i64 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/shr_checked_i64 cint-seed compared
 # Reference: tables/shr_checked_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
@@ -3234,10 +3886,38 @@ tables/shr_checked_i64 cintc compared
 tables/shr_checked_i8 cint-seed compared
 # Reference: tables/shr_checked_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/shr_checked_i8 cintc compared
+# Reference: tables/shr_checked_u128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/shr_checked_u128 cint-seed outside_subset
+# Reference: tables/shr_checked_u128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/shr_checked_u128 cintc compared
+# Reference: tables/shr_checked_u256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/shr_checked_u256 cint-seed outside_subset
+# Reference: tables/shr_checked_u256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/shr_checked_u256 cintc compared
+# Reference: tables/shr_checked_u512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/shr_checked_u512 cint-seed outside_subset
+# Reference: tables/shr_checked_u512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/shr_checked_u512 cintc compared
 # Reference: tables/shr_checked_u8 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/shr_checked_u8 cint-seed compared
 # Reference: tables/shr_checked_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/shr_checked_u8 cintc compared
+# Reference: tables/sub_checked_i1024 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/sub_checked_i1024 cint-seed outside_subset
+# Reference: tables/sub_checked_i1024 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/sub_checked_i1024 cintc compared
+# Reference: tables/sub_checked_i128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/sub_checked_i128 cint-seed outside_subset
+# Reference: tables/sub_checked_i128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/sub_checked_i128 cintc compared
+# Reference: tables/sub_checked_i256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/sub_checked_i256 cint-seed outside_subset
+# Reference: tables/sub_checked_i256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/sub_checked_i256 cintc compared
+# Reference: tables/sub_checked_i512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/sub_checked_i512 cint-seed outside_subset
+# Reference: tables/sub_checked_i512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/sub_checked_i512 cintc compared
 # Reference: tables/sub_checked_i64 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/sub_checked_i64 cint-seed compared
 # Reference: tables/sub_checked_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
@@ -3246,10 +3926,38 @@ tables/sub_checked_i64 cintc compared
 tables/sub_checked_i8 cint-seed compared
 # Reference: tables/sub_checked_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/sub_checked_i8 cintc compared
+# Reference: tables/sub_checked_u128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/sub_checked_u128 cint-seed outside_subset
+# Reference: tables/sub_checked_u128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/sub_checked_u128 cintc compared
+# Reference: tables/sub_checked_u256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/sub_checked_u256 cint-seed outside_subset
+# Reference: tables/sub_checked_u256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/sub_checked_u256 cintc compared
+# Reference: tables/sub_checked_u512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/sub_checked_u512 cint-seed outside_subset
+# Reference: tables/sub_checked_u512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/sub_checked_u512 cintc compared
 # Reference: tables/sub_checked_u8 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/sub_checked_u8 cint-seed compared
 # Reference: tables/sub_checked_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/sub_checked_u8 cintc compared
+# Reference: tables/sub_sat_i1024 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/sub_sat_i1024 cint-seed outside_subset
+# Reference: tables/sub_sat_i1024 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/sub_sat_i1024 cintc compared
+# Reference: tables/sub_sat_i128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/sub_sat_i128 cint-seed outside_subset
+# Reference: tables/sub_sat_i128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/sub_sat_i128 cintc compared
+# Reference: tables/sub_sat_i256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/sub_sat_i256 cint-seed outside_subset
+# Reference: tables/sub_sat_i256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/sub_sat_i256 cintc compared
+# Reference: tables/sub_sat_i512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/sub_sat_i512 cint-seed outside_subset
+# Reference: tables/sub_sat_i512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/sub_sat_i512 cintc compared
 # Reference: tables/sub_sat_i64 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker
 tables/sub_sat_i64 cint-seed outside_subset
 # Reference: tables/sub_sat_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
@@ -3258,10 +3966,38 @@ tables/sub_sat_i64 cintc compared
 tables/sub_sat_i8 cint-seed outside_subset
 # Reference: tables/sub_sat_i8 cintc SPEC-09 CONF-14.1; SPEC-09 CONF-02, 9.3; SPEC-01 IM-30, IM-31, IM-32; exhaustive 8-bit table program
 tables/sub_sat_i8 cintc compared
+# Reference: tables/sub_sat_u128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/sub_sat_u128 cint-seed outside_subset
+# Reference: tables/sub_sat_u128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/sub_sat_u128 cintc compared
+# Reference: tables/sub_sat_u256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/sub_sat_u256 cint-seed outside_subset
+# Reference: tables/sub_sat_u256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/sub_sat_u256 cintc compared
+# Reference: tables/sub_sat_u512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/sub_sat_u512 cint-seed outside_subset
+# Reference: tables/sub_sat_u512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/sub_sat_u512 cintc compared
 # Reference: tables/sub_sat_u8 cint-seed SPEC-09 CONF-14.4; no cint-boot-1 marker; SPEC-09 CONF-02, 9.3; SPEC-01 IM-30, IM-31, IM-32; exhaustive 8-bit table program
 tables/sub_sat_u8 cint-seed outside_subset
 # Reference: tables/sub_sat_u8 cintc SPEC-09 CONF-14.1; SPEC-09 CONF-02, 9.3; SPEC-01 IM-30, IM-31, IM-32; exhaustive 8-bit table program
 tables/sub_sat_u8 cintc compared
+# Reference: tables/sub_wrap_i1024 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/sub_wrap_i1024 cint-seed outside_subset
+# Reference: tables/sub_wrap_i1024 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/sub_wrap_i1024 cintc compared
+# Reference: tables/sub_wrap_i128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/sub_wrap_i128 cint-seed outside_subset
+# Reference: tables/sub_wrap_i128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/sub_wrap_i128 cintc compared
+# Reference: tables/sub_wrap_i256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/sub_wrap_i256 cint-seed outside_subset
+# Reference: tables/sub_wrap_i256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/sub_wrap_i256 cintc compared
+# Reference: tables/sub_wrap_i512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/sub_wrap_i512 cint-seed outside_subset
+# Reference: tables/sub_wrap_i512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4a (OQ-268)
+tables/sub_wrap_i512 cintc compared
 # Reference: tables/sub_wrap_i64 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/sub_wrap_i64 cint-seed compared
 # Reference: tables/sub_wrap_i64 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
@@ -3270,6 +4006,18 @@ tables/sub_wrap_i64 cintc compared
 tables/sub_wrap_i8 cint-seed compared
 # Reference: tables/sub_wrap_i8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/sub_wrap_i8 cintc compared
+# Reference: tables/sub_wrap_u128 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/sub_wrap_u128 cint-seed outside_subset
+# Reference: tables/sub_wrap_u128 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/sub_wrap_u128 cintc compared
+# Reference: tables/sub_wrap_u256 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/sub_wrap_u256 cint-seed outside_subset
+# Reference: tables/sub_wrap_u256 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/sub_wrap_u256 cintc compared
+# Reference: tables/sub_wrap_u512 cint-seed SPEC-09 CONF-02, CONF-14.4; SPEC-01 IM-30, IM-31, IM-32; no cint-boot-1 marker; generated, box 15 unit 1
+tables/sub_wrap_u512 cint-seed outside_subset
+# Reference: tables/sub_wrap_u512 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program; B1 from box 15 unit 4d (OQ-277)
+tables/sub_wrap_u512 cintc compared
 # Reference: tables/sub_wrap_u8 cint-seed SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
 tables/sub_wrap_u8 cint-seed compared
 # Reference: tables/sub_wrap_u8 cintc SPEC-09 CONF-02, CONF-14.1; SPEC-01 IM-30, IM-31, IM-32; table program
@@ -3570,3 +4318,207 @@ view/struct_view_inout cintc compared
 view/transpose_view cint-seed outside_subset
 # Reference: view/transpose_view cintc SPEC-09 CONF-14.1; OQ-197; compiler/OPEN.md CINTC-OQ-42 (box 09 forms); SPEC-01 IM-76; SPEC-02 V-10; SPEC-04 LS-106, LS-145 `extent`
 view/transpose_view cintc compared
+# Reference: wide/add_checked_u512_overflow cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `U512`); frozen from cint_ref, box 15 unit 1
+wide/add_checked_u512_overflow cint-seed outside_subset
+# Reference: wide/add_checked_u512_overflow cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/add_checked_u512_overflow cintc compared
+# Reference: wide/arena_view_sum_i128 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (`Arena` at module level, read as a top-level statement); frozen from cint_ref, box 15 unit 1
+wide/arena_view_sum_i128 cint-seed outside_subset
+# Reference: wide/arena_view_sum_i128 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4c (OQ-274); frozen from cint_ref, box 15 unit 1
+wide/arena_view_sum_i128 cintc compared
+# Reference: wide/array_i1024_rank2_row_sum cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `I1024`); frozen from cint_ref, box 15 unit 1
+wide/array_i1024_rank2_row_sum cint-seed outside_subset
+# Reference: wide/array_i1024_rank2_row_sum cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4c (OQ-274); frozen from cint_ref, box 15 unit 1
+wide/array_i1024_rank2_row_sum cintc compared
+# Reference: wide/array_i128_extremes cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `I128`); frozen from cint_ref, box 15 unit 1
+wide/array_i128_extremes cint-seed outside_subset
+# Reference: wide/array_i128_extremes cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4a; frozen from cint_ref, box 15 unit 1
+wide/array_i128_extremes cintc compared
+# Reference: wide/array_i128_index_bounds cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `I128`); frozen from cint_ref, box 15 unit 1
+wide/array_i128_index_bounds cint-seed outside_subset
+# Reference: wide/array_i128_index_bounds cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4a; frozen from cint_ref, box 15 unit 1
+wide/array_i128_index_bounds cintc compared
+# Reference: wide/convert_i256_to_u256_negative cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `I256`); frozen from cint_ref, box 15 unit 1
+wide/convert_i256_to_u256_negative cint-seed outside_subset
+# Reference: wide/convert_i256_to_u256_negative cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/convert_i256_to_u256_negative cintc compared
+# Reference: wide/convert_u512_to_u128_narrow cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `U512`); frozen from cint_ref, box 15 unit 1
+wide/convert_u512_to_u128_narrow cint-seed outside_subset
+# Reference: wide/convert_u512_to_u128_narrow cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/convert_u512_to_u128_narrow cintc compared
+# Reference: wide/convert_wrap_u128 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `I1024`); frozen from cint_ref, box 15 unit 1
+wide/convert_wrap_u128 cint-seed outside_subset
+# Reference: wide/convert_wrap_u128 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/convert_wrap_u128 cintc compared
+# Reference: wide/copy_reverse_reshape_i256 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `I256`); frozen from cint_ref, box 15 unit 1
+wide/copy_reverse_reshape_i256 cint-seed outside_subset
+# Reference: wide/copy_reverse_reshape_i256 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from the fill and reshape unit (OQ-274); frozen from cint_ref, box 15 unit 1
+wide/copy_reverse_reshape_i256 cintc compared
+# Reference: wide/copy_shape_i256 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:17 (the type `I256`); frozen from cint_ref, box 15 unit 1
+wide/copy_shape_i256 cint-seed outside_subset
+# Reference: wide/copy_shape_i256 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4a; frozen from cint_ref, box 15 unit 1
+wide/copy_shape_i256 cintc compared
+# Reference: wide/div_rem_u512 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `U512`); frozen from cint_ref, box 15 unit 1
+wide/div_rem_u512 cint-seed outside_subset
+# Reference: wide/div_rem_u512 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/div_rem_u512 cintc compared
+# Reference: wide/div_zero_u512 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `U512`); frozen from cint_ref, box 15 unit 1
+wide/div_zero_u512 cint-seed outside_subset
+# Reference: wide/div_zero_u512 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/div_zero_u512 cintc compared
+# Reference: wide/dot_i256_into_i512 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `I256`); frozen from cint_ref, box 15 unit 1
+wide/dot_i256_into_i512 cint-seed outside_subset
+# Reference: wide/dot_i256_into_i512 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4c (OQ-274); frozen from cint_ref, box 15 unit 1
+wide/dot_i256_into_i512 cintc compared
+# Reference: wide/dot_i256_overflow cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `I256`); frozen from cint_ref, box 15 unit 1
+wide/dot_i256_overflow cint-seed outside_subset
+# Reference: wide/dot_i256_overflow cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4c (OQ-274); frozen from cint_ref, box 15 unit 1
+wide/dot_i256_overflow cintc compared
+# Reference: wide/fold_checked_i1024_overflow cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `I1024`); frozen from cint_ref, box 15 unit 1
+wide/fold_checked_i1024_overflow cint-seed outside_subset
+# Reference: wide/fold_checked_i1024_overflow cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4c (OQ-274); frozen from cint_ref, box 15 unit 1
+wide/fold_checked_i1024_overflow cintc compared
+# Reference: wide/fold_constant_u512_overflow cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:7 (the type `U512`); frozen from cint_ref, box 15 unit 1
+wide/fold_constant_u512_overflow cint-seed outside_subset
+# Reference: wide/fold_constant_u512_overflow cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/fold_constant_u512_overflow cintc compared
+# Reference: wide/kernel_add_overflow_u256 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (`kernel` at module level); frozen from cint_ref, box 15 unit 1
+wide/kernel_add_overflow_u256 cint-seed outside_subset
+# Reference: wide/kernel_add_overflow_u256 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/kernel_add_overflow_u256 cintc compared
+# Reference: wide/kernel_alias_descriptors_i256 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (`kernel` at module level); frozen from cint_ref, box 15 unit 1
+wide/kernel_alias_descriptors_i256 cint-seed outside_subset
+# Reference: wide/kernel_alias_descriptors_i256 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4c (OQ-274); frozen from cint_ref, box 15 unit 1
+wide/kernel_alias_descriptors_i256 cintc compared
+# Reference: wide/kernel_alias_descriptors_u128 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (`kernel` at module level); frozen from cint_ref, box 15 unit 1
+wide/kernel_alias_descriptors_u128 cint-seed outside_subset
+# Reference: wide/kernel_alias_descriptors_u128 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/kernel_alias_descriptors_u128 cintc compared
+# Reference: wide/kernel_mul_overflow_i128 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (`kernel` at module level); frozen from cint_ref, box 15 unit 1
+wide/kernel_mul_overflow_i128 cint-seed outside_subset
+# Reference: wide/kernel_mul_overflow_i128 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4c (OQ-274); frozen from cint_ref, box 15 unit 1
+wide/kernel_mul_overflow_i128 cintc compared
+# Reference: wide/kernel_reduce_sum_i512 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (`kernel` at module level); frozen from cint_ref, box 15 unit 1
+wide/kernel_reduce_sum_i512 cint-seed outside_subset
+# Reference: wide/kernel_reduce_sum_i512 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4c (OQ-274); frozen from cint_ref, box 15 unit 1
+wide/kernel_reduce_sum_i512 cintc compared
+# Reference: wide/min_empty_i512 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `I512`); frozen from cint_ref, box 15 unit 1
+wide/min_empty_i512 cint-seed outside_subset
+# Reference: wide/min_empty_i512 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4c (OQ-274); frozen from cint_ref, box 15 unit 1
+wide/min_empty_i512 cintc compared
+# Reference: wide/min_max_i512 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `I512`); frozen from cint_ref, box 15 unit 1
+wide/min_max_i512 cint-seed outside_subset
+# Reference: wide/min_max_i512 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4c (OQ-274); frozen from cint_ref, box 15 unit 1
+wide/min_max_i512 cintc compared
+# Reference: wide/module_state_i256 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (a module-level variable); frozen from cint_ref, box 15 unit 1
+wide/module_state_i256 cint-seed outside_subset
+# Reference: wide/module_state_i256 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4a; frozen from cint_ref, box 15 unit 1
+wide/module_state_i256 cintc compared
+# Reference: wide/module_state_u512 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (a module-level variable); frozen from cint_ref, box 15 unit 1
+wide/module_state_u512 cint-seed outside_subset
+# Reference: wide/module_state_u512 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/module_state_u512 cintc compared
+# Reference: wide/mul_checked_u128_overflow cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `U128`); frozen from cint_ref, box 15 unit 1
+wide/mul_checked_u128_overflow cint-seed outside_subset
+# Reference: wide/mul_checked_u128_overflow cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/mul_checked_u128_overflow cintc compared
+# Reference: wide/mul_full_u256 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `U256`); frozen from cint_ref, box 15 unit 1
+wide/mul_full_u256 cint-seed outside_subset
+# Reference: wide/mul_full_u256 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/mul_full_u256 cintc compared
+# Reference: wide/mul_full_u512_refused cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `U512`); frozen from cint_ref, box 15 unit 1
+wide/mul_full_u512_refused cint-seed outside_subset
+# Reference: wide/mul_full_u512_refused cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/mul_full_u512_refused cintc compared
+# Reference: wide/mul_full_u64 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:13 (the type property `U64.max`); frozen from cint_ref, box 15 unit 1
+wide/mul_full_u64 cint-seed outside_subset
+# Reference: wide/mul_full_u64 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/mul_full_u64 cintc compared
+# Reference: wide/return_u128_max cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `U128`); frozen from cint_ref, box 15 unit 1
+wide/return_u128_max cint-seed outside_subset
+# Reference: wide/return_u128_max cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/return_u128_max cintc compared
+# Reference: wide/rotate_shift_u512 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `U512`); frozen from cint_ref, box 15 unit 1
+wide/rotate_shift_u512 cint-seed outside_subset
+# Reference: wide/rotate_shift_u512 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/rotate_shift_u512 cintc compared
+# Reference: wide/rotl_count_u128 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `U128`); frozen from cint_ref, box 15 unit 1
+wide/rotl_count_u128 cint-seed outside_subset
+# Reference: wide/rotl_count_u128 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/rotl_count_u128 cintc compared
+# Reference: wide/shl_checked_u256_overflow cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `U256`); frozen from cint_ref, box 15 unit 1
+wide/shl_checked_u256_overflow cint-seed outside_subset
+# Reference: wide/shl_checked_u256_overflow cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/shl_checked_u256_overflow cintc compared
+# Reference: wide/slice_bounds_i512 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `I512`); frozen from cint_ref, box 15 unit 1
+wide/slice_bounds_i512 cint-seed outside_subset
+# Reference: wide/slice_bounds_i512 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4c (OQ-274); frozen from cint_ref, box 15 unit 1
+wide/slice_bounds_i512 cintc compared
+# Reference: wide/slice_reversed_i512 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `I512`); frozen from cint_ref, box 15 unit 1
+wide/slice_reversed_i512 cint-seed outside_subset
+# Reference: wide/slice_reversed_i512 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4c (OQ-274); frozen from cint_ref, box 15 unit 1
+wide/slice_reversed_i512 cintc compared
+# Reference: wide/state_after_fault_u128 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (a module-level variable); frozen from cint_ref, box 15 unit 1
+wide/state_after_fault_u128 cint-seed outside_subset
+# Reference: wide/state_after_fault_u128 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/state_after_fault_u128 cintc compared
+# Reference: wide/struct_array_field_i128 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `I128`); frozen from cint_ref, box 15 unit 1
+wide/struct_array_field_i128 cint-seed outside_subset
+# Reference: wide/struct_array_field_i128 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4a; frozen from cint_ref, box 15 unit 1
+wide/struct_array_field_i128 cintc compared
+# Reference: wide/struct_field_u256 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `U256`); frozen from cint_ref, box 15 unit 1
+wide/struct_field_u256 cint-seed outside_subset
+# Reference: wide/struct_field_u256 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/struct_field_u256 cintc compared
+# Reference: wide/sub_checked_u256_underflow cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `U256`); frozen from cint_ref, box 15 unit 1
+wide/sub_checked_u256_underflow cint-seed outside_subset
+# Reference: wide/sub_checked_u256_underflow cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/sub_checked_u256_underflow cintc compared
+# Reference: wide/sum_i1024_exact_accumulator cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `I1024`); frozen from cint_ref, box 15 unit 1
+wide/sum_i1024_exact_accumulator cint-seed outside_subset
+# Reference: wide/sum_i1024_exact_accumulator cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4c (OQ-274); frozen from cint_ref, box 15 unit 1
+wide/sum_i1024_exact_accumulator cintc compared
+# Reference: wide/sum_i1024_into_i128_overflow cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `I1024`); frozen from cint_ref, box 15 unit 1
+wide/sum_i1024_into_i128_overflow cint-seed outside_subset
+# Reference: wide/sum_i1024_into_i128_overflow cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4c (OQ-274); frozen from cint_ref, box 15 unit 1
+wide/sum_i1024_into_i128_overflow cintc compared
+# Reference: wide/sum_i128_into_i256 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `I128`); frozen from cint_ref, box 15 unit 1
+wide/sum_i128_into_i256 cint-seed outside_subset
+# Reference: wide/sum_i128_into_i256 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4c (OQ-274); frozen from cint_ref, box 15 unit 1
+wide/sum_i128_into_i256 cintc compared
+# Reference: wide/sum_u128_overflow cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `U128`); frozen from cint_ref, box 15 unit 1
+wide/sum_u128_overflow cint-seed outside_subset
+# Reference: wide/sum_u128_overflow cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/sum_u128_overflow cintc compared
+# Reference: wide/sum_u256_into_u512 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `U256`); frozen from cint_ref, box 15 unit 1
+wide/sum_u256_into_u512 cint-seed outside_subset
+# Reference: wide/sum_u256_into_u512 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/sum_u256_into_u512 cintc compared
+# Reference: wide/sum_wrap_sat_i256 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `I256`); frozen from cint_ref, box 15 unit 1
+wide/sum_wrap_sat_i256 cint-seed outside_subset
+# Reference: wide/sum_wrap_sat_i256 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4c (OQ-274); frozen from cint_ref, box 15 unit 1
+wide/sum_wrap_sat_i256 cintc compared
+# Reference: wide/u1024_refused cint-seed SPEC-09 CONF-14.1; SPEC-01 IM-6; SPEC-04 17.2 (C3006 at 8:5, U1024 stays Proposed under BX15-02); frozen from cint_ref, box 15 unit 1
+wide/u1024_refused cint-seed compared
+# Reference: wide/u1024_refused cintc SPEC-09 CONF-14.1; SPEC-01 IM-6; SPEC-04 17.2 (C3006 at 8:5, U1024 stays Proposed under BX15-02); frozen from cint_ref, box 15 unit 1
+wide/u1024_refused cintc compared
+# Reference: wide/uabs_i1024_refused cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `I1024`); frozen from cint_ref, box 15 unit 1
+wide/uabs_i1024_refused cint-seed outside_subset
+# Reference: wide/uabs_i1024_refused cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; the expected compile error C2103; frozen from cint_ref, box 15 unit 1
+wide/uabs_i1024_refused cintc compared
+# Reference: wide/uabs_i128_min cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `I128`); frozen from cint_ref, box 15 unit 1
+wide/uabs_i128_min cint-seed outside_subset
+# Reference: wide/uabs_i128_min cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/uabs_i128_min cintc compared
+# Reference: wide/view_params_i256 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (the type `I256`); frozen from cint_ref, box 15 unit 1
+wide/view_params_i256 cint-seed outside_subset
+# Reference: wide/view_params_i256 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4a; frozen from cint_ref, box 15 unit 1
+wide/view_params_i256 cintc compared
+# Reference: wide/view_slice_u512 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (the type `U512`); frozen from cint_ref, box 15 unit 1
+wide/view_slice_u512 cint-seed outside_subset
+# Reference: wide/view_slice_u512 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/view_slice_u512 cintc compared
+# Reference: wide/wrap_sat_u256 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (the type `U256`); frozen from cint_ref, box 15 unit 1
+wide/wrap_sat_u256 cint-seed outside_subset
+# Reference: wide/wrap_sat_u256 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4d (OQ-277); frozen from cint_ref, box 15 unit 1
+wide/wrap_sat_u256 cintc compared

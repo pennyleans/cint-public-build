@@ -15,6 +15,7 @@ a `Z` depends on it (IM-108, IM-148; decision 23, D-17 with OQ-147).
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from .types import Value
@@ -219,9 +220,10 @@ M64 = (1 << 63) - 1
 U64_MASK = (1 << 64) - 1
 _CODE_NAMES = {n: c for c, n in FAULT_CODES.items()}
 _SIGNED_TAGS = {0x11: 8, 0x12: 16, 0x13: 32, 0x14: 64, 0x15: 128, 0x16: 256, 0x17: 512, 0x18: 1024}
-_UNSIGNED_TAGS = {0x21: 8, 0x22: 16, 0x23: 32, 0x24: 64}
+_UNSIGNED_TAGS = {0x21: 8, 0x22: 16, 0x23: 32, 0x24: 64, 0x25: 128, 0x26: 256, 0x27: 512}  # IM-146, BX15-02
 _TAG_OF = {"I%d" % w: t for t, w in _SIGNED_TAGS.items()}
 _TAG_OF.update({"U%d" % w: t for t, w in _UNSIGNED_TAGS.items()})
+_Q_TYPE = re.compile(r"Q([1-9][0-9]*)\.(0|[1-9][0-9]*)\Z")
 
 
 @dataclass(frozen=True)
@@ -265,6 +267,14 @@ def encode_value(v, z_max: int = Z_MAX) -> bytes:
         if len(b) > z_max:
             raise ValueError("a Z of %d bytes exceeds the bound %d (SPEC-01 IM-108)" % (len(b), z_max))
         return bytes([0x0F]) + len(b).to_bytes(4, "little") + b
+    q = _Q_TYPE.match(v.type)
+    if q:
+        # Tag 31: the storage tag, f as U16, then the raw storage integer (IM-145, IM-146).
+        w = int(q.group(1)) + int(q.group(2))
+        if w not in (8, 16, 32, 64) or not -(1 << (w - 1)) <= v.value < (1 << (w - 1)):
+            raise ValueError("%s is outside its type" % v.render())
+        return bytes([0x31, _TAG_OF["I%d" % w]]) + int(q.group(2)).to_bytes(2, "little") \
+            + (v.value & ((1 << w) - 1)).to_bytes(w // 8, "little")
     tag = _TAG_OF.get(v.type)
     if tag is None:
         raise ValueError("no canonical encoding for type %r in cint_ref" % (v.type,))
@@ -454,6 +464,9 @@ def _value(rd: _Reader, where: str, z_max: int):
         return Value("I%d" % _SIGNED_TAGS[tag], int.from_bytes(payload, "little", signed=True))
     if tag in _UNSIGNED_TAGS:
         return Value("U%d" % _UNSIGNED_TAGS[tag], int.from_bytes(payload, "little"))
+    if tag == 0x31:
+        w, f = 8 * len(payload), int.from_bytes(rd.data[start + 2:start + 4], "little")
+        return Value("Q%d.%d" % (w - f, f), int.from_bytes(payload, "little", signed=True))
     if tag == 0x51 and rd.data[start + 1] == 0x01 and any(c > 1 for c in payload):
         raise ValueError("%s: an invalid Bool element (SPEC-01 IM-148)" % where)
     return RawValue(rd.data[start:rd.at])
@@ -503,7 +516,7 @@ def decode_fault_record(data: bytes, kind: str) -> tuple:
         if isinstance(exact, Value) and exact.type == "Z":
             exact = exact.value
         elif not (isinstance(exact, RawValue) and exact.raw == b"\x7f\x0f"):
-            raise ValueError("exact is a Z or a redacted Z (SPEC-01 IM-109, IM-149)")
+            raise ValueError("exact is a Z (SPEC-01 IM-149)")
     limit = _value(rd, "limit", Z_MAX) if rd.flag("limit") else None
     position = _position(rd, "position")
     if version == 1:

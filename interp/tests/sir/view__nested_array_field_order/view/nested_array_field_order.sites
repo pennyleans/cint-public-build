@@ -1,0 +1,37 @@
+module view.nested_array_field_order
+sites view/nested_array_field_order.ci 1:9:31:mul.checked.i64 2:9:36:add.checked.i64 3:10:12:fuel.charge 4:10:30:call.enter 5:10:29:index.checked.struct 6:10:44:call.enter 7:10:43:index.checked.i64 8:10:55:call.enter 9:10:76:mul.checked.i64 10:10:84:index.checked.struct 11:10:92:index.checked.i64 12:10:81:add.checked.i64
+struct O(bits: I64[1])
+global @seen: I64 = 0
+func @view.nested_array_field_order.tick(%v: I64) -> I64 {
+  %t0 = load.global @seen
+  %t1 = const I64 10
+  %t2 = mul.checked.i64 %t0, %t1                 #1 @view/nested_array_field_order.ci:9:31
+  %t3 = add.checked.i64 %t2, %v                  #2 @view/nested_array_field_order.ci:9:36
+  store.global @seen, %t3
+  return %v
+}
+export func @view.nested_array_field_order.run() -> I64 {
+  fuel.charge 1                                  #3 @view/nested_array_field_order.ci:10:12
+  local $a.0: O[1]
+  %t0 = const I64 0
+  %t1 = call @view.nested_array_field_order.tick(%t0) #4 @view/nested_array_field_order.ci:10:30
+  index.checked.struct $a.0, %t1                 #5 @view/nested_array_field_order.ci:10:29
+  element.address $sc.1, $a.0, %t1
+  %t2 = const I64 0
+  %t3 = call @view.nested_array_field_order.tick(%t2) #6 @view/nested_array_field_order.ci:10:44
+  index.checked.i64 $sc.1, %t3, bits             #7 @view/nested_array_field_order.ci:10:43
+  %t4 = const I64 7
+  %t5 = call @view.nested_array_field_order.tick(%t4) #8 @view/nested_array_field_order.ci:10:55
+  field.index.store $sc.1, bits, %t3, %t5
+  %t6 = load.global @seen
+  %t7 = const I64 10
+  %t8 = mul.checked.i64 %t6, %t7                 #9 @view/nested_array_field_order.ci:10:76
+  %t9 = const I64 0
+  index.checked.struct $a.0, %t9                 #10 @view/nested_array_field_order.ci:10:84
+  element.address $sc.2, $a.0, %t9
+  %t10 = const I64 0
+  index.checked.i64 $sc.2, %t10, bits            #11 @view/nested_array_field_order.ci:10:92
+  %t11 = field.index.load $sc.2, bits, %t10
+  %t12 = add.checked.i64 %t8, %t11               #12 @view/nested_array_field_order.ci:10:81
+  return %t12
+}

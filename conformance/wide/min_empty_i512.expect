@@ -1,0 +1,17 @@
+case wide/min_empty_i512
+clause SPEC-01 IM-77, IM-82 (min of an empty I512 view with no initial value faults E_SHAPE)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_SHAPE
+fault.operation reduce_min.checked.i512
+fault.operand I64 0
+fault.exact none
+fault.limit none
+fault.position wide/min_empty_i512.ci:9:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

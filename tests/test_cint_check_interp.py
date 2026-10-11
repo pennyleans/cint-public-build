@@ -44,6 +44,19 @@ class Refusal(unittest.TestCase):
                 self.assertFalse(cint_check.interp_refused(res, done(code, stderr=stderr)))
                 self.assertNotIn("interp_reason", res)
 
+    def test_required_rows_are_the_interpreters_and_name_no_unrun_case(self):
+        # T4.txt's rows of the interpreter (SPEC-09 CONF-15 for T4); a case the interpreter does
+        # not run yet is in no category a required list names.
+        self.assertEqual(cint_check.INTERP_TOKEN, "cintc/cpu-sir-interp")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "T4.txt"
+            cint_check.write_required(path, {"arith/x": ("compared", {})}, cint_check.INTERP_TOKEN, "T4")
+            self.assertEqual(cint_check.read_required(path),
+                             {("arith/x", "cintc/cpu-sir-interp"): ("compared", None)})
+            with self.assertRaisesRegex(ValueError, "arith/y is not executed"):
+                cint_check.write_required(path, {"arith/y": ("not_executed", {"reason": "a form"})},
+                                          cint_check.INTERP_TOKEN, "T4")
+
     def test_leg_requires_b1(self):
         err = io.StringIO()
         with self.assertRaises(SystemExit), contextlib.redirect_stderr(err):

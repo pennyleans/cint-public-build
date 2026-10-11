@@ -24,7 +24,7 @@
 //   2  U8          module   2 n + 64          the source copy, then decoded print text
 //   3  Token       module   CINTC-02 tokens   scan.ci
 //   4  Node        module   CINTC-02 nodes    parse.ci
-//   5  U8          module   0                 unused: the parse stack is in row 14 (KR-03)
+//   5  WideVal     module   513               fold.ci's wide value stack (CINTC-02)
 //   6  Sir         module   CINTC-02 SIR      lowering.ci
 //   7  SirFunc     module   functions + 1     lowering.ci (the script's entry)
 //   8  SirSlot     module   CINTC-02 symbols  lowering.ci
@@ -86,9 +86,10 @@ const U32 R_SIR = 10;
 const U32 R_FUNC = 11;
 const U32 R_SLOT = 12;
 const U32 R_LSTATE = 13;
-const U32 R_SEM = 18;
-const U32 R_SYM = 19;
-const U32 R_NAME = 20;
+const U32 R_SEM = 20;
+const U32 R_SYM = 21;
+const U32 R_NAME = 22;
+const U32 R_WIDEVAL = 18;
 
 const I64 PATH_BYTES = 1024;
 const I64 T_TEXT = 2;
@@ -118,6 +119,7 @@ export I64 plan[m, t](in I64[m] module_bytes, inout limits.TablePlan[t] rows, in
     limits.plan_row(rows, 1, 1, limits.TAG_U8, 0, m * PATH_BYTES + back_c.REV_BYTES, limits.SCOPE_PROGRAM);
     limits.plan_row(rows, T_TEXT, 1, limits.TAG_U8, 0, 2 * most + 64, limits.SCOPE_MODULE);
     parse.plan_front(rows, 3, most, R_TOKEN, R_NODE);
+    limits.plan_row(rows, 5, 8 * fold.WIDE_LIMBS, limits.TAG_RECORD, R_WIDEVAL, fold.WIDE_VALUES, limits.SCOPE_MODULE);
     lowering.plan_lower(rows, 6, most, R_SIR, R_FUNC, R_SLOT);
     limits.plan_row(rows, 10, lowering.LSTATE_BYTES, limits.TAG_RECORD, R_LSTATE, 1, limits.SCOPE_MODULE);
     // CINTC-16: the header, then floor(n / 4) + floor(n / 32) + 1 rows per module of n bytes.
@@ -535,20 +537,20 @@ Bool check_imports(inout U8[_] pbytes, I64 base, inout back_c.PMod[_] pm, I64 m,
     return true;
 }
 
-// Retains the seed's breadth-first module order in flags above the state bit.
-// At most MODULES_MAX modules give flags <= 2 * MODULES_MAX + 1.
+// Retains the seed's breadth-first module order in flags above the state and memory bits.
+// At most MODULES_MAX modules give flags <= 4 * MODULES_MAX + 3.
 void keep_record_order(in U8[_] pbytes, I64 base, inout back_c.PMod[_] pm, I64 m) {
     if (m < 1 || m > limits.MODULES_MAX) { internal(m); return; }
     for k in 0..m { pm[k + 1].flags = 0; }
-    pm[m].flags = 2;
+    pm[m].flags = 4;
     I64 nrecord = 1;
     for order in 0..m {
         I64 k = 0;
-        while (k < m && pm[k + 1].flags != 2 * (order + 1)) { k += 1; }
+        while (k < m && pm[k + 1].flags != 4 * (order + 1)) { k += 1; }
         if (k == m) {
             k = 0;
             while (pm[k + 1].flags != 0) { k += 1; }
-            pm[k + 1].flags = 2 * (order + 1);
+            pm[k + 1].flags = 4 * (order + 1);
             nrecord += 1;
         }
         for j in 0..pm[k + 1].nobs {
@@ -556,7 +558,7 @@ void keep_record_order(in U8[_] pbytes, I64 base, inout back_c.PMod[_] pm, I64 m
             I64 t = get_u32(pbytes, top - 12) - 1;
             if (pm[t + 1].flags == 0) {
                 nrecord += 1;
-                pm[t + 1].flags = 2 * nrecord;
+                pm[t + 1].flags = 4 * nrecord;
             }
         }
     }
@@ -655,7 +657,7 @@ I64 discover[n, p, a1, a2](I64 mi, in U8[n] source, in U8[p] path, inout back_c.
 // program-level tables.
 export I64 compile[n, p, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, f](I64 module_index,
         in U8[n] source, in U8[p] path, inout back_c.PMod[a0] pm, inout U8[a1] pbytes, inout U8[a2] text,
-        inout scan.Token[a3] toks, inout parse.Node[a4] nodes, inout U8[a5] unused5,
+        inout scan.Token[a3] toks, inout parse.Node[a4] nodes, inout fold.WideVal[a5] wv,
         inout lowering.Sir[a6] sir, inout lowering.SirFunc[a7] funcs, inout lowering.SirSlot[a8] slots,
         inout U8[a9] unused9, inout lowering.LState[a10] ls, inout resolve.Sem[a11] sem,
         inout resolve.Sym[a12] syms, inout resolve.Name[a13] names, inout parse.Frame[a14] frames, inout U8[a15] lits,
@@ -698,10 +700,12 @@ export I64 compile[n, p, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, 
     }
     fold.Folded[1] fres;
     fold.Work[1] z;
+    // The scratch of wide constant evaluation; its value stack is wv (CINTC-02).
+    fold.Wide[1] ws;
     resolve.RState[1] rs;
     check.CState[1] cs;
     I64 err = check.check_module(source, toks, nodes, ps[0].nn, root, sem, syms, names, frames, lits, diag, faults, fres,
-        z, path, rs, cs, mi, decls);
+        z, ws, wv, path, rs, cs, mi, decls);
     if (err != 0) {
         // A checker diagnostic, C9102 for a construct outside the checker's subset
         // included, stops the module before lowering (D-11; CINTC-OQ-45).
@@ -710,7 +714,7 @@ export I64 compile[n, p, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, 
     // The module's exports, for the modules that import it (CINTC-16 invariant 4), struct
     // rows with their LS-73 layout (check.record_layout).
     if (!check.record_layout(toks, nodes, sem, syms, diag, rs, root)) { return 1; }
-    if (!decl.write_block(source, toks, nodes, sem, syms, root, mi, decls, diag)) {
+    if (!decl.write_block(source, toks, nodes, sem, syms, lits, root, mi, decls, diag)) {
         return 1;
     }
     // The root module is the last of the build (back_c.ci, CINTC-OQ-39).
@@ -752,13 +756,16 @@ export I64 compile[n, p, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, 
     if (back_c.has_state(slots, ls)) {
         pm[mi + 1].flags = pm[mi + 1].flags | 1;
     }
+    if (back_c.has_memory(slots, ls)) {
+        pm[mi + 1].flags = pm[mi + 1].flags | 2;
+    }
     return 0;
 }
 
 // The byte count of each output of module module_index (or of the program).
 export I64 measure[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, k, f](I64 module_index,
         inout back_c.PMod[a0] pm, inout U8[a1] pbytes, inout U8[a2] text, inout scan.Token[a3] toks,
-        inout parse.Node[a4] nodes, inout U8[a5] unused5, inout lowering.Sir[a6] sir,
+        inout parse.Node[a4] nodes, inout fold.WideVal[a5] wv, inout lowering.Sir[a6] sir,
         inout lowering.SirFunc[a7] funcs, inout lowering.SirSlot[a8] slots, inout U8[a9] unused9,
         inout lowering.LState[a10] ls, inout resolve.Sem[a11] sem, inout resolve.Sym[a12] syms,
         inout resolve.Name[a13] names, inout parse.Frame[a14] frames, inout U8[a15] lits, inout limits.Decl[a16] decls,
@@ -772,7 +779,8 @@ export I64 measure[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a
     for j in 0..k {
         output_bytes[j] = 0;
         if (j < limits.OUTPUTS) {
-            I64 bytes = back_c.measure_output(module_index, j, pm, pbytes, text, toks, nodes, sir, funcs, slots, ls, decls, nmod);
+            I64 bytes = back_c.measure_output(module_index, j, pm, pbytes, text, toks, nodes, sir, funcs, slots, ls, decls, nmod,
+                lits);
             if (bytes < 0) {
                 _ = limits.limit_diag(diag, module_index, 1, 1, limits.LIM_OUTPUT, limits.OUTPUT_BYTES_MAX);
                 return 1;
@@ -790,7 +798,7 @@ export I64 measure[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a
 // measures the program-level outputs.
 export I64 emit[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, b, f](I64 module_index,
         I64 output_index, inout back_c.PMod[a0] pm, inout U8[a1] pbytes, inout U8[a2] text, inout scan.Token[a3] toks,
-        inout parse.Node[a4] nodes, inout U8[a5] unused5, inout lowering.Sir[a6] sir,
+        inout parse.Node[a4] nodes, inout fold.WideVal[a5] wv, inout lowering.Sir[a6] sir,
         inout lowering.SirFunc[a7] funcs, inout lowering.SirSlot[a8] slots, inout U8[a9] unused9,
         inout lowering.LState[a10] ls, inout resolve.Sem[a11] sem, inout resolve.Sym[a12] syms,
         inout resolve.Name[a13] names, inout parse.Frame[a14] frames, inout U8[a15] lits, inout limits.Decl[a16] decls,
@@ -805,7 +813,7 @@ export I64 emit[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14,
         return 0;
     }
     I64 wrote = back_c.emit_output(module_index, output_index, output, pm, pbytes, text, toks, nodes, sir, funcs, slots, ls, decls,
-        a0 - 1);
+        a0 - 1, lits);
     if (wrote >= 0) {
         internal(wrote);
     }

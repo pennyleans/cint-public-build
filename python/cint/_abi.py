@@ -15,8 +15,13 @@ Two runtime contracts are read. `cint-rt-2` (ABI 2.0) has a 72-byte
 `cint_buffer_register`. `cint-rt-3` (ABI 3.0) adds `max_buffers` and
 `module` to an 80-byte `cint_ctx_config`, and registers memory through a
 `cint_buffer_desc` (SPEC-03 5.3, A-8), keeping the byte form as
-`cint_buffer_register_bytes`. `Runtime.config` and `Runtime.register` are
-the only places that differ.
+`cint_buffer_register_bytes`. ABI 3.1 adds `device_count` and `devices` to a
+96-byte `cint_ctx_config` (OQ-216): a library built for `gpu-cuda` takes one
+device, a `cint_cuda_device`, and registers CUDA memory as placement device(1),
+and its `cint_ctx_device_stream` gives the context's stream (SPEC-03 A-16a,
+P-10). `Runtime.config` and `Runtime.register` are the only places that differ.
+ABI 3.2 widens `cint_tvalue` to a `Z` of fault record version 3 (OQ-263), which
+changes no structure here; `_state` reads its structures from ABI 3.2 libraries only.
 """
 from __future__ import annotations
 
@@ -50,6 +55,9 @@ REFUSALS = {
     15: ("lease", "a lease of memory the runtime does not own, or an unknown lease"),
 }
 MEM_HOST = 1
+MEM_CUDA = 2
+PLACEMENT_DEVICE = 1          # cint_buffer_desc.device of CUDA memory: device(1) (SPEC-03 A-16a)
+ABI_DEVICES = 0x00030001      # ABI 3.1: cint_ctx_config.devices (OQ-216)
 PUBLISH_NONE = 0
 PUBLISH_COPY = 1
 
@@ -93,6 +101,19 @@ class CintCtxConfig3(ctypes.Structure):
                 ("allocator", CintAllocator), ("depth_limit", ctypes.c_int64),
                 ("frame_arena_bytes", ctypes.c_int64), ("output", ctypes.c_void_p),
                 ("output_user", ctypes.c_void_p), ("module", ctypes.c_void_p)]
+
+
+class CintCtxConfig31(ctypes.Structure):
+    """`cint_ctx_config` of ABI 3.1: `device_count` (0, or 1 for a `gpu-cuda`
+    library) and `devices`, whose first entry points at a `cint_cuda_device`
+    that lives as long as the context (OQ-216)."""
+    _fields_ = CintCtxConfig3._fields_ + [("device_count", ctypes.c_uint32), ("reserved", ctypes.c_uint32),
+                                          ("devices", ctypes.c_void_p)]
+
+
+class CintCudaDevice(ctypes.Structure):
+    """`cint_cuda_device` (rt/cint_cuda.h): the record `devices[0]` points at."""
+    _fields_ = [("size", ctypes.c_uint32), ("ordinal", ctypes.c_int32)]
 
 
 class CintMem(ctypes.Structure):
@@ -141,9 +162,9 @@ class CintProgram(ctypes.Structure):
                 ("revision", ctypes.c_void_p)]
 
 
-SIZES = {CintType: 16, CintView: 144, CintAllocator: 24, CintCtxConfig: 72, CintCtxConfig3: 80, CintMem: 40,
-         CintSync: 32, CintBufferDesc: 112, CintName: 16, CintExport: 72, CintModuleTable: 32, CintLibrary: 16,
-         CintModuleInfo: 24, CintProgram: 24}
+SIZES = {CintType: 16, CintView: 144, CintAllocator: 24, CintCtxConfig: 72, CintCtxConfig3: 80, CintCtxConfig31: 96,
+         CintCudaDevice: 8, CintMem: 40, CintSync: 32, CintBufferDesc: 112, CintName: 16, CintExport: 72,
+         CintModuleTable: 32, CintLibrary: 16, CintModuleInfo: 24, CintProgram: 24}
 
 
 def layout_problem() -> str | None:
@@ -265,7 +286,7 @@ def _bind(lib, name: str, restype, *argtypes):
     try:
         fn = getattr(lib, name)
     except AttributeError:
-        raise LibraryProblem("it does not export the runtime's host function %s (SPEC-03 A-3, BX10-07)"
+        raise LibraryProblem("it does not export the runtime's host function %s (SPEC-03 A-3)"
                              % name) from None
     fn.restype = restype
     fn.argtypes = list(argtypes)
@@ -276,7 +297,10 @@ class Runtime:
     """The host functions of the runtime a library carries (SPEC-03 5.3).
     Each library carries its own copy, so a context is used through the
     library that created it only (BX10-07). `abi` is the library's
-    `cint_abi_version()`, which selects the contract's layouts."""
+    `cint_abi_version()`, which selects the contract's layouts; `devices` is
+    True when its configuration has the device fields (ABI 3.1), and `cuda`
+    when it was built for `gpu-cuda`, which its `cint_ctx_device_stream`
+    shows."""
 
     def __init__(self, lib: ctypes.CDLL):
         p, u8, u32, i32, i64, u64 = (ctypes.c_void_p, ctypes.c_uint8, ctypes.c_uint32, ctypes.c_int32,
@@ -284,7 +308,8 @@ class Runtime:
         self.lib = lib
         self.abi = _bind(lib, "cint_abi_version", u32)()
         self.major = self.abi >> 16
-        config = CintCtxConfig3 if self.major >= 3 else CintCtxConfig
+        self.devices = self.abi >= ABI_DEVICES
+        config = CintCtxConfig31 if self.devices else CintCtxConfig3 if self.major >= 3 else CintCtxConfig
         self.ctx_create = _bind(lib, "cint_ctx_create", i32, ctypes.POINTER(config), ctypes.POINTER(p))
         self.ctx_destroy = _bind(lib, "cint_ctx_destroy", None, p)
         self.fault_get = _bind(lib, "cint_fault_get", i32, p, p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t))
@@ -299,12 +324,24 @@ class Runtime:
         else:
             self._register_desc = None
             self._register_bytes = _bind(lib, "cint_buffer_register", i32, p, p, i64, u8, ctypes.POINTER(u64))
+        try:
+            self._device_stream = _bind(lib, "cint_ctx_device_stream", i32, p, u32, ctypes.POINTER(CintSync))
+        except LibraryProblem:
+            self._device_stream = None
+        self.cuda = self._device_stream is not None
 
-    def create(self, program: int, module: int, depth: int, frame_arena_bytes: int) -> tuple:
-        """cint_ctx_create with `config`: (status, context handle)."""
+    def create(self, program: int, module: int, depth: int, frame_arena_bytes: int, device=None) -> tuple:
+        """cint_ctx_create with `config`: (status, context handle). `device`
+        is a `CintCudaDevice` that outlives the context, or None."""
         c = self.config(program, module, depth, frame_arena_bytes)
+        devices = None
+        if device is not None:
+            devices = (ctypes.c_void_p * 1)(ctypes.addressof(device))
+            c.device_count = 1
+            c.devices = ctypes.addressof(devices)
         handle = ctypes.c_void_p()
         status = self.ctx_create(ctypes.byref(c), ctypes.byref(handle))
+        del devices
         return status, handle.value or 0
 
     def destroy(self, ctx: int):
@@ -342,27 +379,34 @@ class Runtime:
         allocator, no output (prints are discarded), and the root module's
         descriptor where the contract has the field."""
         if self.major >= 3:
-            c = CintCtxConfig3(size=ctypes.sizeof(CintCtxConfig3), program=program, module=module)
+            kind = CintCtxConfig31 if self.devices else CintCtxConfig3
+            c = kind(size=ctypes.sizeof(kind), program=program, module=module)
         else:
             c = CintCtxConfig(size=ctypes.sizeof(CintCtxConfig), program=program)
         c.depth_limit = depth
         c.frame_arena_bytes = frame_arena_bytes
         return c
 
-    def register(self, ctx: int, address: int, elem, extent: int, writable: bool, publish: bool) -> tuple:
+    def register(self, ctx: int, address: int, elem, extent: int, writable: bool, publish: bool,
+                 device: bool = False) -> tuple:
         """Register `extent` elements of `elem` (a `cint._elem.Elem`) at
         `address`, the lowest reachable byte (SPEC-03 A-8, A-8a): (status, id,
         generation). Under `cint-rt-3` a `Bool` or `I8` to `U64` element goes
         through a `cint_buffer_desc`, a typed registration with its ceiling and
         publish flag; other elements, and every element under `cint-rt-2`, go
-        through the byte form, whose generation is the first."""
+        through the byte form, whose generation is the first. With `device`,
+        `address` is CUDA memory of an `I8` to `U64` element, registered as
+        placement device(1) (SPEC-03 A-16a)."""
         ident, generation = ctypes.c_uint64(0), ctypes.c_uint64(BUFFER_GENERATION_FIRST)
+        if device and (self._register_desc is None or elem.kind != "int" or elem.wide):
+            raise ValueError("device memory is registered as I8 to U64 elements through a cint_buffer_desc only")
         if self._register_desc is not None and (elem.kind == "bool" or (elem.kind == "int" and not elem.wide)):
             d = CintBufferDesc(size=ctypes.sizeof(CintBufferDesc), writable=1 if writable else 0, extent=extent,
                                publish=PUBLISH_COPY if publish and writable else PUBLISH_NONE)
             d.type.code = elem.tag
-            d.mem.kind = MEM_HOST
+            d.mem.kind = MEM_CUDA if device else MEM_HOST
             d.mem.u[0] = address
+            d.device = PLACEMENT_DEVICE if device else 0
             status = self._register_desc(ctx, ctypes.byref(d), ctypes.byref(ident), ctypes.byref(generation))
         else:
             status = self._register_bytes(ctx, address or None, extent * elem.size,
@@ -372,3 +416,10 @@ class Runtime:
     def release(self, ctx: int, ident: int) -> int:
         """End a registration (cint_buffer_release): its status."""
         return self.buffer_release(ctx, ident)
+
+    def device_stream(self, ctx: int) -> tuple:
+        """cint_ctx_device_stream for device(1): (status, the context's CUDA
+        stream as an int), which a DLPack exchange passes (SPEC-03 P-10)."""
+        sync = CintSync()
+        status = self._device_stream(ctx, PLACEMENT_DEVICE, ctypes.byref(sync))
+        return status, sync.u[0] if status == 0 else 0

@@ -1,0 +1,17 @@
+case fixed/convert_integer_narrow
+clause SPEC-01 IM-68, IM-106 (decision 2026-10-03 on OQ-147: operand I64 40000, exact the raw value 40000 * 2^16, limit the Q16.16 bound as a fixed-point value)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_NARROW
+fault.operation as.checked.i64.q16_16
+fault.operand I64 40000
+fault.exact 2621440000
+fault.limit Q16.16 raw 2147483647
+fault.position fixed/convert_integer_narrow.ci:9:14
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

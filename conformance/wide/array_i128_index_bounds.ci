@@ -1,0 +1,12 @@
+// case: wide/array_i128_index_bounds
+// clause: SPEC-01 IM-186; SPEC-04 LS-64 (an index past the extent of an I128 array faults with the element type in the operation)
+// subset: cint-core-1 (wide integers)
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 11:13 (the index's `[`), operation index.checked.i128, operands I64 4 (the index), no exact, limit I64 4 (the extent); stack depth 0; fuel 1. Box 15, unit 1
+
+export Bool run() {
+    I128[4] a = [1, 2, 3, 4];
+    I64 k = 4;
+    a[0] = a[3];
+    return a[k] != 0;
+}

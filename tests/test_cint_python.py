@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -155,6 +156,17 @@ class Bootstrap(unittest.TestCase):
     def test_other_executable(self):
         self.exe.write_bytes(b"another cint")
         self.assertIn("not the executable", cint_python.tree_problem(self.exe))
+
+
+class Identity(unittest.TestCase):
+    def test_runtime_header_digest_covers_both_headers(self):
+        # The Python receipt names the runtime headers as tools/cint_check.py does (rt/OPEN.md RT-OQ-47).
+        with patch.object(cint_bootstrap, "compiler_closure", return_value={}), \
+                patch.object(cint_bootstrap, "source_manifest", return_value=b""):
+            identity = cint_python.identity_of()
+        rt = ROOT / "rt"
+        self.assertEqual(identity["runtime_header_sha256"],
+                         cint_check.files_digest([rt / "cint_rt.h", rt / "cint_rt_host.h"]))
 
 
 class Compare(unittest.TestCase):

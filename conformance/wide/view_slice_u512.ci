@@ -1,0 +1,20 @@
+// case: wide/view_slice_u512
+// clause: SPEC-04 LS-117, LS-145; SPEC-01 IM-6, IM-31; SPEC-09 CONF-11 rule 14 (U512 slices as `in` view parameters, with a wrapping sum)
+// subset: cint-core-1 (unsigned wide integers, array slices, array built-ins)
+// entry: run; args: none
+// spec outcome: value I64 8, its low 64 bits (as%); prints the U512 value 8 (2 + 3 + 4 over a[1..4], and U512.max +% 2 = 1 over a[0..2], less 2) and a line feed; fuel 8 (entry, call to total and its 3 iterations, call to total and its 2 iterations). Box 15, unit 1
+
+U512 total(in U512[_] v) {
+    U512 t = 0;
+    for i in 0..extent(v, 0) {
+        t = t +% v[i];
+    }
+    return t;
+}
+
+export I64 run() {
+    U512[4] a = [U512.max, 2, 3, 4];
+    U512 observed = total(a[1..4]) + total(a[0..2]) - 2;
+    "{observed}\n";
+    return observed as% I64;
+}

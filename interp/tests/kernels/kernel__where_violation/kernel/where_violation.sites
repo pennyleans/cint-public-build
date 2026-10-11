@@ -1,0 +1,57 @@
+module kernel.where_violation
+sites kernel/where_violation.ci 1:8:9:index.checked.i32 2:8:16:index.checked.i32 3:11:12:fuel.charge 4:14:5:dispatch 5:15:13:index.checked.i32
+kernel @kernel.where_violation.diffuse1(%u: I32[_], %next: I32[_]) {
+  dispatch.entry
+  local $n.0: I64
+  %t0 = view.extent %u, 0
+  store.local $n.0, %t0
+  %t1 = load.local $n.0
+  bind.shape %next, 1, 0, %t1
+  %t2 = load.local $n.0
+  %t3 = const I64 2
+  bind.where 0, 6, %t2, %t3
+  %t4 = load.local $n.0
+  store.local $sc.1, %t4
+  bind.alias %next, %u
+  dispatch.charge $sc.2, 1, $sc.1
+  dispatch.stage $sc.3, %next, 1
+  dispatch.push
+  %t5 = const I64 0
+  store.local $sc.4, %t5
+  loop L17 {
+    %t6 = load.local $sc.4
+    %t7 = load.local $sc.2
+    %t8 = cmp.lt.i64 %t6, %t7
+    while %t8
+    %t9 = load.local $sc.4
+    dispatch.item %t9, 1, $i.5, $sc.1
+    %t10 = load.local $i.5
+    index.checked.i32 $sc.3, %t10                #1 @kernel/where_violation.ci:8:9
+    %t11 = view.offset $sc.3, %t10, 0
+    dispatch.step
+    %t12 = load.local $i.5
+    index.checked.i32 %u, %t12                   #2 @kernel/where_violation.ci:8:16
+    %t13 = view.offset %u, %t12, 0
+    dispatch.step
+    %t14 = index.load %u, %t13
+    index.store $sc.3, %t11, %t14
+    next
+    %t15 = load.local $sc.4
+    %t16 = const I64 1
+    %t17 = add.wrap.i64 %t15, %t16
+    store.local $sc.4, %t17
+  }
+  dispatch.phase 2
+  dispatch.pop
+  dispatch.publish %next, $sc.3
+}
+export func @kernel.where_violation.run() -> I32 {
+  fuel.charge 1                                  #3 @kernel/where_violation.ci:11:12
+  local $u.0: I32[1]
+  local $v.1: I32[1]
+  dispatch @kernel.where_violation.diffuse1($u.0, $v.1), 3 #4 @kernel/where_violation.ci:14:5
+  %t0 = const I64 0
+  index.checked.i32 $v.1, %t0                    #5 @kernel/where_violation.ci:15:13
+  %t1 = index.load $v.1, %t0
+  return %t1
+}

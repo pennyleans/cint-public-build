@@ -1,0 +1,54 @@
+module kernel.unpublished_after_fault
+sites kernel/unpublished_after_fault.ci 1:8:38:index.checked.i64 2:8:16:fold_checked.add.i64 3:13:12:fuel.charge 4:15:5:dispatch
+global @total: I64 = 3
+kernel @kernel.unpublished_after_fault.total_checked(%x: I64[_], %s: out I64) {
+  dispatch.entry
+  local $n.0: I64
+  %t0 = view.extent %x, 0
+  store.local $n.0, %t0
+  %t1 = load.local $n.0
+  store.local $sc.1, %t1
+  dispatch.charge $sc.2, 1, $sc.1
+  %t2 = const I64 0
+  reduce.init %s, %t2
+  dispatch.push
+  %t3 = const I64 0
+  store.local $sc.3, %t3
+  loop L12 {
+    %t4 = load.local $sc.3
+    %t5 = load.local $sc.2
+    %t6 = cmp.lt.i64 %t4, %t5
+    while %t6
+    %t7 = load.local $sc.3
+    dispatch.item %t7, 1, $i.4, $sc.1
+    %t8 = load.local $i.4
+    index.checked.i64 %x, %t8                    #1 @kernel/unpublished_after_fault.ci:8:38
+    %t9 = view.offset %x, %t8, 0
+    dispatch.step
+    %t10 = index.load %x, %t9
+    reduce.add fold_checked.add.i64 %s, %t10     #2 @kernel/unpublished_after_fault.ci:8:16
+    dispatch.step
+    next
+    %t11 = load.local $sc.3
+    %t12 = const I64 1
+    %t13 = add.wrap.i64 %t11, %t12
+    store.local $sc.3, %t13
+  }
+  dispatch.phase 2
+  reduce.final fold_checked.add.i64 %s
+  dispatch.pop
+  dispatch.publish %s
+}
+export func @kernel.unpublished_after_fault.run() -> I64 {
+  fuel.charge 1                                  #3 @kernel/unpublished_after_fault.ci:13:12
+  local $x.0: I64[3]
+  %t0 = const I64 9223372036854775807
+  array.init $x.0, %t0, 0, 0
+  %t1 = const I64 1
+  array.init $x.0, %t1, 0, 1
+  %t2 = const I64 -1
+  array.init $x.0, %t2, 0, 2
+  dispatch @kernel.unpublished_after_fault.total_checked($x.0, out @total), 1 #4 @kernel/unpublished_after_fault.ci:15:5
+  %t3 = load.global @total
+  return %t3
+}

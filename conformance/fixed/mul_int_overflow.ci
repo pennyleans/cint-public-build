@@ -1,0 +1,13 @@
+// case: fixed/mul_int_overflow
+// clause: SPEC-01 IM-64, IM-106 (BX15-05 A: raw A * n, exact, checked against the storage range)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 12:12 (the callee `mul_int`), operation mul_int.checked.q16_16.i16, operands Q16.16 raw 294912 (4.5) and I16 30000, exact 8847360000, limit Q16.16 raw 2147483647; stack depth 0; fuel 1. Box 15, unit 1
+
+export Bool run() {
+    Q16.16 a = 1.5;
+    I16 n = 3;
+    Q16.16 b = mul_int(a, n);
+    I16 m = 30000;
+    return mul_int(b, m) != 0;
+}

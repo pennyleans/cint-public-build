@@ -1,0 +1,58 @@
+module struct.array_of_structs
+sites struct/array_of_structs.ci 1:17:5:fuel.charge 2:18:19:index.checked.struct 3:18:15:add.checked.i32 4:23:12:fuel.charge 5:25:5:fuel.charge 6:26:11:index.checked.struct 7:26:27:add.checked.i64 8:26:32:as.checked.i64.i32 9:28:12:call.enter
+struct Token(kind: I32, start: I32, length: I32, line: I32, column: I32)
+func @struct.array_of_structs.total_length(%n: I64, %ts: Token[%n]) -> I32 {
+  %t0 = const I32 0
+  local $s.0: I32
+  store.local $s.0, %t0
+  %t1 = const I64 0
+  local $i.1: I64
+  store.local $i.1, %t1
+  loop L6 {
+    %t2 = load.local $i.1
+    %t3 = cmp.lt.i64 %t2, %n
+    while %t3
+    fuel.charge 1                                #1 @struct/array_of_structs.ci:17:5
+    %t4 = load.local $s.0
+    %t5 = load.local $i.1
+    index.checked.struct %ts, %t5                #2 @struct/array_of_structs.ci:18:19
+    %t6 = element.load %ts, %t5, length
+    %t7 = add.checked.i32 %t4, %t6               #3 @struct/array_of_structs.ci:18:15
+    store.local $s.0, %t7
+    next
+    %t8 = load.local $i.1
+    %t9 = const I64 1
+    %t10 = add.wrap.i64 %t8, %t9
+    store.local $i.1, %t10
+  }
+  %t11 = load.local $s.0
+  return %t11
+}
+export func @struct.array_of_structs.run() -> I32 {
+  fuel.charge 1                                  #4 @struct/array_of_structs.ci:23:12
+  local $ts.0: Token[4]
+  %t0 = const I64 0
+  %t1 = const I64 4
+  local $i.1: I64
+  store.local $i.1, %t0
+  loop L8 {
+    %t2 = load.local $i.1
+    %t3 = cmp.lt.i64 %t2, %t1
+    while %t3
+    fuel.charge 1                                #5 @struct/array_of_structs.ci:25:5
+    %t4 = load.local $i.1
+    index.checked.struct $ts.0, %t4              #6 @struct/array_of_structs.ci:26:11
+    %t5 = load.local $i.1
+    %t6 = const I64 1
+    %t7 = add.checked.i64 %t5, %t6               #7 @struct/array_of_structs.ci:26:27
+    %t8 = as.checked.i64.i32 %t7                 #8 @struct/array_of_structs.ci:26:32
+    element.store $ts.0, %t4, length, %t8
+    next
+    %t9 = load.local $i.1
+    %t10 = const I64 1
+    %t11 = add.wrap.i64 %t9, %t10
+    store.local $i.1, %t11
+  }
+  %t12 = call @struct.array_of_structs.total_length(extent $ts.0, $ts.0) #9 @struct/array_of_structs.ci:28:12
+  return %t12
+}

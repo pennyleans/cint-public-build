@@ -8,7 +8,9 @@
  * cint_ctx_create and cint_ctx_clear_fault, the depth limit, frame-arena
  * capacity and output callback in cint_ctx_config, staged print output, and
  * cint_program_run. Task 2.7 moved the encoder to fault record version 2
- * (SPEC-01 IM-149, `cint-core-1/fault/v2`, D-10). Box 10 unit 2 makes it
+ * (SPEC-01 IM-149, `cint-core-1/fault/v2`, D-10); box 15 adds version 3 for
+ * the records of dot over I1024 elements (BX15-07 C) at ABI 3.2 (OQ-263).
+ * Box 10 unit 2 makes it
  * cint-rt-3, ABI 3.0 (SPEC-03 A-5, A-26): the registry of SPEC-03 5.3 (6a),
  * the T3 entry checks of a cint-abi-1 wrapper (6a'), struct results through
  * a pointer, the reflection table (6b''), and the host functions a library
@@ -41,7 +43,8 @@
  *     without writing `out`);
  *   - wrapping helpers `cint_<op>_wrap_<t>` and `cint_as_wrap_<to>_from_<from>`,
  *     which never fault (shl_wrap still checks its count, SPEC-01 4.1), and
- *     saturating helpers `cint_<op>_sat_<t>` for add, sub and mul;
+ *     saturating helpers `cint_<op>_sat_<t>` for add, sub and mul and
+ *     `cint_as_sat_<to>_from_<from>` for `as|`;
  *   - result-returning helpers `cint_<op>_result_<t>` for add, sub, mul, div,
  *     rem and shl, which return an ArithError tag instead of faulting (10a);
  *   - site tables, the fault record structure, its canonical encoder, and
@@ -52,6 +55,10 @@
  *   - cint_program_run, the body of a generated program's C main;
  *   - views of rank 1 to 4, slices, copies, reductions, kernel dispatch
  *     addresses and scratch storage for generated code (section 14).
+ * The host side of these (context configuration, every CINT_RT_API function,
+ * the buffer registry, the observer and reflection tables, program processes)
+ * is in rt/cint_rt_host.h, which this header includes at its end (decision
+ * 2026-10-08 on OQ-229); its sections keep their numbers.
  *
  * Helper modes (SPEC-09 EMIT-04, EMIT-05, CONF-03). Define at most one:
  *   CINT_RT_HELPERS_PORTABLE  range checks in standard C17 only.
@@ -187,6 +194,18 @@ _Static_assert(sizeof(void *) == 8, "cint-rt-3 supports 64-bit hosts only (SPEC-
 #define CINT_RT_HELPER_MODE "portable"
 #endif
 
+/* A helper whose body folds to one branch only where it is inlined with
+ * constant arguments (cint_builtin_<r>, section 13). GCC, Clang and MSVC keep
+ * it out of line at some call sites unless told, so the builtin mode tells
+ * them; MSVC ignores the request under /Od. */
+#if CINT_RT_USE_BUILTINS && defined(CINT_RT_BUILTINS_GNU)
+#define CINT_RT_FOLD static inline __attribute__((always_inline))
+#elif CINT_RT_USE_BUILTINS
+#define CINT_RT_FOLD static __forceinline
+#else
+#define CINT_RT_FOLD static inline
+#endif
+
 /* ------------------------------------------------------------------------- */
 /* 3. Status values, fault codes, type tags (SPEC-03 A-6, SPEC-01 9.1, 11.1). */
 
@@ -199,11 +218,13 @@ typedef int32_t cint_status;
 #define CINT_RESOURCE 5
 
 /* SPEC-03 A-5: (major << 16) | minor. cint-rt-1 was ABI 1.0; cint-rt-2 changed
- * the signature of cint_ctx_create and the layout of cint_ctx_config, so it
- * was ABI 2.0 (rt/OPEN.md RT-OQ-21). cint-rt-3 changes cint_buffer_register,
- * cint_ctx_config and the result of a struct-valued export, and adds the
- * reflection table, so it is ABI 3.0, taken once (A-26; RT-OQ-39). */
-#define CINT_ABI_VERSION 0x00030000u
+ * the signature of cint_ctx_create and the layout of cint_ctx_config, so it was
+ * ABI 2.0 (RT-OQ-21). cint-rt-3, ABI 3.0 taken once (A-26; RT-OQ-39), changes
+ * cint_buffer_register, cint_ctx_config and the result of a struct-valued
+ * export, and adds the reflection table; 3.1 adds config.devices (OQ-216);
+ * 3.2 widens cint_tvalue to a Z of fault record version 3, so the structures
+ * that hold one grow (OQ-263). */
+#define CINT_ABI_VERSION 0x00030002u
 
 #define CINT_E_OVERFLOW 1u
 #define CINT_E_DIV_ZERO 2u
@@ -229,6 +250,7 @@ typedef int32_t cint_status;
 #define CINT_TAG_U16 0x22
 #define CINT_TAG_U32 0x23
 #define CINT_TAG_U64 0x24
+#define CINT_TAG_HANDLE 0x75  /* a module-level Handle (OQ-242): its cint_handle (rt/cint_mem.h) */
 
 /* Fuel allowance meaning "no allowance": the entry counts fuel and never
  * faults E_FUEL (SPEC-01 10.1). Any other allowance must be >= 0. */
@@ -242,10 +264,13 @@ typedef int32_t cint_status;
 #define CINT_FAULT_MAX_OPERANDS 8u
 #define CINT_FAULT_MAX_OPERATION 64u
 #define CINT_FAULT_MAX_PATH 1024u
-#define CINT_Z_MAX_BYTES 257u
-/* A tagged value as SPEC-01 11.1 bytes: the largest in cint-rt-1 is a tagged Z
- * (tag, U32 length, 257 bytes). */
-#define CINT_TVALUE_MAX 262u
+/* A Z of a run-time record has at most 257 bytes in fault record version 2
+ * and 264 in version 3 (SPEC-01 IM-108 items 1 and 4, IM-149). */
+#define CINT_Z_MAX_BYTES 264u
+#define CINT_Z_V2_MAX_BYTES 257u
+/* A tagged value as SPEC-01 11.1 bytes: the largest is a tagged Z of version
+ * 3 (tag, U32 length, 264 bytes; ABI 3.2, SPEC-03 A-5). */
+#define CINT_TVALUE_MAX 269u
 
 /* ------------------------------------------------------------------------- */
 /* 4. Sites, modules, programs (SPEC-09 EMIT-23).                             */
@@ -356,18 +381,22 @@ typedef struct cint_tvalue {
     uint16_t len;
     uint8_t bytes[CINT_TVALUE_MAX];
 } cint_tvalue;
-_Static_assert(sizeof(cint_tvalue) == 264, "cint_tvalue");
+_Static_assert(sizeof(cint_tvalue) == 272, "cint_tvalue");
 
 /* A shift count of any integer type (SPEC-01 4.6): its type tag and its value
- * as a 64-bit pattern, sign-extended for signed types. Build one with the
- * cint_count_<t> functions below. The count is valid for width w exactly when
- * bits <= w - 1, whatever its type. */
+ * as a 64-bit pattern, sign-extended for signed types. A count of I128 to
+ * I1024 or U128 to U512 (rt/OPEN.md RT-OQ-52) also points at its limbs, for
+ * the fault record, and its pattern is its value when that lies in 0 to
+ * 2^64 - 1, and all ones otherwise. Build one with the cint_count_<t>
+ * functions below or of rt/cint_wide.h. The count is valid for width w exactly
+ * when bits <= w - 1, whatever its type. */
 typedef struct cint_count {
     uint64_t bits;
     uint32_t tag;
-    uint32_t reserved;  /* 0 */
+    uint32_t reserved;      /* 0 */
+    const uint64_t *limbs;  /* a wide count's; read for no other tag */
 } cint_count;
-_Static_assert(sizeof(cint_count) == 16, "cint_count");
+_Static_assert(sizeof(cint_count) == 24, "cint_count");
 
 /* The kernel-dispatch address of SPEC-01 9.2 and 9.3. Absent for scalar code;
  * present only for kernel faults (slice 3). */
@@ -411,112 +440,31 @@ typedef struct cint_fault_record {
 _Static_assert(offsetof(cint_fault_record, operation) == 16, "cint_fault_record.operation");
 _Static_assert(offsetof(cint_fault_record, position) == 80, "cint_fault_record.position");
 _Static_assert(offsetof(cint_fault_record, operands) == 120, "cint_fault_record.operands");
-_Static_assert(offsetof(cint_fault_record, address) == 2760, "cint_fault_record.address");
-_Static_assert(offsetof(cint_fault_record, stack) == 3056, "cint_fault_record.stack");
-_Static_assert(sizeof(cint_fault_record) == 3056 + 8 * CINT_RT_MAX_DEPTH, "cint_fault_record");
+_Static_assert(offsetof(cint_fault_record, address) == 2840, "cint_fault_record.address");
+_Static_assert(offsetof(cint_fault_record, stack) == 3136, "cint_fault_record.stack");
+_Static_assert(sizeof(cint_fault_record) == 3136 + 8 * CINT_RT_MAX_DEPTH, "cint_fault_record");
+
+/* The version of fault record a run-time record of `operation` is written in
+ * (SPEC-01 IM-149, BX15-07 C): 3 for dot.checked.i1024.<R>, 2 for any other.
+ * A compile-time record is always version 2. */
+static inline unsigned cint_fault_version(const char *operation, size_t len)
+{
+    static const char dot[] = "dot.checked.i1024.";
+    size_t i;
+    if (len <= sizeof dot - 1u) return 2u;
+    for (i = 0u; i + 1u < sizeof dot; i++) {
+        if (operation[i] != dot[i]) return 2u;
+    }
+    return 3u;
+}
 
 /* ------------------------------------------------------------------------- */
-/* 6. Contexts (SPEC-03 A-2, A-4, A-7, A-7a, A-11).                           */
+/* 6. Contexts (SPEC-03 A-2, A-4, A-7, A-7a, A-11). Their configuration and   */
+/* the host functions are in cint_rt_host.h, section 6.                      */
 
 typedef struct cint_ctx cint_ctx;  /* opaque to hosts */
 
-typedef struct cint_allocator {
-    void *(*alloc)(void *user, size_t bytes, size_t align);
-    void (*release)(void *user, void *ptr, size_t bytes, size_t align);
-    void *user;
-} cint_allocator;
-_Static_assert(sizeof(cint_allocator) == 24, "cint_allocator");
-
-/* Receives the bytes of one print statement (SPEC-04 LS-193), whole: the
- * runtime stages a statement and calls this once, after its last hole, so a
- * statement whose hole faults writes nothing (LS-197). `bytes` is never NULL.
- * A status other than CINT_OK faults the entry (6c). */
-typedef cint_status (*cint_output_fn)(void *user, const uint8_t *bytes, size_t len);
-
-/* The defaults of SPEC-06 1.4 for the C ABI. */
-#define CINT_DEFAULT_DEPTH ((int64_t)256)
-#define CINT_DEFAULT_FRAME_ARENA_BYTES ((int64_t)16777216)
-
-/* `size` must be sizeof(cint_ctx_config). `max_buffers` is the number of
- * live registrations the context holds (SPEC-03 5.3); 0 selects
- * CINT_RT_MAX_BUFFERS (6a). `program` is required. An allocator with `alloc`
- * NULL means the C library's malloc and free. `depth_limit` is the D of every
- * entry that takes its limit from the context (CINT_DEPTH_FROM_CONFIG, below;
- * SPEC-01 IM-119); 0 selects CINT_DEFAULT_DEPTH. `frame_arena_bytes` is the
- * frame-arena capacity (SPEC-04 LS-110), recorded with the context; 0 selects
- * the default. With `output` NULL, print statements are staged and their
- * bytes discarded. `module`, when not NULL, is the descriptor of the program's
- * root module, whose record layout table gives the size of a record element
- * type in cint_buffer_register and cint_buffer_create (6a); its `program` must
- * be `program`. */
 typedef struct cint_module_info cint_module_info;
-typedef struct cint_ctx_config {
-    uint32_t size;
-    uint32_t max_buffers;
-    const cint_program *program;
-    cint_allocator allocator;
-    int64_t depth_limit;
-    int64_t frame_arena_bytes;
-    cint_output_fn output;
-    void *output_user;
-    const cint_module_info *module;
-} cint_ctx_config;
-_Static_assert(sizeof(cint_ctx_config) == 80 && offsetof(cint_ctx_config, depth_limit) == 40 &&
-                   offsetof(cint_ctx_config, output) == 56 && offsetof(cint_ctx_config, module) == 72,
-               "cint_ctx_config");
-
-/* Host functions. Each that can fail returns a status and writes its out
- * parameters only on CINT_OK (SPEC-03 A-4); each that touches a context takes
- * its busy flag and returns CINT_BUSY when it is held (A-11). */
-CINT_RT_API uint32_t cint_abi_version(void);
-/* CINT_REFUSED for an invalid configuration (a NULL argument, a wrong size,
- * no program or an invalid one, an allocator with `alloc` but no `release`, a
- * negative depth limit or frame-arena capacity, a module of another ABI or
- * program); CINT_RESOURCE when allocation fails; otherwise CINT_OK and *out. */
-CINT_RT_API cint_status cint_ctx_create(const cint_ctx_config *config, cint_ctx **out);
-CINT_RT_API void cint_ctx_destroy(cint_ctx *ctx);
-/* Copies the context's fault record into *out and returns CINT_OK; out->code
- * is 0 when the context holds none. CINT_BUSY during an entry (A-11). */
-CINT_RT_API cint_status cint_ctx_fault(const cint_ctx *ctx, cint_fault_record *out);
-/* Clears the fault record and alters no other state: registrations, buffers
- * and counters stay as they are (A-7a). CINT_BUSY during an entry, CINT_REFUSED
- * for a NULL context, otherwise CINT_OK. */
-CINT_RT_API cint_status cint_ctx_clear_fault(cint_ctx *ctx);
-/* Fuel consumed by the last entry (A-17). CINT_BUSY during an entry. A
- * refused call (6a) is not an entry and leaves the value as it was. */
-CINT_RT_API cint_status cint_fuel_consumed(const cint_ctx *ctx, int64_t *out);
-/* Why the last call that ended CINT_REFUSED through cint_view_bind was
- * refused: one of CINT_REFUSAL_* (6a), or CINT_REFUSAL_NONE when the last
- * entry was not refused. CINT_BUSY during an entry. SPEC-03 cint_refusal_get,
- * with its canonical detail bytes, arrives with the full registry at T3. */
-CINT_RT_API cint_status cint_ctx_refusal(const cint_ctx *ctx, uint32_t *reason);
-
-/* Canonical bytes of a fault record (SPEC-01 11.2 layout of the 9.2 content).
- * Returns the length of the encoding and writes it to buf only when cap is at
- * least that length (buf may be NULL to query). Returns 0 when the record
- * cannot be encoded: code 0, a site that does not resolve, or a field out of
- * its bounds. */
-CINT_RT_API size_t cint_fault_encode(const cint_fault_record *record, uint8_t *buf, size_t cap);
-/* The canonical bytes of the context's fault record (SPEC-03 5.3, A-17;
- * SPEC-01 IM-149): sets *len to their length, 0 when the context holds no
- * fault, and copies min(cap, *len) bytes to buf (NULL when cap is 0, to
- * query). CINT_REFUSED for a NULL context or len, or a NULL buf with cap
- * above 0; CINT_BUSY during an entry; CINT_RESOURCE when a partial copy needs
- * storage the allocator cannot supply; otherwise CINT_OK. */
-CINT_RT_API cint_status cint_fault_get(const cint_ctx *ctx, uint8_t *buf, size_t cap, size_t *len);
-
-/* Resolves a site through a program's tables. False when it does not resolve. */
-bool cint_site_resolve(const cint_program *program, cint_site site, cint_position *out);
-
-/* Renders a tagged value as "<Type> <decimal>" (Z as "Z <decimal>", Bool as
- * "Bool true"), or only the decimal. Returns the length without the NUL, or 0
- * for an invalid value; writes at most cap bytes including a NUL. */
-size_t cint_tvalue_render(const cint_tvalue *value, char *buf, size_t cap);
-size_t cint_tvalue_render_decimal(const cint_tvalue *value, char *buf, size_t cap);
-
-/* The SHA-256 digest (FIPS 180-4) of n bytes at p (p may be NULL when n is 0):
- * the digest of the bridge's MANIFEST (SPEC-09 CINTC-06) and of receipts. */
-void cint_sha256(const uint8_t *p, size_t n, uint8_t digest[32]);
 
 /* Functions generated code calls (out of line, in the cint_rt library).
  *
@@ -537,17 +485,17 @@ void cint_sha256(const uint8_t *p, size_t n, uint8_t digest[32]);
  * cint_rt_call_enter performs a user-function call's checks at its call site:
  * E_DEPTH when the call would exceed the depth limit (no fuel is charged),
  * then the call's fuel charge, then records the site on the stack.
- * cint_rt_call_leave undoes the depth and stack effect of a returned call. */
+ * cint_rt_call_leave undoes the depth and stack effect of a returned call.
+ * Both are static inline (6e), with an out-of-line slow path. */
 #define CINT_DEPTH_FROM_CONFIG ((int64_t)0)
 cint_status cint_rt_entry_begin(cint_ctx *ctx, cint_site site, int64_t fuel, int64_t depth);
 cint_status cint_rt_entry_open(cint_ctx *ctx, cint_site site, int64_t fuel, int64_t depth);
 cint_status cint_rt_entry_end(cint_ctx *ctx);
-bool cint_rt_call_enter(cint_ctx *ctx, cint_site site);
-void cint_rt_call_leave(cint_ctx *ctx);
 
 /* Fault writers. Each writes the canonical record unless the context already
  * holds one, and returns false. `a` and `b` are operand bit patterns
- * (sign-extended for signed types). */
+ * (sign-extended for signed types). The inline helpers return the literal false
+ * after one, so a C compiler sees that a failed check ends the path. */
 #define CINT_RT_OP_ADD 1u
 #define CINT_RT_OP_SUB 2u
 #define CINT_RT_OP_MUL 3u
@@ -590,69 +538,8 @@ bool cint_copy_shape_check(cint_ctx *ctx, cint_site site, int64_t dimension,
                            int64_t destination_extent, int64_t source_extent);
 
 /* ------------------------------------------------------------------------- */
-/* 6a. The buffer registry and view binding (SPEC-03 5.3, M-10, A-8, A-8a,    */
-/* A-9, A-12, A-13a, H-12; rt/OPEN.md RT-OQ-24 and RT-OQ-39). This runtime    */
-/* registers host memory (CINT_MEM_HOST) only, has no devices, and reads      */
-/* and binds views of any rank, stride and lower bound (6a').                 */
-/*                                                                            */
-/* A context holds config.max_buffers live registrations (CINT_RT_MAX_BUFFERS */
-/* when 0). Ids count from 1 and are never reused within a context, and every */
-/* registration starts at generation CINT_BUFFER_GENERATION_FIRST, which      */
-/* cint_buffer_release advances. Registrations may overlap; overlap is        */
-/* decided when views are bound (H-13). Every registry function returns       */
-/* CINT_BUSY during an entry (A-11), CINT_RESOURCE when the registry or the   */
-/* allocator has no room, and CINT_REFUSED for arguments it cannot take; all  */
-/* but the byte and element forms then leave the reason (CINT_REFUSAL_*) for  */
-/* cint_ctx_refusal, which an entry that is not refused resets.               */
-/*                                                                            */
-/* cint_buffer_register validates a descriptor (A-8), in this order: `size`   */
-/* is sizeof(cint_buffer_desc), `writable` is 0 or 1, the reserved fields are */
-/* 0, and `publish` is CINT_PUBLISH_NONE or, for a writable buffer,           */
-/* CINT_PUBLISH_COPY (CALL); the memory is host memory with no device and no  */
-/* synchronization (UNSUPPORTED); the type is Bool, I8 to U64, or a record of */
-/* config.module's layout table (TYPE); the extent is at least 0 (EXTENT) and */
-/* its byte size fits an I64 and the address space (SIZE); the address is not */
-/* NULL unless that size is 0, and is aligned to the largest power of two     */
-/* dividing the element size, at most 8 (ALIGN). It writes the id and the     */
-/* generation. The registration is typed: a view of it must have its type.    */
-/* Its memory stays the host's: a borrowed registration lasts until           */
-/* cint_buffer_release, and the runtime never frees it. `publish` is recorded */
-/* for the staging of dispatch outputs (M-30a).                               */
-/*                                                                            */
-/* cint_buffer_register_bytes records `bytes` bytes at `base` (NULL only when */
-/* bytes is 0) with ceiling `perm` (CINT_VIEW_READ or CINT_VIEW_WRITE),       */
-/* untyped, and writes a new id: the byte form of T2, which the seed's        */
-/* observer path and the test hosts use. cint_buffer_register_elements        */
-/* records a Bool, I8..U64 or nominal record type, its logical byte size, and */
-/* an extent in 0..INT64_MAX; reserved fields, storage and frac_bits must be  */
-/* zero, and record_id is the nominal identity only for records. Scalars must */
-/* have their exact byte size; the byte product must fit an I64. Records may  */
-/* have size zero: such a registration uses no storage, ignores base          */
-/* (recorded as NULL), and has its own fresh logical allocation id even when  */
-/* a base repeats. Aliases reuse that id and generation. Byte overlap is kept */
-/* across all registrations of positive-size elements.                        */
-/*                                                                            */
-/* cint_buffer_create allocates a zero-filled runtime-owned buffer of         */
-/* `extent` elements of `type` through the context's allocator, writable,     */
-/* with no device (A-9: storage of the `bridge` kind, the C form of           */
-/* cint.empty), and writes its id and generation. cint_buffer_release ends a  */
-/* registration and advances its generation, so a view that names it is       */
-/* refused from then on, and frees the storage of a created buffer;           */
-/* CINT_REFUSED for an id that is not live, CINT_BUSY while the buffer has a  */
-/* live lease. cint_ctx_clear_fault releases nothing (A-7a), and              */
-/* cint_ctx_destroy frees every created buffer.                               */
-/*                                                                            */
-/* cint_buffer_read copies the elements of a view of a live registration, at  */
-/* its generation, in row-major order of the view's index tuples, into `dst`, */
-/* which holds exactly their bytes (SIZE otherwise); the view is checked as a */
-/* binding checks it, and any permission reads. cint_buffer_lease gives a     */
-/* read-only address of a live created buffer's storage (NULL for no storage) */
-/* and a lease number, from 1, never reused; the address stays valid until    */
-/* cint_lease_end of that number. A borrowed registration or an unknown lease */
-/* number is refused (LEASE). While a buffer has a live lease, an entry that  */
-/* binds it to an out or inout parameter returns CINT_BUSY, nothing recorded  */
-/* and fuel as it was (A-9); writing through a leased address is outside      */
-/* every guarantee.                                                           */
+/* 6a. View binding (SPEC-03 A-12, A-13a, H-12). The buffer registry is in    */
+/* cint_rt_host.h, 6a.                                                        */
 /*                                                                            */
 /* cint_view_bind, the T2 binding of the seed's wrappers, validates one rank  */
 /* 1 view for a parameter of mode `mode` (CINT_MODE_*), with element type     */
@@ -664,19 +551,16 @@ bool cint_copy_shape_check(cint_ctx *ctx, cint_site site, int64_t dimension,
 /* the byte offsets (origin + extent) * elem_bytes fit an I64 (SIZE) and lie  */
 /* inside the registration (EXTENT); the element address is aligned (ALIGN,   */
 /* A-13a); a write view on a write ceiling for out and inout (PERMISSION; any */
-/* view serves `in`); and no live lease for out and inout (LEASED). For       */
-/* zero-size record storage it requires a typed registration (TYPE) and       */
-/* checks origin <= capacity and extent <= capacity - origin (EXTENT), then   */
-/* permissions, with no byte arithmetic or alignment. On success it writes    */
-/* the element pointer (NULL for zero storage) and the extent. On failure it  */
-/* writes nothing, marks the entry refused, and returns false: the wrapper    */
-/* then returns cint_rt_entry_end, which is CINT_REFUSED (CINT_BUSY for       */
-/* LEASED), with the context and the last entry's fuel as they were (H-12).   */
-/* Outside an entry, or on a faulted context, it returns false and changes    */
-/* nothing.                                                                   */
-
-#define CINT_RT_MAX_BUFFERS 256u
-#define CINT_BUFFER_GENERATION_FIRST ((uint64_t)1)
+/* view serves `in`); host memory (UNSUPPORTED); and no live lease for out    */
+/* and inout (LEASED). For zero-size record storage it requires a typed       */
+/* registration (TYPE) and checks origin <= capacity and                      */
+/* extent <= capacity - origin (EXTENT), then permissions, with no byte       */
+/* arithmetic or alignment. On success it writes the element pointer (NULL    */
+/* for zero storage) and the extent. On failure it writes nothing, marks the  */
+/* entry refused, and returns false: the wrapper then returns                 */
+/* cint_rt_entry_end, which is CINT_REFUSED (CINT_BUSY for LEASED), with the  */
+/* context and the last entry's fuel as they were (H-12). Outside an entry,   */
+/* or on a faulted context, it returns false and changes nothing.             */
 
 #define CINT_REFUSAL_NONE 0u
 #define CINT_REFUSAL_BUFFER 1u      /* no registration has this id */
@@ -695,67 +579,6 @@ bool cint_copy_shape_check(cint_ctx *ctx, cint_site site, int64_t dimension,
 #define CINT_REFUSAL_UNSUPPORTED 14u /* device memory, a device, or a synchronization object */
 #define CINT_REFUSAL_LEASE 15u      /* a lease of memory the runtime does not own, or an unknown lease */
 
-/* Backend memory references (SPEC-03 A-8) and producer synchronization. */
-#define CINT_MEM_HOST 1u
-#define CINT_MEM_CUDA 2u  /* also HIP */
-#define CINT_MEM_VULKAN 3u
-#define CINT_MEM_METAL 4u
-#define CINT_MEM_WEBGPU 5u
-typedef struct cint_mem {
-    uint32_t kind;      /* CINT_MEM_* */
-    uint32_t reserved;  /* 0 */
-    union {
-        struct { void *ptr; } host;              /* the lowest reachable byte */
-        struct { uint64_t device_ptr; } cuda;    /* CUdeviceptr or hipDeviceptr_t */
-        struct { uint64_t buffer, buffer_offset, memory, memory_offset; } vulkan;
-        struct { void *buffer; uint64_t offset; void *heap; } metal;  /* heap NULL: not from a heap */
-        struct { void *buffer; uint64_t offset; } webgpu;
-    } u;
-} cint_mem;
-_Static_assert(sizeof(cint_mem) == 40 && offsetof(cint_mem, u) == 8, "cint_mem");
-
-typedef struct cint_sync {
-    uint32_t kind;      /* CINT_MEM_* of the device, or 0: none */
-    uint32_t reserved;  /* 0 */
-    union {
-        struct { void *stream; } cuda;
-        struct { uint64_t semaphore, wait_value, signal_value; } vulkan;  /* a timeline VkSemaphore */
-        struct { void *shared_event; uint64_t wait_value, signal_value; } metal;
-        struct { void *queue; } webgpu;
-    } u;
-} cint_sync;
-_Static_assert(sizeof(cint_sync) == 32 && offsetof(cint_sync, u) == 8, "cint_sync");
-
-#define CINT_PUBLISH_NONE 0u
-#define CINT_PUBLISH_COPY 1u
-typedef struct cint_buffer_desc {
-    uint32_t size;      /* sizeof(cint_buffer_desc) */
-    uint32_t writable;  /* the ceiling: 0 read, 1 write */
-    cint_type type;
-    cint_mem mem;       /* the lowest reachable element (A-8a) */
-    int64_t extent;     /* elements */
-    uint32_t device;    /* 0: host; k >= 1: placement device(k) */
-    uint32_t publish;   /* CINT_PUBLISH_*; NONE unless writable */
-    cint_sync sync;     /* producer synchronization of device memory, or kind 0 */
-} cint_buffer_desc;
-_Static_assert(sizeof(cint_buffer_desc) == 112 && offsetof(cint_buffer_desc, mem) == 24 &&
-                   offsetof(cint_buffer_desc, extent) == 64 && offsetof(cint_buffer_desc, sync) == 80,
-               "cint_buffer_desc");
-
-CINT_RT_API cint_status cint_buffer_register(cint_ctx *ctx, const cint_buffer_desc *desc, cint_buffer_id *out_id,
-                                             uint64_t *out_generation);
-CINT_RT_API cint_status cint_buffer_register_bytes(cint_ctx *ctx, void *base, int64_t bytes, uint8_t perm,
-                                                   cint_buffer_id *out);
-CINT_RT_API cint_status cint_buffer_register_elements(cint_ctx *ctx, void *base, const cint_type *type,
-                                                      int64_t elem_bytes, int64_t extent, uint8_t perm,
-                                                      cint_buffer_id *out);
-CINT_RT_API cint_status cint_buffer_create(cint_ctx *ctx, cint_type type, int64_t extent, uint32_t device,
-                                           cint_buffer_id *out_id, uint64_t *out_generation);
-CINT_RT_API cint_status cint_buffer_release(cint_ctx *ctx, cint_buffer_id id);
-CINT_RT_API cint_status cint_buffer_read(cint_ctx *ctx, cint_view view, void *dst, size_t dst_bytes);
-CINT_RT_API cint_status cint_buffer_lease(cint_ctx *ctx, cint_buffer_id id, const void **out_ptr,
-                                          uint64_t *out_lease);
-CINT_RT_API cint_status cint_lease_end(cint_ctx *ctx, uint64_t lease);
 bool cint_view_bind(cint_ctx *ctx, const cint_view *v, const cint_type *want, uint8_t mode,
                     int64_t elem_bytes, void **ptr, int64_t *n);
 /* After cint_view_bind of a view whose element type holds a Bool (the element
@@ -797,9 +620,10 @@ bool cint_view_check_bools(cint_ctx *ctx, const void *p, int64_t n, int64_t elem
 /*      rank; limit I64 `rank`).                                              */
 /* On success it writes each `ptr` (the origin element; NULL for no storage). */
 /* The wrapper then checks shapes (check 5, cint_fault_shape) and calls       */
-/* cint_rt_bind_finish, which makes checks 6 and 7:                           */
-/*   6  E_ALIAS bind.injective: an out or inout view that fails A-7 (I64      */
-/*      param);                                                               */
+/* cint_rt_bind_finish, which makes checks 4, 6 and 7:                        */
+/*   4  E_UNSUPPORTED bind.placement: a device(1) view at a parameter not     */
+/*      marked (cint_cuda.h), or a host one for a kernel on a device context; */
+/*   6  E_ALIAS bind.injective: an out or inout view failing A-7 (I64 param); */
 /*   7  E_ALIAS bind.alias: for each out or inout p, each other q in order    */
 /*      that A-5 does not prove disjoint by T0, T1 (byte intervals; element   */
 /*      intervals within one registration for records with no storage) or T2  */
@@ -810,7 +634,7 @@ bool cint_view_check_bools(cint_ctx *ctx, const void *p, int64_t n, int64_t elem
 /* RT-OQ-38). Then the wrapper charges the entry's fuel unit (check 9) and    */
 /* runs the body. A kernel's wrapper makes checks 1 to 3 the same way and     */
 /* hands its binds to the dispatch (cint_rt_dispatch_host, section 14), which */
-/* makes checks 5 to 9 in their order. Both return false, with the context    */
+/* makes checks 4 to 9 in their order. Both return false, with the context    */
 /* refused or faulted, when a check fails, and false with nothing changed     */
 /* outside an entry, on a faulted or refused context. cint_rt_refuse marks    */
 /* the entry refused for a scalar or result that cannot be formed             */
@@ -840,9 +664,7 @@ bool cint_rt_refuse(cint_ctx *ctx, uint32_t reason);
 static inline bool cint_rt_bytes_overlap(const void *a, int64_t an, const void *b, int64_t bn)
 {
     uintptr_t x = (uintptr_t)a, y = (uintptr_t)b;
-    if (an <= 0 || bn <= 0) {
-        return false;
-    }
+    if (an <= 0 || bn <= 0) return false;
     return x <= y ? y - x < (uintptr_t)an : x - y < (uintptr_t)bn;
 }
 
@@ -854,13 +676,9 @@ static inline bool cint_rt_bytes_overlap(const void *a, int64_t an, const void *
 static inline bool cint_rt_view_overlap(const cint_view *a, const void *ap, int64_t a_bytes,
                                         const cint_view *b, const void *bp, int64_t b_bytes)
 {
-    if (a->shape[0] == 0 || b->shape[0] == 0) {
-        return false;
-    }
+    if (a->shape[0] == 0 || b->shape[0] == 0) return false;
     if (a_bytes == 0 || b_bytes == 0) {
-        if (a_bytes != b_bytes || a->buffer != b->buffer || a->generation != b->generation) {
-            return false;
-        }
+        if (a_bytes != b_bytes || a->buffer != b->buffer || a->generation != b->generation) return false;
         return a->origin <= b->origin ? b->origin - a->origin < a->shape[0] :
                                        a->origin - b->origin < b->shape[0];
     }
@@ -940,28 +758,8 @@ static inline bool cint_rt_zero_overlap(cint_rt_zero_place a, int64_t an,
 }
 
 /* ------------------------------------------------------------------------- */
-/* 6b. Observer interface cint-observe-1 (SPEC-09 CONF-13, X-2 to X-4); not   */
-/* the public C ABI. A program built for cint-harness exports                 */
-/* `const uint32_t cint_program_abi` and `const cint_observer cint_observer_desc`. */
-
-typedef cint_status (*cint_observer_fn)(cint_ctx *ctx, int64_t fuel, int64_t depth,
-                                        const uint64_t *args, uint64_t *result);
-typedef struct cint_observer_entry {
-    uint32_t module;         /* index into program->modules */
-    uint32_t name_len;       /* 1 to 255 */
-    const char *name;        /* CINT identifier, not NUL-terminated */
-    const uint32_t *types;   /* type signature {R, n, T1..Tn}, n <= 16; R 0: none */
-    cint_observer_fn call;
-} cint_observer_entry;
-_Static_assert(sizeof(cint_observer_entry) == 32, "cint_observer_entry");
-
-typedef struct cint_observer {
-    uint32_t entry_count;
-    uint32_t reserved;  /* 0 */
-    const cint_program *program;
-    const cint_observer_entry *entries;  /* module order, then declaration order */
-} cint_observer;
-_Static_assert(sizeof(cint_observer) == 24, "cint_observer");
+/* 6b. Module state (SPEC-04 LS-113). The observer interface                  */
+/* cint-observe-1 is in cint_rt_host.h, 6b.                                   */
 
 /* Module state (SPEC-04 LS-113; SPEC-03 1.3 "Context", A-7; slice 2 plan    */
 /* task 2.14). A module with module-level variables defines one cint_state:  */
@@ -974,17 +772,38 @@ _Static_assert(sizeof(cint_observer) == 24, "cint_observer");
 /* be allocated. Proposed (rt/OPEN.md H-OQ-08): a program for cint-harness  */
 /* may also export `const cint_state_table cint_observer_state`, its        */
 /* tables in CONF-11 rule 10 order. cint_state_render writes the lines     */
-/* `state.global <module> <name> <typed value>` of every variable of `t`    */
-/* (CONF-11 rule 10) into `out` and returns their length, or SIZE_MAX when */
-/* they do not fit in `cap` bytes or a table is malformed. */
+/* `state.global <module> <name> <typed value>` of every scalar variable   */
+/* of `t` (CONF-11 rule 10; an array and a struct have none until OQ-156,  */
+/* a handle none, SPEC-03 M-20a) into `out` and                            */
+/* returns their length, or SIZE_MAX when they do not fit in `cap` bytes   */
+/* or a table is malformed. */
+/* A module-level struct (OQ-260; rt/OPEN.md RT-OQ-51) has tag 71 and its  */
+/* type: the bytes its checkpoint value has after the tag, a U32 count of  */
+/* struct definitions, the definitions (SPEC-03 A-21) with its struct      */
+/* last, then 71 and that definition's index; and, for each definition in */
+/* that order, its stored size and each field's offset, in bytes, as       */
+/* cint_mem_decl gives an element type's (rt/cint_mem.h). A field is      */
+/* stored at its width, or in 8 bytes when `cell` is 8. */
+typedef struct cint_state_type {
+    const uint8_t *type;
+    const uint32_t *layout;
+    uint32_t type_len;
+    uint32_t layout_len;
+    uint32_t cell;      /* 0 or 8 */
+    uint32_t reserved;  /* 0 */
+} cint_state_type;
+_Static_assert(sizeof(cint_state_type) == 32, "cint_state_type");
+
 typedef struct cint_state_var {
     const char *name;  /* not NUL-terminated */
     uint32_t name_len;
-    uint32_t tag;      /* CINT_TAG_* of an integer type or Bool */
+    uint32_t tag;      /* CINT_TAG_* of an integer type, Bool or Handle; an array's element's; 71 for a struct */
     uint32_t offset;   /* in the block */
-    uint32_t reserved; /* 0 */
+    uint32_t rank;     /* 0, or an array's rank, 1 to 4, row-major (RT-OQ-49) */
+    const int64_t *extents; /* `rank` extents; NULL for a scalar */
+    const cint_state_type *type; /* a struct's; NULL otherwise */
 } cint_state_var;
-_Static_assert(sizeof(cint_state_var) == 24, "cint_state_var");
+_Static_assert(sizeof(cint_state_var) == 40, "cint_state_var");
 
 typedef struct cint_state {
     uint32_t module;     /* index into program->modules */
@@ -1000,8 +819,10 @@ typedef struct cint_state_table {
     uint32_t count;
     uint32_t reserved;  /* 0 */
     const cint_state *const *states;
+    const struct cint_mem_table *memory;  /* the root module's arenas and pools, which a change of revision
+                                           * carries (cint_mem.h; rt/OPEN.md RT-OQ-46), or NULL */
 } cint_state_table;
-_Static_assert(sizeof(cint_state_table) == 16, "cint_state_table");
+_Static_assert(sizeof(cint_state_table) == 24, "cint_state_table");
 
 void *cint_rt_state(cint_ctx *ctx, const cint_state *s);
 size_t cint_state_render(const cint_ctx *ctx, const cint_state_table *t, char *out, size_t cap);
@@ -1045,65 +866,6 @@ _Static_assert(sizeof(cint_module_info) == 24 && offsetof(cint_module_info, prog
                offsetof(cint_module_info, records) == 16, "cint_module_info");
 
 /* ------------------------------------------------------------------------- */
-/* 6b''. The reflection table of cint-abi-1 (SPEC-03 5.6, A-19 to A-26; box   */
-/* 10 defaults BX10-23 to BX10-28, and the ruling on OQ-202), a side table:   */
-/* cint_module_info and cint_record_layout keep their layouts. The            */
-/* program-level file that cintc writes exports `const cint_library           */
-/* cint_library_desc`, which holds a pointer to each module's table in the    */
-/* order of cint_program.modules. A module's table holds one cint_export row  */
-/* per cx wrapper of the module, in declaration order, and the qualified name */
-/* of each row of its record layout table. A row's type_signature is the      */
-/* canonical type signature of A-20, which also gives the prototype a host    */
-/* casts `call` to (A-12, A-13). The seed writes no side table.               */
-
-#define CINT_PURE 1u
-#define CINT_OBSERVE 2u
-#define CINT_UNRESTRICTED 3u
-#define CINT_EXPORT_FUNCTION 1u
-#define CINT_EXPORT_KERNEL 2u
-
-typedef struct cint_name {
-    const char *bytes;  /* UTF-8, not NUL-terminated */
-    uint32_t len;       /* at least 1 */
-    uint32_t reserved;  /* 0 */
-} cint_name;
-_Static_assert(sizeof(cint_name) == 16 && offsetof(cint_name, len) == 8, "cint_name");
-
-typedef void (*cint_entry_fn)(void);
-
-typedef struct cint_export {
-    cint_name name;
-    uint32_t kind;                    /* CINT_EXPORT_* */
-    uint32_t effect;                  /* CINT_PURE, CINT_OBSERVE, or CINT_UNRESTRICTED */
-    uint32_t size_count;              /* size parameters or shape symbols */
-    uint32_t param_count;
-    const cint_name *size_names;      /* declaration order; NULL when size_count is 0 */
-    const cint_name *param_names;     /* declaration order; NULL when param_count is 0 */
-    const uint8_t *type_signature;    /* SPEC-03 A-20 */
-    uint64_t type_signature_len;
-    cint_entry_fn call;               /* the cx wrapper */
-} cint_export;
-_Static_assert(sizeof(cint_export) == 72 && offsetof(cint_export, size_names) == 32 &&
-               offsetof(cint_export, type_signature_len) == 56 && offsetof(cint_export, call) == 64, "cint_export");
-
-typedef struct cint_module_table {
-    const cint_module_info *info;     /* the module's cm descriptor */
-    uint32_t module;                  /* its index in info->program->modules */
-    uint32_t export_count;
-    const cint_export *exports;       /* NULL when export_count is 0 */
-    const cint_name *record_names;    /* row i of info->records; NULL when it has none */
-} cint_module_table;
-_Static_assert(sizeof(cint_module_table) == 32 && offsetof(cint_module_table, exports) == 16 &&
-               offsetof(cint_module_table, record_names) == 24, "cint_module_table");
-
-typedef struct cint_library {
-    uint32_t abi;                     /* CINT_ABI_VERSION */
-    uint32_t module_count;            /* the program's module count */
-    const cint_module_table *const *modules;
-} cint_library;
-_Static_assert(sizeof(cint_library) == 16 && offsetof(cint_library, modules) == 8, "cint_library");
-
-/* ------------------------------------------------------------------------- */
 /* 6c. Print output (SPEC-04 LS-193 to LS-197; SPEC-01 IM-90).                */
 /*                                                                            */
 /* A print statement is cint_rt_print_begin, then one cint_rt_print_bytes per */
@@ -1135,6 +897,11 @@ _Static_assert(sizeof(cint_library) == 16 && offsetof(cint_library, modules) == 
 /* and width, a fill that is not a scalar value, or another tag faults        */
 /* E_UNSUPPORTED dispatch.admit. A rendering whose bytes would pass the       */
 /* statement's 1 GiB faults E_UNSUPPORTED host.resource, as staging does.     */
+/* CINT_FORMAT_BITS is the conversion `!bits` (LS-201, LS-203): the value's   */
+/* two's complement bits read as unsigned at its width, with x, X, o and b    */
+/* zero-padded to the digits of the full width; not with t, a scale or Bool.  */
+/* CINT_FORMAT_PRECISION is `.precision`, which only a fixed-point hole takes */
+/* (rt/cint_fixed.h, cint_rt_print_format_fixed; RT-OQ-56).                   */
 
 #define CINT_FORMAT_MAX 20u
 #define CINT_FORMAT_KIND 15u
@@ -1147,6 +914,8 @@ _Static_assert(sizeof(cint_library) == 16 && offsetof(cint_library, modules) == 
 #define CINT_FORMAT_ZERO 512u
 #define CINT_FORMAT_UNDERSCORE 1024u
 #define CINT_FORMAT_COMMA 2048u
+#define CINT_FORMAT_BITS 4096u
+#define CINT_FORMAT_PRECISION 8192u
 size_t cint_format_value(uint32_t tag, uint64_t bits, char out[CINT_FORMAT_MAX]);
 bool cint_rt_print_begin(cint_ctx *ctx, cint_site site);
 bool cint_rt_print_bytes(cint_ctx *ctx, const void *bytes, size_t len);
@@ -1170,11 +939,6 @@ bool cint_rt_print_end(cint_ctx *ctx);
 /* tag outside 1..count, or a second call in the same entry. The start of an  */
 /* entry clears what the last entry recorded, a refused call (6a) leaves it   */
 /* as it was, and an entry that faults leaves none.                           */
-/*                                                                            */
-/* cint_ctx_error reads the last entry's error result: CINT_REFUSED for a     */
-/* NULL argument, CINT_BUSY during an entry, otherwise CINT_OK with the set   */
-/* and the tag, or with *set NULL and *tag 0 when the last entry left no      */
-/* error or faulted. cint_ctx_clear_fault does not change it.                 */
 
 typedef struct cint_error_set {
     const char *name;           /* "<module>.<Set>" (SPEC-04 LS-225), or a built-in set such as
@@ -1190,86 +954,10 @@ _Static_assert(sizeof(cint_error_set) == 24 && offsetof(cint_error_set, tag) == 
                "cint_error_set");
 
 void cint_rt_error_result(cint_ctx *ctx, const cint_error_set *set, uint64_t tag);
-CINT_RT_API cint_status cint_ctx_error(const cint_ctx *ctx, const cint_error_set **set, uint64_t *tag);
 
 /* ------------------------------------------------------------------------- */
-/* 6d. Program processes (SPEC-06 3.2, 3.4a; slice 2 decision patch D-19).    */
-/*                                                                            */
-/* cint_program_run is the body of a generated program's C main. It puts      */
-/* stdout in binary mode on Windows (LF is never written as CR LF, LS-194),   */
-/* creates a context with the SPEC-06 1.4 defaults for `cint run` and an      */
-/* output callback that writes each print statement to stdout, runs `main_fn` */
-/* once with allowance `fuel`, flushes stdout before a fault is reported and  */
-/* before it returns, and returns the exit status:                            */
-/*   CINT_EXIT_OK           main_fn returned CINT_OK and stdout was written;  */
-/*   CINT_EXIT_FAULT        CINT_FAULT: the canonical fault record bytes      */
-/*                          (SPEC-01 IM-149) were written to `fault_dest`;    */
-/*   CINT_EXIT_ERROR_VALUE  CINT_OK with an error result (6c'): the error     */
-/*                          record (below) was written to `fault_dest`;       */
-/*   CINT_EXIT_USAGE        a destination is malformed;                       */
-/*   CINT_EXIT_ENVIRONMENT  stdout or a destination could not be written, or  */
-/*                          the context could not be allocated;               */
-/*   CINT_EXIT_INTERNAL     any other status, a record that does not encode,  */
-/*                          or a malformed state table.                       */
-/* `fault_dest` is NULL (the record is not written), "handle:<N>" for an      */
-/* inherited handle (a file descriptor on POSIX, a HANDLE value on Windows,   */
-/* in decimal; it is written and not closed), or a file path in UTF-8, which  */
-/* is created or truncated. It is touched only when the program faults or     */
-/* leaves with an error result. The caller (the `cint` command) gives the     */
-/* program the null device as stdin and renders the record on stderr; this    */
-/* function writes nothing to stderr.                                         */
-/*                                                                            */
-/* The error record (Proposed, rt/OPEN.md RT-OQ-33; SPEC-06 3.4a, BX12-12,    */
-/* BX12-22), all little-endian: a U32 length and the ASCII domain string      */
-/* CINT_ERROR_RECORD_DOMAIN (SPEC-01 IM-152); a U32 length and the bytes of   */
-/* the set's `name`; a U32 length and the bytes of the value's name,          */
-/* values[tag - 1]; the set's `tag` code (CINT_TAG_U8 to CINT_TAG_U64) as a   */
-/* U32; and the tag as a U64. Names are written without their NUL. A set      */
-/* with an empty name or value name, another `tag` code, or a tag above its   */
-/* type's range does not encode.                                              */
-
-#define CINT_EXIT_OK 0
-#define CINT_EXIT_FAULT 1
-#define CINT_EXIT_COMPILE 2
-#define CINT_EXIT_CHECK 3
-#define CINT_EXIT_USAGE 4
-#define CINT_EXIT_ENVIRONMENT 5
-#define CINT_EXIT_ERROR_VALUE 6  /* `main` or a test left with an error result (6c') */
-#define CINT_EXIT_INTERNAL 7
-
-#define CINT_ERROR_RECORD_DOMAIN "cint-core-1/error-result/v1"
-
-typedef cint_status (*cint_main_fn)(cint_ctx *ctx, int64_t fuel);
-int cint_program_run(const cint_program *program, cint_main_fn main_fn, int64_t fuel,
-                     const char *fault_dest);
-
-/* cint_program_run with a second destination, `fuel_dest`, of the same forms  */
-/* (NULL: none). When main_fn returned CINT_OK (with or without an error        */
-/* result), or CINT_FAULT with a fault record, the fuel record is written there */
-/* before the fault or error record is reported: the domain string              */
-/* CINT_FUEL_RECORD_DOMAIN (U32 length and ASCII, SPEC-01 IM-152), then the     */
-/* entry's fuel consumed as an I64, little-endian (IM-144),                     */
-/* CINT_FUEL_RECORD_BYTES in all (SPEC-06 3.4a; compiler/OPEN.md CINTC-OQ-46,   */
-/* Proposed). If it cannot be written the status is CINT_EXIT_ENVIRONMENT.      */
-/* Generated mains of programs without module state call this one.              */
-#define CINT_FUEL_RECORD_DOMAIN "cint-core-1/fuel-consumed/v1"
-#define CINT_FUEL_RECORD_BYTES 40
-int cint_program_run_fuel(const cint_program *program, cint_main_fn main_fn, int64_t fuel,
-                          const char *fault_dest, const char *fuel_dest);
-
-/* cint_program_run_fuel with a third destination, `state_dest`, of the same    */
-/* forms, and the program's state tables (6b). When the entry ran (main_fn      */
-/* returned CINT_OK, or CINT_FAULT with a fault record) and neither             */
-/* `state_dest` nor `state` is NULL, the text cint_state_render writes for      */
-/* `state` (the `state.global` lines of SPEC-09 CONF-11 rule 10, LF after each, */
-/* none when no table has a variable) is written there after the fuel record    */
-/* and before the fault or error record is reported. If it cannot be written    */
-/* the status is CINT_EXIT_ENVIRONMENT; a malformed table is                    */
-/* CINT_EXIT_INTERNAL. Proposed (rt/OPEN.md RT-OQ-33). Generated mains of       */
-/* programs with module state call this one, with argv[3] as `state_dest`.      */
-int cint_program_run_state(const cint_program *program, cint_main_fn main_fn, int64_t fuel,
-                           const char *fault_dest, const char *fuel_dest, const char *state_dest,
-                           const cint_state_table *state);
+/* 6e. The context head, the call protocol and fuel charges (SPEC-01 9.4,     */
+/* 10.2).                                                                     */
 
 /* The leading member of every context. Generated code reads it through the
  * helpers below; hosts never touch it. A context object begins with this
@@ -1280,8 +968,13 @@ typedef struct cint_rt_head {
     uint32_t in_entry;   /* nonzero between entry begin and end */
     int64_t fuel_limit;  /* allowance of the current entry, or CINT_FUEL_UNBOUNDED */
     int64_t fuel_used;   /* consumed by the current (or last) entry, <= fuel_limit */
+    int64_t depth_limit; /* D of the current (or last) entry */
+    int64_t depth;       /* active user-function frames, the entry included */
+    uint32_t stack_count;  /* sites on `stack`: active calls, then dispatch positions (14) */
+    uint32_t reserved;     /* 0 */
+    cint_site *stack;      /* the context's CINT_RT_MAX_DEPTH sites */
 } cint_rt_head;
-_Static_assert(sizeof(cint_rt_head) == 24, "cint_rt_head");
+_Static_assert(sizeof(cint_rt_head) == 56 && offsetof(cint_rt_head, stack) == 48, "cint_rt_head");
 
 static inline cint_rt_head *cint_rt_head_of(cint_ctx *ctx)
 {
@@ -1301,16 +994,42 @@ static inline bool cint_fuel_charge(cint_ctx *ctx, cint_site site, uint64_t unit
 {
     cint_rt_head *h = cint_rt_head_of(ctx);
     uint64_t room;
-    if (h->faulted != 0u) {
-        return false;
-    }
+    if (h->faulted != 0u) return false;
     room = h->fuel_limit >= 0 ? (uint64_t)(h->fuel_limit - h->fuel_used)
                               : (uint64_t)(INT64_MAX - h->fuel_used);
-    if (units > room) {
-        return cint_rt_fault_fuel(ctx, site, units);
-    }
+    if (units > room) return (void)cint_rt_fault_fuel(ctx, site, units), false;
     h->fuel_used += (int64_t)units;
     return true;
+}
+
+/* The call protocol of section 6, inline (SPEC-01 9.4, 10.2). A call that
+ * can enter (no fault record, depth below D, a unit of fuel room) is entered
+ * here with the effect cint_rt_call_enter_slow would have. Any other call
+ * takes that function, which makes the checks again in the same order and
+ * writes the E_DEPTH or E_FUEL record, so every record comes from one place.
+ * The site's index stays below CINT_RT_MAX_DEPTH, since stack_count + D -
+ * depth does (cint_rt_entry_open, cint_rt_dispatch_push). */
+bool cint_rt_call_enter_slow(cint_ctx *ctx, cint_site site);
+static inline bool cint_rt_call_enter(cint_ctx *ctx, cint_site site)
+{
+    cint_rt_head *h = cint_rt_head_of(ctx);
+    uint64_t room = h->fuel_limit >= 0 ? (uint64_t)(h->fuel_limit - h->fuel_used)
+                                       : (uint64_t)(INT64_MAX - h->fuel_used);
+    if (h->faulted != 0u || h->depth >= h->depth_limit || room == 0u) return cint_rt_call_enter_slow(ctx, site);
+    h->fuel_used += 1;
+    h->stack[h->stack_count] = site;
+    h->stack_count++;
+    h->depth++;
+    return true;
+}
+
+static inline void cint_rt_call_leave(cint_ctx *ctx)
+{
+    cint_rt_head *h = cint_rt_head_of(ctx);
+    if (h->stack_count > 0u) {
+        h->stack_count--;
+        h->depth--;
+    }
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1323,9 +1042,7 @@ static inline int64_t cint_rt_sext(uint64_t u, unsigned w)
     uint64_t mask = w >= 64u ? UINT64_MAX : (((uint64_t)1 << (w & 63u)) - 1u);
     uint64_t sign = (uint64_t)1 << ((w - 1u) & 63u);
     u &= mask;
-    if ((u & sign) == 0u) {
-        return (int64_t)u;
-    }
+    if ((u & sign) == 0u) return (int64_t)u;
     return -(int64_t)(mask - u) - 1;
 }
 
@@ -1357,9 +1074,7 @@ static inline bool cint_rt_fits(uint64_t bits, bool src_signed, uint32_t to_tag)
     unsigned w = cint_rt_tag_width(to_tag);
     bool to_signed = cint_rt_tag_signed(to_tag);
     uint64_t max = to_signed ? ((uint64_t)1 << ((w - 1u) & 63u)) - 1u : cint_rt_mask(w);
-    if (!src_signed || (bits >> 63) == 0u) {
-        return bits <= max;
-    }
+    if (!src_signed || (bits >> 63) == 0u) return bits <= max;
     return to_signed && (uint64_t)0 - bits <= (uint64_t)1 << ((w - 1u) & 63u);
 }
 
@@ -1378,6 +1093,7 @@ static inline bool cint_rt_fits(uint64_t bits, bool src_signed, uint32_t to_tag)
         c.bits = CINT_RT_BITS_##K(k);                        \
         c.tag = (uint32_t)(TAG);                             \
         c.reserved = 0u;                                     \
+        c.limbs = NULL;                                      \
         return c;                                            \
     }
 CINT_RT_COUNT(i8, int8_t, CINT_TAG_I8, S)
@@ -1448,14 +1164,22 @@ CINT_RT_PRIMS_NARROW_UNSIGNED(u32, uint32_t, 32u, UINT32_MAX)
 
 static inline bool cint_rt_add_ovf_i64_p(int64_t a, int64_t b, int64_t *r)
 {
-    *r = cint_rt_sext((uint64_t)a + (uint64_t)b, 64u);
-    return (b > 0 && a > INT64_MAX - b) || (b < 0 && a < INT64_MIN - b);
+    if ((b > 0 && a > INT64_MAX - b) || (b < 0 && a < INT64_MIN - b)) {
+        *r = cint_rt_sext((uint64_t)a + (uint64_t)b, 64u);
+        return true;
+    }
+    *r = a + b;
+    return false;
 }
 
 static inline bool cint_rt_sub_ovf_i64_p(int64_t a, int64_t b, int64_t *r)
 {
-    *r = cint_rt_sext((uint64_t)a - (uint64_t)b, 64u);
-    return (b < 0 && a > INT64_MAX + b) || (b > 0 && a < INT64_MIN + b);
+    if ((b < 0 && a > INT64_MAX + b) || (b > 0 && a < INT64_MIN + b)) {
+        *r = cint_rt_sext((uint64_t)a - (uint64_t)b, 64u);
+        return true;
+    }
+    *r = a - b;
+    return false;
 }
 
 /* Magnitudes in uint64_t, no signed overflow (SPEC-09 EMIT-04). */
@@ -1622,18 +1346,23 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
 /*   CT cint_add_sat_<t>(CT a, CT b), cint_sub_sat_<t>, cint_mul_sat_<t>   <op>.sat.<t>:  */
 /*       sat(T, exact): MIN(T) or MAX(T) by the sign of the exact result (SPEC-01 4.1)    */
 /* There is no wrapping or saturating division (SPEC-01 4.4).                            */
+/* A checked add or sub that overflows names a in its record by the bits of              */
+/* wrap(T, r - b) or wrap(T, r + b). Section 8 writes r = wrap(T, a op b) in             */
+/* every case, so these are a's bits, and the fast path need not keep a copy             */
+/* of a for the record.                                                                  */
 
 #define CINT_RT_ARITH(T, CT, TAG, K, W)                                                       \
     static inline bool cint_add_##T(cint_ctx *ctx, cint_site site, CT a, CT b, CT *out)        \
     {                                                                                         \
         CT r;                                                                                 \
         bool overflow = CINT_RT_OVF(add, T)(a, b, &r);                                        \
-        if (cint_rt_faulted(ctx)) {                                                           \
-            return false;                                                                     \
-        }                                                                                     \
+        if (cint_rt_faulted(ctx)) return false;                                               \
         if (overflow) {                                                                       \
-            return cint_rt_fault_arith(ctx, site, CINT_RT_OP_ADD, (TAG), CINT_RT_BITS_##K(a), \
-                                       CINT_RT_BITS_##K(b));                                  \
+            uint64_t ab = CINT_RT_BITS_##K(r) - CINT_RT_BITS_##K(b);                          \
+            ab = (uint64_t)CINT_RT_NARROW_##K(ab, (W));                                       \
+            (void)cint_rt_fault_arith(ctx, site, CINT_RT_OP_ADD, (TAG), ab,                   \
+                                      CINT_RT_BITS_##K(b));                                   \
+            return false;                                                                     \
         }                                                                                     \
         *out = r;                                                                             \
         return true;                                                                          \
@@ -1642,12 +1371,13 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
     {                                                                                         \
         CT r;                                                                                 \
         bool overflow = CINT_RT_OVF(sub, T)(a, b, &r);                                        \
-        if (cint_rt_faulted(ctx)) {                                                           \
-            return false;                                                                     \
-        }                                                                                     \
+        if (cint_rt_faulted(ctx)) return false;                                               \
         if (overflow) {                                                                       \
-            return cint_rt_fault_arith(ctx, site, CINT_RT_OP_SUB, (TAG), CINT_RT_BITS_##K(a), \
-                                       CINT_RT_BITS_##K(b));                                  \
+            uint64_t ab = CINT_RT_BITS_##K(r) + CINT_RT_BITS_##K(b);                          \
+            ab = (uint64_t)CINT_RT_NARROW_##K(ab, (W));                                       \
+            (void)cint_rt_fault_arith(ctx, site, CINT_RT_OP_SUB, (TAG), ab,                   \
+                                      CINT_RT_BITS_##K(b));                                   \
+            return false;                                                                     \
         }                                                                                     \
         *out = r;                                                                             \
         return true;                                                                          \
@@ -1656,12 +1386,11 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
     {                                                                                         \
         CT r;                                                                                 \
         bool overflow = CINT_RT_OVF(mul, T)(a, b, &r);                                        \
-        if (cint_rt_faulted(ctx)) {                                                           \
-            return false;                                                                     \
-        }                                                                                     \
+        if (cint_rt_faulted(ctx)) return false;                                               \
         if (overflow) {                                                                       \
-            return cint_rt_fault_arith(ctx, site, CINT_RT_OP_MUL, (TAG), CINT_RT_BITS_##K(a), \
-                                       CINT_RT_BITS_##K(b));                                  \
+            (void)cint_rt_fault_arith(ctx, site, CINT_RT_OP_MUL, (TAG), CINT_RT_BITS_##K(a),  \
+                                      CINT_RT_BITS_##K(b));                                   \
+            return false;                                                                     \
         }                                                                                     \
         *out = r;                                                                             \
         return true;                                                                          \
@@ -1670,12 +1399,9 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
     {                                                                                         \
         CT r;                                                                                 \
         bool overflow = CINT_RT_OVF(sub, T)((CT)0, a, &r);                                    \
-        if (cint_rt_faulted(ctx)) {                                                           \
-            return false;                                                                     \
-        }                                                                                     \
-        if (overflow) {                                                                       \
-            return cint_rt_fault_arith(ctx, site, CINT_RT_OP_NEG, (TAG), CINT_RT_BITS_##K(a), 0u); \
-        }                                                                                     \
+        if (cint_rt_faulted(ctx)) return false;                                               \
+        if (overflow)                                                                         \
+            return (void)cint_rt_fault_arith(ctx, site, CINT_RT_OP_NEG, (TAG), CINT_RT_BITS_##K(a), 0u), false; \
         *out = r;                                                                             \
         return true;                                                                          \
     }                                                                                         \
@@ -1706,12 +1432,9 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
         CT r = 0;                                                                             \
         bool bad = k.bits > (uint64_t)((W) - 1u);                                             \
         bool overflow = !bad && cint_rt_shl_ovf_##T(a, (unsigned)k.bits, &r);                 \
-        if (cint_rt_faulted(ctx)) {                                                           \
-            return false;                                                                     \
-        }                                                                                     \
-        if (bad || overflow) {                                                                \
-            return cint_rt_fault_shift(ctx, site, CINT_RT_OP_SHL, (TAG), CINT_RT_BITS_##K(a), k); \
-        }                                                                                     \
+        if (cint_rt_faulted(ctx)) return false;                                               \
+        if (bad || overflow)                                                                  \
+            return (void)cint_rt_fault_shift(ctx, site, CINT_RT_OP_SHL, (TAG), CINT_RT_BITS_##K(a), k), false; \
         *out = r;                                                                             \
         return true;                                                                          \
     }                                                                                         \
@@ -1719,15 +1442,10 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
     {                                                                                         \
         CT r = 0;                                                                             \
         bool bad = k.bits > (uint64_t)((W) - 1u);                                             \
-        if (!bad) {                                                                           \
-            (void)cint_rt_shl_ovf_##T(a, (unsigned)k.bits, &r);                               \
-        }                                                                                     \
-        if (cint_rt_faulted(ctx)) {                                                           \
-            return false;                                                                     \
-        }                                                                                     \
-        if (bad) {                                                                            \
-            return cint_rt_fault_shift(ctx, site, CINT_RT_OP_SHL_WRAP, (TAG), CINT_RT_BITS_##K(a), k); \
-        }                                                                                     \
+        if (!bad) (void)cint_rt_shl_ovf_##T(a, (unsigned)k.bits, &r);                         \
+        if (cint_rt_faulted(ctx)) return false;                                               \
+        if (bad)                                                                              \
+            return (void)cint_rt_fault_shift(ctx, site, CINT_RT_OP_SHL_WRAP, (TAG), CINT_RT_BITS_##K(a), k), false; \
         *out = r;                                                                             \
         return true;                                                                          \
     }
@@ -1743,16 +1461,11 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
         if (!bad) {                                                                           \
             int64_t m = x % y;                                                                \
             q = x / y;                                                                        \
-            if (m != 0 && ((m < 0) != (y < 0))) {                                             \
-                q -= 1;                                                                       \
-            }                                                                                 \
+            if (m != 0 && ((m < 0) != (y < 0))) q -= 1;                                       \
         }                                                                                     \
-        if (cint_rt_faulted(ctx)) {                                                           \
-            return false;                                                                     \
-        }                                                                                     \
-        if (bad) {                                                                            \
-            return cint_rt_fault_arith(ctx, site, CINT_RT_OP_DIV, (TAG), (uint64_t)x, (uint64_t)y); \
-        }                                                                                     \
+        if (cint_rt_faulted(ctx)) return false;                                               \
+        if (bad)                                                                              \
+            return (void)cint_rt_fault_arith(ctx, site, CINT_RT_OP_DIV, (TAG), (uint64_t)x, (uint64_t)y), false; \
         *out = (CT)q;                                                                         \
         return true;                                                                          \
     }                                                                                         \
@@ -1762,16 +1475,11 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
         bool bad = y == 0;                                                                    \
         if (!bad && y != -1) {                                                                \
             m = x % y;                                                                        \
-            if (m != 0 && ((m < 0) != (y < 0))) {                                             \
-                m += y;                                                                       \
-            }                                                                                 \
+            if (m != 0 && ((m < 0) != (y < 0))) m += y;                                       \
         }                                                                                     \
-        if (cint_rt_faulted(ctx)) {                                                           \
-            return false;                                                                     \
-        }                                                                                     \
-        if (bad) {                                                                            \
-            return cint_rt_fault_arith(ctx, site, CINT_RT_OP_REM, (TAG), (uint64_t)x, (uint64_t)y); \
-        }                                                                                     \
+        if (cint_rt_faulted(ctx)) return false;                                               \
+        if (bad)                                                                              \
+            return (void)cint_rt_fault_arith(ctx, site, CINT_RT_OP_REM, (TAG), (uint64_t)x, (uint64_t)y), false; \
         *out = (CT)m;                                                                         \
         return true;                                                                          \
     }                                                                                         \
@@ -1779,12 +1487,9 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
     {                                                                                         \
         bool bad = k.bits > (uint64_t)(sizeof(CT) * 8u - 1u);                                 \
         int64_t r = bad ? 0 : cint_rt_asr((int64_t)a, (unsigned)k.bits);                      \
-        if (cint_rt_faulted(ctx)) {                                                           \
-            return false;                                                                     \
-        }                                                                                     \
-        if (bad) {                                                                            \
-            return cint_rt_fault_shift(ctx, site, CINT_RT_OP_SHR, (TAG), CINT_RT_BITS_S(a), k); \
-        }                                                                                     \
+        if (cint_rt_faulted(ctx)) return false;                                               \
+        if (bad)                                                                              \
+            return (void)cint_rt_fault_shift(ctx, site, CINT_RT_OP_SHR, (TAG), CINT_RT_BITS_S(a), k), false; \
         *out = (CT)r;                                                                         \
         return true;                                                                          \
     }
@@ -1794,12 +1499,8 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
     {                                                                                         \
         uint64_t x = (uint64_t)a, y = (uint64_t)b;                                            \
         uint64_t q = y == 0u ? 0u : x / y;                                                    \
-        if (cint_rt_faulted(ctx)) {                                                           \
-            return false;                                                                     \
-        }                                                                                     \
-        if (y == 0u) {                                                                        \
-            return cint_rt_fault_arith(ctx, site, CINT_RT_OP_DIV, (TAG), x, y);               \
-        }                                                                                     \
+        if (cint_rt_faulted(ctx)) return false;                                               \
+        if (y == 0u) return (void)cint_rt_fault_arith(ctx, site, CINT_RT_OP_DIV, (TAG), x, y), false; \
         *out = (CT)q;                                                                         \
         return true;                                                                          \
     }                                                                                         \
@@ -1807,12 +1508,8 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
     {                                                                                         \
         uint64_t x = (uint64_t)a, y = (uint64_t)b;                                            \
         uint64_t m = y == 0u ? 0u : x % y;                                                    \
-        if (cint_rt_faulted(ctx)) {                                                           \
-            return false;                                                                     \
-        }                                                                                     \
-        if (y == 0u) {                                                                        \
-            return cint_rt_fault_arith(ctx, site, CINT_RT_OP_REM, (TAG), x, y);               \
-        }                                                                                     \
+        if (cint_rt_faulted(ctx)) return false;                                               \
+        if (y == 0u) return (void)cint_rt_fault_arith(ctx, site, CINT_RT_OP_REM, (TAG), x, y), false; \
         *out = (CT)m;                                                                         \
         return true;                                                                          \
     }                                                                                         \
@@ -1820,12 +1517,9 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
     {                                                                                         \
         bool bad = k.bits > (uint64_t)(sizeof(CT) * 8u - 1u);                                 \
         uint64_t r = bad ? 0u : (uint64_t)a >> k.bits;                                        \
-        if (cint_rt_faulted(ctx)) {                                                           \
-            return false;                                                                     \
-        }                                                                                     \
-        if (bad) {                                                                            \
-            return cint_rt_fault_shift(ctx, site, CINT_RT_OP_SHR, (TAG), (uint64_t)a, k);     \
-        }                                                                                     \
+        if (cint_rt_faulted(ctx)) return false;                                               \
+        if (bad)                                                                              \
+            return (void)cint_rt_fault_shift(ctx, site, CINT_RT_OP_SHR, (TAG), (uint64_t)a, k), false; \
         *out = (CT)r;                                                                         \
         return true;                                                                          \
     }
@@ -1888,20 +1582,20 @@ CINT_RT_DIV_UNSIGNED(u64, uint64_t, CINT_TAG_U64)
 /* leaves *out unwritten and returns the ArithError tag that mirrors the fault code       */
 /* (IM-188): CINT_ARITH_OVERFLOW for E_OVERFLOW (MIN / -1 included), CINT_ARITH_DIV_ZERO  */
 /* for E_DIV_ZERO, and CINT_ARITH_SHIFT for E_SHIFT, a count of any integer type outside  */
-/* 0..w-1. MIN % -1 is 0, as for cint_rem_<t>. CINT_ARITH_NARROW is the tag of `as?`.     */
+/* 0..w-1. MIN % -1 is 0, as for cint_rem_<t>. CINT_ARITH_NARROW is the tag of `as?`, and */
+/* CINT_ARITH_DOMAIN that of a negative operand of fixed-point sqrt_result (rt/cint_fixed.h). */
 
 #define CINT_ARITH_OVERFLOW ((uint16_t)1)
 #define CINT_ARITH_DIV_ZERO ((uint16_t)2)
 #define CINT_ARITH_SHIFT ((uint16_t)3)
 #define CINT_ARITH_NARROW ((uint16_t)4)
+#define CINT_ARITH_DOMAIN ((uint16_t)5)
 
 #define CINT_RT_RESULT_BODY(OP, T, CT)                                                        \
     static inline uint16_t cint_##OP##_result_##T(CT a, CT b, CT *out)                        \
     {                                                                                         \
         CT r = 0;                                                                             \
-        if (CINT_RT_OVF(OP, T)(a, b, &r)) {                                                   \
-            return CINT_ARITH_OVERFLOW;                                                       \
-        }                                                                                     \
+        if (CINT_RT_OVF(OP, T)(a, b, &r)) return CINT_ARITH_OVERFLOW;                         \
         *out = r;                                                                             \
         return 0u;                                                                            \
     }
@@ -1912,12 +1606,8 @@ CINT_RT_DIV_UNSIGNED(u64, uint64_t, CINT_TAG_U64)
     static inline uint16_t cint_shl_result_##T(CT a, cint_count k, CT *out)                   \
     {                                                                                         \
         CT r = 0;                                                                             \
-        if (k.bits > (uint64_t)((W) - 1u)) {                                                  \
-            return CINT_ARITH_SHIFT;                                                          \
-        }                                                                                     \
-        if (cint_rt_shl_ovf_##T(a, (unsigned)k.bits, &r)) {                                   \
-            return CINT_ARITH_OVERFLOW;                                                       \
-        }                                                                                     \
+        if (k.bits > (uint64_t)((W) - 1u)) return CINT_ARITH_SHIFT;                           \
+        if (cint_rt_shl_ovf_##T(a, (unsigned)k.bits, &r)) return CINT_ARITH_OVERFLOW;         \
         *out = r;                                                                             \
         return 0u;                                                                            \
     }
@@ -1928,31 +1618,21 @@ CINT_RT_DIV_UNSIGNED(u64, uint64_t, CINT_TAG_U64)
     static inline uint16_t cint_div_result_##T(CT a, CT b, CT *out)                           \
     {                                                                                         \
         int64_t x = (int64_t)a, y = (int64_t)b, q, m;                                         \
-        if (y == 0) {                                                                         \
-            return CINT_ARITH_DIV_ZERO;                                                       \
-        }                                                                                     \
-        if (x == (int64_t)(TMIN) && y == -1) {                                                \
-            return CINT_ARITH_OVERFLOW;                                                       \
-        }                                                                                     \
+        if (y == 0) return CINT_ARITH_DIV_ZERO;                                               \
+        if (x == (int64_t)(TMIN) && y == -1) return CINT_ARITH_OVERFLOW;                      \
         m = x % y;                                                                            \
         q = x / y;                                                                            \
-        if (m != 0 && ((m < 0) != (y < 0))) {                                                 \
-            q -= 1;                                                                           \
-        }                                                                                     \
+        if (m != 0 && ((m < 0) != (y < 0))) q -= 1;                                           \
         *out = (CT)q;                                                                         \
         return 0u;                                                                            \
     }                                                                                         \
     static inline uint16_t cint_rem_result_##T(CT a, CT b, CT *out)                           \
     {                                                                                         \
         int64_t x = (int64_t)a, y = (int64_t)b, m = 0;                                        \
-        if (y == 0) {                                                                         \
-            return CINT_ARITH_DIV_ZERO;                                                       \
-        }                                                                                     \
+        if (y == 0) return CINT_ARITH_DIV_ZERO;                                               \
         if (y != -1) {                                                                        \
             m = x % y;                                                                        \
-            if (m != 0 && ((m < 0) != (y < 0))) {                                             \
-                m += y;                                                                       \
-            }                                                                                 \
+            if (m != 0 && ((m < 0) != (y < 0))) m += y;                                       \
         }                                                                                     \
         *out = (CT)m;                                                                         \
         return 0u;                                                                            \
@@ -1961,17 +1641,13 @@ CINT_RT_DIV_UNSIGNED(u64, uint64_t, CINT_TAG_U64)
 #define CINT_RT_DIV_RESULT_UNSIGNED(T, CT)                                                    \
     static inline uint16_t cint_div_result_##T(CT a, CT b, CT *out)                           \
     {                                                                                         \
-        if ((uint64_t)b == 0u) {                                                              \
-            return CINT_ARITH_DIV_ZERO;                                                       \
-        }                                                                                     \
+        if ((uint64_t)b == 0u) return CINT_ARITH_DIV_ZERO;                                    \
         *out = (CT)((uint64_t)a / (uint64_t)b);                                               \
         return 0u;                                                                            \
     }                                                                                         \
     static inline uint16_t cint_rem_result_##T(CT a, CT b, CT *out)                           \
     {                                                                                         \
-        if ((uint64_t)b == 0u) {                                                              \
-            return CINT_ARITH_DIV_ZERO;                                                       \
-        }                                                                                     \
+        if ((uint64_t)b == 0u) return CINT_ARITH_DIV_ZERO;                                    \
         *out = (CT)((uint64_t)a % (uint64_t)b);                                               \
         return 0u;                                                                            \
     }
@@ -2000,25 +1676,44 @@ CINT_RT_DIV_RESULT_UNSIGNED(u64, uint64_t)
 /*   bool cint_as_<to>_from_<from>(cint_ctx *, cint_site, CF x, CT *out)      */
 /*       as.checked.<from>.<to>: E_NARROW when x is outside <to>              */
 /*   CT cint_as_wrap_<to>_from_<from>(CF x)    as.wrap.<from>.<to>: wrap      */
+/*   CT cint_as_sat_<to>_from_<from>(CF x)     as|: sat(<to>, x), never faults */
 /* Widening conversions never fault (the range test is then always true).    */
+
+/* The pattern of MIN(T) (negative) or MAX(T) for the narrow type `tag`. */
+static inline uint64_t cint_rt_bound_bits(uint32_t tag, bool negative)
+{
+    unsigned w = cint_rt_tag_width(tag);
+    if (!cint_rt_tag_signed(tag)) return negative ? 0u : cint_rt_mask(w);
+    return negative ? (uint64_t)0 - ((uint64_t)1 << (w - 1u)) : ((uint64_t)1 << (w - 1u)) - 1u;
+}
+
+/* The pattern of sat(T, x) for T the narrow type `to_tag` and x the integer with
+ * pattern `bits`, signed when src_signed: x where it fits, else the bound on its
+ * side (SPEC-01 IM-50). */
+static inline uint64_t cint_rt_sat_bits(uint64_t bits, bool src_signed, uint32_t to_tag)
+{
+    if (cint_rt_fits(bits, src_signed, to_tag)) return bits;
+    return cint_rt_bound_bits(to_tag, src_signed && (bits >> 63) != 0u);
+}
 
 #define CINT_RT_CONV(D, CD, DTAG, DK, DW, S, CS, STAG, SK)                                   \
     static inline bool cint_as_##D##_from_##S(cint_ctx *ctx, cint_site site, CS x, CD *out)  \
     {                                                                                       \
         uint64_t bits = CINT_RT_BITS_##SK(x);                                               \
         bool fits = cint_rt_fits(bits, CINT_RT_SIGNED_##SK, (DTAG));                        \
-        if (cint_rt_faulted(ctx)) {                                                         \
-            return false;                                                                   \
-        }                                                                                   \
-        if (!fits) {                                                                        \
-            return cint_rt_fault_narrow(ctx, site, (STAG), (DTAG), bits);                   \
-        }                                                                                   \
+        if (cint_rt_faulted(ctx)) return false;                                             \
+        if (!fits) return (void)cint_rt_fault_narrow(ctx, site, (STAG), (DTAG), bits), false; \
         *out = (CD)CINT_RT_NARROW_##DK(bits, (DW));                                         \
         return true;                                                                        \
     }                                                                                       \
     static inline CD cint_as_wrap_##D##_from_##S(CS x)                                      \
     {                                                                                       \
         return (CD)CINT_RT_NARROW_##DK(CINT_RT_BITS_##SK(x), (DW));                         \
+    }                                                                                       \
+    static inline CD cint_as_sat_##D##_from_##S(CS x)                                       \
+    {                                                                                       \
+        uint64_t bits = cint_rt_sat_bits(CINT_RT_BITS_##SK(x), CINT_RT_SIGNED_##SK, (DTAG)); \
+        return (CD)CINT_RT_NARROW_##DK(bits, (DW));                                         \
     }
 
 #define CINT_RT_CONV_TO(D, CD, DTAG, DK, DW)                                \
@@ -2049,9 +1744,7 @@ static inline bool cint_index_check(cint_ctx *ctx, cint_site site, const char *o
                                     int64_t index, int64_t extent)
 {
     bool inside = index >= 0 && index < extent;
-    if (cint_rt_faulted(ctx)) {
-        return false;
-    }
+    if (cint_rt_faulted(ctx)) return false;
     if (!inside) {
         /* Always false; returning the literal lets a C compiler see that no access
          * follows a failed check (GCC -O2 -Warray-bounds on a constant index). */
@@ -2079,13 +1772,194 @@ static inline bool cint_index_check(cint_ctx *ctx, cint_site site, const char *o
 bool cint_rt_builtin(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t tag, uint32_t mode, uint32_t aux,
                      uint64_t a, uint64_t b, uint64_t c, uint64_t *out);
 
+/* Wide arithmetic of the built-ins, for cint_rt_builtin and the fast path below. */
+
+/* The leading zero bits of x != 0: the compiler's count in the builtin helper
+ * mode, a binary search in the portable one. */
+static inline unsigned cint_rt_clz64(uint64_t x)
+{
+#if CINT_RT_USE_BUILTINS && defined(CINT_RT_BUILTINS_GNU)
+    return (unsigned)__builtin_clzll(x);
+#elif CINT_RT_USE_BUILTINS
+    unsigned long top;
+    (void)_BitScanReverse64(&top, x);
+    return 63u - (unsigned)top;
+#else
+    unsigned n = 0u, k;
+    for (k = 32u; k != 0u; k >>= 1) {
+        if ((x >> (64u - k)) == 0u) {
+            n += k;
+            x <<= k;
+        }
+    }
+    return n;
+#endif
+}
+
+/* The product of two magnitudes: the low word returned, the high word in *hi. */
+static inline uint64_t cint_rt_mul_wide(uint64_t a, uint64_t b, uint64_t *hi)
+{
+    uint64_t a0 = a & 0xFFFFFFFFu, a1 = a >> 32, b0 = b & 0xFFFFFFFFu, b1 = b >> 32;
+    uint64_t p01 = a0 * b1, p10 = a1 * b0, mid = ((a0 * b0) >> 32) + (p01 & 0xFFFFFFFFu) + (p10 & 0xFFFFFFFFu);
+    *hi = a1 * b1 + (p01 >> 32) + (p10 >> 32) + (mid >> 32);
+    return a * b;
+}
+
+/* The magnitude hi:lo divided by d with hi < d: the quotient returned, the
+ * remainder in *rem. Long division in base 2^32 by the normalized divisor
+ * (Knuth's algorithm D): each digit is estimated from the divisor's high half,
+ * at most 2 too large, and corrected before it is subtracted. */
+static inline uint64_t cint_rt_div_wide(uint64_t hi, uint64_t lo, uint64_t d, uint64_t *rem)
+{
+    uint64_t q = 0u, d1;
+    unsigned s, k;
+    if (hi == 0u) {
+        *rem = lo % d;
+        return lo / d;
+    }
+    s = cint_rt_clz64(d);  /* 0 < hi < d: the shifts keep every bit of hi:lo */
+    d <<= s;
+    d1 = d >> 32;
+    hi = s == 0u ? hi : (hi << s) | (lo >> (64u - s));
+    lo <<= s;
+    for (k = 0u; k < 2u; k++) {
+        uint64_t w = k == 0u ? lo >> 32 : lo & 0xFFFFFFFFu, digit = hi / d1, rhat = hi - digit * d1;
+        while ((digit >> 32) != 0u || digit * (d & 0xFFFFFFFFu) > ((rhat << 32) | w)) {
+            digit--;
+            rhat += d1;
+            if ((rhat >> 32) != 0u) break;
+        }
+        hi = ((hi << 32) | w) - digit * d;  /* the partial remainder, below d */
+        q = (q << 32) | digit;
+    }
+    *rem = hi >> s;
+    return q;
+}
+
+/* The two above in the builtin helper mode, for the fast path below: the 128-bit
+ * product of GCC and Clang, _umul128 and _udiv128 on MSVC x64, __umulh on MSVC
+ * ARM64, admitted per EMIT-05 and EMIT-12 as box 15's limb steps are (BX15-15).
+ * GCC and Clang would call a support routine for a 128-bit quotient, so they
+ * keep the long division. */
+static inline uint64_t cint_rt_mul_wide_b(uint64_t a, uint64_t b, uint64_t *hi)
+{
+#if CINT_RT_USE_BUILTINS && defined(CINT_RT_BUILTINS_GNU)
+    __extension__ unsigned __int128 p = (unsigned __int128)a * b;
+    *hi = (uint64_t)(p >> 64);
+    return (uint64_t)p;
+#elif CINT_RT_USE_BUILTINS && defined(_M_X64)
+    return _umul128(a, b, hi);
+#elif CINT_RT_USE_BUILTINS
+    *hi = __umulh(a, b);
+    return a * b;
+#else
+    return cint_rt_mul_wide(a, b, hi);
+#endif
+}
+
+static inline uint64_t cint_rt_div_wide_b(uint64_t hi, uint64_t lo, uint64_t d, uint64_t *rem)
+{
+#if CINT_RT_USE_BUILTINS && defined(CINT_RT_BUILTINS_MSVC) && defined(_M_X64)
+    return _udiv128(hi, lo, d, rem);
+#else
+    return cint_rt_div_wide(hi, lo, d, rem);
+#endif
+}
+
+/* The largest r with r * r <= n. With s the even shift that puts the top bit
+ * of n at bit 63 or 62, n << s lies in cell t = (n << s) >> 54 (256 to 1023),
+ * and cint_rt_isqrt_seed[t - 256] = ceil(sqrt((t + 1) * 2^10)), so the seed
+ * below is at least floor(sqrt(n)) and at most 2^-8.17 above sqrt(n). Two
+ * Newton steps never go below floor(sqrt(n)) and come within 2^-35.6 of
+ * sqrt(n) < 2^32 when they start above it, so r is the root or one above. */
+extern CINT_RT_INTERNAL const uint16_t cint_rt_isqrt_seed[768];
+static inline uint64_t cint_rt_isqrt64(uint64_t n)
+{
+    unsigned s;
+    uint64_t r;
+    if (n < 2u) return n;
+    s = cint_rt_clz64(n) & ~1u;
+    r = ((uint64_t)cint_rt_isqrt_seed[((n << s) >> 54) - 256u] << 22) >> (s / 2u);
+    r = (r + n / r) >> 1;
+    r = (r + n / r) >> 1;
+    return (r >> 32) != 0u || r * r > n ? r - 1u : r;
+}
+
+/* Whether a rational of sign `negative`, with truncated quotient magnitude q
+ * and remainder rem != 0 of the divisor magnitude d, rounds away from zero under
+ * mode (SPEC-01 4.5, numbered as in cint_rt_builtin). */
+static inline bool cint_rt_round_up(uint64_t q, uint64_t rem, bool negative, uint64_t d, uint32_t mode)
+{
+    if (mode <= 4u) {
+        return mode == 1u ? negative : mode == 2u ? !negative : mode == 4u;  /* floor ceil trunc away */
+    }
+    if (rem != d - rem) return rem > d - rem;
+    return mode == 5u ? (q & 1u) != 0u : mode == 6u || (mode == 8u ? !negative : mode == 9u && negative);
+}
+
+/* The magnitude of an operand pattern under tag, with its sign in *negative.
+ * Folded with the fast path's constant tag: MSVC otherwise calls it out of line. */
+CINT_RT_FOLD uint64_t cint_rt_magnitude(uint32_t tag, uint64_t bits, bool *negative)
+{
+    int64_t v = cint_rt_sext(bits, cint_rt_tag_width(tag));
+    *negative = cint_rt_tag_signed(tag) && v < 0;
+    return !cint_rt_tag_signed(tag) ? bits & cint_rt_mask(cint_rt_tag_width(tag))
+                                    : v < 0 ? (uint64_t)0 - (uint64_t)v : (uint64_t)v;
+}
+
+/* The fast path of cint_builtin_<r> (OQ-227): div_round, muldiv, isqrt and
+ * isqrt_round whose result is in range return true with its pattern in *out.
+ * Every other call returns false and goes to cint_rt_builtin, which writes the
+ * record. In emitted code op, tag, mode and aux are constants, so a compiler
+ * that inlines it keeps only the branch of the built-in at hand (CINT_RT_FOLD). */
+CINT_RT_FOLD bool cint_rt_builtin_fast(uint32_t op, uint32_t tag, uint32_t mode, uint32_t aux, uint64_t a,
+                                       uint64_t b, uint64_t c, uint64_t *out)
+{
+    uint32_t rtag = op == 11u ? aux : tag;
+    bool an, bn, cn, neg = false;
+    uint64_t am, bm, cm, hi = 0u, q, rem, lim;
+    if (op < 10u || op > 14u || op == 12u || (op == 13u ? mode != 0u : mode < 1u || mode > 9u) ||
+        ((tag >> 4) != 1u && (tag >> 4) != 2u) || (tag & 0x0fu) < 1u || (tag & 0x0fu) > 4u ||
+        ((rtag >> 4) != 1u && (rtag >> 4) != 2u) || (rtag & 0x0fu) < 1u || (rtag & 0x0fu) > 4u) {
+        return false;
+    }
+    am = cint_rt_magnitude(tag, a, &an);
+    bm = cint_rt_magnitude(tag, b, &bn);
+    cm = cint_rt_magnitude(tag, c, &cn);
+    if (op == 10u || op == 11u) {
+        if (op == 10u) {
+            cm = bm;
+            neg = an != bn;
+        } else {
+            am = cint_rt_mul_wide_b(am, bm, &hi);
+            neg = (an != bn) != cn;
+        }
+        if (cm == 0u || hi >= cm) return false;
+        q = cint_rt_div_wide_b(hi, am, cm, &rem);
+        if (rem != 0u && cint_rt_round_up(q, rem, neg, cm, mode)) {
+            if (q == UINT64_MAX) return false;
+            q++;
+        }
+    } else {
+        if (an) return false;
+        q = cint_rt_isqrt64(am);
+        if (op == 14u && q * q != am && (mode == 2u || mode == 4u || (mode > 4u && am > q * q + q))) q++;
+    }
+    lim = !cint_rt_tag_signed(rtag) ? (neg ? 0u : cint_rt_mask(cint_rt_tag_width(rtag)))
+                                    : ((uint64_t)1 << (cint_rt_tag_width(rtag) - 1u)) - (neg ? 0u : 1u);
+    if (q > lim) return false;
+    *out = neg ? (uint64_t)0 - q : q;
+    return true;
+}
+
 #define CINT_RT_BUILTIN(T, CT, K, W)                                                                \
-    static inline bool cint_builtin_##T(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t tag,    \
-                                        uint32_t mode, uint32_t aux, uint64_t a, uint64_t b,         \
-                                        uint64_t c, CT *out)                                         \
+    CINT_RT_FOLD bool cint_builtin_##T(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t tag,     \
+                                       uint32_t mode, uint32_t aux, uint64_t a, uint64_t b,          \
+                                       uint64_t c, CT *out)                                          \
     {                                                                                               \
         uint64_t bits;                                                                              \
-        if (!cint_rt_builtin(ctx, site, op, tag, mode, aux, a, b, c, &bits)) {                      \
+        if ((cint_rt_faulted(ctx) || !cint_rt_builtin_fast(op, tag, mode, aux, a, b, c, &bits)) &&   \
+            !cint_rt_builtin(ctx, site, op, tag, mode, aux, a, b, c, &bits)) {                      \
             return false;                                                                           \
         }                                                                                           \
         *out = (CT)CINT_RT_NARROW_##K(bits, (W));                                                   \
@@ -2175,9 +2049,7 @@ static inline bool cint_index_check_dim(cint_ctx *ctx, cint_site site, const cha
                                         int64_t index, int64_t extent)
 {
     bool inside = index >= 0 && index < extent;
-    if (cint_rt_faulted(ctx)) {
-        return false;
-    }
+    if (cint_rt_faulted(ctx)) return false;
     if (!inside) {
         (void)cint_rt_fault_index_dim(ctx, site, operation, dim, index, extent);
         return false;
@@ -2220,12 +2092,12 @@ int cint_rt_view_relation(const cint_vdesc *p, const cint_vdesc *q);
 
 /* copy(dst, src) and array assignment between views of equal rank (SPEC-01
  * IM-187; rulings R7, R8), with elements of `size` bytes: at the first
- * dimension d whose extents differ, E_SHAPE copy.shape as
- * cint_copy_shape_check (operands d and the source extent, limit the
- * destination extent); then relation 1 is no copy (true, nothing written) and
- * relation 2 is E_ALIAS copy.alias (no operands, exact or limit); otherwise
- * every element is copied with memcpy in logical (row-major) order. No fuel;
- * the fuel consumed is kept. */
+ * dimension d whose extents differ, E_SHAPE copy.shape as cint_copy_shape_check
+ * (operands d and the source extent, limit the destination extent); then
+ * relation 1 is no copy (true, nothing written) and relation 2 is E_ALIAS
+ * copy.alias (no operands, exact or limit); otherwise every element is copied
+ * in logical (row-major) order, with memcpy, or by the driver when a view is in
+ * device memory (cint_cuda.h). No fuel is charged. */
 bool cint_rt_copy_view(cint_ctx *ctx, cint_site site, const cint_vdesc *dst, const cint_vdesc *src, size_t size);
 
 /* The entry alias check of a call (SPEC-04 LS-121, LS-123; REF-OQ-32): the
@@ -2286,17 +2158,22 @@ void cint_zacc_add_product(cint_zacc *a, uint32_t tag, uint64_t x, uint64_t y);
  * pattern (sign-extended for a signed type) and returns true; otherwise
  * E_OVERFLOW <name>.checked.<elem>.<result> (both types always written:
  * sum.checked.i8.i8, dot.checked.i64.i64), operand n, exact the total, limit
- * MAX(result) when above, else MIN(result); false. `name` is sum or dot. */
+ * MAX(result) when above, else MIN(result); false. `name` is sum or dot. For
+ * fixed point (rt/cint_fixed.h) both types are, the total is raw, sum's result
+ * is elem, and the record spells q8_8 with the limit a Q value; a dot that
+ * rounds goes through cint_rt_dot_fixed. */
 bool cint_rt_zacc_fit(cint_ctx *ctx, cint_site site, const char *name, uint32_t elem, uint32_t result, int64_t n,
                       const cint_zacc *a, uint64_t *out);
 /* One step j of fold_checked: *acc + x (op CINT_RT_OP_ADD) or *acc * x
- * (CINT_RT_OP_MUL) in type `tag`. In range: writes *acc, true. Otherwise
+ * (CINT_RT_OP_MUL; not on fixed point) in type `tag`, I8 to U64 or fixed point
+ * on the raw values (rt/cint_fixed.h). In range: writes *acc, true. Otherwise
  * E_OVERFLOW fold_checked.add.<t> or fold_checked.mul.<t>, operands j, <T>
  * *acc (before the step) and <T> x, exact, limit the bound crossed; false. */
 bool cint_rt_fold_step(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t tag, int64_t j, uint64_t *acc,
                        uint64_t x);
 /* min or max with no element and no init: E_SHAPE reduce_min.checked.<t>
- * (max false) or reduce_max.checked.<t>, operand I64 0, no exact or limit. */
+ * (max false) or reduce_max.checked.<t>, operand I64 0, no exact or limit.
+ * t is I8 to U64, fixed point (rt/cint_fixed.h), or a wide type of rt/cint_wide.h. */
 bool cint_rt_fault_reduce_empty(cint_ctx *ctx, cint_site site, bool max, uint32_t tag);
 
 /* A sequential reduction built-in at its callee name `site` (exec.py
@@ -2313,7 +2190,9 @@ bool cint_rt_fault_reduce_empty(cint_ctx *ctx, cint_site site, bool max, uint32_
  * saturating left fold from 0; fold_checked cint_rt_fold_step from init, j
  * from 0; min and max over the elements and init (an empty pool is
  * cint_rt_fault_reduce_empty); count the true elements; (4) writes the result
- * (sign-extended for a signed type) and returns true. */
+ * (sign-extended for a signed type) and returns true. A fixed-point elem
+ * (rt/cint_fixed.h) acts on the raw values with result elem (SPEC-02 R-4), not
+ * for fold_checked(mul); a dot of fixed point that rounds is cint_rt_dot_fixed. */
 #define CINT_REDUCE_SUM 1u
 #define CINT_REDUCE_SUM_WRAP 2u
 #define CINT_REDUCE_SUM_SAT 3u
@@ -2334,9 +2213,7 @@ bool cint_rt_reduce(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t elem, u
                                        uint64_t init, CT *out)                                        \
     {                                                                                                 \
         uint64_t bits;                                                                                \
-        if (!cint_rt_reduce(ctx, site, op, elem, (TAG), xs, ys, has_init, init, &bits)) {             \
-            return false;                                                                             \
-        }                                                                                             \
+        if (!cint_rt_reduce(ctx, site, op, elem, (TAG), xs, ys, has_init, init, &bits)) return false; \
         *out = (CT)CINT_RT_NARROW_##K(bits, (W));                                                     \
         return true;                                                                                  \
     }
@@ -2362,6 +2239,11 @@ CINT_RT_REDUCE(u64, uint64_t, CINT_TAG_U64, U, 64u)
  * (only a dispatch inside a dispatch at the largest depth limit) records
  * dispatch.admit instead; a pop removes nothing but a pushed position.
  *
+ * cint_rt_dispatch_end, called once dispatch `number` has published every
+ * written parameter, is its boundary at `dispatch` density (SPEC-06 1.5): a
+ * recorder or a replay that asked for that density (rt/cint_state.h) takes
+ * the state hash there. Otherwise, or on a faulted context, it does nothing.
+ *
  * cint_rt_dispatch_fault, called by a kernel's fault exit after any fault of
  * its dispatch: when the context holds a record without an address, it sets
  * the address (cint_fault_address): the dispatch number, the phase, the
@@ -2385,6 +2267,7 @@ CINT_RT_REDUCE(u64, uint64_t, CINT_TAG_U64, U, 64u)
 int64_t cint_rt_dispatch_number(cint_ctx *ctx);
 void cint_rt_dispatch_push(cint_ctx *ctx, cint_site site);
 void cint_rt_dispatch_pop(cint_ctx *ctx);
+void cint_rt_dispatch_end(cint_ctx *ctx, int64_t number);
 void cint_rt_dispatch_fault(cint_ctx *ctx, const char *kernel, int64_t number, uint32_t phase, int64_t work_item,
                             int64_t step);
 bool cint_rt_dispatch_alias(cint_ctx *ctx, cint_site site, uint32_t i, uint32_t x, const cint_vdesc *p,
@@ -2392,8 +2275,8 @@ bool cint_rt_dispatch_alias(cint_ctx *ctx, cint_site site, uint32_t i, uint32_t 
 
 /* A host-issued dispatch (SPEC-02 K-15; rt/OPEN.md RT-OQ-40). The wrapper of
  * an exported kernel binds its views with cint_rt_bind_views (checks 1 to 3),
- * then hands the binds to the dispatch with cint_rt_dispatch_host; they stay
- * valid until the entry ends, and cint_rt_entry_open and cint_rt_entry_end
+ * then hands them to cint_rt_dispatch_host, which makes check 4 (6a'); they
+ * stay valid until the entry ends, and cint_rt_entry_open and cint_rt_entry_end
  * forget them. cint_rt_dispatch_bound makes, once per entry, F-5 checks 6 and
  * 7 of those binds as cint_rt_bind_finish makes them (a bind.alias record gets
  * the two views as its descriptors), then check 8: an out or inout view of a
@@ -2414,10 +2297,12 @@ bool cint_rt_dispatch_bound(cint_ctx *ctx, cint_site site);
 bool cint_rt_fault_where(cint_ctx *ctx, cint_site site, int64_t index, int64_t left, int64_t right);
 
 /* The staging buffer of a written array parameter (SPEC-02 P-4): the product of
- * arg's extents in elements of `size` bytes from cint_rt_scratch, zero-filled, and
- * *stage a row-major view of them with arg's rank and extents; with copy_in (an
- * `inout` parameter) arg's elements copied in, in logical order. False with the
- * record of cint_rt_scratch. */
+ * arg's extents in elements of `size` bytes, zero-filled, scratch storage that
+ * the arena does not charge (decision 2026-10-08 on OQ-237), freed as
+ * cint_rt_scratch's is (cint_cuda_stage for a device view, B-16d), and *stage a
+ * row-major view of them with arg's rank and extents; with copy_in (an `inout`
+ * parameter) arg's elements copied in, in logical order. False with the
+ * allocator's record: E_UNSUPPORTED arena.alloc, as cint_rt_scratch's. */
 bool cint_rt_dispatch_stage(cint_ctx *ctx, cint_site site, cint_vdesc *stage, const cint_vdesc *arg, size_t size,
                             bool copy_in);
 
@@ -2430,9 +2315,8 @@ bool cint_rt_dispatch_stage(cint_ctx *ctx, cint_site site, cint_vdesc *stage, co
     static inline bool cint_kfold_##T(cint_ctx *ctx, cint_site site, int64_t n, CT *acc, CT x)     \
     {                                                                                              \
         uint64_t bits = (uint64_t)*acc;                                                            \
-        if (!cint_rt_fold_step(ctx, site, CINT_RT_OP_ADD, (TAG), n, &bits, (uint64_t)x)) {          \
+        if (!cint_rt_fold_step(ctx, site, CINT_RT_OP_ADD, (TAG), n, &bits, (uint64_t)x))            \
             return false;                                                                          \
-        }                                                                                          \
         *acc = (CT)CINT_RT_NARROW_##K(bits, (W));                                                  \
         return true;                                                                               \
     }                                                                                              \
@@ -2440,9 +2324,7 @@ bool cint_rt_dispatch_stage(cint_ctx *ctx, cint_site site, cint_vdesc *stage, co
                                      const cint_zacc *a, CT *out)                                  \
     {                                                                                              \
         uint64_t bits;                                                                             \
-        if (!cint_rt_zacc_fit(ctx, site, "sum", elem, (TAG), n, a, &bits)) {                       \
-            return false;                                                                          \
-        }                                                                                          \
+        if (!cint_rt_zacc_fit(ctx, site, "sum", elem, (TAG), n, a, &bits)) return false;           \
         *out = (CT)CINT_RT_NARROW_##K(bits, (W));                                                  \
         return true;                                                                               \
     }                                                                                              \
@@ -2459,21 +2341,11 @@ CINT_RT_KERNEL_ACC(u16, uint16_t, CINT_TAG_U16, U, 16u)
 CINT_RT_KERNEL_ACC(u32, uint32_t, CINT_TAG_U32, U, 32u)
 CINT_RT_KERNEL_ACC(u64, uint64_t, CINT_TAG_U64, U, 64u)
 
-typedef struct cint_fault_descriptor {
-    uint32_t elem;   /* element type tag */
-    uint32_t write;  /* 1 write, 0 read */
-    int64_t rank;
-    int64_t origin;
-    int64_t shape[4];
-    int64_t stride[4];
-} cint_fault_descriptor;
-_Static_assert(sizeof(cint_fault_descriptor) == 88, "cint_fault_descriptor");
-CINT_RT_API cint_status cint_ctx_fault_descriptors(const cint_ctx *ctx, cint_fault_descriptor out[2], uint32_t *count);
-
 /* Scratch storage, a minimal frame arena (SPEC-04 LS-110; SPEC-03 M-19): kernel
- * copy-in and run-time-sized local arrays. cint_rt_scratch writes a pointer to
- * `count` elements of `size` bytes, zero-filled and aligned for any scalar,
- * from the context's allocator, and returns true. The arena counts elements:
+ * staging, which it does not charge, and run-time-sized local arrays.
+ * cint_rt_scratch writes a pointer to `count` elements of `size` bytes,
+ * zero-filled and aligned for any scalar, from the context's allocator, and
+ * returns true. The arena counts elements:
  * its capacity is frame_arena_bytes / 8 (2,097,152 at the default) until
  * roadmap box 12's runtime step. A request beyond it records E_BOUNDS
  * arena.alloc at `site`, operands count, the elements in use and the capacity;
@@ -2485,6 +2357,10 @@ CINT_RT_API cint_status cint_ctx_fault_descriptors(const cint_ctx *ctx, cint_fau
 bool cint_rt_scratch(cint_ctx *ctx, cint_site site, int64_t count, size_t size, void **out);
 int64_t cint_rt_scratch_mark(const cint_ctx *ctx);
 void cint_rt_scratch_release(cint_ctx *ctx, int64_t mark);
+
+/* The host side: contexts, the buffer registry, the observer and             */
+/* reflection tables, error results and program processes.                    */
+#include "cint_rt_host.h"
 
 #if defined(CINT_RT_LIBRARY) && !defined(_WIN32) && (defined(__GNUC__) || defined(__clang__))
 #pragma GCC visibility pop

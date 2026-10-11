@@ -1,0 +1,10 @@
+// case: wide/sum_u128_overflow
+// clause: SPEC-01 IM-6, IM-77, IM-81, IM-106; SPEC-09 CONF-11 rule 14 (a sum of U128 elements leaves U128, with the exact total in the record)
+// subset: cint-core-1 (unsigned wide integers, built-in sum)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 9:12 (callee `sum`), operation sum.checked.u128.u128, operand I64 3 (n), exact 2^128 + 1, limit U128 2^128 - 1; stack depth 0; fuel 2. Box 15, unit 1
+
+export Bool run() {
+    U128[3] a = [U128.max, 1, 1];
+    return sum(a) != 0;
+}

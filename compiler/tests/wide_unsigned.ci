@@ -1,0 +1,65 @@
+// The unsigned wide types U128 to U512 (box 15 unit 4d; ruling BX15-02): constants and their
+// folding, checked, wrapping and saturating operations, shifts and rotations, conversions
+// to and from every kind of integer, the built-ins, comparisons, module state, struct
+// fields, arrays, views and reductions, and printed values; it ends at a checked fault.
+const U256 THIRD = U256.max / 3;
+const U128 HIGH = (1 as U128 << 127) + 5;
+const U512 BIG = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF1;
+
+U512 total = 0;
+U256[3] kept = [1, U256.max, 7];
+
+struct Pair {
+    U128 lo;
+    U256 hi;
+}
+
+U128 twice(U128 v) {
+    total = total + v as U512;
+    return v *% 2;
+}
+
+U256 last[n](in U256[n] a) {
+    return a[n - 1];
+}
+
+void main() {
+    U128 a = U128.max;
+    U128 z = U128.min;
+    U256 b = 1 as U256 << 200;
+    U512 c = U512.max;
+    "{a} {z} {b} {c}\n";
+    "{THIRD} {HIGH} {BIG}\n";
+    "{a +% 1} {z -% 1} {a +| 5} {z -| 5} {a *| 3} {a *% 3} {b * 9} {b - 1}\n";
+    "{a / 7} {a % 7} {b / (b >> 100)} {c % 1000000007} {c / BIG}\n";
+    "{a >> 64} {a >> 127} {b >> 199} {b << 55} {b <<% 100} {rotl(a >> 1, 1)} {rotr(1 as U128, 1)} {rotl(b, 60)}\n";
+    "{a & 0xFF} {z | 1} {a ^ (a >> 1)} {~z} {~b}\n";
+    "{min(a, 5)} {max(b, 3)} {clamp(b, 2, 9)} {isqrt(c)} {isqrt_round(b + 1, ceil)}\n";
+    "{div_round(a, 3, half_even)} {div_trunc(c, 9)} {rem_euclid(c, 11)} {div_euclid(b, 7)}\n";
+    "{mul_full(U64.max, 3 as U64)} {mul_full(a, a)} {mul_full(b, b)}\n";
+    "{uabs(I128.min)} {uabs(-5 as I256)} {uabs(I512.min)} {uabs(I512.max)}\n";
+    "{a as I256} {c as% U128} {(-1 as I512) as% U256} {b as% I64} {7 as U512} {U64.max as U128}\n";
+    "{(a >> 100) as U32} {(-3 as I128) as% U128} {a as% I1024} {b as I512} {(c >> 300) as U256}\n";
+    "{a == a} {a < z} {b > 0} {c >= c} {z <= a} {b != b}\n";
+    "{a:x} {b:#b} {c:,} {a:t} {b:>70} {c:/1000000} {z:#x} {a:_o}\n";
+    U128 h = twice(HIGH);
+    U128 g = twice(5);
+    "{h} {g} {total}\n";
+    Pair p;
+    p.lo = a - 1;
+    p.hi = b + 1;
+    p.lo -= 2;
+    p.hi *= 3;
+    "{p.lo} {p.hi}\n";
+    U128[4] r = [1, 2, a, 4];
+    r[1] += 40;
+    U512[2, 2] q;
+    fill(q, c >> 1);
+    q[1, 1] = 9;
+    "{r[1]} {r[2]} {q[0, 1]} {q[1, 1]} {last(kept)} {last(kept[0..2])}\n";
+    "{sum(U512, kept)} {sum_wrap(kept)} {sum_sat(kept)} {min(kept)} {max(r)} {sum(U256, r)}\n";
+    "{dot(U512, kept, kept)} {fold_checked(add, 1 as U128, r[0..2])}\n";
+    kept[0] = kept[0] + 1;
+    "{kept[0]} {a + z + g}\n";
+    "{a + 1}\n";
+}

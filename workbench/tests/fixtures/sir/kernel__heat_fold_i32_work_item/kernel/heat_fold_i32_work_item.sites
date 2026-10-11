@@ -1,0 +1,262 @@
+module kernel.heat_fold_i32_work_item
+sites kernel/heat_fold_i32_work_item.ci 1:14:14:index.checked.i32 2:14:14:index.checked.i32 3:14:21:as.checked.i32.i64 4:15:14:index.checked.i32 5:15:14:index.checked.i32 6:16:24:sub.checked.i64 7:16:46:sub.checked.i64 8:17:24:sub.checked.i64 9:17:21:index.checked.i32 10:17:21:index.checked.i32 11:17:32:as.checked.i32.i64 12:17:47:add.checked.i64 13:17:44:index.checked.i32 14:17:44:index.checked.i32 15:17:55:as.checked.i32.i64 16:17:40:add.checked.i64 17:18:27:sub.checked.i64 18:18:21:index.checked.i32 19:18:21:index.checked.i32 20:18:32:as.checked.i32.i64 21:18:17:add.checked.i64 22:18:50:add.checked.i64 23:18:44:index.checked.i32 24:18:44:index.checked.i32 25:18:55:as.checked.i32.i64 26:18:40:add.checked.i64 27:18:67:mul.checked.i64 28:18:63:sub.checked.i64 29:19:33:mul.checked.i64 30:19:20:div_round.checked.i64.half_even 31:20:16:add.checked.i64 32:20:24:as.checked.i64.i32 33:22:6:index.checked.i32 34:22:6:index.checked.i32 35:23:20:fold_checked.add.i32 36:26:12:fuel.charge 37:29:5:fuel.charge 38:30:9:fuel.charge 39:31:14:index.checked.i32 40:31:14:index.checked.i32 41:35:5:dispatch
+kernel @kernel.heat_fold_i32_work_item.diffuse32(%u: I32[_, _], %kn: I64, %kd: I64, %v: I32[_, _], %total: out I32) {
+  dispatch.entry
+  local $h.0: I64
+  local $w.1: I64
+  %t0 = view.extent %u, 0
+  store.local $h.0, %t0
+  %t1 = view.extent %u, 1
+  store.local $w.1, %t1
+  %t2 = load.local $h.0
+  bind.shape %v, 3, 0, %t2
+  %t3 = load.local $w.1
+  bind.shape %v, 3, 1, %t3
+  %t4 = load.local $h.0
+  store.local $sc.2, %t4
+  %t5 = load.local $w.1
+  store.local $sc.3, %t5
+  bind.alias %v, %u
+  dispatch.charge $sc.4, 2, $sc.2, $sc.3
+  dispatch.stage $sc.5, %v, 1
+  %t6 = const I32 0
+  reduce.init %total, %t6
+  dispatch.push
+  %t7 = const I64 0
+  store.local $sc.6, %t7
+  loop L23 {
+    %t8 = load.local $sc.6
+    %t9 = load.local $sc.4
+    %t10 = cmp.lt.i64 %t8, %t9
+    while %t10
+    %t11 = load.local $sc.6
+    dispatch.item %t11, 2, $y.7, $x.8, $sc.2, $sc.3
+    %t12 = load.local $y.7
+    %t13 = load.local $x.8
+    index.checked.i32 %u, %t12, 0                #1 @kernel/heat_fold_i32_work_item.ci:14:14
+    index.checked.i32 %u, %t13, 1                #2 @kernel/heat_fold_i32_work_item.ci:14:14
+    %t14 = view.offset %u, %t12, 0
+    %t15 = view.offset %u, %t13, %t14, 1
+    dispatch.step
+    %t16 = index.load %u, %t15
+    %t17 = as.checked.i32.i64 %t16               #3 @kernel/heat_fold_i32_work_item.ci:14:21
+    dispatch.step
+    local $c.9: I64
+    store.local $c.9, %t17
+    %t18 = load.local $y.7
+    %t19 = load.local $x.8
+    index.checked.i32 %u, %t18, 0                #4 @kernel/heat_fold_i32_work_item.ci:15:14
+    index.checked.i32 %u, %t19, 1                #5 @kernel/heat_fold_i32_work_item.ci:15:14
+    %t20 = view.offset %u, %t18, 0
+    %t21 = view.offset %u, %t19, %t20, 1
+    dispatch.step
+    %t22 = index.load %u, %t21
+    local $r.10: I32
+    store.local $r.10, %t22
+    if {
+      arm {
+        %t23 = load.local $y.7
+        %t24 = const I64 0
+        %t25 = cmp.gt.i64 %t23, %t24
+        local $sc.11: Bool
+        store.local $sc.11, %t25
+        if {
+          arm {
+          } then %t25 {
+            %t26 = load.local $y.7
+            %t27 = load.local $h.0
+            %t28 = const I64 1
+            %t29 = sub.checked.i64 %t27, %t28    #6 @kernel/heat_fold_i32_work_item.ci:16:24
+            dispatch.step
+            %t30 = cmp.lt.i64 %t26, %t29
+            store.local $sc.11, %t30
+          }
+        }
+        %t31 = load.local $sc.11
+        local $sc.12: Bool
+        store.local $sc.12, %t31
+        if {
+          arm {
+          } then %t31 {
+            %t32 = load.local $x.8
+            %t33 = const I64 0
+            %t34 = cmp.gt.i64 %t32, %t33
+            store.local $sc.12, %t34
+          }
+        }
+        %t35 = load.local $sc.12
+        local $sc.13: Bool
+        store.local $sc.13, %t35
+        if {
+          arm {
+          } then %t35 {
+            %t36 = load.local $x.8
+            %t37 = load.local $w.1
+            %t38 = const I64 1
+            %t39 = sub.checked.i64 %t37, %t38    #7 @kernel/heat_fold_i32_work_item.ci:16:46
+            dispatch.step
+            %t40 = cmp.lt.i64 %t36, %t39
+            store.local $sc.13, %t40
+          }
+        }
+        %t41 = load.local $sc.13
+      } then %t41 {
+        %t42 = load.local $y.7
+        %t43 = const I64 1
+        %t44 = sub.checked.i64 %t42, %t43        #8 @kernel/heat_fold_i32_work_item.ci:17:24
+        dispatch.step
+        %t45 = load.local $x.8
+        index.checked.i32 %u, %t44, 0            #9 @kernel/heat_fold_i32_work_item.ci:17:21
+        index.checked.i32 %u, %t45, 1            #10 @kernel/heat_fold_i32_work_item.ci:17:21
+        %t46 = view.offset %u, %t44, 0
+        %t47 = view.offset %u, %t45, %t46, 1
+        dispatch.step
+        %t48 = index.load %u, %t47
+        %t49 = as.checked.i32.i64 %t48           #11 @kernel/heat_fold_i32_work_item.ci:17:32
+        dispatch.step
+        %t50 = load.local $y.7
+        %t51 = const I64 1
+        %t52 = add.checked.i64 %t50, %t51        #12 @kernel/heat_fold_i32_work_item.ci:17:47
+        dispatch.step
+        %t53 = load.local $x.8
+        index.checked.i32 %u, %t52, 0            #13 @kernel/heat_fold_i32_work_item.ci:17:44
+        index.checked.i32 %u, %t53, 1            #14 @kernel/heat_fold_i32_work_item.ci:17:44
+        %t54 = view.offset %u, %t52, 0
+        %t55 = view.offset %u, %t53, %t54, 1
+        dispatch.step
+        %t56 = index.load %u, %t55
+        %t57 = as.checked.i32.i64 %t56           #15 @kernel/heat_fold_i32_work_item.ci:17:55
+        dispatch.step
+        %t58 = add.checked.i64 %t49, %t57        #16 @kernel/heat_fold_i32_work_item.ci:17:40
+        dispatch.step
+        %t59 = load.local $y.7
+        %t60 = load.local $x.8
+        %t61 = const I64 1
+        %t62 = sub.checked.i64 %t60, %t61        #17 @kernel/heat_fold_i32_work_item.ci:18:27
+        dispatch.step
+        index.checked.i32 %u, %t59, 0            #18 @kernel/heat_fold_i32_work_item.ci:18:21
+        index.checked.i32 %u, %t62, 1            #19 @kernel/heat_fold_i32_work_item.ci:18:21
+        %t63 = view.offset %u, %t59, 0
+        %t64 = view.offset %u, %t62, %t63, 1
+        dispatch.step
+        %t65 = index.load %u, %t64
+        %t66 = as.checked.i32.i64 %t65           #20 @kernel/heat_fold_i32_work_item.ci:18:32
+        dispatch.step
+        %t67 = add.checked.i64 %t58, %t66        #21 @kernel/heat_fold_i32_work_item.ci:18:17
+        dispatch.step
+        %t68 = load.local $y.7
+        %t69 = load.local $x.8
+        %t70 = const I64 1
+        %t71 = add.checked.i64 %t69, %t70        #22 @kernel/heat_fold_i32_work_item.ci:18:50
+        dispatch.step
+        index.checked.i32 %u, %t68, 0            #23 @kernel/heat_fold_i32_work_item.ci:18:44
+        index.checked.i32 %u, %t71, 1            #24 @kernel/heat_fold_i32_work_item.ci:18:44
+        %t72 = view.offset %u, %t68, 0
+        %t73 = view.offset %u, %t71, %t72, 1
+        dispatch.step
+        %t74 = index.load %u, %t73
+        %t75 = as.checked.i32.i64 %t74           #25 @kernel/heat_fold_i32_work_item.ci:18:55
+        dispatch.step
+        %t76 = add.checked.i64 %t67, %t75        #26 @kernel/heat_fold_i32_work_item.ci:18:40
+        dispatch.step
+        %t77 = const I64 4
+        %t78 = load.local $c.9
+        %t79 = mul.checked.i64 %t77, %t78        #27 @kernel/heat_fold_i32_work_item.ci:18:67
+        dispatch.step
+        %t80 = sub.checked.i64 %t76, %t79        #28 @kernel/heat_fold_i32_work_item.ci:18:63
+        dispatch.step
+        local $lap.14: I64
+        store.local $lap.14, %t80
+        %t81 = load.local $lap.14
+        %t82 = mul.checked.i64 %kn, %t81         #29 @kernel/heat_fold_i32_work_item.ci:19:33
+        dispatch.step
+        %t83 = div_round.checked.i64.half_even %t82, %kd #30 @kernel/heat_fold_i32_work_item.ci:19:20
+        dispatch.step
+        local $flux.15: I64
+        store.local $flux.15, %t83
+        %t84 = load.local $c.9
+        %t85 = load.local $flux.15
+        %t86 = add.checked.i64 %t84, %t85        #31 @kernel/heat_fold_i32_work_item.ci:20:16
+        dispatch.step
+        %t87 = as.checked.i64.i32 %t86           #32 @kernel/heat_fold_i32_work_item.ci:20:24
+        dispatch.step
+        store.local $r.10, %t87
+      }
+    }
+    %t88 = load.local $y.7
+    %t89 = load.local $x.8
+    index.checked.i32 $sc.5, %t88, 0             #33 @kernel/heat_fold_i32_work_item.ci:22:6
+    index.checked.i32 $sc.5, %t89, 1             #34 @kernel/heat_fold_i32_work_item.ci:22:6
+    %t90 = view.offset $sc.5, %t88, 0
+    %t91 = view.offset $sc.5, %t89, %t90, 1
+    dispatch.step
+    %t92 = load.local $r.10
+    index.store $sc.5, %t91, %t92
+    %t93 = load.local $r.10
+    reduce.add fold_checked.add.i32 %total, %t93 #35 @kernel/heat_fold_i32_work_item.ci:23:20
+    dispatch.step
+    next
+    %t94 = load.local $sc.6
+    %t95 = const I64 1
+    %t96 = add.wrap.i64 %t94, %t95
+    store.local $sc.6, %t96
+  }
+  dispatch.phase 2
+  reduce.final fold_checked.add.i32 %total
+  dispatch.pop
+  dispatch.publish %v, $sc.5
+  dispatch.publish %total
+}
+export func @kernel.heat_fold_i32_work_item.run() -> I32 {
+  fuel.charge 1                                  #36 @kernel/heat_fold_i32_work_item.ci:26:12
+  local $sc.0: I32[64]
+  view.begin $a.1: I32[_, _], $sc.0, 0, 32776
+  local $sc.2: I32[64]
+  view.begin $b.3: I32[_, _], $sc.2, 0, 32776
+  %t0 = const I64 0
+  %t1 = const I64 8
+  local $y.4: I64
+  store.local $y.4, %t0
+  loop L12 {
+    %t2 = load.local $y.4
+    %t3 = cmp.lt.i64 %t2, %t1
+    while %t3
+    fuel.charge 1                                #37 @kernel/heat_fold_i32_work_item.ci:29:5
+    %t4 = const I64 0
+    %t5 = const I64 8
+    local $x.5: I64
+    store.local $x.5, %t4
+    loop L21 {
+      %t6 = load.local $x.5
+      %t7 = cmp.lt.i64 %t6, %t5
+      while %t7
+      fuel.charge 1                              #38 @kernel/heat_fold_i32_work_item.ci:30:9
+      %t8 = load.local $y.4
+      %t9 = load.local $x.5
+      index.checked.i32 $a.1, %t8, 0             #39 @kernel/heat_fold_i32_work_item.ci:31:14
+      index.checked.i32 $a.1, %t9, 1             #40 @kernel/heat_fold_i32_work_item.ci:31:14
+      %t10 = view.offset $a.1, %t8, 0
+      %t11 = view.offset $a.1, %t9, %t10, 1
+      %t12 = const I32 2147483647
+      index.store $a.1, %t11, %t12
+      next
+      %t13 = load.local $x.5
+      %t14 = const I64 1
+      %t15 = add.wrap.i64 %t13, %t14
+      store.local $x.5, %t15
+    }
+    next
+    %t16 = load.local $y.4
+    %t17 = const I64 1
+    %t18 = add.wrap.i64 %t16, %t17
+    store.local $y.4, %t18
+  }
+  %t19 = const I32 0
+  local $total.6: I32
+  store.local $total.6, %t19
+  %t20 = const I64 1
+  %t21 = const I64 8
+  dispatch @kernel.heat_fold_i32_work_item.diffuse32($a.1, %t20, %t21, $b.3, out $total.6), 9 #41 @kernel/heat_fold_i32_work_item.ci:35:5
+  %t22 = load.local $total.6
+  return %t22
+}

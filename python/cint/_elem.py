@@ -94,8 +94,7 @@ def parse_elem(name) -> Elem:
     if name == "T27":
         return Elem(name, TAG_T27, 0, 0, 8, True, -T27_MAX, T27_MAX, "t27")
     if name in ("PT5", "PT4"):
-        raise ValueError("%s: packed trit arrays have no element code in this ABI yet (SPEC-03 A-13, "
-                         "SPEC-05 X-6)" % name)
+        raise ValueError("%s: packed trit arrays have no element code in this ABI yet (SPEC-03 A-13)" % name)
     if name == "Str":
         raise ValueError("Str crosses as an in U8[n] parameter: pass bytes, for example s.encode(\"utf-8\")")
     raise ValueError("unknown element type %r; examples: \"I64\", \"U8\", \"Q32.32\", \"Bool\", \"T27\"" % (name,))

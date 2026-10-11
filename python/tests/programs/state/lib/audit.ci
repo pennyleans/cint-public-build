@@ -1,0 +1,11 @@
+// Helper module of python/tests/programs/state/ledger.ci: counts the deposits.
+I64 notes = 0;
+
+export I64 note(I64 n) {
+    notes += 1;
+    return notes;
+}
+
+export I64 tally() {
+    return notes;
+}

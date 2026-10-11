@@ -1,0 +1,10 @@
+// case: fixed/literal_out_of_range_c2003
+// clause: SPEC-04 LS-37, LS-53, 17.2 (128.0 is outside Q8.8, whose largest value is 127.99609375)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: compile-error C2003 at 8:14 (the literal 128.0). Box 15, unit 1
+
+export I64 run() {
+    Q8.8 x = 128.0;
+    return x.raw as I64;
+}

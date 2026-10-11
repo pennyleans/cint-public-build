@@ -1,0 +1,5 @@
+void main() {
+    I64 big = 300;
+    I8 small = big as I8;
+    "small={small}\n";
+}

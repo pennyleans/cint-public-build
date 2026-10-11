@@ -178,7 +178,8 @@ export I64 next_member[k](in limits.Decl[k] d, I64 r) {
 // row it was bound to; a view whose extent is a size parameter is DX_SIZE with the
 // parameter's position. An error set is tag 0x72, an error union 0x73, and (box 12) an
 // arena, a pool or a handle 0x74, which no importer types yet (check.import_type gives 0,
-// so a use is C9102; box 12, compiler/OPEN.md).
+// so a use is C9102; box 12, compiler/OPEN.md). An array is rank 1 here; write_block gives
+// a field of rank 2 to 4 its rank and packed extents (BX22-06, packed_extents).
 void persist[n](in parse.Node[_] nodes, in resolve.Sem[_] sem, in resolve.Sym[_] syms, I64 ty,
         inout I64[n] t) {
     t[0] = ty;
@@ -221,6 +222,39 @@ void persist[n](in parse.Node[_] nodes, in resolve.Sem[_] sem, in resolve.Sym[_]
     }
 }
 
+// The static extents of array type ty of rank 2 to 4, 12 bits each from dimension 0: the `b`
+// of a field row of that rank, whose ext_kind is DX_LITERAL (BX22-06; resolve.field_count
+// keeps each extent at most resolve.NARRAY_EXTENT_MAX).
+export I64 packed_extents(I64 ty) {
+    I64 v = 0;
+    for k in 0..resolve.array_rank(ty) {
+        v = v + (resolve.dim_extent(ty, k) << (12 * k));
+    }
+    return v;
+}
+
+// The extent of dimension k of field row r of rank 2 to 4.
+export I64 row_extent(in limits.Decl[_] d, I64 r, I64 k) {
+    return (d[r].b >> (12 * k)) & 4095;
+}
+
+// The elements of field row r: 1 for rank 0, its extent for rank 1, the product of its
+// extents for rank 2 to 4.
+export I64 row_count(in limits.Decl[_] d, I64 r) {
+    I64 rk = d[r].rank as I64;
+    if (rk == 0) {
+        return 1;
+    }
+    if (rk == 1) {
+        return d[r].b;
+    }
+    I64 n = 1;
+    for k in 0..rk {
+        n = n * row_extent(d, r, k);
+    }
+    return n;
+}
+
 // The tags of an error set and of an error union in a row's type fields (persist), and (box
 // 12) of an arena, a pool or a handle, which no importer types yet either.
 export const I64 ERRSET_TAG = 0x72;
@@ -248,6 +282,94 @@ export I64 type_of_row[k](in limits.Decl[k] d, I64 r) {
         return resolve.TY_ARRAY + tag;
     }
     return 0;
+}
+
+// The limbs of a value of type ty: 0 for a type of at most 64 bits; 2^(tag - 0x14) for I128
+// to I1024 (tags 0x15 to 0x18) and 2^(tag - 0x24) for U128 to U512 (tags 0x25 to 0x27).
+I64 wide_limbs(I64 ty) {
+    if (ty >= 0x15 && ty <= 0x18) {
+        return (1 as I64) << (ty - 0x14);
+    }
+    if (ty >= 0x25 && ty <= 0x27) {
+        return (1 as I64) << (ty - 0x24);
+    }
+    return 0;
+}
+
+// The limb rows of a constant of type ty: none for a type of at most 64 bits; for a wide
+// type one row for every six limbs after the first, which the record's `a` holds.
+export I64 limb_rows(I64 ty) {
+    I64 limbs = wide_limbs(ty);
+    if (limbs == 0) {
+        return 0;
+    }
+    return (limbs - 1 + 5) / 6;
+}
+
+// Limb i of the value stored at lits[at, at + nbytes) (minimal two's complement bytes,
+// SPEC-01 IM-145), sign-extended.
+export U64 lit_limb[b](in U8[b] lits, I64 at, I64 nbytes, I64 i) {
+    U64 ext = 0;
+    if (nbytes > 0 && lits[at + nbytes - 1] >= 0x80) {
+        ext = 0xFF;
+    }
+    U64 v = 0;
+    for k in 0..8 {
+        I64 q = 8 * i + k;
+        U64 byte = ext;
+        if (q < nbytes) {
+            byte = lits[at + q] as U64;
+        }
+        v = v | (byte << (8 * k));
+    }
+    return v;
+}
+
+// Writes the nl limb rows from row `at` of a constant of wide type ty in module m whose
+// value is stored at lits[lat, lat + nbytes) (CINTC-16): limb 1 + 6 j + p of row at + j in
+// `a` (p 0), `b` (p 1) or bytes 8 (p - 2) to 8 (p - 2) + 7 of `name`.
+void put_limbs[k](inout limits.Decl[k] d, I64 at, I64 nl, I64 m, I64 ty, in U8[_] lits, I64 lat, I64 nbytes) {
+    for j in 0..nl {
+        clear_row(d, at + j);
+        d[at + j].kind = limits.DK_LIMBS;
+        d[at + j].module = m as U32;
+    }
+    I64 limbs = wide_limbs(ty);
+    for i in 1..limbs {
+        U64 v = lit_limb(lits, lat, nbytes, i);
+        I64 r = at + (i - 1) / 6;
+        I64 p = (i - 1) % 6;
+        if (p == 0) {
+            d[r].a = v as% I64;
+        } else if (p == 1) {
+            d[r].b = v as% I64;
+        } else {
+            for q in 0..8 {
+                d[r].name[8 * (p - 2) + q] = ((v >> (8 * q)) & 0xFF) as U8;
+            }
+        }
+    }
+}
+
+// Limb j of the value of the constant whose record is row r (CINTC-16): its `a` for limb 0,
+// else from its limb rows, which follow its name rows.
+export U64 const_limb[k](in limits.Decl[k] d, I64 r, I64 j) {
+    if (j == 0) {
+        return d[r].a as% U64;
+    }
+    I64 q = next_member(d, r) + (j - 1) / 6;
+    I64 p = (j - 1) % 6;
+    if (p == 0) {
+        return d[q].a as% U64;
+    }
+    if (p == 1) {
+        return d[q].b as% U64;
+    }
+    U64 v = 0;
+    for i in 0..8 {
+        v = v | ((d[q].name[8 * (p - 2) + i] as U64) << (8 * i));
+    }
+    return v;
 }
 
 // The parameter mode of an N_PARAM node: 0 by value, 1 `in`, 2 `inout`.
@@ -300,6 +422,8 @@ I64 item_rows(in scan.Token[_] toks, in parse.Node[_] nodes, in resolve.Sem[_] s
         p = nodes[x].a as I64;
     } else if (kind != parse.N_VAR || ((nodes[x].flags & parse.F_CONST) == 0 && !module_var(nodes, sem, syms, x))) {
         return 0;
+    } else if ((nodes[x].flags & parse.F_CONST) != 0 && sem[x].sym >= 0) {
+        rows += limb_rows(syms[sem[x].sym].ty);
     }
     while (p >= 0) {
         rows += record_rows(toks[nodes[p].tok as I64].len as I64);
@@ -316,7 +440,7 @@ I64 item_rows(in scan.Token[_] toks, in parse.Node[_] nodes, in resolve.Sem[_] s
 // "Block order"). Returns true, or false after C9001 (LIM_DECLS) at the name of the first
 // declaration that does not fit, with the table as it was.
 export Bool write_block[n, k, r](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes,
-        inout resolve.Sem[_] sem, in resolve.Sym[_] syms, I64 root, I64 m, inout limits.Decl[k] d,
+        inout resolve.Sem[_] sem, in resolve.Sym[_] syms, in U8[_] lits, I64 root, I64 m, inout limits.Decl[k] d,
         inout limits.CompilerDiag[r] diag) {
     if (k == 0 || d[0].kind != limits.DK_HEADER) {
         _ = limits.limit_diag(diag, m, 1, 1, limits.LIM_DECLS, k);
@@ -337,6 +461,9 @@ export Bool write_block[n, k, r](in U8[n] src, in scan.Token[_] toks, in parse.N
             I64 tk = nodes[x].tok as I64;
             I64 nb = toks[tk].len as I64;
             I64 rows = record_rows(nb);
+            if (kind == parse.N_VAR && (nodes[x].flags & parse.F_CONST) != 0) {
+                rows += limb_rows(syms[sem[x].sym].ty);
+            }
             if (nb < 1 || nb > 255 || need + rows > k) {
                 _ = limits.limit_diag(diag, m, toks[tk].line as I64, toks[tk].col as I64,
                     limits.LIM_DECLS, k);
@@ -387,13 +514,19 @@ export Bool write_block[n, k, r](in U8[n] src, in scan.Token[_] toks, in parse.N
         if (kind == parse.N_VAR && (nodes[x].flags & parse.F_CONST) != 0 && sem[x].sym >= 0) {
             I64 sy = sem[x].sym;
             persist(nodes, sem, syms, syms[sy].ty, t);
+            I64 nl = limb_rows(syms[sy].ty);
             next = put(d, at, limits.DK_CONST, vis_of(nodes, x), 0, m, t[0] as U8, 0, 0,
-                syms[sy].value as% I64, 0, src, s, l);
+                syms[sy].value as% I64, nl, src, s, l);
+            if (next >= 0 && nl > 0) {
+                put_limbs(d, next, nl, m, syms[sy].ty, lits, sem[x].lit_at, sem[x].lit_len);
+                next += nl;
+            }
             nrec += 1;
         } else if (module_var(nodes, sem, syms, x)) {
-            // Its index in the module's state, the order of lowering.declare_globals.
+            // Its index in the module's state, the order of lowering.declare_globals; rank 1
+            // for a module-level array (box 13 MLA), which an importer does not name yet.
             persist(nodes, sem, syms, syms[sem[x].sym].ty, t);
-            next = put(d, at, limits.DK_VAR, vis_of(nodes, x), 0, m, t[0] as U8, 0, 0, nvar, 0,
+            next = put(d, at, limits.DK_VAR, vis_of(nodes, x), 0, m, t[0] as U8, t[1] as U8, 0, nvar, 0,
                 src, s, l);
             nrec += 1;
         } else if (kind == parse.N_FUNC || kind == parse.N_STRUCT) {
@@ -438,6 +571,12 @@ export Bool write_block[n, k, r](in U8[n] src, in scan.Token[_] toks, in parse.N
                     next = put(d, row, limits.DK_PARAM, vis, mode_of(nodes, p), m, t[0] as U8, t[1] as U8,
                         t[2] as U8, pos, t[3], src, toks[ptk].start as I64, toks[ptk].len as I64);
                 } else {
+                    if (resolve.is_array(sem[p].ty) && resolve.array_rank(sem[p].ty) > 1) {
+                        // A field of rank 2 to 4 (BX22-06): its extents, packed.
+                        t[1] = resolve.array_rank(sem[p].ty);
+                        t[2] = limits.DX_LITERAL as I64;
+                        t[3] = packed_extents(sem[p].ty);
+                    }
                     next = put(d, row, limits.DK_FIELD, vis, 0, m, t[0] as U8, t[1] as U8, t[2] as U8,
                         sem[p].lit_at, t[3], src, toks[ptk].start as I64, toks[ptk].len as I64);
                 }

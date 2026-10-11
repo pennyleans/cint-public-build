@@ -114,22 +114,26 @@ static bool ci_17_public_x5Frecords_5_touch(cint_ctx *ctx, cs_17_public_x5Frecor
     (void)n_a;
     (void)s_a;
     (void)result;
+    static const cint_site cs2 = {2u, 2u}; (void)cs2;
+    static const cint_site cs3 = {2u, 3u}; (void)cs3;
+    static const cint_site cs4 = {2u, 4u}; (void)cs4;
+    static const cint_site cs5 = {2u, 5u}; (void)cs5;
     t0 = INT64_C(0);
     if (!(t0 >= 0 && t0 < n_a)) {
-        (void)cint_index_check(ctx, (cint_site){2u, 2u}, "index.checked.struct", t0, n_a);
+        (void)cint_index_check(ctx, cs2, "index.checked.struct", t0, n_a);
         goto fault;
     }
     t1 = v_a[o_a + t0 * s_a].f_value;
     t2 = 1;
-    if (!cint_add_i32(ctx, (cint_site){2u, 3u}, t1, t2, &t3)) goto fault;
+    if (!cint_add_i32(ctx, cs3, t1, t2, &t3)) goto fault;
     v_a[o_a + t0 * s_a].f_value = t3;
     t4 = INT64_C(0);
     if (!(t4 >= 0 && t4 < n_a)) {
-        (void)cint_index_check(ctx, (cint_site){2u, 4u}, "index.checked.struct", t4, n_a);
+        (void)cint_index_check(ctx, cs4, "index.checked.struct", t4, n_a);
         goto fault;
     }
     t5 = v_a[o_a + t4 * s_a].f_value;
-    if (!cint_as_i64_from_i32(ctx, (cint_site){2u, 5u}, t5, &t6)) goto fault;
+    if (!cint_as_i64_from_i32(ctx, cs5, t5, &t6)) goto fault;
     *result = t6;
     return true;
 fault:
@@ -147,11 +151,12 @@ static bool ci_17_public_x5Frecords_6_copied(cint_ctx *ctx, cs_17_public_x5Freco
     (void)v_input;
     (void)l0;
     (void)result;
+    static const cint_site cs7 = {2u, 7u}; (void)cs7;
     l0.f_value = 0;
     l0.f_flag = false;
     t0 = v_input.f_value;
     t1 = INT64_C(1);
-    if (!cint_add_i64(ctx, (cint_site){2u, 7u}, t0, t1, &t2)) goto fault;
+    if (!cint_add_i64(ctx, cs7, t0, t1, &t2)) goto fault;
     t3 = v_input.f_flag;
     l0.f_value = t2;
     l0.f_flag = t3;
@@ -174,12 +179,13 @@ static bool ci_17_public_x5Frecords_4_both(cint_ctx *ctx, cs_17_public_x5Frecord
     (void)v_divisor;
     (void)l0;
     (void)result;
+    static const cint_site cs9 = {2u, 9u}; (void)cs9;
     t0 = INT64_C(42);
     (*v_a).f_value = t0;
     l0.f_value = 0;
     l0.f_flag = false;
     t1 = INT64_C(10);
-    if (!cint_div_i64(ctx, (cint_site){2u, 9u}, t1, v_divisor, &t2)) goto fault;
+    if (!cint_div_i64(ctx, cs9, t1, v_divisor, &t2)) goto fault;
     t3 = v_b.f_flag;
     l0.f_value = t2;
     l0.f_flag = t3;
@@ -212,6 +218,11 @@ static bool ci_17_public_x5Frecords_7_aliases(cint_ctx *ctx, int64_t *result)
     (void)l2;
     (void)l3_b;
     (void)result;
+    static const cint_site cs11 = {2u, 11u}; (void)cs11;
+    static const cint_site cs12 = {2u, 12u}; (void)cs12;
+    static const cint_site cs13 = {2u, 13u}; (void)cs13;
+    static const cint_site cs14 = {2u, 14u}; (void)cs14;
+    static const cint_site cs15 = {2u, 15u}; (void)cs15;
     l0.f_enabled = false;
     l0.f_code = 0;
     t0 = true;
@@ -231,14 +242,14 @@ static bool ci_17_public_x5Frecords_7_aliases(cint_ctx *ctx, int64_t *result)
     l3_b.f_code = 0;
     l3_b = l2;
     t4 = l1_a.f_code;
-    if (!cint_as_i64_from_u8(ctx, (cint_site){2u, 11u}, t4, &t5)) goto fault;
+    if (!cint_as_i64_from_u8(ctx, cs11, t4, &t5)) goto fault;
     t6 = l3_b.f_code;
-    if (!cint_as_i64_from_u8(ctx, (cint_site){2u, 12u}, t6, &t7)) goto fault;
-    if (!cint_add_i64(ctx, (cint_site){2u, 13u}, t5, t7, &t8)) goto fault;
-    if (!cint_rt_call_enter(ctx, (cint_site){2u, 14u})) goto fault;
+    if (!cint_as_i64_from_u8(ctx, cs12, t6, &t7)) goto fault;
+    if (!cint_add_i64(ctx, cs13, t5, t7, &t8)) goto fault;
+    if (!cint_rt_call_enter(ctx, cs14)) goto fault;
     if (!ci_13_record_x5Fmid_8_observed(ctx, &t9)) goto fault;
     cint_rt_call_leave(ctx);
-    if (!cint_add_i64(ctx, (cint_site){2u, 15u}, t8, t9, &t10)) goto fault;
+    if (!cint_add_i64(ctx, cs15, t8, t9, &t10)) goto fault;
     *result = t10;
     return true;
 fault:

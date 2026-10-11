@@ -1,0 +1,11 @@
+// case: fixed/convert_round_clause_c2009
+// clause: SPEC-01 IM-68, IM-69; SPEC-04 17.2 (an integer converted to fixed point is exact, so a round clause is C2009)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: compile-error C2009 at 9:18 (the `as`). Box 15, unit 1
+
+export I64 run() {
+    I32 n = 1;
+    Q16.16 y = n as Q16.16 round floor;
+    return 0;
+}

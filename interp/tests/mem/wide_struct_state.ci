@@ -1,0 +1,47 @@
+// Wide fields of module-level structs in a checkpoint on both backends (box 15; rt/OPEN.md
+// RT-OQ-51; interp/tests/state_host.c). `acc` starts at -5 * 2^64, 2^200 and -9, and 2^300;
+// `zero` is zero-filled. Each `run` counts its call, multiplies `acc.lo` by 3 and adds the
+// count, negates the element of `acc.pair` at the count's remainder mod 2, takes the count from
+// `acc.inner.big`, flips `acc.inner.odd`, adds the count to `acc.n`, and adds `acc.lo` shifted
+// left by 900 to `zero.sum`, then returns `acc.lo` mod 1000, a digit per sign of the pair,
+// `acc.inner.big` mod 1000, the Bool, and `zero.sum` shifted right by 950, mod 1000. A run after
+// a restore returns what the run after the checkpoint returned only when the structs came back.
+
+struct Inner { I512 big; Bool odd; }
+struct Acc { I128 lo; I256[2] pair; Inner inner; I64 n; }
+struct Zero { I1024 sum; I32 k; }
+
+I64 calls = 0;
+Acc acc = Acc(-92233720368547758080,
+              [1606938044258990275541962092341162602522202993782792835301376, -9],
+              Inner(2037035976334486086268445688409378161051468393665936250636140449354381299763336706183397376,
+                    true),
+              3);
+Zero zero;
+
+I64 digit(I256 v) {
+    if (v < 0) {
+        return 1;
+    }
+    return 2;
+}
+
+export I64 run() {
+    calls += 1;
+    acc.lo = acc.lo * 3 + calls as I128;
+    acc.pair[calls % 2] = -acc.pair[calls % 2];
+    acc.inner.big -= calls as I512;
+    acc.inner.odd = !acc.inner.odd;
+    acc.n += calls;
+    zero.sum += (acc.lo as I1024) << 900;
+    zero.k += 1;
+    I64 d = (acc.lo % 1000) as I64;
+    d = d * 10 + digit(acc.pair[0]);
+    d = d * 10 + digit(acc.pair[1]);
+    d = d * 1000 + (acc.inner.big % 1000) as I64;
+    d = d * 10;
+    if (acc.inner.odd) {
+        d += 1;
+    }
+    return d * 1000 + ((zero.sum >> 950) % 1000) as I64;
+}

@@ -179,6 +179,9 @@ def main(argv=None):
                     [PY, "conformance/tools/gen_tables.py"]
                     + sorted(glob.glob("conformance/integer-machine/exh8/*.cif1.jsonl"))
                     + sorted(glob.glob("conformance/integer-machine/bnd64/*.cif1.jsonl"))
+                    + ["--out", os.path.join(regen, "tables")],
+                    [PY, "conformance/tools/gen_tables.py", "--kernel"]
+                    + sorted(glob.glob("conformance/integer-machine/bnd64/*.cif1.jsonl"))
                     + ["--out", os.path.join(regen, "tables")]):
             code, out, _ = run(cmd)
             assert code == 0, out[-2000:]
@@ -193,6 +196,8 @@ def main(argv=None):
     commands += ["python conformance/tools/gen_exhaustive8.py --batch all --out <scratch>/exh8",
                  "python conformance/tools/gen_boundary64.py --batch all --out <scratch>/bnd64",
                  "python conformance/tools/gen_tables.py conformance/integer-machine/exh8/*.cif1.jsonl "
+                 "conformance/integer-machine/bnd64/*.cif1.jsonl --out <scratch>/tables",
+                 "python conformance/tools/gen_tables.py --kernel "
                  "conformance/integer-machine/bnd64/*.cif1.jsonl --out <scratch>/tables",
                  "sha256 of each regenerated file compared with conformance/integer-machine/MANIFEST.txt"]
 

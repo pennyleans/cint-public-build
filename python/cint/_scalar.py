@@ -61,7 +61,7 @@ def to_raw(value, elem, what: str = "argument") -> int:
             return int(value)
         if np is not None and np[0] == "b":
             return int(bool(value))
-        raise Refused("%s: a Bool parameter takes True or False, not %s (BX10-15)" % (what, _describe(value)))
+        raise Refused("%s: a Bool parameter takes True or False, not %s" % (what, _describe(value)))
     if isinstance(value, bool) or (np is not None and np[0] == "b"):
         raise Refused("%s: a bool is not %s argument, although bool subclasses int (SPEC-03 P-21)"
                       % (what, _a(e)))
@@ -91,7 +91,7 @@ def to_raw(value, elem, what: str = "argument") -> int:
         return _range(e, value, what)
     if isinstance(value, str):
         raise Refused("%s: a str is not a CINT value; text crosses as bytes to an in U8[n] parameter, "
-                      "for example s.encode(\"utf-8\") (BX10-15)" % what)
+                      "for example s.encode(\"utf-8\")" % what)
     raise Refused("%s: %s is not a value of %s" % (what, _describe(value), e))
 
 

@@ -1,5 +1,6 @@
 /* cint_main.c: the `cint` command: `cint run` (slice 2 task 2.12), `cint build` and `cint test`
- * (task 2.15), and `cint emit-c` (task 2.12a).
+ * (task 2.15), `cint emit-c` (task 2.12a), and `cint <name>`, which runs `cint-<name>` from this
+ * executable's directory (SPEC-06 3.1, BX13-15; handoff below).
  *
  *   cint run [--json] [--receipt PATH] [--root DIR] [--toolchain FILE] [--cache DIR] FILE.ci
  *   cint build [--json] [--receipt PATH] [--root DIR] [--out DIR] [--toolchain FILE] [--cache DIR] [FILE.ci | DIR]
@@ -20,7 +21,7 @@
  *   (no host C compiler, an unreadable or refused input, output not writable); 6 `main` left
  *   with an error result (rt/OPEN.md RT-OQ-33); 7 internal error (a fault inside cintc, the
  *   host C compiler rejecting or warning on generated source, a program that ends without a
- *   CINT status, an unreadable fault, error or fuel record). 3 is not reachable here.
+ *   CINT status, an unreadable fault, error or fuel record). 3 comes only from `cint <name>`.
  *
  * `cint build` writes the program to --out DIR (default: build under the project directory) as
  * the root module's name without .ci, and runs nothing. `cint test` runs every test block of the
@@ -104,13 +105,12 @@ static const char USAGE[] =
     "usage: cint [--json] run [--receipt PATH] [--root DIR] [--toolchain FILE] [--cache DIR] FILE.ci\n"
     "       cint [--json] build [--receipt PATH] [--root DIR] [--out DIR] [--lib] [--toolchain FILE] [--cache DIR] [FILE.ci | DIR]\n"
     "       cint [--json] test [--receipt PATH] [--root DIR] [--toolchain FILE] [--cache DIR] [FILE.ci | DIR]\n"
-    "       cint [--json] emit-c --root DIR --out DIR [--toolchain FILE] MODULE.ci...\n";
+    "       cint [--json] emit-c --root DIR --out DIR [--toolchain FILE] MODULE.ci...\n"
+    "       cint [--json] NAME [ARG...]: runs cint-NAME from cint's directory, as cint debug or cint workbench\n";
 
 static int usage(const char *why)
 {
-    if (!json_mode) {
-        fputs(USAGE, stderr);
-    }
+    if (!json_mode) fputs(USAGE, stderr);
     return tool_error(CINT_EXIT_USAGE, NULL, 0, NULL, "%s", why);
 }
 
@@ -120,19 +120,12 @@ int read_file(const char *path, uint8_t **bytes, size_t *len)
     sbuf b = {0};
     char buf[65536];
     size_t got;
-    if (f == NULL) {
-        return -1;
-    }
+    if (f == NULL) return -1;
     sb_put(&b, "", 0u);
-    while ((got = fread(buf, 1, sizeof buf, f)) > 0u) {
-        sb_put(&b, buf, got);
-    }
-    if (ferror(f)) {
-        fclose(f);
-        free(b.p);
-        return -1;
-    }
+    while ((got = fread(buf, 1, sizeof buf, f)) > 0u) sb_put(&b, buf, got);
+    int failed = ferror(f);
     fclose(f);
+    if (failed) { free(b.p); return -1; }
     *bytes = (uint8_t *)b.p;
     *len = b.n;
     return 0;
@@ -140,11 +133,9 @@ int read_file(const char *path, uint8_t **bytes, size_t *len)
 
 static char *dup_s(const char *s)
 {
-    char *d = malloc(strlen(s) + 1u);
-    if (d != NULL) {
-        memcpy(d, s, strlen(s) + 1u);
-    }
-    return d;
+    size_t n = strlen(s) + 1u;
+    char *d = malloc(n);
+    return d != NULL ? memcpy(d, s, n) : NULL;
 }
 
 char *join(const char *a, const char *b)
@@ -177,48 +168,36 @@ static int load_toolchain(const char *path)
     size_t len;
     char *line, *next;
     toolchain *t = &g.tc;
-    if (read_file(path, &bytes, &len) != 0 || len < 16u || memcmp(bytes, "cint-toolchain-1\n", 16) != 0) {
-        return -1;
-    }
+    if (read_file(path, &bytes, &len) != 0 || len < 16u || memcmp(bytes, "cint-toolchain-1\n", 16) != 0) return -1;
     for (line = (char *)bytes + 16; *line != '\0'; line = next) {
         char *sp, *val;
-        next = strchr(line, '\n');
-        if (next == NULL) {
-            next = line + strlen(line);
-        } else {
-            *next++ = '\0';
-        }
-        if ((sp = strchr(line, ' ')) == NULL) {
-            continue;
-        }
+        if ((next = strchr(line, '\n')) == NULL) next = line + strlen(line);
+        else *next++ = '\0';
+        if ((sp = strchr(line, ' ')) == NULL) continue;
         *sp = '\0';
         val = sp + 1;
-        if (strcmp(line, "flag") == 0 && t->nflags++ < 64u) { /* a count past 64 refuses the file below */
-            t->flags[t->nflags - 1u] = val;
-        } else if (strcmp(line, "runtime_source") == 0 && t->nrt++ < 64u) {
-            t->rt_sources[t->nrt - 1u] = val;
+        if (strcmp(line, "flag") == 0 && t->nflags < 64u) {
+            t->flags[t->nflags++] = val;
+        } else if (strcmp(line, "runtime_source") == 0 && t->nrt <= CLI_MAX_RT) {
+            t->rt_sources[t->nrt++] = val;
         } else if (strcmp(line, "env") == 0 && strchr(val, '=') != NULL) {
             char *eq = strchr(val, '=');
             *eq = '\0';
-            if (cli_setenv(val, eq + 1) != 0) {
-                return -1;
-            }
+            if (cli_setenv(val, eq + 1) != 0) return -1;
         } else {
             static const char *const keys[] = {"leg", "cc", "cc_version", "include", "runtime_object", "cache", "host",
                                                "compiler_sources", "executable_sha256", "runtime_library_object"};
             char **slots[] = {&t->leg, &t->cc, &t->cc_version, &t->include, &t->runtime_object, &t->cache, &t->host,
                               &t->compiler_sources, &t->executable_sha256, &t->runtime_library_object};
             for (size_t k = 0; k < sizeof keys / sizeof keys[0]; k++) {
-                if (strcmp(line, keys[k]) == 0) {
-                    *slots[k] = val;
-                }
+                if (strcmp(line, keys[k]) == 0) *slots[k] = val;
             }
         }
     }
     qsort(t->rt_sources, t->nrt, sizeof t->rt_sources[0], by_basename);
     return t->leg != NULL && t->cc != NULL && t->include != NULL && t->runtime_object != NULL && t->cache != NULL &&
                    t->compiler_sources != NULL && t->executable_sha256 != NULL &&
-                   strlen(t->executable_sha256) == 64u && t->nrt - 1u < 64u && t->nflags - 1u < 64u
+                   strlen(t->executable_sha256) == 64u && t->nrt > 0u && t->nrt <= CLI_MAX_RT && t->nflags > 0u
                ? 0
                : -1;
 }
@@ -230,9 +209,7 @@ static cint_view u8_view(void *p, int64_t n, uint8_t perm)
 {
     cint_view v;
     memset(&v, 0, sizeof v);
-    if (cint_buffer_register_bytes(g.ctx, n > 0 ? p : NULL, n, perm, &v.buffer) != CINT_OK) {
-        v.buffer = 0u;
-    }
+    if (cint_buffer_register_bytes(g.ctx, n > 0 ? p : NULL, n, perm, &v.buffer) != CINT_OK) v.buffer = 0u;
     v.generation = CINT_BUFFER_GENERATION_FIRST;
     v.type.code = CINT_TAG_U8;
     v.rank = 1u;
@@ -252,9 +229,7 @@ int digest(const uint8_t *data, size_t n, char hex[65])
     (void)cint_buffer_release(g.ctx, vd.buffer);
     (void)cint_buffer_release(g.ctx, vh.buffer);
     if (st != CINT_OK || result != 0) return -1;
-    for (int i = 0; i < 32; i++) {
-        (void)snprintf(hex + 2 * i, 3, "%02x", (unsigned)hash[i]);
-    }
+    for (int i = 0; i < 32; i++) (void)snprintf(hex + 2 * i, 3, "%02x", (unsigned)hash[i]);
     return 0;
 }
 
@@ -444,13 +419,8 @@ typedef struct rd {
 static uint64_t rd_u(rd *r, unsigned k)
 {
     uint64_t v = 0;
-    if (r->bad || r->n - r->at < k) {
-        r->bad = 1;
-        return 0;
-    }
-    for (unsigned i = 0; i < k; i++) {
-        v |= (uint64_t)r->p[r->at + i] << (8u * i);
-    }
+    if (r->bad || r->n - r->at < k) { r->bad = 1; return 0; }
+    for (unsigned i = 0; i < k; i++) v |= (uint64_t)r->p[r->at + i] << (8u * i);
     r->at += k;
     return v;
 }
@@ -465,10 +435,7 @@ static int rd_flag(rd *r)
 static const uint8_t *rd_take(rd *r, uint64_t k)
 {
     const uint8_t *p = r->p + r->at;
-    if (r->bad || r->n - r->at < k) {
-        r->bad = 1;
-        return NULL;
-    }
+    if (r->bad || r->n - r->at < k) { r->bad = 1; return NULL; }
     r->at += (size_t)k;
     return p;
 }
@@ -490,9 +457,7 @@ static void rd_value(rd *r, fvalue *v, unsigned zmax)
                (tag >= 0x21u && tag <= 0x28u)) {
         const uint8_t *p = rd_take(r, tag == CINT_TAG_BOOL ? 1u : 1u << ((tag & 0x0Fu) - 1u));
         if (p != NULL && tag == CINT_TAG_BOOL && *p > 1u) r->bad = 1;
-    } else {
-        r->bad = 1;
-    }
+    } else r->bad = 1;
     if (!r->bad) {
         v->len = (uint16_t)(r->at - start);
         memcpy(v->bytes, r->p + start, r->at - start);
@@ -532,53 +497,52 @@ static void rd_pos(rd *r, fpos *p)
     if (p->line == 0u || p->column == 0u) r->bad = 1;
 }
 
-/* Trailing bytes are allowed only in a compile-time slot of the faults table. */
+/* The version a run-time record of `op` is written in: 3 for dot.checked.i1024.<R>, 2 for any
+ * other (SPEC-01 IM-149; BX15-07 C). It is spelled out, as pin 1's cint_rt.h has no
+ * cint_fault_version; the CLI builds against pin 1's header (cint-stage floor). */
+static unsigned fault_version(const char *op, size_t len)
+{
+    static const char dot[] = "dot.checked.i1024.";
+    return len > sizeof dot - 1u && memcmp(op, dot, sizeof dot - 1u) == 0 ? 3u : 2u;
+}
+
+/* Trailing bytes are allowed only in a compile-time slot of the faults table. A record
+ * is of version 2, or of version 3 when it is a run-time record of dot.checked.i1024.<R>,
+ * whose Z holds up to 264 bytes rather than 257 (SPEC-01 IM-108, IM-148, IM-149). */
 int decode_fault(const uint8_t *data, size_t n, frec *f, int trailing)
 {
-    static const char domain[] = "cint-core-1/fault/v2";
+    static const char v2[] = "cint-core-1/fault/v2", v3[] = "cint-core-1/fault/v3";
     rd r = {data, n, 0, 0};
     uint64_t len;
     const uint8_t *s;
+    unsigned version, zmax;
     memset(f, 0, sizeof *f);
     len = rd_u(&r, 4);
     s = rd_take(&r, len);
-    if (s == NULL || len != sizeof domain - 1u || memcmp(s, domain, sizeof domain - 1u) != 0) {
-        return -1;
-    }
+    if (s == NULL || len != sizeof v2 - 1u) return -1;
+    version = memcmp(s, v2, sizeof v2 - 1u) == 0 ? 2u : memcmp(s, v3, sizeof v3 - 1u) == 0 ? 3u : 0u;
+    if (version == 0u || (version == 3u && trailing)) return -1;
+    zmax = version == 3u ? 264u : 257u;
     f->code = (unsigned)rd_u(&r, 2);
     len = rd_u(&r, 4);
     s = rd_take(&r, len);
-    if (f->code == 0u || f->code > 13u || s == NULL || len == 0u || len > 64u) {
-        return -1;
-    }
+    if (f->code == 0u || f->code > 13u || s == NULL || len == 0u || len > 64u) return -1;
     memcpy(f->op, s, (size_t)len);
     for (size_t i = 0; i < len; i++) {
         unsigned c = s[i];
-        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '_')) {
-            return -1;
-        }
+        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '_')) return -1;
     }
-    f->nop = (uint32_t)rd_u(&r, 4);
-    if (f->nop > CINT_FAULT_MAX_OPERANDS) {
-        return -1;
-    }
-    for (uint32_t i = 0; i < f->nop; i++) {
-        rd_value(&r, &f->opnd[i], trailing ? 513u : 257u);
-    }
+    if (!trailing && fault_version(f->op, (size_t)len) != version) return -1;
+    if ((f->nop = (uint32_t)rd_u(&r, 4)) > CINT_FAULT_MAX_OPERANDS) return -1;
+    for (uint32_t i = 0; i < f->nop; i++) rd_value(&r, &f->opnd[i], trailing ? 513u : zmax);
     if ((f->has_exact = rd_flag(&r)) != 0) {
-        rd_value(&r, &f->exact, trailing ? 520u : 257u);
+        rd_value(&r, &f->exact, trailing ? 520u : zmax);
         if (f->exact.bytes[0] != CINT_TAG_Z) r.bad = 1;
     }
-    if ((f->has_limit = rd_flag(&r)) != 0) {
-        rd_value(&r, &f->limit, 257u);
-    }
+    if ((f->has_limit = rd_flag(&r)) != 0) rd_value(&r, &f->limit, zmax);
     rd_pos(&r, &f->pos);
-    if ((f->has_rev = rd_flag(&r)) != 0 && (s = rd_take(&r, 32)) != NULL) {
-        memcpy(f->rev, s, 32);
-    }
-    if ((f->has_map = rd_flag(&r)) != 0 && (s = rd_take(&r, 32)) != NULL) {
-        memcpy(f->map, s, 32);
-    }
+    if ((f->has_rev = rd_flag(&r)) != 0 && (s = rd_take(&r, 32)) != NULL) memcpy(f->rev, s, 32);
+    if ((f->has_map = rd_flag(&r)) != 0 && (s = rd_take(&r, 32)) != NULL) memcpy(f->map, s, 32);
     if ((f->has_addr = rd_flag(&r)) != 0) {
         f->kernel_len = (uint32_t)rd_u(&r, 4);
         f->kernel = (const char *)rd_take(&r, f->kernel_len);
@@ -595,13 +559,8 @@ int decode_fault(const uint8_t *data, size_t n, frec *f, int trailing)
             memcpy(&f->step, &u, sizeof u);
         }
     }
-    f->nstack = (uint32_t)rd_u(&r, 4);
-    if (f->nstack > CINT_RT_MAX_DEPTH) {
-        return -1;
-    }
-    for (uint32_t i = 0; i < f->nstack; i++) {
-        rd_pos(&r, &f->stack[i]);
-    }
+    if ((f->nstack = (uint32_t)rd_u(&r, 4)) > CINT_RT_MAX_DEPTH) return -1;
+    for (uint32_t i = 0; i < f->nstack; i++) rd_pos(&r, &f->stack[i]);
     return r.bad || (r.at != r.n && !trailing) ? -1 : 0;
 }
 
@@ -630,15 +589,12 @@ size_t value_text(const fvalue *v, char text[1700], int with_type)
     }
     negative = n > 0u && (tag == CINT_TAG_Z || tag < 0x20u) && (v->bytes[off + n - 1u] & 0x80u) != 0u;
     memcpy(mag, v->bytes + off, n);
-    if (negative) {
-        unsigned carry = 1u;
-        for (size_t i = 0; i < n; i++) {
-            unsigned u = (unsigned)(uint8_t)~mag[i] + carry;
-            mag[i] = (uint8_t)u;
-            carry = u >> 8;
-        }
-        text[at++] = '-';
+    for (unsigned i = 0, carry = 1u; negative && i < n; i++) {   /* the magnitude of a negative value */
+        unsigned u = (unsigned)(uint8_t)~mag[i] + carry;
+        mag[i] = (uint8_t)u;
+        carry = u >> 8;
     }
+    if (negative) text[at++] = '-';
     for (int more = 1; more;) {
         unsigned rem = 0u;
         more = 0;
@@ -650,9 +606,7 @@ size_t value_text(const fvalue *v, char text[1700], int with_type)
         }
         digits[nd++] = (char)('0' + rem);
     }
-    while (nd > 0u) {
-        text[at++] = digits[--nd];
-    }
+    while (nd > 0u) text[at++] = digits[--nd];
     text[at] = '\0';
     return at;
 }
@@ -668,29 +622,18 @@ static void excerpt(sbuf *b, const char *path, size_t path_len, uint32_t line, u
     for (int i = 0; i < g.nmods; i++) {
         if (g.mods[i].src != NULL && strlen(g.mods[i].rel) == path_len && memcmp(g.mods[i].rel, path, path_len) == 0) m = &g.mods[i];
     }
-    if (m == NULL || line == 0u) {
-        return;
-    }
+    if (m == NULL || line == 0u) return;
     const char *s = (const char *)m->src, *end = s + m->len, *e;
     uint32_t k = 1, col = 1;
     int w = line >= 100000u ? 6 : line >= 10000u ? 5 : line >= 1000u ? 4 : line >= 100u ? 3 : 2;
-    while (s < end && k < line) {
-        if (*s++ == '\n') {
-            k++;
-        }
-    }
-    if (k != line || s > end) {
-        return;
-    }
-    for (e = s; e < end && *e != '\n' && *e != '\r'; e++) {
-    }
+    while (s < end && k < line) k += *s++ == '\n';
+    if (k != line || s > end) return;
+    for (e = s; e < end && *e != '\n' && *e != '\r'; e++) {}
     sb_f(b, "%*s |\n%*u | ", w, "", w, (unsigned)line);
     sb_put(b, s, (size_t)(e - s));
     sb_f(b, "\n%*s | ", w, "");
     for (; s < e && col < column; s++) {
-        if (((unsigned char)*s & 0xC0u) == 0x80u) {
-            continue;  /* a continuation byte: columns count scalar values (DIAG-01) */
-        }
+        if (((unsigned char)*s & 0xC0u) == 0x80u) continue;  /* a continuation byte: columns count scalar values (DIAG-01) */
         sb_s(b, *s == '\t' ? "\t" : " ");
         col++;
     }
@@ -710,22 +653,15 @@ static void human_fault(sbuf *b, const frec *f, int64_t fuel)
         (void)value_text(&f->opnd[i], text, 1);
         sb_f(b, "   = operand: %s\n", text);
     }
-    if (f->has_exact) {
-        (void)value_text(&f->exact, text, 0);
-        sb_f(b, "   = exact:   %s\n", text);
-    } else sb_s(b, "   = exact:   none\n");
-    if (f->has_limit) {
-        (void)value_text(&f->limit, text, 1);
-        sb_f(b, "   = limit:   %s\n", text);
-    } else sb_s(b, "   = limit:   none\n");
-    sb_s(b, "   = revision: ");
-    if (f->has_rev) {
-        sb_hex(b, f->rev, 32);
-    } else sb_s(b, "none");
+    if (f->has_exact) (void)value_text(&f->exact, text, 0);
+    sb_f(b, "   = exact:   %s\n", f->has_exact ? text : "none");
+    if (f->has_limit) (void)value_text(&f->limit, text, 1);
+    sb_f(b, "   = limit:   %s\n   = revision: ", f->has_limit ? text : "none");
+    if (f->has_rev) sb_hex(b, f->rev, 32);
+    else sb_s(b, "none");
     sb_s(b, "\n   = source-map: ");
-    if (f->has_map) {
-        sb_hex(b, f->map, 32);
-    } else sb_s(b, "none");
+    if (f->has_map) sb_hex(b, f->map, 32);
+    else sb_s(b, "none");
     sb_s(b, "\n   = address: ");
     if (f->has_addr) {
         sb_put(b, f->kernel, f->kernel_len);
@@ -739,9 +675,7 @@ static void human_fault(sbuf *b, const frec *f, int64_t fuel)
         sb_put(b, f->stack[i].path, f->stack[i].path_len);
         sb_f(b, ":%u:%u\n", (unsigned)f->stack[i].line, (unsigned)f->stack[i].column);
     }
-    if (fuel >= 0) {
-        sb_f(b, "   = fuel-consumed: %lld (not part of the fault record)\n", (long long)fuel);
-    }
+    if (fuel >= 0) sb_f(b, "   = fuel-consumed: %lld (not part of the fault record)\n", (long long)fuel);
     sb_s(b, g.mode == MODE_TEST ? "   = state: the test stopped; its output is not shown\n"
                                 : "   = state: the program stopped; stdout holds what it wrote before the fault\n");
 }
@@ -790,13 +724,9 @@ static const char *diag_text(const cint_compiler_diag *d)
         if (d->detail[0] == CINT_PATH_COLLISION)
             return "two module paths of one program are equal under ASCII case folding (SPEC-09 CINTC-12)";
     }
-    if (code == 9001 && d->detail[0] == 31) {
-        return "cpu-c17 record layout exceeds 4294967295 bytes (LIM_RECORD_BYTES)";
-    }
+    if (code == 9001 && d->detail[0] == 31) return "cpu-c17 record layout exceeds 4294967295 bytes (LIM_RECORD_BYTES)";
     for (size_t i = 0; i < sizeof DIAG_TEXT / sizeof DIAG_TEXT[0]; i++) {
-        if (code >= DIAG_TEXT[i].lo && code <= DIAG_TEXT[i].hi) {
-            return DIAG_TEXT[i].text;
-        }
+        if (code >= DIAG_TEXT[i].lo && code <= DIAG_TEXT[i].hi) return DIAG_TEXT[i].text;
     }
     return "compile error";
 }
@@ -814,19 +744,15 @@ static const char *diag_text(const cint_compiler_diag *d)
 static int script_note(const cint_compiler_diag *d, char *out, size_t cap)
 {
     if ((d->code != 3004 && d->code != 3010 && d->code != 3011 && d->code != 6004) ||
-        (d->detail[2] != 1 && d->detail[2] != 2)) {
-        return 0;
-    }
+        (d->detail[2] != 1 && d->detail[2] != 2)) return 0;
     if (d->detail[2] == 1) {
         (void)snprintf(out, cap, "this module is a script because of the top-level statement at %s:%lld:%lld", dfile(d),
                        (long long)d->detail[0], (long long)d->detail[1]);
     } else {
-        (void)snprintf(out, cap, "this file is a module, not a script, because every top-level item is a "
-                                 "declaration (LS-218)");
+        (void)snprintf(out, cap, "this file is a module, not a script, because every top-level item is a declaration (LS-218)");
     }
     return 1;
 }
-
 
 /* Compile diagnostics in LS-282 order (the compiler retains them sorted). */
 void report_diags(sbuf *receipt)
@@ -843,9 +769,7 @@ void report_diags(sbuf *receipt)
                     decode_fault(g_faults + d->detail[2], 2372u, &f, 1) == 0;
         sbuf *o = receipt != NULL ? receipt : &b;
         if (receipt != NULL || json_mode) {
-            if (receipt != NULL && k > 1) {
-                sb_s(o, ",");
-            }
+            if (receipt != NULL && k > 1) sb_s(o, ",");
             sb_jdiag(o, d, fault ? &f : NULL, dfile(d), receipt != NULL ? NULL : diag_text(d),
                      receipt == NULL && script_note(d, note, sizeof note) ? note : NULL);
             continue;
@@ -853,20 +777,12 @@ void report_diags(sbuf *receipt)
         sb_f(&b, "error[C%04lld]: %s\n  --> %s:%lld:%lld\n", (long long)d->code, diag_text(d), dfile(d),
              (long long)d->line, (long long)d->column);
         excerpt(&b, dfile(d), strlen(dfile(d)), (uint32_t)d->line, (uint32_t)d->column, "");
-        if (fault) {
-            human_fault(&b, &f, -1);
-        }
-        if (script_note(d, note, sizeof note)) {
-            sb_f(&b, "   = note: %s\n", note);
-        }
+        if (fault) human_fault(&b, &f, -1);
+        if (script_note(d, note, sizeof note)) sb_f(&b, "   = note: %s\n", note);
     }
     if (receipt == NULL) {
-        if (rest > 0 && !json_mode) {
-            sb_f(&b, "%lld more errors not shown (SPEC-04 LS-282)\n", (long long)rest);
-        }
-        if (b.p != NULL) {
-            fputs(b.p, stderr);
-        }
+        if (rest > 0 && !json_mode) sb_f(&b, "%lld more errors not shown (SPEC-04 LS-282)\n", (long long)rest);
+        if (b.p != NULL) fputs(b.p, stderr);
         fflush(stderr);
     }
     free(b.p);
@@ -878,22 +794,15 @@ void report_diags(sbuf *receipt)
 static int relay(void *user, const uint8_t *bytes, size_t len)
 {
     run_out *o = user;
-    if (fwrite(bytes, 1, len, stdout) != len || fflush(stdout) != 0) {
-        o->failed = 1;
-        return 1;
-    }
-    if (o->keep) {
-        sb_put(&o->bytes, bytes, len);
-    }
+    if (fwrite(bytes, 1, len, stdout) != len || fflush(stdout) != 0) { o->failed = 1; return 1; }
+    if (o->keep) sb_put(&o->bytes, bytes, len);
     return 0;
 }
 
 int64_t now_ns(void)
 {
     struct timespec ts;
-    if (timespec_get(&ts, TIME_UTC) != TIME_UTC) {
-        return 0;
-    }
+    if (timespec_get(&ts, TIME_UTC) != TIME_UTC) return 0;
     return (int64_t)ts.tv_sec * 1000000000 + (int64_t)ts.tv_nsec;
 }
 
@@ -904,26 +813,19 @@ static int read_outset(const char *out, outset *o)
     char *mpath, *line, *next;
     char *ref_path = join(out, "MANIFEST.ref");
     memset(o, 0, sizeof *o);
-    if (read_file(ref_path, &ref, &len) != 0 || len == 0u || len >= 256u || strchr((char *)ref, ' ') == NULL) {
-        free(ref_path);
-        return -1;
-    }
+    int bad = read_file(ref_path, &ref, &len) != 0 || len == 0u || len >= 256u || strchr((char *)ref, ' ') == NULL;
     free(ref_path);
+    if (bad) return -1;
     *strchr((char *)ref, ' ') = '\0';
     (void)snprintf(o->stage, sizeof o->stage, "%s" SEP "..%s%s", out, SEP, (char *)ref);
     free(ref);
     mpath = join(o->stage, "MANIFEST");
-    if (read_file(mpath, &man, &mlen) != 0 || digest(man, mlen, o->manifest_hex) != 0) {
-        free(mpath);
-        return -1;
-    }
+    bad = read_file(mpath, &man, &mlen) != 0 || digest(man, mlen, o->manifest_hex) != 0;
     free(mpath);
+    if (bad) return -1;
     for (line = strchr((char *)man, '\n'); line != NULL; line = next) {
         char *sp, **rel;
-        next = strchr(++line, '\n');
-        if (next != NULL) {
-            *next = '\0';
-        }
+        if ((next = strchr(++line, '\n')) != NULL) *next = '\0';
         if ((sp = strrchr(line, ' ')) != NULL && sp[1] != '\0' &&
             (rel = realloc(o->rel, (o->n + 1u) * sizeof *rel)) != NULL) {
             o->rel = rel;
@@ -934,26 +836,26 @@ static int read_outset(const char *out, outset *o)
     return o->n > 0u ? 0 : -1;
 }
 
-/* The program's fuel record (rt/cint_rt.h CINT_FUEL_RECORD_DOMAIN): the domain string,
- * U32 length first, then fuel consumed as a non-negative I64, little-endian. Zero and
- * *fuel on success. */
-static int decode_fuel(const uint8_t *data, size_t n, int64_t *fuel)
+/* The program's or test's records and stderr, in the run directory. */
+static char *fpath, *epath, *upath;
+
+/* The fuel record at upath (rt/cint_rt.h CINT_FUEL_RECORD_DOMAIN): the domain string, U32
+ * length first, then fuel consumed as a non-negative I64, little-endian. 1, with *fuel, when
+ * it reads; 0 otherwise. */
+static int read_fuel(int64_t *fuel)
 {
     static const char domain[] = "cint-core-1/fuel-consumed/v1";
     const size_t d = sizeof domain - 1u;
+    uint8_t *data = NULL;
+    size_t n = 0u;
     uint64_t v = 0u;
-    if (n != 4u + d + 8u || data[0] != (uint8_t)d || data[1] != 0u || data[2] != 0u || data[3] != 0u ||
-        memcmp(data + 4, domain, d) != 0) {
-        return -1;
-    }
-    for (size_t i = 0; i < 8u; i++) {
-        v |= (uint64_t)data[4u + d + i] << (8u * i);
-    }
-    if (v > (uint64_t)INT64_MAX) {
-        return -1;
-    }
+    int ok = read_file(upath, &data, &n) == 0 && n == 4u + d + 8u && data[0] == (uint8_t)d && data[1] == 0u &&
+             data[2] == 0u && data[3] == 0u && memcmp(data + 4, domain, d) == 0;
+    for (size_t i = 0; ok && i < 8u; i++) v |= (uint64_t)data[4u + d + i] << (8u * i);
+    free(data);
+    if (!ok || v > (uint64_t)INT64_MAX) return 0;
     *fuel = (int64_t)v;
-    return 0;
+    return 1;
 }
 
 /* A U32 length and a name of SPEC-09 CONF-11 rule 12: identifiers joined by at most `dots` dots. */
@@ -1132,12 +1034,31 @@ static char *write_driver(const outset *set, const char *cache)
     return ok ? path : NULL;
 }
 
-static int discard(void *user, const uint8_t *bytes, size_t len)
+/* Runs the program or a test: stdin is the null device, stdout goes to `sink` (NULL: drained),
+ * and the fault or error record and the fuel record go through inherited handles (SPEC-06
+ * 3.4a). Zero with *st its exit status, or a tool error's status: `what` (the program, the test
+ * program) could not start, or wrote to stderr. */
+static int start_child(const char *what, const char *const *argv, cli_sink sink, void *user, int *st)
 {
-    (void)user;
-    (void)bytes;
-    (void)len;
-    return 0;
+    cli_proc pr = {.argv = argv, .err_path = epath, .fault_path = fpath, .fuel_path = upath, .sink = sink, .user = user};
+    uint8_t *bytes = NULL;
+    size_t len = 0u;
+    if (cli_proc_run(&pr, st) != 0) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot start %s %s", what, argv[0]);
+    int bad = read_file(epath, &bytes, &len) != 0 || len != 0u;
+    free(bytes);
+    if (!bad) return 0;
+    return tool_error(CINT_EXIT_INTERNAL, argv[0], *st, epath, "%s wrote to stderr (a sanitizer or runtime report); see %s", what, epath);
+}
+
+/* The fault record (exit 1) or the error record (exit 6) at fpath. A decoded record points into
+ * its bytes, which stay allocated. Zero on success. */
+static int read_record(int st, frec **fault, cli_error **error)
+{
+    uint8_t *bytes = NULL;
+    size_t len = 0u;
+    if (read_file(fpath, &bytes, &len) != 0) return -1;
+    if (st == CINT_EXIT_FAULT) return (*fault = malloc(sizeof **fault)) != NULL && decode_fault(bytes, len, *fault, 0) == 0 ? 0 : -1;
+    return (*error = malloc(sizeof **error)) != NULL && decode_error(bytes, len, *error) == 0 ? 0 : -1;
 }
 
 /* One test's result: a line on stdout (a CINT-TEST-1 object under --json); for a failure,
@@ -1171,44 +1092,21 @@ static void report_test(const cli_test *t)
 /* Runs each test in its own process (exit 0: completed; 1: faulted, with a fault record; 6: an
  * error left it, with an error record) and gives the verdict of SPEC-04 LS-235, LS-236, LS-240
  * and LS-315, as cint_ref's test_verdict does. */
-static int run_tests(outcome *oc, const char *exe, const char *cache, const char *src_hex)
+static int run_tests(outcome *oc, const char *exe, const char *src_hex)
 {
-    char *fpath = join(cache, "fault.bin"), *upath = join(cache, "fuel.bin"), *epath = join(cache, "program.stderr");
     int passed = 0;
     for (int k = 0; k < g.ntests; k++) {
         cli_test *t = &g.tests[k];
         char index[24];
         const char *pargv[3] = {exe, index, NULL};
-        uint8_t *bytes = NULL;
-        size_t len = 0u;
-        int st, ok;
-        cli_proc pr;
+        int st = 0, ok;
         (void)snprintf(index, sizeof index, "%d", k);
-        memset(&pr, 0, sizeof pr);
-        pr.argv = pargv;
-        pr.err_path = epath;
-        pr.fault_path = fpath;
-        pr.fuel_path = upath;
-        pr.sink = discard;
-        if (cli_proc_run(&pr, &st) != 0) {
-            return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot start the test program %s", exe);
-        }
-        if (read_file(epath, &bytes, &len) != 0 || len != 0u) {
-            return tool_error(CINT_EXIT_INTERNAL, exe, st, epath,
-                              "the test program wrote to stderr (a sanitizer or runtime report); see %s", epath);
-        }
-        free(bytes);
+        if ((ok = start_child("the test program", pargv, NULL, NULL, &st)) != 0) return ok;
         if (st != CINT_EXIT_OK && st != CINT_EXIT_FAULT && st != CINT_EXIT_ERROR_VALUE) {
             return tool_error(st == CINT_EXIT_ENVIRONMENT ? st : CINT_EXIT_INTERNAL, exe, st, NULL,
                               "test %d ended without a CINT status (exit status %d)", k, st);
         }
-        ok = read_file(upath, &bytes, &len) == 0 && decode_fuel(bytes, len, &t->fuel) == 0;
-        free(bytes);
-        /* A decoded fault points into its record's bytes, which stay allocated. */
-        if (!ok || (st == CINT_EXIT_FAULT && ((t->fault = malloc(sizeof *t->fault)) == NULL ||
-                                             read_file(fpath, &bytes, &len) != 0 || decode_fault(bytes, len, t->fault, 0) != 0)) ||
-            (st == CINT_EXIT_ERROR_VALUE && ((t->error = malloc(sizeof *t->error)) == NULL ||
-                                             read_file(fpath, &bytes, &len) != 0 || decode_error(bytes, len, t->error) != 0))) {
+        if (!(ok = read_fuel(&t->fuel)) || (st != CINT_EXIT_OK && read_record(st, &t->fault, &t->error) != 0)) {
             return tool_error(CINT_EXIT_INTERNAL, exe, st, ok ? fpath : upath, "the record %s of test %d is unreadable",
                               ok ? fpath : upath, k);
         }
@@ -1217,10 +1115,8 @@ static int run_tests(outcome *oc, const char *exe, const char *cache, const char
         passed += t->passed;
         report_test(t);
     }
-    if (!json_mode) {
-        printf("%d of %d tests passed\n", passed, g.ntests);
-        fflush(stdout);
-    }
+    if (!json_mode) printf("%d of %d tests passed\n", passed, g.ntests);
+    fflush(stdout);
     oc->status = passed == g.ntests ? CINT_EXIT_OK : CINT_EXIT_CHECK;
     oc->kind = passed == g.ntests ? "pass" : "fail";
     return finish(oc, src_hex);
@@ -1267,7 +1163,6 @@ static int git_query(const char *gitdir, const char *worktree, int status_query,
     const char **args = malloc((16u + (size_t)g.nmods) * sizeof *args);
     size_t n = 0u;
     if (args == NULL) return -1;
-    cli_proc p;
     int status = -1;
     char *err = join(g.cachedir, "git.stderr");
     args[n++] = "git";
@@ -1291,9 +1186,8 @@ static int git_query(const char *gitdir, const char *worktree, int status_query,
         }
     }
     args[n] = NULL;
-    memset(&p, 0, sizeof p);
     memset(out, 0, sizeof *out);
-    p.argv = args; p.err_path = err; p.sink = capture_git; p.user = out;
+    cli_proc p = {.argv = args, .err_path = err, .sink = capture_git, .user = out};
     int started = cli_proc_run(&p, &status);
     free(err);
     free(args);
@@ -1360,20 +1254,12 @@ static int locate(void)
         return g.root != NULL || n >= sizeof g.dir - 4u ? -1 : 0;
     }
     if (g.root != NULL) {
-        if (strlen(f) >= sizeof g.rel) {
-            return -1;
-        }
+        if (strlen(f) >= sizeof g.rel) return -1;
         (void)snprintf(g.dir, sizeof g.dir, "%s", g.root);
         (void)snprintf(g.rel, sizeof g.rel, "%s", f);
-        for (char *c = g.rel; *c; c++) {
-            *c = *c == '\\' ? '/' : *c;
-        }
+        for (char *c = g.rel; *c; c++) *c = *c == '\\' ? '/' : *c;
     } else {
-        for (const char *c = f; *c; c++) {
-            if (*c == '/' || *c == '\\') {
-                slash = c;
-            }
-        }
+        for (const char *c = f; *c; c++) slash = *c == '/' || *c == '\\' ? c : slash;
         if (slash == NULL) {
             (void)snprintf(g.dir, sizeof g.dir, ".");
         } else {
@@ -1382,9 +1268,7 @@ static int locate(void)
             if (n >= sizeof g.dir) return -1;
             (void)snprintf(g.dir, sizeof g.dir, "%.*s", (int)n, f);
         }
-        if (strlen(slash != NULL ? slash + 1 : f) >= sizeof g.rel) {
-            return -1;
-        }
+        if (strlen(slash != NULL ? slash + 1 : f) >= sizeof g.rel) return -1;
         (void)snprintf(g.rel, sizeof g.rel, "%s", slash != NULL ? slash + 1 : f);
     }
     if (g.out == NULL) g.out = join(g.dir, "build");
@@ -1395,7 +1279,7 @@ static int locate(void)
 static int ready(void)
 {
     cint_ctx_config cfg;
-    char *self = NULL, *tcpath;
+    char *self = NULL, *tcpath, compiler_hex[65];
     if (g.toolchain != NULL) {
         tcpath = dup_s(g.toolchain);
     } else if ((self = cli_self_dir()) == NULL || (tcpath = join(self, "cint.toolchain")) == NULL) {
@@ -1403,9 +1287,7 @@ static int ready(void)
     }
     if (load_toolchain(tcpath) != 0) {
         return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL,
-                          "no host C compiler: the toolchain file %s is missing or incomplete (run "
-                          "tools/cint_bootstrap.py)",
-                          tcpath);
+                          "no host C compiler: the toolchain file %s is missing or incomplete (run tools/cint_bootstrap.py)", tcpath);
     }
     memset(&cfg, 0, sizeof cfg);
     cfg.size = (uint32_t)sizeof cfg;
@@ -1413,24 +1295,17 @@ static int ready(void)
     if (cint_ctx_create(&cfg, &g.ctx) != CINT_OK) {
         return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot create the compiler's context");
     }
-    {
-        char compiler_hex[65];
-        if (strlen(CINT_COMPILER_SOURCE_IDENTITY) != 64u ||
-            digest_file(g.tc.compiler_sources, compiler_hex) != 0 ||
-            strcmp(compiler_hex, CINT_COMPILER_SOURCE_IDENTITY) != 0) {
-            return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL,
-                              "the toolchain compiler source identity does not match this cint executable; run tools/cint_bootstrap.py");
-        }
-        char *executable_path = cli_self_path();
-        int matches = executable_path != NULL && digest_file(executable_path, compiler_hex) == 0 &&
-                      strcmp(compiler_hex, g.tc.executable_sha256) == 0;
-        free(executable_path);
-        if (!matches) {
-            return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL,
-                              "the toolchain executable digest does not match this cint executable; run tools/cint_bootstrap.py");
-        }
+    if (strlen(CINT_COMPILER_SOURCE_IDENTITY) != 64u || digest_file(g.tc.compiler_sources, compiler_hex) != 0 ||
+        strcmp(compiler_hex, CINT_COMPILER_SOURCE_IDENTITY) != 0) {
+        return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL,
+                          "the toolchain compiler source identity does not match this cint executable; run tools/cint_bootstrap.py");
     }
-    return 0;
+    char *executable_path = cli_self_path();
+    int matches = executable_path != NULL && digest_file(executable_path, compiler_hex) == 0 &&
+                  strcmp(compiler_hex, g.tc.executable_sha256) == 0;
+    free(executable_path);
+    return matches ? 0 : tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL,
+                                    "the toolchain executable digest does not match this cint executable; run tools/cint_bootstrap.py");
 }
 
 /* Copies every module discovery read into `dir`, so the source digests name the bytes the
@@ -1470,18 +1345,18 @@ static int compile_c(outcome *oc, const outset *set, const char *driver, const c
     sb_s(&inc, msvc ? "/I" : "-I");
     sb_s(&inc, g.tc.include);
     argv[na++] = inc.p;
+    if (driver != NULL) {   /* before the sources: cl warns of an option after them (D9026) */
+        sb_s(&stage, msvc ? "/I" : "-I");
+        sb_s(&stage, set->stage);
+        argv[na++] = stage.p;
+    }
     for (size_t i = 0; i < set->n; i++) {
         size_t n = strlen(set->rel[i]);
         if (n > 2u && strcmp(set->rel[i] + n - 2u, ".c") == 0 && (driver == NULL || strcmp(set->rel[i], "cint-program.c") != 0)) {
             argv[na++] = join(set->stage, set->rel[i]);
         }
     }
-    if (driver != NULL) {
-        sb_s(&stage, msvc ? "/I" : "-I");
-        sb_s(&stage, set->stage);
-        argv[na++] = stage.p;
-        argv[na++] = driver;
-    }
+    if (driver != NULL) argv[na++] = driver;
     argv[na++] = g.tc.runtime_object;
     if (msvc) {
         sb_s(&fe, "/Fe");
@@ -1498,34 +1373,26 @@ static int compile_c(outcome *oc, const outset *set, const char *driver, const c
     argv[na] = NULL;
     for (size_t i = 0; i < sizeof cc_overrides / sizeof cc_overrides[0]; i++) {
         if (getenv(cc_overrides[i]) != NULL && cli_unsetenv(cc_overrides[i]) != 0) {
-            return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot remove %s from the host C "
-                              "compiler environment", cc_overrides[i]);
+            return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot remove %s from the host C compiler environment", cc_overrides[i]);
         }
     }
-    cli_proc cc;
-    uint8_t *text;
-    size_t len;
-    memset(&cc, 0, sizeof cc);
-    cc.argv = argv;
-    cc.log_path = log;
+    cli_proc cc = {.argv = argv, .log_path = log};
+    uint8_t *text = NULL;
+    size_t len = 0u;
     oc->t_cc = now_ns();
     if (cli_proc_run(&cc, &st) != 0) {
         return tool_error(CINT_EXIT_ENVIRONMENT, g.tc.cc, -1, log, "no host C compiler: cannot start %s", g.tc.cc);
     }
     oc->t_cc = now_ns() - oc->t_cc;
     if (st != 0) {
-        return tool_error(CINT_EXIT_INTERNAL, g.tc.cc, st, log,
-                          "the host C compiler %s rejected the generated source with exit status %d; its "
-                          "output is in %s (SPEC-09 EMIT-26)",
-                          g.tc.cc, st, log);
+        return tool_error(CINT_EXIT_INTERNAL, g.tc.cc, st, log, "the host C compiler %s rejected the generated source with "
+                          "exit status %d; its output is in %s (SPEC-09 EMIT-26)", g.tc.cc, st, log);
     }
     if (read_file(log, &text, &len) == 0) {
         for (size_t i = 0; i + 7u <= len; i++) {
             if (memcmp(text + i, "warning", 7u) == 0 && warning_tail(text + i + 7u, len - i - 7u)) {
-                return tool_error(CINT_EXIT_INTERNAL, g.tc.cc, st, log,
-                                  "the host C compiler %s warned on the generated source; its output is in %s "
-                                  "(SPEC-09 EMIT-26)",
-                                  g.tc.cc, log);
+                return tool_error(CINT_EXIT_INTERNAL, g.tc.cc, st, log, "the host C compiler %s warned on the generated "
+                                  "source; its output is in %s (SPEC-09 EMIT-26)", g.tc.cc, log);
             }
         }
         free(text);
@@ -1553,9 +1420,7 @@ static int publish(outcome *oc, const char *src_hex)
     oc->exe = path;
     oc->kind = "built";
     oc->status = CINT_EXIT_OK;
-    if (!json_mode) {
-        fprintf(stderr, "built: %s\n", path);
-    }
+    if (!json_mode) fprintf(stderr, "built: %s\n", path);
     return finish(oc, src_hex);
 }
 
@@ -1565,9 +1430,7 @@ static int run(void)
     outcome oc;
     run_out out;
     outset set;
-    frec *fault = NULL;
-    cli_error error;
-    char key_hex[65], *src_hex, *cache, *outdir, *bin, *log, *exe, *fpath, *epath, *upath, *driver = NULL;
+    char key_hex[65], *src_hex, *cache, *outdir, *bin, *log, *exe, *driver = NULL;
     int st = 0, built, found;
     memset(&oc, 0, sizeof oc);
     oc.fuel = -1;
@@ -1577,37 +1440,25 @@ static int run(void)
     out.keep = g.receipt != NULL;
     if ((st = ready()) != 0) return st;
     if (g.lib && (g.tc.runtime_object = g.tc.runtime_library_object) == NULL) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "the toolchain has no runtime_library_object for --lib");
-    if (locate() != 0) {
-        return usage(g.root != NULL ? "a project directory takes no --root; give FILE.ci" : "the file path is too long");
-    }
+    if (locate() != 0) return usage(g.root != NULL ? "a project directory takes no --root; give FILE.ci" : "the file path is too long");
     /* The sources, through the bridge reader: identity from the reading handle (D-3). */
-    if (!cint_bridge_root_open(g.dir, &root)) {
-        return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot open the directory %s", g.dir);
-    }
+    if (!cint_bridge_root_open(g.dir, &root)) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot open the directory %s", g.dir);
     if ((found = discover(root)) > 0) {
-        return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL,
-                          "cannot read %s under %s: it is missing, unreadable, a link, larger than 4 MiB, or a "
-                          "path the bridge reader refuses (SPEC-09 CINTC-12)",
-                          g.rel, g.dir);
+        return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot read %s under %s: it is missing, unreadable, a link, "
+                          "larger than 4 MiB, or a path the bridge reader refuses (SPEC-09 CINTC-12)", g.rel, g.dir);
     }
-    if (found < 0) {
-        return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot record the imports of %s (at most 2048 modules)", g.rel);
-    }
+    if (found < 0) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot record the imports of %s (at most 2048 modules)", g.rel);
     src_hex = g.mods[0].hex;
-    {
-        sbuf k = {0};
-        sb_s(&k, g.rel);
-        sb_put(&k, "\n", 1u);
-        sb_put(&k, g.src, g.src_len);
-        if (digest((const uint8_t *)k.p, k.n, key_hex) != 0) {
-            return tool_error(CINT_EXIT_INTERNAL, NULL, 0, NULL, "the digest export of the compiler failed");
-        }
-        free(k.p);
+    sbuf key = {0};
+    sb_s(&key, g.rel);
+    sb_put(&key, "\n", 1u);
+    sb_put(&key, g.src, g.src_len);
+    if (digest((const uint8_t *)key.p, key.n, key_hex) != 0) {
+        return tool_error(CINT_EXIT_INTERNAL, NULL, 0, NULL, "the digest export of the compiler failed");
     }
+    free(key.p);
     char *base = join(g.cache != NULL ? g.cache : g.tc.cache, key_hex);
-    if (cli_mkdirs(base) != 0) {
-        return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot create the cache directory %s", base);
-    }
+    if (cli_mkdirs(base) != 0) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot create the cache directory %s", base);
     cache = NULL;
     for (unsigned k = 0; k < 10000u; k++) {
         char name[32];
@@ -1616,9 +1467,7 @@ static int run(void)
         cache = join(base, name);
         int created = cli_mkdir_new(cache);
         if (created == 1) break;
-        if (created < 0 || k == 9999u) {
-            return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot create a private run directory under %s", base);
-        }
+        if (created < 0 || k == 9999u) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot create a private run directory under %s", base);
     }
     outdir = join(cache, "out");
     bin = join(cache, "bin");
@@ -1627,13 +1476,9 @@ static int run(void)
     epath = join(cache, "program.stderr");
     upath = join(cache, "fuel.bin");
     (void)snprintf(g.cachedir, sizeof g.cachedir, "%s", cache);
-    if (cli_mkdirs(bin) != 0) {
-        return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot create the cache directory %s", cache);
-    }
+    if (cli_mkdirs(bin) != 0) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot create the cache directory %s", cache);
     char *snapshot = join(cache, "input");
-    if (snapshot_inputs(snapshot, &snap) != 0) {
-        return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot write the source snapshot %s", snapshot);
-    }
+    if (snapshot_inputs(snapshot, &snap) != 0) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot write the source snapshot %s", snapshot);
     if (g.receipt != NULL) source_metadata();
     /* plan, compile, measure, emit per module, then commit the output set (D-13). */
     built = cint_build_with_paths(g.ctx, snap, g.order, g.norder, outdir, g_diag, g_faults, keep_diag_path, g_diag_paths);
@@ -1645,21 +1490,16 @@ static int run(void)
     }
     found = same_inputs(root);
     cint_bridge_root_close(root);
-    if (!found) {
-        return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "a module under %s changed while it was compiled", g.dir);
-    }
+    if (!found) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "a module under %s changed while it was compiled", g.dir);
     if (built == CINT_BUILD_DIAG) {
         oc.status = CINT_EXIT_COMPILE;
         oc.kind = "compile-error";
         report_diags(NULL);
         return finish(&oc, src_hex);
     }
-    if (built == CINT_BUILD_REFUSED) {
-        return tool_error(CINT_EXIT_INTERNAL, NULL, 0, NULL, "internal compiler error: build result %d", built);
-    }
     if (built != CINT_BUILD_OK) {
-        return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot write the generated source under %s",
-                          outdir);
+        return built == CINT_BUILD_REFUSED ? tool_error(CINT_EXIT_INTERNAL, NULL, 0, NULL, "internal compiler error: build result %d", built)
+                                           : tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot write the generated source under %s", outdir);
     }
     if (read_outset(outdir, &set) != 0) {
         return tool_error(CINT_EXIT_INTERNAL, NULL, 0, NULL, "the output set under %s is unreadable", outdir);
@@ -1677,97 +1517,49 @@ static int run(void)
     if (g.mode == MODE_TEST && (driver = write_driver(&set, cache)) == NULL) {
         return tool_error(CINT_EXIT_INTERNAL, NULL, 0, NULL, "the tests of the output set under %s are unreadable", set.stage);
     }
-    if (g.mode == MODE_TEST && g.ntests == 0) {
-        return run_tests(&oc, NULL, cache, src_hex);
-    }
+    if (g.mode == MODE_TEST && g.ntests == 0) return run_tests(&oc, NULL, src_hex);
     exe = join(bin, strcmp(g.tc.leg, "msvc") != 0 ? "program" : g.lib ? "program.dll" : "program.exe");
     oc.exe = exe;
-    if ((st = compile_c(&oc, &set, driver, bin, log)) != 0) {
-        return st;
+    if ((st = compile_c(&oc, &set, driver, bin, log)) != 0) return st;
+    if (g.mode == MODE_BUILD) return publish(&oc, src_hex);
+    if (g.mode == MODE_TEST) return run_tests(&oc, exe, src_hex);
+    /* The program, with stdout relayed byte for byte. */
+    const char *pargv[2] = {exe, NULL};
+    oc.t_run = now_ns();
+    if ((found = start_child("the program", pargv, relay, &out, &st)) != 0) return found;
+    oc.t_run = now_ns() - oc.t_run;
+    if (fflush(stdout) != 0 || out.failed) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot write to stdout");
+    /* The fuel record, written before exit by cint_program_run_fuel (SPEC-06 3.4a). Without it, a
+     * fault or an error is reported after its record, which is checked first. */
+    if ((st == CINT_EXIT_OK || st == CINT_EXIT_FAULT || st == CINT_EXIT_ERROR_VALUE) && !read_fuel(&oc.fuel)) oc.fuel = -2;
+    if (st == CINT_EXIT_OK && oc.fuel < 0) {
+        return tool_error(CINT_EXIT_INTERNAL, exe, st, upath, "the program's fuel record %s is unreadable", upath);
     }
-    if (g.mode == MODE_BUILD) {
-        return publish(&oc, src_hex);
-    }
-    if (g.mode == MODE_TEST) {
-        return run_tests(&oc, exe, cache, src_hex);
-    }
-    /* The program: stdin is the null device, stdout relayed byte for byte, the fault or error
-     * record through an inherited handle (SPEC-06 3.4a). */
-    {
-        cli_proc pr;
-        const char *pargv[2] = {exe, NULL};
-        uint8_t *bytes = NULL;
-        size_t len = 0;
-        memset(&pr, 0, sizeof pr);
-        pr.argv = pargv;
-        pr.err_path = epath;
-        pr.fault_path = fpath;
-        pr.fuel_path = upath;
-        pr.sink = relay;
-        pr.user = &out;
-        oc.t_run = now_ns();
-        if (cli_proc_run(&pr, &st) != 0) {
-            return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot start the program %s", exe);
-        }
-        oc.t_run = now_ns() - oc.t_run;
-        if (fflush(stdout) != 0 || out.failed) {
-            return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot write to stdout");
-        }
-        if (read_file(epath, &bytes, &len) != 0 || len != 0u) {
-            return tool_error(CINT_EXIT_INTERNAL, exe, st, epath,
-                              "the program wrote to stderr (a sanitizer or runtime report); see %s", epath);
-        }
-        free(bytes);
-        bytes = NULL;
-        if (st == CINT_EXIT_OK || st == CINT_EXIT_FAULT || st == CINT_EXIT_ERROR_VALUE) {
-            /* The fuel record, written before exit by cint_program_run_fuel (SPEC-06 3.4a). */
-            int ok = read_file(upath, &bytes, &len) == 0 && decode_fuel(bytes, len, &oc.fuel) == 0;
-            free(bytes);
-            bytes = NULL;
-            if (!ok && st == CINT_EXIT_OK) {
-                return tool_error(CINT_EXIT_INTERNAL, exe, st, upath, "the program's fuel record %s is unreadable",
-                                  upath);
-            }
-            if (!ok) {
-                oc.fuel = -2;   /* reported after the fault or error record, which is checked first */
-            }
-        }
-        if (st == CINT_EXIT_OK) {
-            oc.kind = "value";
-            oc.status = CINT_EXIT_OK;
-            return finish(&oc, src_hex);
-        }
-        if (st == CINT_EXIT_ENVIRONMENT) {
-            return tool_error(CINT_EXIT_ENVIRONMENT, exe, st, NULL, "the program could not write its output");
-        }
-        if (st != CINT_EXIT_FAULT && st != CINT_EXIT_ERROR_VALUE) {
-            return tool_error(CINT_EXIT_INTERNAL, exe, st, NULL,
-                              "the program ended without a CINT status (exit status %d)", st);
-        }
-        if (read_file(fpath, &bytes, &len) != 0 || (st == CINT_EXIT_FAULT ? (fault = malloc(sizeof *fault)) == NULL ||
-            decode_fault(bytes, len, fault, 0) != 0 : decode_error(bytes, len, oc.error = &error) != 0)) {
-            return tool_error(CINT_EXIT_INTERNAL, exe, st, fpath, "the program's %s record %s is unreadable",
-                              st == CINT_EXIT_FAULT ? "fault" : "error", fpath);
-        }
-        if (oc.fuel < 0) {
-            return tool_error(CINT_EXIT_INTERNAL, exe, st, upath, "the program's fuel record %s is unreadable",
-                              upath);
-        }
-        {
-            sbuf b = {0};
-            if (oc.error != NULL) sb_error(&b, oc.error, json_mode);   /* one line (SPEC-06 3.4a) */
-            else if (json_mode) sb_jfault(&b, fault, oc.fuel);
-            else human_fault(&b, fault, oc.fuel);
-            if (json_mode || oc.error != NULL) sb_s(&b, "\n");
-            fputs(b.p, stderr);
-            fflush(stderr);
-            free(b.p);
-        }
-        oc.kind = oc.error != NULL ? "error" : "fault";
-        oc.status = st;
-        oc.fault = fault;
+    if (st == CINT_EXIT_OK) {
+        oc.kind = "value";
+        oc.status = CINT_EXIT_OK;
         return finish(&oc, src_hex);
     }
+    if (st == CINT_EXIT_ENVIRONMENT) return tool_error(CINT_EXIT_ENVIRONMENT, exe, st, NULL, "the program could not write its output");
+    if (st != CINT_EXIT_FAULT && st != CINT_EXIT_ERROR_VALUE) {
+        return tool_error(CINT_EXIT_INTERNAL, exe, st, NULL, "the program ended without a CINT status (exit status %d)", st);
+    }
+    if (read_record(st, &oc.fault, &oc.error) != 0) {
+        return tool_error(CINT_EXIT_INTERNAL, exe, st, fpath, "the program's %s record %s is unreadable",
+                          st == CINT_EXIT_FAULT ? "fault" : "error", fpath);
+    }
+    if (oc.fuel < 0) return tool_error(CINT_EXIT_INTERNAL, exe, st, upath, "the program's fuel record %s is unreadable", upath);
+    sbuf b = {0};
+    if (oc.error != NULL) sb_error(&b, oc.error, json_mode);   /* one line (SPEC-06 3.4a) */
+    else if (json_mode) sb_jfault(&b, oc.fault, oc.fuel);
+    else human_fault(&b, oc.fault, oc.fuel);
+    if (json_mode || oc.error != NULL) sb_s(&b, "\n");
+    fputs(b.p, stderr);
+    fflush(stderr);
+    free(b.p);
+    oc.kind = oc.error != NULL ? "error" : "fault";
+    oc.status = st;
+    return finish(&oc, src_hex);
 }
 
 static int emit_c(void)
@@ -1799,20 +1591,44 @@ static int emit_c(void)
                       "cannot build the output set under %s (cint_build result %d)", g.out, built);
 }
 
+/* `cint <name>` (SPEC-06 3.1, BX13-15): any other subcommand runs cint-<name> from this
+ * executable's directory with every other argument in order, a --json before NAME included,
+ * on this process's stdin, stdout and stderr, and exits with its exit status. Each tool finds
+ * the `cint` beside it by default, so the handoff adds no --cint. A NAME of other than
+ * lowercase letters, digits and '-', or with no executable, is an unknown subcommand. */
+static int handoff(int argc, char **argv, int sub)
+{
+    const char *name = argv[sub];
+    size_t n = strlen(name);
+    int ok = n > 0 && n <= 64 && name[0] != '-', status = 0, r;
+    for (size_t i = 0; ok && i < n; i++) ok = (name[i] >= 'a' && name[i] <= 'z') || (name[i] >= '0' && name[i] <= '9') || name[i] == '-';
+    if (!ok) return usage("unknown subcommand; there are run, build, test and emit-c, and NAME runs cint-NAME");
+    char *dir = cli_self_dir();
+    if (dir == NULL) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot locate the directory of cint");
+    sbuf path = {0};
+    sb_f(&path, "%s" SEP "cint-%s" CLI_EXE_SUFFIX, dir, name);
+    free(dir);
+    const char **args = calloc((size_t)argc, sizeof *args);
+    if (args == NULL) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "out of memory");
+    args[0] = path.p;
+    for (int i = 1, k = 1; i < argc; i++) if (i != sub) args[k++] = argv[i];
+    r = cli_handoff(path.p, args, &status);
+    if (r == 1 && !json_mode) fputs(USAGE, stderr);
+    r = r == 0 ? status : r < 0 ? tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot run %s", path.p)
+      : tool_error(CINT_EXIT_USAGE, NULL, 0, NULL, "unknown subcommand %s: there are run, build, test and emit-c, and no cint-%s beside cint", name, name);
+    free((void *)args);
+    free(path.p);
+    return r;
+}
+
 int main(int argc, char **argv)
 {
     int i;
-    for (i = 1; i < argc; i++) {
+    for (i = 1; i < argc; i++) {   /* before cli_init, so its error takes the --json form */
         if (strcmp(argv[i], "--json") == 0) json_mode = 1;
     }
-    if (cli_init(&argc, &argv) != 0) {
-        return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot read the command line");
-    }
-    for (i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--json") == 0) {
-            json_mode = 1;
-        }
-    }
+    if (cli_init(&argc, &argv) != 0) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot read the command line");
+    for (i = 1; i < argc; i++) if (strcmp(argv[i], "--json") == 0) json_mode = 1;   /* Windows re-splits the line */
     /* The subcommand is the first argument other than --json, which may come before it (SPEC-06 3.1). */
     int sub = 1;
     while (sub < argc && strcmp(argv[sub], "--json") == 0) sub++;
@@ -1823,9 +1639,8 @@ int main(int argc, char **argv)
     static const char *const subs[4] = {"run", "build", "test", "emit-c"};
     for (g.mode = 0; sub < argc && g.mode < 4 && strcmp(argv[sub], subs[g.mode]) != 0; g.mode++) {
     }
-    if (sub >= argc || g.mode == 4) {
-        return usage(sub >= argc ? "no subcommand" : "unknown subcommand; there are run, build, test and emit-c");
-    }
+    if (sub >= argc) return usage("no subcommand");
+    if (g.mode == 4) return handoff(argc, argv, sub);
     g.emit = g.mode == 3;
     for (i = sub + 1; i < argc; i++) {
         const char *a = argv[i];
@@ -1839,12 +1654,10 @@ int main(int argc, char **argv)
             continue;
         }
         if (slot != NULL) {
-            if (i + 1 >= argc || *slot != NULL) {
-                return usage("an option needs one value and is given at most once");
-            }
+            if (i + 1 >= argc || *slot != NULL) return usage("an option needs one value and is given at most once");
             *slot = argv[++i];
         } else if (a[0] == '-' && a[1] != '\0') {
-            return usage("unknown option (SPEC-06 3.4 options other than --receipt are not in slice 2)");
+            return usage("unknown option (of the options of cint run, only --receipt is provided yet)");
         } else if ((g.file != NULL && !g.emit) || g.nfiles == 64) {
             return usage(g.mode == MODE_RUN ? "program arguments are not supported; give one FILE.ci" : "give one FILE.ci or project directory");
         } else {
@@ -1852,21 +1665,10 @@ int main(int argc, char **argv)
             g.files[g.nfiles++] = argv[i];
         }
     }
-    if (g.file == NULL && (g.mode == MODE_BUILD || g.mode == MODE_TEST)) {
-        g.file = ".";
-    }
-    if (g.file == NULL) {
-        return usage("no FILE.ci given");
-    }
-    if (g.emit) {
-        int status = g.receipt != NULL || g.cache != NULL ? usage("emit-c takes no --receipt or --cache") : emit_c();
-        free_diag_paths();
-        return status;
-    }
-    if (g.receipt != NULL && g.receipt[0] == '\0') {
-        return usage("--receipt needs a path");
-    }
-    int status = run();
+    if (g.file == NULL && (g.mode == MODE_BUILD || g.mode == MODE_TEST)) g.file = ".";
+    if (g.file == NULL) return usage("no FILE.ci given");
+    if (g.receipt != NULL && g.receipt[0] == '\0' && !g.emit) return usage("--receipt needs a path");
+    int status = !g.emit ? run() : g.receipt != NULL || g.cache != NULL ? usage("emit-c takes no --receipt or --cache") : emit_c();
     free_diag_paths();
     return status;
 }

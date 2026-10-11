@@ -1,0 +1,16 @@
+// case: fixed/kernel_mul_overflow
+// clause: SPEC-02 F-8; SPEC-01 IM-61, IM-106; SPEC-09 CONF-11 rules 13 and 14 (a fixed-point overflow in a work-item carries the dispatch address)
+// subset: cint-core-1 (fixed point, kernels)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 8:17 (the `*`), operation mul.checked.q16_16.half_even, operands Q16.16 raw 13107200 twice, exact 2621440000, limit Q16.16 raw 2147483647; address fixed.kernel_mul_overflow.square, dispatch 0, phase work-item, work-item 1, step 3; stack depth 1; fuel 4. Box 15, unit 1
+
+kernel square[n](in Q16.16[n] a, out Q16.16[n] b) over [i: n] {
+    b[i] = a[i] * a[i];
+}
+
+export I64 run() {
+    Q16.16[3] a = [1.5, 200.0, 2.0];
+    Q16.16[3] b;
+    square(a, b);
+    return 0;
+}

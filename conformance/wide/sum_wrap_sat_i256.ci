@@ -1,0 +1,13 @@
+// case: wide/sum_wrap_sat_i256
+// clause: SPEC-01 IM-77, IM-84, IM-85 (sum_wrap reduces the exact total modulo 2^256; sum_sat clamps after each step, in logical order)
+// subset: cint-core-1 (wide integers, print statements, built-in sum_wrap and sum_sat)
+// entry: run; args: none
+// spec outcome: value I64 0; output "-7 57896044618658097711785492504343953926634992332820282019728792003956564819962\n" (sum_wrap: I256.max twice and -5 is 2^257 - 7, which wraps to -7; sum_sat: I256.max, then I256.max, then I256.max - 5); fuel 3 (entry, two reduction charges). Box 15, unit 1
+
+export I64 run() {
+    I256[3] a = [I256.max, I256.max, -5];
+    I256 w = sum_wrap(a);
+    I256 s = sum_sat(a);
+    "{w} {s}\n";
+    return 0;
+}

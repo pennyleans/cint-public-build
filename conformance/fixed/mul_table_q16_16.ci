@@ -1,0 +1,15 @@
+// case: fixed/mul_table_q16_16
+// clause: SPEC-01 IM-61, IM-62 (the rows of the 5.3 table, as raw values)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 0; prints the result raw values of the 5.3 table in its row order, `147456 2 1 1 -2` and `-1 -1 0 0 -1`; fuel 1. Box 15, unit 1
+
+export I64 run() {
+    Q16.16 one = Q16.16.raw(1);
+    Q16.16 m1 = Q16.16.raw(-1);
+    Q16.16 x = Q16.16.raw(98304);
+    Q16.16 h = Q16.16.raw(32768);
+    "{(x * x)!raw} {(one * x)!raw} {mul(one, x, floor)!raw} {mul(one, x, trunc)!raw} {(m1 * x)!raw}\n";
+    "{mul(m1, x, trunc)!raw} {mul(m1, x, half_up)!raw} {(one * h)!raw} {(m1 * h)!raw} {mul(m1, h, half_away)!raw}\n";
+    return 0;
+}

@@ -1,0 +1,12 @@
+// case: fixed/print_layout_raw_bits
+// clause: SPEC-04 LS-201 to LS-212, LS-214 (width, fill, sign and zero padding on the decimal text; `!raw` and `!bits` print the storage integer; an array prints each element)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 0; prints `-1.5|+1.5|***-1.5|-00001.5|0xfe80|-180|[0.5, -1.25, 3.0]|[0.5, -1.2, 3.0]|-2|a=-1.5`; fuel 1. Box 15, unit 1
+
+export I64 run() {
+    Q8.8 a = -1.5;
+    Q8.8[3] v = [0.5, -1.25, 3.0];
+    "{a:+}|{-a:+}|{a:*>7}|{a:08}|{a!bits:#x}|{a!raw:x}|{v}|{v:.1}|{a:.0}|{a=}\n";
+    return 0;
+}

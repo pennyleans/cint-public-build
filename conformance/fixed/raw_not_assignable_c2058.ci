@@ -1,0 +1,11 @@
+// case: fixed/raw_not_assignable_c2058
+// clause: SPEC-01 IM-57; SPEC-04 17.2 (`.raw` reads the storage integer and is not a place)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: compile-error C2058 at 9:5 (the place x.raw). Box 15, unit 1
+
+export I64 run() {
+    Q16.16 x = 1.0;
+    x.raw = 3;
+    return 0;
+}

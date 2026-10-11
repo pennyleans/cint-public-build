@@ -1,0 +1,3 @@
+import wide_transitive_mid;
+
+export I64 run(I64 k) { return wide_transitive_mid.load(k); }

@@ -1,0 +1,86 @@
+module kernel.advance_element_form
+sites kernel/advance_element_form.ci 1:8:16:add.checked.i64 2:11:12:fuel.charge 3:15:5:dispatch 4:16:13:index.checked.i64 5:16:20:index.checked.i64 6:16:24:mul.checked.i64 7:16:17:add.checked.i64 8:16:33:index.checked.i64 9:16:37:mul.checked.i64 10:16:30:add.checked.i64
+kernel @kernel.advance_element_form.advance(%old: I64[_], %increment: I64[_], %next: I64[_]) {
+  dispatch.entry
+  local $n.0: I64
+  %t0 = view.extent %old, 0
+  store.local $n.0, %t0
+  %t1 = load.local $n.0
+  bind.shape %increment, 1, 0, %t1
+  %t2 = load.local $n.0
+  bind.shape %next, 2, 0, %t2
+  %t3 = load.local $n.0
+  store.local $sc.1, %t3
+  bind.alias %next, %old
+  bind.alias %next, %increment
+  dispatch.charge $sc.2, 1, $sc.1
+  dispatch.stage $sc.3, %next, 1
+  dispatch.push
+  %t4 = const I64 0
+  store.local $sc.4, %t4
+  loop L17 {
+    %t5 = load.local $sc.4
+    %t6 = load.local $sc.2
+    %t7 = cmp.lt.i64 %t5, %t6
+    while %t7
+    %t8 = load.local $sc.4
+    dispatch.item %t8, 1, $sc.5, $sc.1
+    %t9 = load.local $sc.5
+    %t10 = view.offset $sc.3, %t9, 0
+    dispatch.step
+    %t11 = load.local $sc.5
+    %t12 = view.offset %old, %t11, 0
+    dispatch.step
+    %t13 = index.load %old, %t12
+    %t14 = load.local $sc.5
+    %t15 = view.offset %increment, %t14, 0
+    dispatch.step
+    %t16 = index.load %increment, %t15
+    %t17 = add.checked.i64 %t13, %t16            #1 @kernel/advance_element_form.ci:8:16
+    dispatch.step
+    index.store $sc.3, %t10, %t17
+    next
+    %t18 = load.local $sc.4
+    %t19 = const I64 1
+    %t20 = add.wrap.i64 %t18, %t19
+    store.local $sc.4, %t20
+  }
+  dispatch.phase 2
+  dispatch.pop
+  dispatch.publish %next, $sc.3
+}
+export func @kernel.advance_element_form.run() -> I64 {
+  fuel.charge 1                                  #2 @kernel/advance_element_form.ci:11:12
+  local $a.0: I64[3]
+  %t0 = const I64 1
+  array.init $a.0, %t0, 0, 0
+  %t1 = const I64 2
+  array.init $a.0, %t1, 0, 1
+  %t2 = const I64 3
+  array.init $a.0, %t2, 0, 2
+  local $d.1: I64[3]
+  %t3 = const I64 10
+  array.init $d.1, %t3, 0, 0
+  %t4 = const I64 20
+  array.init $d.1, %t4, 0, 1
+  %t5 = const I64 30
+  array.init $d.1, %t5, 0, 2
+  local $b.2: I64[3]
+  dispatch @kernel.advance_element_form.advance($a.0, $d.1, $b.2), 7 #3 @kernel/advance_element_form.ci:15:5
+  %t6 = const I64 0
+  index.checked.i64 $b.2, %t6                    #4 @kernel/advance_element_form.ci:16:13
+  %t7 = index.load $b.2, %t6
+  %t8 = const I64 1
+  index.checked.i64 $b.2, %t8                    #5 @kernel/advance_element_form.ci:16:20
+  %t9 = index.load $b.2, %t8
+  %t10 = const I64 100
+  %t11 = mul.checked.i64 %t9, %t10               #6 @kernel/advance_element_form.ci:16:24
+  %t12 = add.checked.i64 %t7, %t11               #7 @kernel/advance_element_form.ci:16:17
+  %t13 = const I64 2
+  index.checked.i64 $b.2, %t13                   #8 @kernel/advance_element_form.ci:16:33
+  %t14 = index.load $b.2, %t13
+  %t15 = const I64 10000
+  %t16 = mul.checked.i64 %t14, %t15              #9 @kernel/advance_element_form.ci:16:37
+  %t17 = add.checked.i64 %t12, %t16              #10 @kernel/advance_element_form.ci:16:30
+  return %t17
+}

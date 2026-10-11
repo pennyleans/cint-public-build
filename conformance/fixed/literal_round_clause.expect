@@ -1,0 +1,9 @@
+case fixed/literal_round_clause
+clause SPEC-04 LS-37; SPEC-01 4.5, IM-27 (an inexact literal with a round clause is rounded once to the grid)
+format 5
+source reference
+outcome value
+stdout-bytes 21
+stdout-sha256 1fb02a2ffa1d28735e74cdd6d3cbe81d6ed28f3e533c1b9b97fbf90cd1991ec4
+return I64 6554
+fuel-consumed 1

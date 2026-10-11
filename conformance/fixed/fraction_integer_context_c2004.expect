@@ -1,0 +1,7 @@
+case fixed/fraction_integer_context_c2004
+clause SPEC-04 LS-35, 17.2 (a fraction literal cannot have an integer type)
+format 5
+source compile-error
+outcome compile-error
+diagnostic.code C2004
+diagnostic.position fixed/fraction_integer_context_c2004.ci:8:13

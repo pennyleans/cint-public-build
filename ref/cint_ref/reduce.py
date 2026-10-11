@@ -6,11 +6,15 @@ reduces the exact total modulo 2^w. A `sum` fault record carries `n` (an `I64`);
 a `fold_checked` fault carries the index, the accumulator and the element (IM-83;
 box 09 ruling R5). The view identity operand (tag `61`, SPEC-01 11.1) is not
 formed until arrays have canonical buffer identifiers (IM-81).
+
+A fixed-point element type acts on its stored integers, with contributions and
+result in one format and no rounding (SPEC-02 R-4); its values are raw.
 """
 from __future__ import annotations
 
 from .arith import op_id
 from .faults import Fault
+from .fixed import is_q_type, q_type
 from .types import Value, int_type
 
 __all__ = ["op", "NAMES"]
@@ -18,8 +22,16 @@ __all__ = ["op", "NAMES"]
 NAMES = ("sum", "fold_checked", "sum_wrap", "sum_sat", "reduce_min", "reduce_max")
 
 
+def _range(name: str):
+    """The integer range of a type's values, and its spelling in operation identifiers."""
+    if is_q_type(name):
+        q = q_type(name)
+        return q.storage, q.ident
+    return int_type(name), name.lower()
+
+
 def op(name: str, form: str, elem: str, xs, init=None, target: str | None = None):
-    t = int_type(elem)
+    t, ident = _range(elem)
     xs = list(xs)
     for x in xs:
         if isinstance(x, bool) or not isinstance(x, int) or not t.contains(x):
@@ -30,21 +42,25 @@ def op(name: str, form: str, elem: str, xs, init=None, target: str | None = None
 
     if name == "sum":
         _need(form == "checked" and init is None, "sum is sum.checked.<E>.<R> over one sequence")
-        r = int_type(target or elem)
+        rname = target or elem
+        if is_q_type(elem) != is_q_type(rname) or (is_q_type(elem) and rname != elem):
+            raise ValueError("a fixed-point sum keeps its format (SPEC-02 R-4)")
+        r, rident = _range(rname)
         total = sum(xs)
-        operation = op_id("sum", "checked", [elem, r.name])        # second type always present (9.8)
+        operation = op_id("sum", "checked", [ident, rident])        # second type always present (9.8)
         if r.contains(total):
-            return Value(r.name, total)
-        return Fault("E_OVERFLOW", operation, (n,), total, Value(r.name, r.max if total > r.max else r.min))
+            return Value(rname, total)
+        return Fault("E_OVERFLOW", operation, (n,), total, Value(rname, r.max if total > r.max else r.min))
 
     _need(target is None, "only sum names a result type")
     if name == "fold_checked":
         _need(form in ("add", "mul") and init is not None, "fold_checked.<add|mul>.<E> takes init and a sequence")
+        _need(form == "add" or not is_q_type(elem), "fold_checked(mul) on fixed point has no rule (SPEC-02 R-4)")
         acc = init
         for j, x in enumerate(xs):
             v = acc + x if form == "add" else acc * x
             if not t.contains(v):
-                return Fault("E_OVERFLOW", op_id("fold_checked", form, [elem]),
+                return Fault("E_OVERFLOW", op_id("fold_checked", form, [ident]),
                              (Value("I64", j), Value(elem, acc), Value(elem, x)),
                              v, Value(elem, t.max if v > t.max else t.min), index=j)
             acc = v
@@ -62,7 +78,7 @@ def op(name: str, form: str, elem: str, xs, init=None, target: str | None = None
         _need(form == "checked", "%s is %s.checked.<E>" % (name, name))
         pool = xs + ([init] if init is not None else [])
         if not pool:
-            return Fault("E_SHAPE", op_id(name, "checked", [elem]), (n,))
+            return Fault("E_SHAPE", op_id(name, "checked", [ident]), (n,))
         return Value(elem, min(pool) if name == "reduce_min" else max(pool))
     raise ValueError("unknown reduction %r" % (name,))
 

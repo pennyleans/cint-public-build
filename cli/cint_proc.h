@@ -33,14 +33,18 @@ int cli_unsetenv(const char *name);
  * with malloc'd paths, or 0 when this source directory needs no such mapping. */
 int cli_git_worktree(const char *dir, char **gitdir, char **worktree);
 
-/* The name a shared library takes on this host (`cint build --lib`, SPEC-06 3.1). */
+/* The names an executable and a shared library take on this host (`cint <name>`, `cint build --lib`,
+ * SPEC-06 3.1). */
 #if defined(_WIN32)
+#define CLI_EXE_SUFFIX ".exe"
 #define CLI_LIB_PREFIX ""
 #define CLI_LIB_SUFFIX ".dll"
 #elif defined(__APPLE__)
+#define CLI_EXE_SUFFIX ""
 #define CLI_LIB_PREFIX "lib"
 #define CLI_LIB_SUFFIX ".dylib"
 #else
+#define CLI_EXE_SUFFIX ""
 #define CLI_LIB_PREFIX "lib"
 #define CLI_LIB_SUFFIX ".so"
 #endif
@@ -64,5 +68,12 @@ typedef struct cli_proc {
  * *status to its exit status, or to -1 when it ended without one (a signal or a crash on
  * POSIX); returns -1 when it could not be started (the executable is missing). */
 int cli_proc_run(const cli_proc *p, int *status);
+
+/* Runs the executable PATH with ARGV (argv[0] its name, NULL-terminated) on this process's
+ * stdin, stdout and stderr, for `cint <name>` (SPEC-06 3.1). POSIX replaces this process, so
+ * the call returns only when it fails; Windows waits for the child and sets *status to its
+ * exit code. Returns 0 with *status set, 1 when PATH does not exist, and -1 when it could not
+ * be started. */
+int cli_handoff(const char *path, const char *const *argv, int *status);
 
 #endif /* CINT_PROC_H */

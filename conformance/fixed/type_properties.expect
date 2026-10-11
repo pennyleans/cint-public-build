@@ -1,0 +1,9 @@
+case fixed/type_properties
+clause SPEC-04 LS-51 (min, max and epsilon of a fixed-point type; epsilon has raw 1)
+format 5
+source reference
+outcome value
+stdout-bytes 66
+stdout-sha256 27f22e53ccc3929954512279bff4fe37802254ab783b8abe7d853bad85e05704
+return I64 1
+fuel-consumed 1

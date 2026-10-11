@@ -1,0 +1,17 @@
+case fixed/convert_narrow_q32_32
+clause SPEC-01 IM-68, IM-69, IM-106 (Q32.32 32768.0 as Q16.16 is raw 2^31; operation names the default mode)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_NARROW
+fault.operation as.checked.q32_32.q16_16.half_even
+fault.operand Q32.32 raw 140737488355328
+fault.exact 2147483648
+fault.limit Q16.16 raw 2147483647
+fault.position fixed/convert_narrow_q32_32.ci:9:14
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

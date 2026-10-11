@@ -1,0 +1,46 @@
+// case: probes/module_handles
+// clause: box 13 OQ-242 probe: module-level handles of a pool, an arena allocation and a struct pool, null at start, read and written by several functions, passed as arguments and replaced after a removal
+// entry: run; args: none
+
+struct Item { I64 weight; Handle(Item) next; }
+
+Pool(Item, 3) items;
+Pool(I64, 2) counts;
+Arena(I64, 16) scratch;
+Handle(Item) head;
+Handle(I64) tallied;
+Handle(I64[]) row;
+Handle(I64) unused;
+
+void push(I64 w) {
+    head = items.insert(Item(weight = w, next = head));
+}
+
+I64 total(in Handle(Item) from, I64 n) {
+    I64 t = 0;
+    Handle(Item) h = from;
+    for i in 0..n {
+        t = t * 10 + items[h].weight;
+        h = items[h].next;
+    }
+    return t;
+}
+
+void tally(I64 v) {
+    tallied = counts.insert(v);
+}
+
+export I64 run() {
+    push(1);
+    push(2);
+    push(3);
+    tally(5);
+    counts[tallied] += 2;
+    counts.remove(tallied);
+    tally(8);
+    row = scratch.alloc(3);
+    for i in 0..3 {
+        scratch[row][i] = i + counts[tallied];
+    }
+    return total(head, 3) * 1000 + counts[tallied] * 100 + sum(scratch[row]);
+}

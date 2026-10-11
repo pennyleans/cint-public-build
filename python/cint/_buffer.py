@@ -6,6 +6,12 @@ A `Buffer` holds its storage, aligned as SPEC-03 A-13a requires, until
 bridge to a context or back. `cint.copy` always copies, exactly: integers
 keep their values, byte order is converted (P-3a), and a refused element
 leaves no `Buffer` behind (X-8). Its exports are read-only and counted (P-18).
+
+With `device=` a CUDA device (box 11, BX11-16), the storage is that
+device's memory, of `I8` to `U64` elements: `cint.empty` zero-fills it and
+`cint.copy` copies into it. The host never reads it implicitly (P-11):
+`cint.copy(buf)`, with no device, is the explicit copy to host memory, and
+its DLPack export gives it to a CUDA package such as CuPy.
 """
 from __future__ import annotations
 
@@ -15,14 +21,14 @@ import functools
 import numbers
 import weakref
 
-from . import _dlpack, _floats, _memory
+from . import _cuda, _dlpack, _floats, _memory
 from ._elem import Elem, parse_elem
 from ._errors import Busy, Refused, StaleHandle, Unpublished
 from ._fixed import Fixed
 from ._floats import FloatPolicy, is_float_like
 from ._memory import BORROW_FLAGS, SIGNED_CODES, UNSIGNED_CODES, HeldBuffer, element_count
 from ._scalar import _numpy_kind, _range, from_raw, to_raw
-from ._view import MAX_RANK, Region, View, _values, classify_dtype, classify_format, region
+from ._view import MAX_RANK, Region, View, _values, borrow, classify_dtype, classify_format, device_refusal, region
 
 M64 = (1 << 63) - 1
 
@@ -33,21 +39,34 @@ class Buffer:
     an entry publishes it, and reading it before then raises
     `cint.Unpublished`. Its exports (`memoryview()`, NumPy) are read-only and
     counted; using it as an output while one is live raises `cint.Busy`
-    (P-18). Use it as a context manager to bound its storage."""
+    (P-18). A `Buffer` of device memory is read only by entries and by its
+    DLPack export. Use it as a context manager to bound its storage."""
 
     def __init__(self, *args, **kwargs):
         raise TypeError("a Buffer is made by cint.copy, cint.empty, or cint.from_float")
 
     @classmethod
-    def _make(cls, elem: Elem, shape: tuple, raws, *, published: bool = True, conversion=None) -> "Buffer":
+    def _make(cls, elem: Elem, shape: tuple, raws, *, published: bool = True, conversion=None,
+              device=None) -> "Buffer":
         n = element_count(shape)
         nbytes = n * elem.size
         if nbytes > M64:
             raise Refused("%d elements of %s need more than M64 bytes (SPEC-03 A-8)" % (n, elem))
-        storage, address = _memory.alloc(nbytes, elem.align)
-        if raws:
-            data = _memory.pack(raws, elem.signed, elem.size)
-            ctypes.memmove(address, data, len(data))
+        if device is not None:
+            if elem.kind != "int" or elem.wide:
+                raise Refused("a Buffer on %s holds I8 to U64 elements, the device data a context registers "
+                              "(SPEC-03 A-16a), not %s" % (device, elem))
+            storage = _cuda.Memory(device, nbytes)
+            address = storage.address
+            if raws:
+                storage.upload(_memory.pack(raws, elem.signed, elem.size))
+            else:
+                storage.zero()
+        else:
+            storage, address = _memory.alloc(nbytes, elem.align)
+            if raws:
+                data = _memory.pack(raws, elem.signed, elem.size)
+                ctypes.memmove(address, data, len(data))
         b = object.__new__(cls)
         b._elem = elem
         b.shape = tuple(shape)
@@ -58,6 +77,7 @@ class Buffer:
         b._exports = 0
         b._released = False
         b._registrations = {}
+        b._device = device
         b.conversion = conversion
         return b
 
@@ -93,10 +113,19 @@ class Buffer:
         return self._released
 
     @property
+    def device(self) -> _cuda.Device:
+        """The `cint.Device` whose memory holds the storage."""
+        return self._device or _cuda.device("cpu")
+
+    @property
+    def _placement(self) -> str | None:
+        return None if self._device is None else str(self._device)
+
+    @property
     def region(self) -> Region:
         """The registration this storage gets on first use with a context (SPEC-03 P-20)."""
         self._check_live()
-        return region(self._address, self._elem, self.shape, self.strides, True)
+        return region(self._address, self._elem, self.shape, self.strides, True, self._placement)
 
     def _check_live(self):
         if self._released:
@@ -110,7 +139,17 @@ class Buffer:
 
     def _raw_values(self) -> list:
         self._check_readable()
+        if self._device is not None:
+            raise device_refusal(self._placement, "Buffer")
         return _memory.unpack(ctypes.string_at(self._address, self._nbytes), self._elem.signed, self._elem.size)
+
+    def _host_raws(self) -> list:
+        """The raw values, read back to the host from device memory: the
+        explicit copy of BX11-16."""
+        if self._device is None:
+            return self._raw_values()
+        self._check_readable()
+        return _memory.unpack(self._storage.download(), self._elem.signed, self._elem.size)
 
     def _claim_output(self):
         """The check before this Buffer is bound as an output (SPEC-03 P-18)."""
@@ -125,7 +164,8 @@ class Buffer:
         self._published = True
 
     def tolist(self) -> list:
-        """The values as nested lists: `int`, `cint.Fixed`, or `bool`."""
+        """The values as nested lists: `int`, `cint.Fixed`, or `bool`. Device
+        memory is not read: `cint.copy(buf).tolist()` reads a copy."""
         return _memory.nest([from_raw(r, self._elem) for r in self._raw_values()], self.shape)
 
     def memoryview(self) -> memoryview:
@@ -133,6 +173,8 @@ class Buffer:
         array made from it is gone (SPEC-03 P-18). Elements wider than 8 bytes
         have no buffer format: `tolist()` gives their exact values."""
         self._check_readable()
+        if self._device is not None:
+            raise device_refusal(self._placement, "Buffer")
         e = self._elem
         if e.wide:
             raise TypeError("%s elements have no buffer format; tolist() gives their exact values" % e)
@@ -162,7 +204,43 @@ class Buffer:
     def __buffer__(self, flags: int) -> memoryview:
         if flags & _memory.PyBUF_WRITABLE:
             raise BufferError("a Buffer has no writable export (SPEC-03 P-18)")
+        if self._device is not None:
+            raise BufferError(str(device_refusal(self._placement, "Buffer")))
         return self.memoryview()
+
+    def __dlpack_device__(self) -> tuple:
+        return self.device._pair()
+
+    def __dlpack__(self, *, stream=None, max_version=None, dl_device=None, copy=None):
+        """A read-only DLPack export, counted until its deleter runs (SPEC-03
+        P-18): a versioned capsule, so `max_version` is (1, 0) or later; it
+        never copies. A consumer that ignores the read-only flag can still
+        write, outside every guarantee (P-18; Open question 17: CuPy 14.2.0 and
+        PyTorch 2.14.1 accept the capsule and do not honor the flag). The data
+        is ready on every stream: what the bridge writes and what an entry
+        publishes are complete before they return (A-16a)."""
+        self._check_readable()
+        e = self._elem
+        pair = self.__dlpack_device__()
+        if e.wide:
+            raise BufferError("%s elements have no DLPack data type; tolist() gives their exact values" % e)
+        if max_version is None or tuple(max_version)[0] < _dlpack.MAJOR_VERSION:
+            raise BufferError("a Buffer exports a versioned DLPack capsule only, which marks it read-only (SPEC-03 "
+                              "P-18): this consumer did not ask for DLPack version 1")
+        if copy:
+            raise BufferError("a Buffer's DLPack export never copies (copy=True): cint.copy(buf) makes a copy")
+        if dl_device is not None and tuple(dl_device) != pair:
+            raise BufferError("this Buffer is on %s, not on DLPack device %s; the bridge makes no implicit transfer "
+                              "(SPEC-03 P-11)" % (self.device, tuple(dl_device)))
+        if pair[0] == _dlpack.kDLCUDA and stream == 0:
+            raise ValueError("stream 0 is not a CUDA stream of the DLPack protocol")
+        self._exports += 1
+        try:
+            return _dlpack.export(self._storage, self._address, pair, e, self.shape,
+                                  functools.partial(_export_ended, weakref.ref(self)))
+        except BaseException:
+            self._exports -= 1
+            raise
 
     def __release_buffer__(self, view: memoryview):
         try:
@@ -195,7 +273,8 @@ class Buffer:
 
     def __repr__(self) -> str:
         state = "released" if self._released else "published" if self._published else "unpublished"
-        return "<cint.Buffer %s%s %s>" % (self.elem, list(self.shape), state)
+        return "<cint.Buffer %s%s %s%s>" % (self.elem, list(self.shape), state,
+                                           "" if self._device is None else " on %s" % self._device)
 
 
 @functools.lru_cache(maxsize=256)
@@ -209,13 +288,6 @@ def _export_ended(ref):
     b = ref()
     if b is not None:
         b._exports -= 1
-
-
-def _check_device(device):
-    if device is None or device == "cpu":
-        return
-    raise NotImplementedError("device=%r: this bridge works in host memory only; there is no implicit transfer "
-                              "(SPEC-03 P-11)" % (device,))
 
 
 def _shape(shape) -> tuple:
@@ -234,9 +306,10 @@ def _shape(shape) -> tuple:
 
 def empty(shape, elem: str, *, device=None) -> Buffer:
     """An unpublished bridge-owned buffer of `shape` (extents, in elements)
-    for use as a kernel output (SPEC-03 6.1)."""
-    _check_device(device)
-    return Buffer._make(parse_elem(elem), _shape(shape), None, published=False)
+    for use as a kernel output (SPEC-03 6.1); with `device`, a `cint.Device`
+    or its spec, in that device's memory, zero-filled (BX11-16)."""
+    dev = _cuda.resolve(device)
+    return Buffer._make(parse_elem(elem), _shape(shape), None, published=False, device=dev)
 
 
 @dataclass
@@ -278,11 +351,11 @@ def _refuse_rank0(obj):
 def _read(obj, floats: bool) -> _Source:
     """The elements of a copy source, in row-major order."""
     if isinstance(obj, View):
-        return _Source("raw", obj.shape, obj._elem, raws=obj._raw_values(), desc="a %s View" % obj.elem)
+        return _Source("raw", obj.shape, obj._elem, raws=obj._host_raws(), desc="a %s View" % obj.elem)
     if isinstance(obj, Buffer):
-        return _Source("raw", obj.shape, obj._elem, raws=obj._raw_values(), desc="a %s Buffer" % obj.elem)
+        return _Source("raw", obj.shape, obj._elem, raws=obj._host_raws(), desc="a %s Buffer" % obj.elem)
     if isinstance(obj, str):
-        raise Refused("a str is not copied; text crosses as bytes, for example s.encode(\"utf-8\") (BX10-15)")
+        raise Refused("a str is not copied; text crosses as bytes, for example s.encode(\"utf-8\")")
     if isinstance(obj, (list, tuple, range)):
         shape, leaves = _walk(obj)
         if not floats:
@@ -301,8 +374,12 @@ def _read(obj, floats: bool) -> _Source:
     device = getattr(obj, "__dlpack_device__", None)
     if device is not None:
         kind, index = (int(x) for x in device())
+        if kind == _dlpack.kDLCUDA:
+            with borrow(obj) as view:      # the explicit copy to the host (BX11-16)
+                return _Source("raw", view.shape, view._elem, raws=view._host_raws(),
+                               desc="%s data (CUDA DLPack)" % view.elem)
         if kind != _dlpack.kDLCPU:
-            raise Refused("the array is on %s:%d; this bridge copies from host memory only, with no implicit "
+            raise Refused("the array is on %s:%d; this bridge copies from host and CUDA memory, with no implicit "
                           "transfer (SPEC-03 P-11)" % (_dlpack.DEVICE_NAMES.get(kind, "device type %d" % kind), index))
     try:
         held = HeldBuffer(obj, BORROW_FLAGS)
@@ -425,7 +502,7 @@ def _convert_raws(raws: list, s: Elem, t: Elem, shape: tuple) -> list:
                       "storage values need %s data, and the values need cint.Fixed(%r, value=v) elements"
                       % (t.name, s, "I%d" % (8 * t.size), t.name))
     if "bool" in (s.kind, t.kind):
-        raise Refused("%s data does not copy as %s: booleans and integers never convert (SPEC-03 P-3, BX10-15)"
+        raise Refused("%s data does not copy as %s: booleans and integers never convert (SPEC-03 P-3)"
                       % (s, t))
     raise Refused("%s data copies as %s only; the bridge converts nothing else implicitly" % (s, s))
 
@@ -433,14 +510,16 @@ def _convert_raws(raws: list, s: Elem, t: Elem, shape: tuple) -> list:
 def copy(obj, *, elem: str | None = None, device=None, from_float: FloatPolicy | None = None) -> Buffer:
     """Copy `obj` into a new bridge-owned `Buffer` (SPEC-03 6.1).
 
-    `obj` is any object with the buffer protocol or CPU DLPack, in any layout
+    `obj` is any object with the buffer protocol or DLPack, in any layout
     and byte order (P-3a); a `View` or `Buffer`; or nested lists, tuples, or
     ranges of values, which need `elem`. Values convert exactly: an integer
     `elem` takes integers in its range; a fixed-point `elem` takes the raw
     values of its storage type, or `cint.Fixed` elements. Floating-point data
     needs `from_float`, a `cint.FloatPolicy` (SPEC-03 section 8). All or
-    nothing: a refused element leaves no `Buffer` (X-8)."""
-    _check_device(device)
+    nothing: a refused element leaves no `Buffer` (X-8). Device data (a CUDA
+    array, or a `View` or `Buffer` of one) is read back to the host; with
+    `device`, the copy is in that device's memory (BX11-16)."""
+    dev = _cuda.resolve(device)
     target = parse_elem(elem) if elem is not None else None
     if from_float is not None:
         if not isinstance(from_float, FloatPolicy):
@@ -455,7 +534,7 @@ def copy(obj, *, elem: str | None = None, device=None, from_float: FloatPolicy |
         if src.bits is None:
             raise Refused("%s input is not accepted: only binary32 and binary64 are (SPEC-03 X-2)" % src.desc)
         raws, conversion = _floats.convert_many(src.bits, src.shape, t, from_float)
-        return Buffer._make(t, src.shape, raws, conversion=conversion)
+        return Buffer._make(t, src.shape, raws, conversion=conversion, device=dev)
     src = _read(obj, floats=False)
     if src.kind == "float":
         raise Refused("%s is floating-point data, which enters only through an explicit conversion (SPEC-03 X-1): "
@@ -463,15 +542,14 @@ def copy(obj, *, elem: str | None = None, device=None, from_float: FloatPolicy |
     if src.kind == "values":
         if target is None:
             raise TypeError("%s has no element type: pass elem=, for example cint.copy(seq, elem=\"I64\")" % src.desc)
-        return Buffer._make(target, src.shape, _leaf_raws(src.leaves, target, src.shape))
+        return Buffer._make(target, src.shape, _leaf_raws(src.leaves, target, src.shape), device=dev)
     t = target or src.elem
-    return Buffer._make(t, src.shape, _convert_raws(src.raws, src.elem, t, src.shape))
+    return Buffer._make(t, src.shape, _convert_raws(src.raws, src.elem, t, src.shape), device=dev)
 
 
 def from_float(obj, elem: str, *, rounding: str = "half_even", overflow: str = "refuse", recorder=None) -> Buffer:
     """`cint.copy(obj, elem=elem, from_float=cint.FloatPolicy(rounding, overflow))`
     (SPEC-03 6.1, X-1 to X-8). The policy is checked before any element is read."""
     if recorder is not None:
-        raise NotImplementedError("recorder=: the conversion audit record (SPEC-03 X-9) needs recordings, which "
-                                  "this bridge does not have yet")
+        raise NotImplementedError("recorder=: conversion audit records are not provided yet")
     return copy(obj, elem=elem, from_float=FloatPolicy(rounding, overflow))

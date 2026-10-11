@@ -2,7 +2,8 @@
  *
  * Every path goes through the wide API, so a UTF-8 path with characters outside the ANSI
  * code page works. A child inherits exactly the handles it is given (a handle list on
- * STARTUPINFOEX): its stdin (NUL), stdout and stderr, and the fault record file.
+ * STARTUPINFOEX): its stdin (NUL), stdout and stderr, and the fault record file. The child of
+ * `cint <name>` (cli_handoff) gets this process's stdin, stdout and stderr instead.
  */
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -367,6 +368,90 @@ done:
         }
     }
     free((void *)args);
+    free(cmd);
+    free(exe);
+    return r;
+}
+
+/* Ctrl+C reaches every process on the console: the child decides, and this one waits for it. */
+static BOOL WINAPI leave_to_child(DWORD event)
+{
+    return event == CTRL_C_EVENT || event == CTRL_BREAK_EVENT;
+}
+
+int cli_handoff(const char *path, const char *const *argv, int *status)
+{
+    static const DWORD which[3] = {STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE};
+    STARTUPINFOEXW si;
+    PROCESS_INFORMATION pi;
+    HANDLE std[3], list[3];
+    LPPROC_THREAD_ATTRIBUTE_LIST attrs = NULL;
+    SIZE_T attr_bytes = 0;
+    wchar_t *exe = widen(path), *cmd = NULL;
+    size_t len = 1, at = 0, i, nh = 0;
+    DWORD code = 0;
+    int r = -1;
+    memset(&si, 0, sizeof si);
+    memset(&pi, 0, sizeof pi);
+    if (exe == NULL) return -1;
+    if (GetFileAttributesW(exe) == INVALID_FILE_ATTRIBUTES) {
+        DWORD e = GetLastError();
+        free(exe);
+        return e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND ? 1 : -1;
+    }
+    for (i = 0; argv[i] != NULL; i++) len += 2u * strlen(argv[i]) + 3u;
+    if ((cmd = malloc(len * sizeof *cmd)) == NULL) goto done;
+    for (i = 0; argv[i] != NULL; i++) {
+        wchar_t *w = widen(argv[i]);
+        if (w == NULL) goto done;
+        if (at > 0) cmd[at++] = L' ';
+        quote_arg(cmd, &at, w);
+        free(w);
+    }
+    cmd[at] = L'\0';
+    for (i = 0; i < 3u; i++) {   /* inheritable copies, so a console, pipe, or file all reach the child */
+        HANDLE h = GetStdHandle(which[i]), dup = NULL;
+        std[i] = h;
+        if (h != NULL && h != INVALID_HANDLE_VALUE &&
+            DuplicateHandle(GetCurrentProcess(), h, GetCurrentProcess(), &dup, 0, TRUE, DUPLICATE_SAME_ACCESS)) {
+            std[i] = list[nh++] = dup;
+        }
+    }
+    if (nh > 0u) {
+        (void)InitializeProcThreadAttributeList(NULL, 1, 0, &attr_bytes);
+        if ((attrs = malloc(attr_bytes)) == NULL || !InitializeProcThreadAttributeList(attrs, 1, 0, &attr_bytes) ||
+            !UpdateProcThreadAttribute(attrs, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, list, nh * sizeof list[0], NULL,
+                                       NULL)) {
+            free(attrs);
+            attrs = NULL;
+            goto done;
+        }
+    }
+    si.StartupInfo.cb = attrs != NULL ? sizeof si : sizeof si.StartupInfo;
+    si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    si.StartupInfo.hStdInput = std[0];
+    si.StartupInfo.hStdOutput = std[1];
+    si.StartupInfo.hStdError = std[2];
+    si.lpAttributeList = attrs;
+    fflush(NULL);
+    (void)SetConsoleCtrlHandler(leave_to_child, TRUE);   /* a handler routine is not inherited */
+    if (!CreateProcessW(exe, cmd, NULL, NULL, nh > 0u, attrs != NULL ? EXTENDED_STARTUPINFO_PRESENT : 0, NULL, NULL,
+                        &si.StartupInfo, &pi)) {
+        goto done;
+    }
+    (void)WaitForSingleObject(pi.hProcess, INFINITE);
+    if (GetExitCodeProcess(pi.hProcess, &code)) {
+        *status = (int)code;   /* main returns it, so all 32 bits reach the caller */
+        r = 0;
+    }
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+done:
+    if (attrs != NULL) {
+        DeleteProcThreadAttributeList(attrs);
+        free(attrs);
+    }
+    for (i = 0; i < nh; i++) CloseHandle(list[i]);
     free(cmd);
     free(exe);
     return r;

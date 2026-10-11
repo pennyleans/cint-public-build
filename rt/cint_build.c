@@ -163,12 +163,8 @@ static void remove_listed(const char *dir, char *list)
             *end = '\0';
             if (cint_bridge_rel_ok(++rel) && (p = cint_bridge_join(dir, "/", rel)) != NULL) {
                 if (pass == 0) cint_bridge_remove(p, false);
-                for (char *s = p + strlen(p); pass == 1 && s > p + strlen(dir); s--) {
-                    if (*s == '/') {
-                        *s = '\0';
-                        cint_bridge_remove(p, true);
-                    }
-                }
+                for (char *s = p + strlen(p); pass == 1 && s > p + strlen(dir); s--)
+                    if (*s == '/') { *s = '\0'; cint_bridge_remove(p, true); }
                 free(p);
             }
             *end = '\n';
@@ -220,15 +216,12 @@ bool cint_stage_commit(cint_stage *st)
     uint8_t *old = NULL;
     stage_entry *sorted = malloc((st->n + 1) * sizeof *sorted);
     bool ok = text != NULL && ref != NULL && sorted != NULL && path != NULL;
-    for (size_t i = 0; ok && i < st->n; i++) {
-        if (!st->e[i].dir) sorted[files++] = st->e[i];
-    }
+    for (size_t i = 0; ok && i < st->n; i++) if (!st->e[i].dir) sorted[files++] = st->e[i];
     if (ok) {
         qsort(sorted, files, sizeof *sorted, entry_order);
         n = (size_t)snprintf(text, cap, "cint-manifest-1\n");
-        for (size_t i = 0; i < files; i++) {
+        for (size_t i = 0; i < files; i++)
             n += (size_t)snprintf(text + n, cap - n, "%s %zu %s\n", sorted[i].hex, sorted[i].len, sorted[i].rel);
-        }
         cint_bridge_sha256_hex((const uint8_t *)text, n, hex);
         snprintf(ref, refcap, "%s %s\n", st->dir + k, hex);
         if (!cint_bridge_read_file(path, 4096, &old, &oldlen)) old = NULL;
@@ -484,9 +477,8 @@ int cint_build_with_paths(cint_ctx *ctx, cint_bridge_root *root, const char *con
         if ((mem[k] = calloc((size_t)(c > 0 ? c : 1), (size_t)e)) == NULL) { res = CINT_BUILD_IO; goto done; }
         tv[k] = view_of(&b, mem[k], c, e, p->elem_type, CINT_VIEW_WRITE);
     }
-    for (m = 0; m < count; m++) {   /* the discovery pass: every import resolved before any check */
+    for (m = 0; m < count; m++)   /* the discovery pass: every import resolved before any check */
         if ((res = compile_one(&b, rels[m], src[m], size[m], m, tv, vd, vf, diag)) >= 0) goto done;
-    }
     res = CINT_BUILD_IO;
     if (!cint_stage_begin(out, &st)) goto done;
     for (m = 0; m <= count; m++) {   /* compile, measure, emit per module; m == count: the program */

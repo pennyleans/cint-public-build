@@ -1,0 +1,80 @@
+module errors/combined_try_converts_tag.ci   revision 8abe3f4ab1337596c09974bafeabd55812999f91f17ea689859f1ea426563cc0
+program   1 module, 2 functions, 46 nodes
+compile fuel   per phase: k x input bytes + c, k = 21524, c = 19876 (rt/cint_bridge.h; SPEC-09 CINTC-09)
+  plan                                  782 bytes in all modules   16851644 units
+  errors/combined_try_converts_tag.ci   782 bytes   16851644 units for each of compile, measure, and emit
+memory   K x source bytes + 1 MiB + 80 B x program declarations per module (SPEC-09 CINTC-02); K is measured by tools/cint_measure.py
+
+function digit   errors/combined_try_converts_tag.sites:4   pure
+  signature  (in c: U8) -> U16!I64
+  fault sites (2): 2 possible, 0 statically excluded
+    digit#1  errors/combined_try_converts_tag.ci:15:15  sub.checked.u8     E_OVERFLOW possible
+    digit#2  errors/combined_try_converts_tag.ci:15:22  as.checked.u8.i64  E_NARROW possible
+  hint       not analyzed: excluding a possible site needs range analysis, which no component performs yet
+  fuel       fuel-v1 charge points (SPEC-01 IM-139, SPEC-09 SIR-07): none in this body
+  lowering
+    cpu-sir-interp    supported   the workbench evaluator runs this text (SPEC-09 BACK-01a)
+    cpu-c17 (ref-c)   supported   cintc emits C17 from the same SIR (SPEC-09 BACK-03)
+  sir
+func @errors.combined_try_converts_tag.digit(%c: U8) -> U16!I64 {
+  if {
+    arm {
+      %t0 = const U8 48
+      %t1 = cmp.lt.u8 %c, %t0
+      local $sc.0: Bool
+      store.local $sc.0, %t1
+      %t2 = not.bool %t1
+      if {
+        arm {
+        } then %t2 {
+          %t3 = const U8 57
+          %t4 = cmp.gt.u8 %c, %t3
+          store.local $sc.0, %t4
+        }
+      }
+      %t5 = load.local $sc.0
+    } then %t5 {
+      %t6 = const U16 2
+      return.error %t6
+    }
+  }
+  %t7 = const U8 48
+  %t8 = sub.checked.u8 %c, %t7                   #1 @errors/combined_try_converts_tag.ci:15:15
+  %t9 = as.checked.u8.i64 %t8                    #2 @errors/combined_try_converts_tag.ci:15:22
+  return %t9
+}
+
+function run   errors/combined_try_converts_tag.sites:31   pure
+  signature  () -> U32!I64 error E1
+  fault sites (2): 2 possible, 0 statically excluded
+    run#3  errors/combined_try_converts_tag.ci:18:22  fuel.charge  E_FUEL possible
+    run#4  errors/combined_try_converts_tag.ci:19:17  call.enter   E_FUEL E_DEPTH possible
+  hint       not analyzed: excluding a possible site needs range analysis, which no component performs yet
+  fuel       fuel-v1 charge points (SPEC-01 IM-139, SPEC-09 SIR-07)
+    run#3  fuel.charge 1   at the start of the body
+    run#4  call.enter      1 per call of errors.combined_try_converts_tag.digit
+  lowering
+    cpu-sir-interp    supported   the workbench evaluator runs this text (SPEC-09 BACK-01a)
+    cpu-c17 (ref-c)   supported   cintc emits C17 from the same SIR (SPEC-09 BACK-03)
+  sir
+export func @errors.combined_try_converts_tag.run() -> U32!I64 error E1 {
+  fuel.charge 1                                  #3 @errors/combined_try_converts_tag.ci:18:22
+  %t0 = const U8 120
+  %t1 = call @errors.combined_try_converts_tag.digit(%t0) #4 @errors/combined_try_converts_tag.ci:19:17
+  %t2 = error.tag
+  %t3 = const U16 0
+  %t4 = cmp.ne.u16 %t2, %t3
+  if {
+    arm {
+    } then %t4 {
+      %t5 = as.wrap.u16.u32 %t2
+      %t6 = const U32 2
+      %t7 = add.wrap.u32 %t5, %t6
+      return.error %t7
+    }
+  }
+  local $d.0: I64
+  store.local $d.0, %t1
+  %t8 = load.local $d.0
+  return %t8
+}

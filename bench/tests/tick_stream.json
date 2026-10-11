@@ -1,0 +1,87 @@
+{
+  "args": [
+    "t",
+    "steps"
+  ],
+  "bars": [
+    {
+      "against": {
+        "ns_by_config": {
+          "apple-clang-2-builtin": 1000000000,
+          "clang-2-builtin": 1000000000,
+          "gcc-2-builtin": 1000000000,
+          "msvc-2-builtin": 1000000000
+        }
+      },
+      "cint": [
+        "cint-builtin"
+      ],
+      "id": "mean under 1 s",
+      "relation": "below",
+      "statistic": "mean",
+      "status": "test only",
+      "times": [
+        1,
+        1
+      ]
+    },
+    {
+      "against": {
+        "variants": [
+          "c"
+        ]
+      },
+      "cint": [
+        "cint-builtin"
+      ],
+      "id": "p99 within 1000 times C",
+      "relation": "at_most",
+      "statistic": "p99",
+      "status": "test only",
+      "times": [
+        1000,
+        1
+      ]
+    }
+  ],
+  "benchmark": "test",
+  "cint": {
+    "entry": "tick",
+    "source": "bench/tests/tick.ci"
+  },
+  "form": "call",
+  "index": "t",
+  "method": {
+    "agreement_calls": 3,
+    "rounds": 2,
+    "samples": 60,
+    "warmup": 4
+  },
+  "name": "tick_stream",
+  "parameters": {
+    "steps": {
+      "agreement": 10,
+      "value": 1000
+    },
+    "t": {
+      "value": 0
+    }
+  },
+  "summary": "A stand-in per-tick workload for the tests of tools/cint_bench.py: the per-iteration form with a digest stream, the mean and p99 rules.",
+  "variants": [
+    {
+      "fuel": "off",
+      "helpers": "builtin",
+      "name": "cint-builtin",
+      "role": "cint"
+    },
+    {
+      "entry": "tick_c",
+      "language": "C17",
+      "name": "c",
+      "number_format": "I64",
+      "role": "baseline",
+      "source": "bench/tests/tick_c.c"
+    }
+  ]
+}

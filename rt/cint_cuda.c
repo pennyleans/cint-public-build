@@ -602,6 +602,14 @@ cint_status cint_cuda_copy_on_device(cint_cuda *cuda, uint64_t dst, uint64_t src
     return CU_ONE(cuda, "cuMemcpyDtoDAsync", cuda->api.copy_dtod((cu_ptr)dst, (cu_ptr)src, bytes, cuda->stream));
 }
 
+cint_status cint_cuda_zero(cint_cuda *cuda, uint64_t dst, size_t bytes)
+{
+    if (cuda == NULL || dst == 0u || bytes == 0u || bytes % 4u != 0u) {
+        return CINT_REFUSED;
+    }
+    return CU_ONE(cuda, "cuMemsetD32Async", cuda->api.memset_d32((cu_ptr)dst, 0u, bytes / 4u, cuda->stream));
+}
+
 cint_status cint_cuda_wait_stream(cint_cuda *cuda, uintptr_t producer)
 {
     cu_result r;

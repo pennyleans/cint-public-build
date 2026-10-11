@@ -1,0 +1,13 @@
+// case: wide/rotate_shift_u512
+// clause: SPEC-01 IM-6, IM-16, IM-45, IM-46 (rotl, rotr, logical >> and << on U512)
+// subset: cint-core-1 (unsigned wide integers, print statements, built-in rotl and rotr)
+// entry: run; args: none
+// spec outcome: value I64 0; output `2^512 - 3, 2^511, 1, 2^511` in decimal, space-separated, and a line feed (2^512 - 2 rotated left by 1; 1 rotated right by 1; the all-ones pattern of I512 -1 shifted right by 511; 1 shifted left by 511); fuel 1. Box 15, unit 1
+
+export I64 run() {
+    U512 a = U512.max - 1;
+    I512 m = -1;
+    U512 one = 1;
+    "{rotl(a, 1)} {rotr(one, 1)} {(m as% U512) >> 511} {one << 511}\n";
+    return 0;
+}

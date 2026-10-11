@@ -1,0 +1,31 @@
+module module.import_plain
+sites module/import_plain.ci 1:9:12:fuel.charge 2:12:16:call.enter 3:13:23:call.enter 4:13:37:mul.checked.i64 5:13:69:call.enter 6:13:56:add.checked.i64 7:13:88:index.checked.i64 8:13:81:add.checked.i64 9:11:12:arena.alloc
+export func @module.import_plain.run() -> I64 {
+  fuel.charge 1                                  #1 @module/import_plain.ci:9:12
+  frame.mark 1, 1
+  local $sc.0: module.lib.plain_math.Pair
+  %t0 = const I64 3
+  %t1 = const I64 4
+  field.store $sc.0, a, %t0
+  field.store $sc.0, b, %t1
+  local $p.1: module.lib.plain_math.Pair
+  struct.copy $p.1, $sc.0
+  frame.charge 4                                 #9 @module/import_plain.ci:11:12
+  local $cells.2: I64[4]
+  %t2 = const I64 5
+  call @module.lib.plain_math.set_all(extent $cells.2, $cells.2, %t2) #2 @module/import_plain.ci:12:16
+  %t3 = const I64 1
+  %t4 = const I64 2
+  %t5 = const I64 3
+  %t6 = call @module.lib.plain_math.add3(%t3, %t4, %t5) #3 @module/import_plain.ci:13:23
+  %t7 = const I64 10
+  %t8 = mul.checked.i64 %t6, %t7                 #4 @module/import_plain.ci:13:37
+  %t9 = call @module.lib.plain_math.sum_pair($p.1) #5 @module/import_plain.ci:13:69
+  %t10 = add.checked.i64 %t8, %t9                #6 @module/import_plain.ci:13:56
+  %t11 = const I64 3
+  index.checked.i64 $cells.2, %t11               #7 @module/import_plain.ci:13:88
+  %t12 = index.load $cells.2, %t11
+  %t13 = add.checked.i64 %t10, %t12              #8 @module/import_plain.ci:13:81
+  return %t13
+  frame.release 1, 1
+}

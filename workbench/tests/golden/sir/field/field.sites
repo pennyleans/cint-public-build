@@ -1,0 +1,327 @@
+module field
+sites field.ci 1:9:14:index.checked.i32 2:9:14:index.checked.i32 3:9:21:as.checked.i32.i64 4:10:14:index.checked.i32 5:10:14:index.checked.i32 6:11:24:sub.checked.i64 7:11:46:sub.checked.i64 8:12:24:sub.checked.i64 9:12:21:index.checked.i32 10:12:21:index.checked.i32 11:12:32:as.checked.i32.i64 12:12:47:add.checked.i64 13:12:44:index.checked.i32 14:12:44:index.checked.i32 15:12:55:as.checked.i32.i64 16:12:40:add.checked.i64 17:13:27:sub.checked.i64 18:13:21:index.checked.i32 19:13:21:index.checked.i32 20:13:32:as.checked.i32.i64 21:13:17:add.checked.i64 22:13:50:add.checked.i64 23:13:44:index.checked.i32 24:13:44:index.checked.i32 25:13:55:as.checked.i32.i64 26:13:40:add.checked.i64 27:13:67:mul.checked.i64 28:13:63:sub.checked.i64 29:14:31:mul.checked.i64 30:14:18:div_round.checked.i64.half_even 31:14:16:add.checked.i64 32:14:54:as.checked.i64.i32 33:16:6:index.checked.i32 34:16:6:index.checked.i32 35:17:20:sum.checked.i32.i64 36:20:13:fuel.charge 37:21:17:decl.shape 38:22:17:decl.shape 39:23:6:index.checked.i32 40:23:6:index.checked.i32 41:25:5:fuel.charge 42:26:9:dispatch 43:27:9:dispatch 44:29:45:index.checked.i32 45:29:45:index.checked.i32 46:29:5:print 47:32:1:fuel.charge 48:35:6:index.checked.i32 49:35:6:index.checked.i32 50:37:5:dispatch 51:38:13:index.checked.i32 52:38:13:index.checked.i32 53:38:34:index.checked.i32 54:38:34:index.checked.i32 55:38:12:assert.checked.bool
+kernel @field.diffuse(%u: I32[_, _], %kn: I64, %kd: I64, %v: I32[_, _], %total: out I64) {
+  dispatch.entry
+  local $h.0: I64
+  local $w.1: I64
+  %t0 = view.extent %u, 0
+  store.local $h.0, %t0
+  %t1 = view.extent %u, 1
+  store.local $w.1, %t1
+  %t2 = load.local $h.0
+  bind.shape %v, 3, 0, %t2
+  %t3 = load.local $w.1
+  bind.shape %v, 3, 1, %t3
+  %t4 = load.local $h.0
+  store.local $sc.2, %t4
+  %t5 = load.local $w.1
+  store.local $sc.3, %t5
+  bind.alias %v, %u
+  dispatch.charge $sc.4, 2, $sc.2, $sc.3
+  dispatch.stage $sc.5, %v, 1
+  dispatch.push
+  %t6 = const I64 0
+  store.local $sc.6, %t6
+  loop L21 {
+    %t7 = load.local $sc.6
+    %t8 = load.local $sc.4
+    %t9 = cmp.lt.i64 %t7, %t8
+    while %t9
+    %t10 = load.local $sc.6
+    dispatch.item %t10, 2, $y.7, $x.8, $sc.2, $sc.3
+    %t11 = load.local $y.7
+    %t12 = load.local $x.8
+    index.checked.i32 %u, %t11, 0                #1 @field.ci:9:14
+    index.checked.i32 %u, %t12, 1                #2 @field.ci:9:14
+    %t13 = view.offset %u, %t11, 0
+    %t14 = view.offset %u, %t12, %t13, 1
+    dispatch.step
+    %t15 = index.load %u, %t14
+    %t16 = as.checked.i32.i64 %t15               #3 @field.ci:9:21
+    dispatch.step
+    local $c.9: I64
+    store.local $c.9, %t16
+    %t17 = load.local $y.7
+    %t18 = load.local $x.8
+    index.checked.i32 %u, %t17, 0                #4 @field.ci:10:14
+    index.checked.i32 %u, %t18, 1                #5 @field.ci:10:14
+    %t19 = view.offset %u, %t17, 0
+    %t20 = view.offset %u, %t18, %t19, 1
+    dispatch.step
+    %t21 = index.load %u, %t20
+    local $r.10: I32
+    store.local $r.10, %t21
+    if {
+      arm {
+        %t22 = load.local $y.7
+        %t23 = const I64 0
+        %t24 = cmp.gt.i64 %t22, %t23
+        local $sc.11: Bool
+        store.local $sc.11, %t24
+        if {
+          arm {
+          } then %t24 {
+            %t25 = load.local $y.7
+            %t26 = load.local $h.0
+            %t27 = const I64 1
+            %t28 = sub.checked.i64 %t26, %t27    #6 @field.ci:11:24
+            dispatch.step
+            %t29 = cmp.lt.i64 %t25, %t28
+            store.local $sc.11, %t29
+          }
+        }
+        %t30 = load.local $sc.11
+        local $sc.12: Bool
+        store.local $sc.12, %t30
+        if {
+          arm {
+          } then %t30 {
+            %t31 = load.local $x.8
+            %t32 = const I64 0
+            %t33 = cmp.gt.i64 %t31, %t32
+            store.local $sc.12, %t33
+          }
+        }
+        %t34 = load.local $sc.12
+        local $sc.13: Bool
+        store.local $sc.13, %t34
+        if {
+          arm {
+          } then %t34 {
+            %t35 = load.local $x.8
+            %t36 = load.local $w.1
+            %t37 = const I64 1
+            %t38 = sub.checked.i64 %t36, %t37    #7 @field.ci:11:46
+            dispatch.step
+            %t39 = cmp.lt.i64 %t35, %t38
+            store.local $sc.13, %t39
+          }
+        }
+        %t40 = load.local $sc.13
+      } then %t40 {
+        %t41 = load.local $y.7
+        %t42 = const I64 1
+        %t43 = sub.checked.i64 %t41, %t42        #8 @field.ci:12:24
+        dispatch.step
+        %t44 = load.local $x.8
+        index.checked.i32 %u, %t43, 0            #9 @field.ci:12:21
+        index.checked.i32 %u, %t44, 1            #10 @field.ci:12:21
+        %t45 = view.offset %u, %t43, 0
+        %t46 = view.offset %u, %t44, %t45, 1
+        dispatch.step
+        %t47 = index.load %u, %t46
+        %t48 = as.checked.i32.i64 %t47           #11 @field.ci:12:32
+        dispatch.step
+        %t49 = load.local $y.7
+        %t50 = const I64 1
+        %t51 = add.checked.i64 %t49, %t50        #12 @field.ci:12:47
+        dispatch.step
+        %t52 = load.local $x.8
+        index.checked.i32 %u, %t51, 0            #13 @field.ci:12:44
+        index.checked.i32 %u, %t52, 1            #14 @field.ci:12:44
+        %t53 = view.offset %u, %t51, 0
+        %t54 = view.offset %u, %t52, %t53, 1
+        dispatch.step
+        %t55 = index.load %u, %t54
+        %t56 = as.checked.i32.i64 %t55           #15 @field.ci:12:55
+        dispatch.step
+        %t57 = add.checked.i64 %t48, %t56        #16 @field.ci:12:40
+        dispatch.step
+        %t58 = load.local $y.7
+        %t59 = load.local $x.8
+        %t60 = const I64 1
+        %t61 = sub.checked.i64 %t59, %t60        #17 @field.ci:13:27
+        dispatch.step
+        index.checked.i32 %u, %t58, 0            #18 @field.ci:13:21
+        index.checked.i32 %u, %t61, 1            #19 @field.ci:13:21
+        %t62 = view.offset %u, %t58, 0
+        %t63 = view.offset %u, %t61, %t62, 1
+        dispatch.step
+        %t64 = index.load %u, %t63
+        %t65 = as.checked.i32.i64 %t64           #20 @field.ci:13:32
+        dispatch.step
+        %t66 = add.checked.i64 %t57, %t65        #21 @field.ci:13:17
+        dispatch.step
+        %t67 = load.local $y.7
+        %t68 = load.local $x.8
+        %t69 = const I64 1
+        %t70 = add.checked.i64 %t68, %t69        #22 @field.ci:13:50
+        dispatch.step
+        index.checked.i32 %u, %t67, 0            #23 @field.ci:13:44
+        index.checked.i32 %u, %t70, 1            #24 @field.ci:13:44
+        %t71 = view.offset %u, %t67, 0
+        %t72 = view.offset %u, %t70, %t71, 1
+        dispatch.step
+        %t73 = index.load %u, %t72
+        %t74 = as.checked.i32.i64 %t73           #25 @field.ci:13:55
+        dispatch.step
+        %t75 = add.checked.i64 %t66, %t74        #26 @field.ci:13:40
+        dispatch.step
+        %t76 = const I64 4
+        %t77 = load.local $c.9
+        %t78 = mul.checked.i64 %t76, %t77        #27 @field.ci:13:67
+        dispatch.step
+        %t79 = sub.checked.i64 %t75, %t78        #28 @field.ci:13:63
+        dispatch.step
+        local $lap.14: I64
+        store.local $lap.14, %t79
+        %t80 = load.local $c.9
+        %t81 = load.local $lap.14
+        %t82 = mul.checked.i64 %kn, %t81         #29 @field.ci:14:31
+        dispatch.step
+        %t83 = div_round.checked.i64.half_even %t82, %kd #30 @field.ci:14:18
+        dispatch.step
+        %t84 = add.checked.i64 %t80, %t83        #31 @field.ci:14:16
+        dispatch.step
+        %t85 = as.checked.i64.i32 %t84           #32 @field.ci:14:54
+        dispatch.step
+        store.local $r.10, %t85
+      }
+    }
+    %t86 = load.local $y.7
+    %t87 = load.local $x.8
+    index.checked.i32 $sc.5, %t86, 0             #33 @field.ci:16:6
+    index.checked.i32 $sc.5, %t87, 1             #34 @field.ci:16:6
+    %t88 = view.offset $sc.5, %t86, 0
+    %t89 = view.offset $sc.5, %t87, %t88, 1
+    dispatch.step
+    %t90 = load.local $r.10
+    index.store $sc.5, %t89, %t90
+    %t91 = load.local $r.10
+    reduce.add sum.checked.i32.i64 %total, %t91
+    dispatch.step
+    next
+    %t92 = load.local $sc.6
+    %t93 = const I64 1
+    %t94 = add.wrap.i64 %t92, %t93
+    store.local $sc.6, %t94
+  }
+  dispatch.phase 2
+  reduce.final sum.checked.i32.i64 %total        #35 @field.ci:17:20
+  dispatch.pop
+  dispatch.publish %v, $sc.5
+  dispatch.publish %total
+}
+export func @field.main() {
+  fuel.charge 1                                  #36 @field.ci:20:13
+  frame.mark 1, 2
+  %t0 = const I64 64
+  %t1 = const I64 64
+  view.dim $a.0: I32[_, _], %t0, 0
+  view.dim $a.0: I32[_, _], %t1, 1
+  view.alloc $a.0: I32[_, _], 2                  #37 @field.ci:21:17
+  %t2 = const I64 64
+  %t3 = const I64 64
+  view.dim $b.1: I32[_, _], %t2, 0
+  view.dim $b.1: I32[_, _], %t3, 1
+  view.alloc $b.1: I32[_, _], 2                  #38 @field.ci:22:17
+  %t4 = const I64 32
+  %t5 = const I64 32
+  index.checked.i32 $a.0, %t4, 0                 #39 @field.ci:23:6
+  index.checked.i32 $a.0, %t5, 1                 #40 @field.ci:23:6
+  %t6 = view.offset $a.0, %t4, 0
+  %t7 = view.offset $a.0, %t5, %t6, 1
+  %t8 = const I32 65536
+  index.store $a.0, %t7, %t8
+  %t9 = const I64 0
+  local $heat.2: I64
+  store.local $heat.2, %t9
+  %t10 = const I64 0
+  %t11 = const I64 120
+  local $t.3: I64
+  store.local $t.3, %t10
+  loop L27 {
+    %t12 = load.local $t.3
+    %t13 = cmp.lt.i64 %t12, %t11
+    while %t13
+    fuel.charge 1                                #41 @field.ci:25:5
+    %t14 = const I64 1
+    %t15 = const I64 8
+    dispatch @field.diffuse($a.0, %t14, %t15, $b.1, out $heat.2), 9 #42 @field.ci:26:9
+    %t16 = const I64 1
+    %t17 = const I64 8
+    dispatch @field.diffuse($b.1, %t16, %t17, $a.0, out $heat.2), 9 #43 @field.ci:27:9
+    next
+    %t18 = load.local $t.3
+    %t19 = const I64 1
+    %t20 = add.wrap.i64 %t18, %t19
+    store.local $t.3, %t20
+  }
+  %t21 = load.local $heat.2
+  %t22 = const I64 32
+  %t23 = const I64 32
+  index.checked.i32 $a.0, %t22, 0                #44 @field.ci:29:45
+  index.checked.i32 $a.0, %t23, 1                #45 @field.ci:29:45
+  %t24 = view.offset $a.0, %t22, 0
+  %t25 = view.offset $a.0, %t23, %t24, 1
+  %t26 = index.load $a.0, %t25
+  print.begin                                    #46 @field.ci:29:5
+  print.bytes "after 240 steps: total="
+  print.value I64 %t21
+  print.bytes " center="
+  print.value I32 %t26
+  print.bytes "\n"
+  print.end
+  frame.release 1, 2
+}
+test @field 0 {
+  fuel.charge 1                                  #47 @field.ci:32:1
+  local $sc.0: I32[64]
+  view.begin $p.1: I32[_, _], $sc.0, 0, 32776
+  local $sc.2: I32[64]
+  view.begin $q.3: I32[_, _], $sc.2, 0, 32776
+  %t0 = const I64 3
+  %t1 = const I64 4
+  index.checked.i32 $p.1, %t0, 0                 #48 @field.ci:35:6
+  index.checked.i32 $p.1, %t1, 1                 #49 @field.ci:35:6
+  %t2 = view.offset $p.1, %t0, 0
+  %t3 = view.offset $p.1, %t1, %t2, 1
+  %t4 = const I32 65536
+  index.store $p.1, %t3, %t4
+  %t5 = const I64 0
+  local $s.4: I64
+  store.local $s.4, %t5
+  %t6 = const I64 1
+  %t7 = const I64 8
+  dispatch @field.diffuse($p.1, %t6, %t7, $q.3, out $s.4), 9 #50 @field.ci:37:5
+  %t8 = const I64 3
+  %t9 = const I64 4
+  index.checked.i32 $q.3, %t8, 0                 #51 @field.ci:38:13
+  index.checked.i32 $q.3, %t9, 1                 #52 @field.ci:38:13
+  %t10 = view.offset $q.3, %t8, 0
+  %t11 = view.offset $q.3, %t9, %t10, 1
+  %t12 = index.load $q.3, %t11
+  %t13 = const I32 32768
+  %t14 = cmp.eq.i32 %t12, %t13
+  local $sc.5: Bool
+  store.local $sc.5, %t14
+  if {
+    arm {
+    } then %t14 {
+      %t15 = const I64 2
+      %t16 = const I64 4
+      index.checked.i32 $q.3, %t15, 0            #53 @field.ci:38:34
+      index.checked.i32 $q.3, %t16, 1            #54 @field.ci:38:34
+      %t17 = view.offset $q.3, %t15, 0
+      %t18 = view.offset $q.3, %t16, %t17, 1
+      %t19 = index.load $q.3, %t18
+      %t20 = const I32 8192
+      %t21 = cmp.eq.i32 %t19, %t20
+      store.local $sc.5, %t21
+    }
+  }
+  %t22 = load.local $sc.5
+  local $sc.6: Bool
+  store.local $sc.6, %t22
+  if {
+    arm {
+    } then %t22 {
+      %t23 = load.local $s.4
+      %t24 = const I64 65536
+      %t25 = cmp.eq.i64 %t23, %t24
+      store.local $sc.6, %t25
+    }
+  }
+  %t26 = load.local $sc.6
+  assert.checked.bool %t26                       #55 @field.ci:38:12
+}

@@ -1,0 +1,10 @@
+// case: fixed/sqrt_q1_15_ceil_overflow
+// clause: SPEC-01 IM-67, IM-106 (Q1.15 raw 32767 with ceil rounds up to 2^15, outside Q1.15)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 9:12 (the callee `sqrt`), operation sqrt.checked.q1_15.ceil, operand Q1.15 raw 32767, exact 32768, limit Q1.15 raw 32767; stack depth 0; fuel 1. Box 15, unit 1
+
+export Bool run() {
+    Q1.15 a = Q1.15.raw(32767);
+    return sqrt(a, ceil) != 0;
+}

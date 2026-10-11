@@ -1,0 +1,15 @@
+// case: wide/slice_reversed_i512
+// clause: SPEC-01 IM-74; SPEC-04 LS-161 (a reversed strided slice of an I512 array reads its logical elements in order)
+// subset: cint-core-1 (wide integers, array slices, built-in sum)
+// entry: run; args: none
+// spec outcome: value I64 9, its low 64 bits (as%); prints the I512 value 9 (elements 5, 3 and 1, each times 2^400, summed and shifted back down) and a line feed; fuel 8 (entry, 6 fill iterations, one reduction charge). Box 15, unit 1
+
+export I64 run() {
+    I512[6] a;
+    for i in 0..6 {
+        a[i] = (i as I512) << 400;
+    }
+    I512 observed = sum(a[5..0 by -2]) >> 400;
+    "{observed}\n";
+    return observed as% I64;
+}

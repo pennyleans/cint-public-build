@@ -1,0 +1,18 @@
+// case: wide/kernel_reduce_sum_i512
+// clause: SPEC-02 R-1, R-5, 8.2 (a `reduce` statement sums I512 contributions, one per work-item, exactly)
+// subset: cint-core-1 (wide integers, kernel)
+// entry: run; args: none
+// spec outcome: value I64 30, its low 64 bits (as%); prints the I512 value 30 (1 + 4 + 9 + 16) and a line feed; fuel 5 (entry, N = 4). Box 15, unit 1
+
+kernel squares[n](in I512[n] a, out I512 t) over [i: n] {
+    reduce t = sum(a[i] * a[i]);
+}
+
+export I64 run() {
+    I512[4] x = [1, 2, 3, 4];
+    I512 t = 0;
+    squares(x, t);
+    I512 observed = t;
+    "{observed}\n";
+    return observed as% I64;
+}

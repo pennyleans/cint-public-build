@@ -1,0 +1,15 @@
+// case: probes/copy_rank2_transposed
+// clause: box 13 unit 7 probe: copy from a transposed view (view.transpose, view.copy)
+// entry: run; args: none
+
+export I64 run() {
+    I64[2, 3] src;
+    I64[3, 2] dst;
+    for i in 0..2 {
+        for j in 0..3 {
+            src[i, j] = i * 3 + j;
+        }
+    }
+    copy(dst, transpose(src));
+    return dst[0, 1] * 100 + dst[2, 0] * 10 + dst[2, 1];
+}

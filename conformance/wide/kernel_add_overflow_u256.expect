@@ -1,0 +1,21 @@
+case wide/kernel_add_overflow_u256
+clause SPEC-02 F-3, F-6, X-8; SPEC-01 IM-6, IM-106; SPEC-09 CONF-11 rule 14 (a work-item's U256 sum overflows; the record has the kernel form with U256 operands)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 4
+fault.code E_OVERFLOW
+fault.operation add.checked.u256
+fault.operand U256 115792089237316195423570985008687907853269984665640564039457584007913129639935
+fault.operand U256 1
+fault.exact 115792089237316195423570985008687907853269984665640564039457584007913129639936
+fault.limit U256 115792089237316195423570985008687907853269984665640564039457584007913129639935
+fault.position wide/kernel_add_overflow_u256.ci:8:17
+fault.revision self
+fault.source-map self
+fault.phase work-item
+fault.kernel wide.kernel_add_overflow_u256.bump
+fault.address 0 2 2
+fault.stack-depth 1
+fault.stack wide/kernel_add_overflow_u256.ci:14:5

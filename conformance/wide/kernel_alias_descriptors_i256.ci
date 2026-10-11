@@ -1,0 +1,15 @@
+// case: wide/kernel_alias_descriptors_i256
+// clause: SPEC-02 A-5, A-6, A-8, V-13; SPEC-09 CONF-11 rule 13 (adjacent column blocks of an I256 array: an uncertain overlap at dispatch entry, with I256 descriptors)
+// subset: cint-core-1 (wide integers, kernel, array slices)
+// entry: run; args: none
+// spec outcome: fault E_ALIAS at 13:5 (the dispatch site), phase entry, address dispatch 0, operation bind.alias, operands I64 1 (v) and I64 0 (u), descriptors I256 none 2 4 4 0 8 4 0 1 write and I256 none 2 0 4 0 8 4 0 1 write; stack depth 0; fuel 1. Encoding: box 09 ruling R9. Box 15, unit 1
+
+kernel bump[h, w](in I256[h, w] u, out I256[h, w] v) over [y: h, x: w] {
+    v[y, x] = u[y, x] + 1;
+}
+
+export Bool run() {
+    I256[4, 8] m;
+    bump(m[.., 0..4], m[.., 4..8]);
+    return m[0, 4] != 0;
+}

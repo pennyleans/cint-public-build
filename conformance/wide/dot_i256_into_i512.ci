@@ -1,0 +1,13 @@
+// case: wide/dot_i256_into_i512
+// clause: SPEC-01 IM-87 (dot over I256 elements: the exact sum of products, then one range check against an I512 result)
+// subset: cint-core-1 (wide integers, built-in dot)
+// entry: run; args: none
+// spec outcome: value I64 -1, its low 64 bits (as%); prints the I512 value (2^255 - 1)^2 + 2^255 - 2 (the products: I256.max squared, I256.min times -1 and 2 times -1) and a line feed; fuel 2 (entry, one reduction charge). Box 15, unit 1
+
+export I64 run() {
+    I256[3] a = [I256.max, I256.min, 2];
+    I256[3] b = [I256.max, -1, -1];
+    I512 observed = dot(I512, a, b);
+    "{observed}\n";
+    return observed as% I64;
+}

@@ -1,0 +1,65 @@
+module view.partial_index_row_view
+sites view/partial_index_row_view.ci 1:9:5:fuel.charge 2:10:20:index.checked.i64 3:10:15:add.checked.i64 4:15:12:fuel.charge 5:17:6:index.checked.i64 6:17:6:index.checked.i64 7:18:6:index.checked.i64 8:18:6:index.checked.i64 9:19:6:index.checked.i64 10:19:6:index.checked.i64 11:20:19:index.checked.i64 12:20:12:call.enter
+func @view.partial_index_row_view.total(%n: I64, %row: I64[%n]) -> I64 {
+  %t0 = const I64 0
+  local $s.0: I64
+  store.local $s.0, %t0
+  %t1 = const I64 0
+  local $i.1: I64
+  store.local $i.1, %t1
+  loop L6 {
+    %t2 = load.local $i.1
+    %t3 = cmp.lt.i64 %t2, %n
+    while %t3
+    fuel.charge 1                                #1 @view/partial_index_row_view.ci:9:5
+    %t4 = load.local $s.0
+    %t5 = load.local $i.1
+    index.checked.i64 %row, %t5                  #2 @view/partial_index_row_view.ci:10:20
+    %t6 = index.load %row, %t5
+    %t7 = add.checked.i64 %t4, %t6               #3 @view/partial_index_row_view.ci:10:15
+    store.local $s.0, %t7
+    next
+    %t8 = load.local $i.1
+    %t9 = const I64 1
+    %t10 = add.wrap.i64 %t8, %t9
+    store.local $i.1, %t10
+  }
+  %t11 = load.local $s.0
+  return %t11
+}
+export func @view.partial_index_row_view.run() -> I64 {
+  fuel.charge 1                                  #4 @view/partial_index_row_view.ci:15:12
+  local $sc.0: I64[12]
+  view.begin $m.1: I64[_, _], $sc.0, 0, 16387
+  %t0 = const I64 1
+  %t1 = const I64 0
+  index.checked.i64 $m.1, %t0, 0                 #5 @view/partial_index_row_view.ci:17:6
+  index.checked.i64 $m.1, %t1, 1                 #6 @view/partial_index_row_view.ci:17:6
+  %t2 = view.offset $m.1, %t0, 0
+  %t3 = view.offset $m.1, %t1, %t2, 1
+  %t4 = const I64 1
+  index.store $m.1, %t3, %t4
+  %t5 = const I64 1
+  %t6 = const I64 3
+  index.checked.i64 $m.1, %t5, 0                 #7 @view/partial_index_row_view.ci:18:6
+  index.checked.i64 $m.1, %t6, 1                 #8 @view/partial_index_row_view.ci:18:6
+  %t7 = view.offset $m.1, %t5, 0
+  %t8 = view.offset $m.1, %t6, %t7, 1
+  %t9 = const I64 4
+  index.store $m.1, %t8, %t9
+  %t10 = const I64 2
+  %t11 = const I64 0
+  index.checked.i64 $m.1, %t10, 0                #9 @view/partial_index_row_view.ci:19:6
+  index.checked.i64 $m.1, %t11, 1                #10 @view/partial_index_row_view.ci:19:6
+  %t12 = view.offset $m.1, %t10, 0
+  %t13 = view.offset $m.1, %t11, %t12, 1
+  %t14 = const I64 100
+  index.store $m.1, %t13, %t14
+  %t15 = const I64 1
+  view.begin $sc.2: I64[_], $m.1, 0, 0
+  index.checked.i64 $m.1, %t15, 0                #11 @view/partial_index_row_view.ci:20:19
+  view.pick $sc.2, %t15, 0
+  view.end $sc.2, $m.1, 1, 1
+  %t16 = call @view.partial_index_row_view.total(extent $sc.2, $sc.2) #12 @view/partial_index_row_view.ci:20:12
+  return %t16
+}

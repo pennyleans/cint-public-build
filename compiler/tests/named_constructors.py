@@ -11,7 +11,9 @@ import import_views as iv
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
-def main(values=None, diagnostics=None, boundaries=None, library=None, label='named constructors'):
+def main(values=None, diagnostics=None, boundaries=None, library=None, label='named constructors', fuels=None):
+    """fuels, when given, maps a value case's fuel consumed without an allowance to more
+    allowances; the case is then also run with each of them by cint_ref and the harness."""
     values = VALUES if values is None else values
     diagnostics = DIAGNOSTICS if diagnostics is None else diagnostics
     boundaries = BOUNDARIES if boundaries is None else boundaries
@@ -94,6 +96,18 @@ def main(values=None, diagnostics=None, boundaries=None, library=None, label='na
                     result = row['run']
                     row['passed'] = (result['exit'] == 0 and not result['stderr'] and
                                      iv.observed(ref['stdout']) == iv.observed(result['stdout']))
+                    consumed = [int(line.split()[1]) for line in ref['stdout'].splitlines()
+                                if line.startswith('fuel-consumed ')]
+                    row['fuel_runs'] = []
+                    for fuel in (fuels(consumed[0]) if fuels and consumed else ()):
+                        fuel_ref = call([sys.executable, '-B', '-m', 'cint_ref', 'run', source, '--entry', 'run',
+                                         '--path', 'main.ci', '--format', '2', '--fuel', fuel], ROOT / 'ref')
+                        fuel_run = call([harness, native_library, '--cases', case_list, '--format', '2',
+                                         '--fuel', fuel], directory, tc.env)
+                        agree = (fuel_ref['exit'] == 0 and fuel_run['exit'] == 0 and not fuel_run['stderr'] and
+                                 iv.observed(fuel_ref['stdout']) == iv.observed(fuel_run['stdout']))
+                        row['fuel_runs'].append(dict(fuel=fuel, reference=fuel_ref, run=fuel_run, passed=agree))
+                        row['passed'] = row['passed'] and agree
                 except iv.cc.BuildError as error:
                     row.update(passed=False, build_error=str(error))
         rows.append(row)

@@ -1,0 +1,59 @@
+module money
+sites money.ci 1:5:12:fuel.charge 2:6:13:sum.checked.i64.i64 3:7:28:mul.checked.i64 4:7:16:div_round.checked.i64.half_even 5:7:14:add.checked.i64 6:10:12:fuel.charge 7:11:31:mul.checked.i64 8:11:12:div_round.checked.i64.half_even 9:14:12:fuel.charge 10:15:14:add.checked.i64 11:18:12:fuel.charge 12:20:12:call.enter 13:24:12:fuel.charge 14:26:12:call.enter 15:29:1:fuel.charge 16:30:12:call.enter 17:30:12:assert.checked.bool
+export func @money.total_with_tax(%n: I64, %c: I64[%n], %rate_bp: I64) -> I64 {
+  fuel.charge 1                                  #1 @money.ci:5:12
+  %t0 = sum.checked.i64.i64 %c                   #2 @money.ci:6:13
+  local $s.0: I64
+  store.local $s.0, %t0
+  %t1 = load.local $s.0
+  %t2 = load.local $s.0
+  %t3 = mul.checked.i64 %t2, %rate_bp            #3 @money.ci:7:28
+  %t4 = const I64 10000
+  %t5 = div_round.checked.i64.half_even %t3, %t4 #4 @money.ci:7:16
+  %t6 = add.checked.i64 %t1, %t5                 #5 @money.ci:7:14
+  return %t6
+}
+export func @money.tax(%subtotal: I64, %rate_bp: I64) -> I64 {
+  fuel.charge 1                                  #6 @money.ci:10:12
+  %t0 = mul.checked.i64 %subtotal, %rate_bp      #7 @money.ci:11:31
+  %t1 = const I64 10000
+  %t2 = div_round.checked.i64.half_even %t0, %t1 #8 @money.ci:11:12
+  return %t2
+}
+export func @money.add_cents(%a: I64, %b: I64) -> I64 {
+  fuel.charge 1                                  #9 @money.ci:14:12
+  %t0 = add.checked.i64 %a, %b                   #10 @money.ci:15:14
+  return %t0
+}
+export func @money.priced() -> I64 {
+  fuel.charge 1                                  #11 @money.ci:18:12
+  local $cents.0: I64[3]
+  %t0 = const I64 1999
+  array.init $cents.0, %t0, 0, 0
+  %t1 = const I64 425
+  array.init $cents.0, %t1, 0, 1
+  %t2 = const I64 10
+  array.init $cents.0, %t2, 0, 2
+  %t3 = const I64 825
+  %t4 = call @money.total_with_tax(extent $cents.0, $cents.0, %t3) #12 @money.ci:20:12
+  return %t4
+}
+export func @money.overflow() -> I64 {
+  fuel.charge 1                                  #13 @money.ci:24:12
+  %t0 = const I64 9223372036854775800
+  local $big.0: I64
+  store.local $big.0, %t0
+  %t1 = load.local $big.0
+  %t2 = const I64 12
+  %t3 = call @money.add_cents(%t1, %t2)          #14 @money.ci:26:12
+  return %t3
+}
+test @money 0 {
+  fuel.charge 1                                  #15 @money.ci:29:1
+  %t0 = const I64 200
+  %t1 = const I64 825
+  %t2 = call @money.tax(%t0, %t1)                #16 @money.ci:30:12
+  %t3 = const I64 16
+  %t4 = cmp.eq.i64 %t2, %t3
+  assert.checked.bool %t4                        #17 @money.ci:30:12
+}

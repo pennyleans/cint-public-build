@@ -64,7 +64,7 @@ class BareArguments(unittest.TestCase):
                 bind_argument(seq, A_IN)
             text = str(caught.exception)
             self.assertIn("cint.copy(seq, elem='I64') copies it exactly", text)
-            self.assertIn("BX10-04", text)
+            self.assertIn("is not borrowed", text)
 
     def test_text_refused(self):
         with self.assertRaises(cint.Refused) as caught:

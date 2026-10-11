@@ -276,6 +276,28 @@ class Records(unittest.TestCase):
         f = decode_fault_record(record(exact=bytes.fromhex("7f 0f")))
         self.assertEqual(f["exact"], Redacted("Z"))
 
+    def test_version_3(self):
+        """A run-time record of dot.checked.i1024.<R> is of version 3, with a Z of up to 264 bytes;
+        version 2 refuses that operation at run time and version 3 every other, and no
+        compile-time record is of version 3 (SPEC-01 IM-148, IM-149; BX15-07 C)."""
+        def z(n):
+            return b"\x0f" + u32(n) + b"\x11" * n
+        dot, mul = b"dot.checked.i1024.i1024", b"mul.checked.i1024"
+        f = decode_fault_record(record(code=1, operation=dot, exact=z(264), version=3))
+        self.assertEqual(f["exact"], int.from_bytes(b"\x11" * 264, "little"))
+        for data, kind in ((record(code=1, operation=dot, exact=z(264), version=3), "compile-time"),
+                           (record(code=1, operation=dot, exact=z(265), version=3), "run-time"),
+                           (record(code=1, operation=mul, exact=z(8), version=3), "run-time"),
+                           (record(code=1, operation=b"dot.checked.i1024.", exact=z(8), version=3), "run-time"),
+                           (record(code=1, operation=dot, exact=z(8)), "run-time"),
+                           (record(code=1, operation=mul, exact=z(258)), "run-time")):
+            with self.assertRaises(ValueError):
+                decode_fault_record(data, kind=kind)
+        self.assertEqual(decode_fault_record(record(code=1, operation=dot, exact=z(8)), kind="compile-time")["operation"],
+                         dot.decode("ascii"))
+        self.assertEqual(decode_fault_record(record(code=1, operation=mul, exact=z(257)))["exact"],
+                         int.from_bytes(b"\x11" * 257, "little"))
+
     def test_kernel_address(self):
         data = record([bytes.fromhex("14 01 00 00 00 00 00 00 00")], code=1, operation=b"add.checked.i64",
                       address=(b"advance", 3, 1, (13, 2)), stack=[(b"k.ci", 9, 1), (b"k.ci", 20, 5)],
@@ -377,7 +399,7 @@ class AgainstTheReference(unittest.TestCase):
             if "\noutcome fault\n" not in text:
                 continue
             lines = text.split("\n")
-            fmt = int(lines[2][len("format "):]) if lines[2] in ("format 2", "format 4") else 1
+            fmt = int(lines[2][len("format "):]) if lines[2] in ("format 2", "format 4", "format 5") else 1
             stem = path.relative_to(conformance).as_posix()[:-len(".expect")]
             entry = None
             if not (conformance / (stem + ".ci")).exists():

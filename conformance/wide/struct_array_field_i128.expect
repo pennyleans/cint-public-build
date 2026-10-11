@@ -1,0 +1,9 @@
+case wide/struct_array_field_i128
+clause SPEC-04 LS-67, LS-73, LS-77; SPEC-01 IM-50 (a struct with an I128 array field and an I512 field, returned by value, and an array of such structs)
+format 2
+source reference
+outcome value
+stdout-bytes 78
+stdout-sha256 4d7968e61e2ddf64aa0cafb5bb4b6193bd60fc45cfe48093a7100f4959974214
+return I64 5
+fuel-consumed 2

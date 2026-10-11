@@ -1,0 +1,12 @@
+module lib.audit
+sites lib/audit.ci 1:4:12:fuel.charge 2:5:11:add.checked.i64
+global @notes: I64 = 0
+export func @lib.audit.note(%n: I64) -> I64 {
+  fuel.charge 1                                  #1 @lib/audit.ci:4:12
+  %t0 = load.global @notes
+  %t1 = const I64 1
+  %t2 = add.checked.i64 %t0, %t1                 #2 @lib/audit.ci:5:11
+  store.global @notes, %t2
+  %t3 = load.global @notes
+  return %t3
+}

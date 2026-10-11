@@ -1,0 +1,17 @@
+// case: fixed/print_ls215
+// clause: SPEC-04 LS-207, LS-208, LS-215 (the fixed-point rows of the 9.5 table, but `!ratio`, which is Proposed)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 0; prints `1.5|3.0|0.00000000023283064365386962890625|0.12|0.38|0.0|0.000|6442450944`; fuel 1. Box 15, unit 1
+
+export I64 run() {
+    Q32.32 a = 1.5;
+    Q32.32 b = 3;
+    Q32.32 c = Q32.32.raw(1);
+    Q32.32 d = 0.125;
+    Q32.32 e = 0.375;
+    Q32.32 f = -0.03125;
+    Q16.16 g = Q16.16.raw(1);
+    "{a}|{b}|{c}|{d:.2}|{e:.2}|{f:.1}|{g:.3}|{a!raw}\n";
+    return 0;
+}

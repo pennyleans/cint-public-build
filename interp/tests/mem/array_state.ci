@@ -1,0 +1,37 @@
+// Module-level arrays in a checkpoint on both backends (box 13 unit MLA; rt/OPEN.md RT-OQ-49;
+// interp/tests/state_host.c). Each `run` counts its call, shifts the count into `last`, counts
+// it in `hits` by its remainder mod 4, flips `odd` at its remainder mod 2 and adds it to
+// `grid` (rank 2) in the row of its remainder mod 2, then returns the digits of `last`
+// (three), `hits` (four) and `odd` (two). A run after a restore returns what the run after the
+// checkpoint returned only when the arrays came back.
+
+I64 calls = 0;
+I64[3] last = [7, 8, 9];
+U8[4] hits;
+Bool[2] odd = [false, true];
+I64[2, 2] grid;
+
+void shift(inout I64[_] xs, I64 v) {
+    xs[0] = xs[1];
+    xs[1] = xs[2];
+    xs[2] = v;
+}
+
+export I64 run() {
+    calls += 1;
+    shift(last, calls);
+    hits[calls % 4] += 1;
+    odd[calls % 2] = !odd[calls % 2];
+    grid[calls % 2, 1] += calls;
+    I64 d = last[0] * 100 + last[1] * 10 + last[2];
+    for i in 0..4 {
+        d = d * 10 + hits[i] as I64;
+    }
+    for i in 0..2 {
+        d = d * 10;
+        if (odd[i]) {
+            d += 1;
+        }
+    }
+    return d;
+}

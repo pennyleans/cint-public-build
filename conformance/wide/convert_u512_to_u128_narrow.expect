@@ -1,0 +1,17 @@
+case wide/convert_u512_to_u128_narrow
+clause SPEC-01 IM-6, IM-50, IM-106; SPEC-09 CONF-11 rule 14 (a checked conversion of 2^128 from U512 to U128)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_NARROW
+fault.operation as.checked.u512.u128
+fault.operand U512 340282366920938463463374607431768211456
+fault.exact 340282366920938463463374607431768211456
+fault.limit U128 340282366920938463463374607431768211455
+fault.position wide/convert_u512_to_u128_narrow.ci:9:14
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

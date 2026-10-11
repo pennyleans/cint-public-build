@@ -33,6 +33,21 @@ class T2Inventory(unittest.TestCase):
         self.assertTrue(all(category != "outside_subset" for (case, compiler), (category, detail)
                             in entries.items() if compiler == "cintc"))
 
+    def test_t4_rows_are_b1s_on_both_executors(self):
+        # T4.txt (OQ-248): T2.txt's B1 rows, and each interpreter row with its case's B1
+        # category; no seed row.
+        t2 = cint_check.read_required(ROOT / "conformance/required/T2.txt")
+        t4 = cint_check.read_required(ROOT / "conformance/required/T4.txt")
+        b1 = {case: row for (case, compiler), row in t2.items() if compiler == "cintc"}
+        self.assertEqual(set(b1), self.available())
+        self.assertEqual({compiler for _, compiler in t4}, {"cintc", cint_check.INTERP_TOKEN})
+        for token in ("cintc", cint_check.INTERP_TOKEN):
+            with self.subTest(token=token):
+                self.assertEqual({case: row for (case, compiler), row in t4.items()
+                                  if compiler == token}, b1)
+        self.assertTrue((ROOT / "conformance/required/T4.txt").read_text().startswith(
+            "# Status: Approved "))
+
     def test_t1_seed_inventory_covers_every_available_case(self):
         entries = cint_check.read_required(ROOT / "conformance/required/T1.txt")
         self.assertEqual({case for case, compiler in entries if compiler == "cint-seed"}, self.available())

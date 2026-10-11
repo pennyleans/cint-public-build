@@ -1,0 +1,11 @@
+// case: wide/div_zero_u512
+// clause: SPEC-01 IM-6, IM-35, IM-39, IM-106; SPEC-09 CONF-11 rule 14 (a U512 division by zero, with U512 operands in the record)
+// subset: cint-core-1 (unsigned wide integers)
+// entry: run; args: none
+// spec outcome: fault E_DIV_ZERO at 10:14 (the `/`), operation div.checked.u512, operands U512 2^512 - 1 and U512 0, exact none, limit none; stack depth 0; fuel 1. Box 15, unit 1
+
+export Bool run() {
+    U512 a = U512.max;
+    U512 z = 0;
+    return a / z != 0;
+}

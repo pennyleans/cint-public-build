@@ -1,0 +1,16 @@
+// case: wide/module_state_i256
+// clause: SPEC-04 LS-213; SPEC-09 CONF-11 rule 10 (a module-level I256 array and an I256 scalar: one state.global line, for the scalar only)
+// subset: cint-core-1 (wide integers)
+// entry: run; args: none
+// spec outcome: value I64 12, its low 64 bits (as%); prints the I256 value 12 and a line feed; fuel 1 (the entry); state.global wide.module_state_i256 s I256 12, and no line for the array g. Box 15, unit 1
+
+I256[3] g;
+I256 s = 7;
+
+export I64 run() {
+    g[1] = 5;
+    s = s + g[1];
+    I256 observed = s;
+    "{observed}\n";
+    return observed as% I64;
+}

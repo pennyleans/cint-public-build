@@ -1,0 +1,9 @@
+case fixed/convert_table
+clause SPEC-01 IM-68, IM-69 (the rows of the 5.6 table that do not fault)
+format 5
+source reference
+outcome value
+stdout-bytes 36
+stdout-sha256 e206f6e026cf7296d3be37f739b3ff4507779df3687bc5a08f80ab4081714647
+return I64 0
+fuel-consumed 1

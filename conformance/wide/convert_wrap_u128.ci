@@ -1,0 +1,12 @@
+// case: wide/convert_wrap_u128
+// clause: SPEC-01 IM-6, IM-50 (wrapping and checked conversions between the signed and unsigned wide types)
+// subset: cint-core-1 (unsigned wide integers, print statements)
+// entry: run; args: none
+// spec outcome: value I64 0; output `2^128 - 1, 2^256 - 1, 2^128, 2^256` in decimal, space-separated, and a line feed (I1024 -1 as% U128; U512.max as% U256; U128.max widened to U256, plus 1; U256.max widened to I512, plus 1); fuel 1. Box 15, unit 1
+
+export I64 run() {
+    I1024 n = -1;
+    U512 big = U512.max;
+    "{n as% U128} {big as% U256} {(U128.max as U256) + 1} {(U256.max as I512) + 1}\n";
+    return 0;
+}

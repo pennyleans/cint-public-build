@@ -186,6 +186,10 @@ CASES = [
      kernel_text(3, "E_OVERFLOW", "sum.checked.i32.i32", ["I64 2"], [], "2147483648", "I32 2147483647", "8:16",
                  "epilogue", "total", "0 none none", ["30:5"], 0)),
     ("kernel_name_valid", "kernel", ["--entry", "bad_kernel", "--args", "I64", "3", "--format", "4"], OVERLAP),
+    # Format 5 (CONF-11 rule 14; box 15 unit 4d) writes what format 4 writes, under its own line.
+    ("kernel_read_descriptor_v5", "kernel", ["--entry", "read_alias", "--format", "5"],
+     kernel_text(1, "E_ALIAS", "bind.alias", ["I64 1", "I64 0"], ["U8 none 1 2 4 0 1 write", "U8 none 1 0 4 0 1 read"],
+                 "none", "none", "22:5", "entry", "copy2", "0 none none", [], 0).replace("format 4\n", "format 5\n", 1)),
     # Error results (CONF-11 rule 12; rt/cint_rt.h 6c', RT-OQ-33) and module state (rule 10).
     ("error_v3", "errors", ["--entry", "open", "--args", "I64", "-1", "--format", "3"],
      error_text(1, "harness.errors.IoError", "full", "U16 2", errors_head(3), calls=1)),
@@ -233,7 +237,7 @@ ERRORS = [
     ("no_clause", "basic", ["--entry", "f", "--no-default-clause"], 2),
     ("unknown_option", "basic", ["--entry", "f", "--frobnicate"], 2),
     ("format_04", "basic", ["--entry", "f", "--format", "04"], 2),
-    ("format_5", "basic", ["--entry", "f", "--format", "5"], 2),
+    ("format_6", "basic", ["--entry", "f", "--format", "6"], 2),
     ("bad_integer", "basic", ["--entry", "add", "--args", "I64", "1x", "I64", "2"], 2),
     ("bad_type", "basic", ["--entry", "add", "--args", "Q8", "1", "I64", "2"], 2),
     ("arg_option_removed", "basic", ["--entry", "add", "--arg", "I64 2", "--arg", "I64 3"], 2),  # D-6

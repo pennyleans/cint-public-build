@@ -56,6 +56,40 @@
 # (compiler/OPEN.md CINTC-OQ-64), so they are frozen from cint_ref and outside_subset
 # here (C9100). memory/pool_insert_result_try_main no longer
 # names `main` as its entry, since `main` is the program entry and not an export.
+# 2026-10-06, box 11 unit 6 (SPEC-09 CONF-17; approved 2026-10-08, OQ-220): the BACK-09
+# case kernel/fuel_before_overflow, frozen from cint_ref, and the 14 kernel tables of the
+# I64 boundary matrices (tables/kernel_*), measured on the seed at 2e47f8d (scratch runs, no
+# receipt): all outside_subset, the case with C9100 at 7:1 (`kernel` at module level) and
+# the tables, which carry no cint-boot-1 marker, without compiling.
+# 2026-10-08 (OQ-232): memory/arena_struct_element_store, the case of a B1 defect fix
+# (a whole-struct store into an element of an arena allocation of structs made cintc's
+# SIR verifier refuse the function), is frozen from cint_ref; the seed refuses it with
+# C9100 at 12:1 (`Arena` at module level), so it is outside_subset here.
+# 2026-10-09, box 15 unit 1 (OQ-252): the 23 conformance/wide/ cases, whose arrays, views,
+# struct fields, arenas, pools and kernels have wide integer elements (I128 to I1024),
+# are frozen from cint_ref; the seed refuses each with C9100, at a module-level form or
+# at the first wide type, so all 23 are outside_subset here.
+# 2026-10-09, box 15 unit 1 (OQ-257): the 56 table programs of the wide boundary matrices
+# (tables/*_i128 to tables/*_i1024; conformance/tools/gen_boundary64.py, ref/OPEN.md O-3)
+# carry no cint-boot-1 marker, so they are outside_subset here without compiling.
+# 2026-10-09, box 15 unit 1 (OQ-262): the 28 unsigned wide cases under conformance/wide/
+# (U128, U256 and U512; ruling BX15-02, .expect format 5) are frozen from cint_ref; the
+# seed refuses 27 with C9100, at a module-level form or at the first wide type, and
+# compares wide/u1024_refused (C3006, an unknown type). The 42 table programs of the
+# unsigned boundary matrices (tables/*_u128 to tables/*_u512; ref/OPEN.md O-3) carry no
+# cint-boot-1 marker, so they are outside_subset here without compiling.
+# 2026-10-09, box 15 unit 1 (OQ-264): the 46 fixed-point cases under conformance/fixed/
+# (Q<i>.<f> of 8 to 64 bits; rulings BX15-03 to BX15-06, .expect format 5) are frozen
+# from cint_ref; the seed refuses each with C9100, at the first fixed-point type or, in
+# fixed/fraction_integer_context_c2004, at the fraction literal, so all 46 are
+# outside_subset here.
+# 2026-10-10, box 15 unit 1 (OQ-266): fixed/literal_round_negative (a round clause after a
+# negative fraction literal, SPEC-04I.12) is frozen from cint_ref; the seed refuses it with
+# C9100 at its first fixed-point type, so it is outside_subset here.
+# 2026-10-10, box 15 (OQ-267): the entries of 55 cases under conformance/wide/ and
+# conformance/fixed/ return Bool or I64, so that cint-observe-1 can call them; no row
+# changes. The seed now refuses wide/mul_full_u64 at the type property `U64.max` (8:13),
+# before its first wide type.
 anchors/abs.checked.i64.001 cint-seed not_applicable
 anchors/abs.checked.i64.002 cint-seed not_applicable
 anchors/abs.checked.i8.001 cint-seed not_applicable
@@ -600,6 +634,53 @@ errors/tags_from_one cint-seed outside_subset
 errors/test_try_any_set cint-seed outside_subset
 errors/underlying_type_u8 cint-seed outside_subset
 errors/widen_in_assignment_and_compare cint-seed outside_subset
+fixed/add_checked_overflow_raw cint-seed outside_subset
+fixed/array_index_bounds_q16_16 cint-seed outside_subset
+fixed/constant_fold_overflow cint-seed outside_subset
+fixed/convert_integer_narrow cint-seed outside_subset
+fixed/convert_literal_c6001 cint-seed outside_subset
+fixed/convert_narrow_q32_32 cint-seed outside_subset
+fixed/convert_round_clause_c2009 cint-seed outside_subset
+fixed/convert_table cint-seed outside_subset
+fixed/convert_wrap_and_result cint-seed outside_subset
+fixed/div_overflow_q16_16 cint-seed outside_subset
+fixed/div_table_q16_16 cint-seed outside_subset
+fixed/div_zero_q16_16 cint-seed outside_subset
+fixed/dot_one_rounding cint-seed outside_subset
+fixed/dot_overflow_q8_8 cint-seed outside_subset
+fixed/fraction_integer_context_c2004 cint-seed outside_subset
+fixed/kernel_mul_overflow cint-seed outside_subset
+fixed/kernel_scale_reduce cint-seed outside_subset
+fixed/literal_grid_q16_16 cint-seed outside_subset
+fixed/literal_off_grid_c2006 cint-seed outside_subset
+fixed/literal_out_of_range_c2003 cint-seed outside_subset
+fixed/literal_round_clause cint-seed outside_subset
+fixed/literal_round_negative cint-seed outside_subset
+fixed/module_state_q16_16 cint-seed outside_subset
+fixed/mul_forms_q16_16 cint-seed outside_subset
+fixed/mul_int_overflow cint-seed outside_subset
+fixed/mul_overflow_q16_16 cint-seed outside_subset
+fixed/mul_table_q16_16 cint-seed outside_subset
+fixed/print_kind_c1037 cint-seed outside_subset
+fixed/print_layout_raw_bits cint-seed outside_subset
+fixed/print_ls215 cint-seed outside_subset
+fixed/qmul_formats cint-seed outside_subset
+fixed/qmul_overflow cint-seed outside_subset
+fixed/raw_and_constructor cint-seed outside_subset
+fixed/raw_forms_q8_8 cint-seed outside_subset
+fixed/raw_not_assignable_c2058 cint-seed outside_subset
+fixed/reductions_q16_16 cint-seed outside_subset
+fixed/rem_c2103 cint-seed outside_subset
+fixed/round_modes_convert cint-seed outside_subset
+fixed/round_modes_div cint-seed outside_subset
+fixed/round_modes_mul cint-seed outside_subset
+fixed/sqrt_negative_domain cint-seed outside_subset
+fixed/sqrt_q1_15_ceil_overflow cint-seed outside_subset
+fixed/sqrt_table cint-seed outside_subset
+fixed/struct_field_q cint-seed outside_subset
+fixed/sum_overflow_q8_8 cint-seed outside_subset
+fixed/type_name_c2005 cint-seed outside_subset
+fixed/type_properties cint-seed outside_subset
 kernel/advance_element_form cint-seed outside_subset
 kernel/alias_gcd_accepted cint-seed outside_subset
 kernel/alias_same_view_c5010 cint-seed outside_subset
@@ -608,6 +689,7 @@ kernel/body_print_c5020 cint-seed outside_subset
 kernel/bounds_in_block cint-seed outside_subset
 kernel/coverage_c5031 cint-seed outside_subset
 kernel/dispatch_number_second cint-seed outside_subset
+kernel/fuel_before_overflow cint-seed outside_subset
 kernel/fuel_entry_charge cint-seed outside_subset
 kernel/fuel_in_body_located cint-seed outside_subset
 kernel/heat_e1_overflow cint-seed outside_subset
@@ -644,6 +726,7 @@ memory/arena_parameters cint-seed outside_subset
 memory/arena_reset_stale_generation cint-seed outside_subset
 memory/arena_retired_alloc cint-seed outside_subset
 memory/arena_stale_view_after_callee_reset cint-seed outside_subset
+memory/arena_struct_element_store cint-seed outside_subset
 memory/arena_struct_elements cint-seed outside_subset
 memory/c2001_arena_handle_into_pool cint-seed outside_subset
 memory/c2051_arena_in_struct cint-seed outside_subset
@@ -805,47 +888,159 @@ switch/half_open_case_c4022 cint-seed compared
 switch/multi_items cint-seed compared
 switch/non_exhaustive_c4020 cint-seed compared
 switch/overlap_c4021 cint-seed compared
+tables/add_checked_i1024 cint-seed outside_subset
+tables/add_checked_i128 cint-seed outside_subset
+tables/add_checked_i256 cint-seed outside_subset
+tables/add_checked_i512 cint-seed outside_subset
 tables/add_checked_i64 cint-seed compared
 tables/add_checked_i8 cint-seed compared
+tables/add_checked_u128 cint-seed outside_subset
+tables/add_checked_u256 cint-seed outside_subset
+tables/add_checked_u512 cint-seed outside_subset
 tables/add_checked_u8 cint-seed compared
+tables/add_sat_i1024 cint-seed outside_subset
+tables/add_sat_i128 cint-seed outside_subset
+tables/add_sat_i256 cint-seed outside_subset
+tables/add_sat_i512 cint-seed outside_subset
 tables/add_sat_i64 cint-seed outside_subset
 tables/add_sat_i8 cint-seed outside_subset
+tables/add_sat_u128 cint-seed outside_subset
+tables/add_sat_u256 cint-seed outside_subset
+tables/add_sat_u512 cint-seed outside_subset
 tables/add_sat_u8 cint-seed outside_subset
+tables/add_wrap_i1024 cint-seed outside_subset
+tables/add_wrap_i128 cint-seed outside_subset
+tables/add_wrap_i256 cint-seed outside_subset
+tables/add_wrap_i512 cint-seed outside_subset
 tables/add_wrap_i64 cint-seed compared
 tables/add_wrap_i8 cint-seed compared
+tables/add_wrap_u128 cint-seed outside_subset
+tables/add_wrap_u256 cint-seed outside_subset
+tables/add_wrap_u512 cint-seed outside_subset
 tables/add_wrap_u8 cint-seed compared
+tables/div_checked_i1024 cint-seed outside_subset
+tables/div_checked_i128 cint-seed outside_subset
+tables/div_checked_i256 cint-seed outside_subset
+tables/div_checked_i512 cint-seed outside_subset
 tables/div_checked_i64 cint-seed compared
 tables/div_checked_i8 cint-seed compared
+tables/div_checked_u128 cint-seed outside_subset
+tables/div_checked_u256 cint-seed outside_subset
+tables/div_checked_u512 cint-seed outside_subset
 tables/div_checked_u8 cint-seed compared
+tables/kernel_add_checked_i64 cint-seed outside_subset
+tables/kernel_add_sat_i64 cint-seed outside_subset
+tables/kernel_add_wrap_i64 cint-seed outside_subset
+tables/kernel_div_checked_i64 cint-seed outside_subset
+tables/kernel_mul_checked_i64 cint-seed outside_subset
+tables/kernel_mul_sat_i64 cint-seed outside_subset
+tables/kernel_mul_wrap_i64 cint-seed outside_subset
+tables/kernel_rem_checked_i64 cint-seed outside_subset
+tables/kernel_shl_checked_i64 cint-seed outside_subset
+tables/kernel_shl_wrap_i64 cint-seed outside_subset
+tables/kernel_shr_checked_i64 cint-seed outside_subset
+tables/kernel_sub_checked_i64 cint-seed outside_subset
+tables/kernel_sub_sat_i64 cint-seed outside_subset
+tables/kernel_sub_wrap_i64 cint-seed outside_subset
+tables/mul_checked_i1024 cint-seed outside_subset
+tables/mul_checked_i128 cint-seed outside_subset
+tables/mul_checked_i256 cint-seed outside_subset
+tables/mul_checked_i512 cint-seed outside_subset
 tables/mul_checked_i64 cint-seed compared
 tables/mul_checked_i8 cint-seed compared
+tables/mul_checked_u128 cint-seed outside_subset
+tables/mul_checked_u256 cint-seed outside_subset
+tables/mul_checked_u512 cint-seed outside_subset
 tables/mul_checked_u8 cint-seed compared
+tables/mul_sat_i1024 cint-seed outside_subset
+tables/mul_sat_i128 cint-seed outside_subset
+tables/mul_sat_i256 cint-seed outside_subset
+tables/mul_sat_i512 cint-seed outside_subset
 tables/mul_sat_i64 cint-seed outside_subset
 tables/mul_sat_i8 cint-seed outside_subset
+tables/mul_sat_u128 cint-seed outside_subset
+tables/mul_sat_u256 cint-seed outside_subset
+tables/mul_sat_u512 cint-seed outside_subset
 tables/mul_sat_u8 cint-seed outside_subset
+tables/mul_wrap_i1024 cint-seed outside_subset
+tables/mul_wrap_i128 cint-seed outside_subset
+tables/mul_wrap_i256 cint-seed outside_subset
+tables/mul_wrap_i512 cint-seed outside_subset
 tables/mul_wrap_i64 cint-seed compared
 tables/mul_wrap_i8 cint-seed compared
+tables/mul_wrap_u128 cint-seed outside_subset
+tables/mul_wrap_u256 cint-seed outside_subset
+tables/mul_wrap_u512 cint-seed outside_subset
 tables/mul_wrap_u8 cint-seed compared
+tables/rem_checked_i1024 cint-seed outside_subset
+tables/rem_checked_i128 cint-seed outside_subset
+tables/rem_checked_i256 cint-seed outside_subset
+tables/rem_checked_i512 cint-seed outside_subset
 tables/rem_checked_i64 cint-seed compared
 tables/rem_checked_i8 cint-seed compared
+tables/rem_checked_u128 cint-seed outside_subset
+tables/rem_checked_u256 cint-seed outside_subset
+tables/rem_checked_u512 cint-seed outside_subset
 tables/rem_checked_u8 cint-seed compared
+tables/shl_checked_i1024 cint-seed outside_subset
+tables/shl_checked_i128 cint-seed outside_subset
+tables/shl_checked_i256 cint-seed outside_subset
+tables/shl_checked_i512 cint-seed outside_subset
 tables/shl_checked_i64 cint-seed compared
 tables/shl_checked_i8 cint-seed compared
+tables/shl_checked_u128 cint-seed outside_subset
+tables/shl_checked_u256 cint-seed outside_subset
+tables/shl_checked_u512 cint-seed outside_subset
 tables/shl_checked_u8 cint-seed compared
+tables/shl_wrap_i1024 cint-seed outside_subset
+tables/shl_wrap_i128 cint-seed outside_subset
+tables/shl_wrap_i256 cint-seed outside_subset
+tables/shl_wrap_i512 cint-seed outside_subset
 tables/shl_wrap_i64 cint-seed compared
 tables/shl_wrap_i8 cint-seed compared
+tables/shl_wrap_u128 cint-seed outside_subset
+tables/shl_wrap_u256 cint-seed outside_subset
+tables/shl_wrap_u512 cint-seed outside_subset
 tables/shl_wrap_u8 cint-seed compared
+tables/shr_checked_i1024 cint-seed outside_subset
+tables/shr_checked_i128 cint-seed outside_subset
+tables/shr_checked_i256 cint-seed outside_subset
+tables/shr_checked_i512 cint-seed outside_subset
 tables/shr_checked_i64 cint-seed compared
 tables/shr_checked_i8 cint-seed compared
+tables/shr_checked_u128 cint-seed outside_subset
+tables/shr_checked_u256 cint-seed outside_subset
+tables/shr_checked_u512 cint-seed outside_subset
 tables/shr_checked_u8 cint-seed compared
+tables/sub_checked_i1024 cint-seed outside_subset
+tables/sub_checked_i128 cint-seed outside_subset
+tables/sub_checked_i256 cint-seed outside_subset
+tables/sub_checked_i512 cint-seed outside_subset
 tables/sub_checked_i64 cint-seed compared
 tables/sub_checked_i8 cint-seed compared
+tables/sub_checked_u128 cint-seed outside_subset
+tables/sub_checked_u256 cint-seed outside_subset
+tables/sub_checked_u512 cint-seed outside_subset
 tables/sub_checked_u8 cint-seed compared
+tables/sub_sat_i1024 cint-seed outside_subset
+tables/sub_sat_i128 cint-seed outside_subset
+tables/sub_sat_i256 cint-seed outside_subset
+tables/sub_sat_i512 cint-seed outside_subset
 tables/sub_sat_i64 cint-seed outside_subset
 tables/sub_sat_i8 cint-seed outside_subset
+tables/sub_sat_u128 cint-seed outside_subset
+tables/sub_sat_u256 cint-seed outside_subset
+tables/sub_sat_u512 cint-seed outside_subset
 tables/sub_sat_u8 cint-seed outside_subset
+tables/sub_wrap_i1024 cint-seed outside_subset
+tables/sub_wrap_i128 cint-seed outside_subset
+tables/sub_wrap_i256 cint-seed outside_subset
+tables/sub_wrap_i512 cint-seed outside_subset
 tables/sub_wrap_i64 cint-seed compared
 tables/sub_wrap_i8 cint-seed compared
+tables/sub_wrap_u128 cint-seed outside_subset
+tables/sub_wrap_u256 cint-seed outside_subset
+tables/sub_wrap_u512 cint-seed outside_subset
 tables/sub_wrap_u8 cint-seed compared
 ternary/planes_add27 cint-seed outside_subset
 ternary/planes_adders cint-seed outside_subset
@@ -921,3 +1116,54 @@ view/slice_strided cint-seed outside_subset
 view/struct_array_field cint-seed compared
 view/struct_view_inout cint-seed compared
 view/transpose_view cint-seed outside_subset
+wide/add_checked_u512_overflow cint-seed outside_subset
+wide/arena_view_sum_i128 cint-seed outside_subset
+wide/array_i1024_rank2_row_sum cint-seed outside_subset
+wide/array_i128_extremes cint-seed outside_subset
+wide/array_i128_index_bounds cint-seed outside_subset
+wide/convert_i256_to_u256_negative cint-seed outside_subset
+wide/convert_u512_to_u128_narrow cint-seed outside_subset
+wide/convert_wrap_u128 cint-seed outside_subset
+wide/copy_reverse_reshape_i256 cint-seed outside_subset
+wide/copy_shape_i256 cint-seed outside_subset
+wide/div_rem_u512 cint-seed outside_subset
+wide/div_zero_u512 cint-seed outside_subset
+wide/dot_i256_into_i512 cint-seed outside_subset
+wide/dot_i256_overflow cint-seed outside_subset
+wide/fold_checked_i1024_overflow cint-seed outside_subset
+wide/fold_constant_u512_overflow cint-seed outside_subset
+wide/kernel_add_overflow_u256 cint-seed outside_subset
+wide/kernel_alias_descriptors_i256 cint-seed outside_subset
+wide/kernel_alias_descriptors_u128 cint-seed outside_subset
+wide/kernel_mul_overflow_i128 cint-seed outside_subset
+wide/kernel_reduce_sum_i512 cint-seed outside_subset
+wide/min_empty_i512 cint-seed outside_subset
+wide/min_max_i512 cint-seed outside_subset
+wide/module_state_i256 cint-seed outside_subset
+wide/module_state_u512 cint-seed outside_subset
+wide/mul_checked_u128_overflow cint-seed outside_subset
+wide/mul_full_u256 cint-seed outside_subset
+wide/mul_full_u512_refused cint-seed outside_subset
+wide/mul_full_u64 cint-seed outside_subset
+wide/return_u128_max cint-seed outside_subset
+wide/rotate_shift_u512 cint-seed outside_subset
+wide/rotl_count_u128 cint-seed outside_subset
+wide/shl_checked_u256_overflow cint-seed outside_subset
+wide/slice_bounds_i512 cint-seed outside_subset
+wide/slice_reversed_i512 cint-seed outside_subset
+wide/state_after_fault_u128 cint-seed outside_subset
+wide/struct_array_field_i128 cint-seed outside_subset
+wide/struct_field_u256 cint-seed outside_subset
+wide/sub_checked_u256_underflow cint-seed outside_subset
+wide/sum_i1024_exact_accumulator cint-seed outside_subset
+wide/sum_i1024_into_i128_overflow cint-seed outside_subset
+wide/sum_i128_into_i256 cint-seed outside_subset
+wide/sum_u128_overflow cint-seed outside_subset
+wide/sum_u256_into_u512 cint-seed outside_subset
+wide/sum_wrap_sat_i256 cint-seed outside_subset
+wide/u1024_refused cint-seed compared
+wide/uabs_i1024_refused cint-seed outside_subset
+wide/uabs_i128_min cint-seed outside_subset
+wide/view_params_i256 cint-seed outside_subset
+wide/view_slice_u512 cint-seed outside_subset
+wide/wrap_sat_u256 cint-seed outside_subset

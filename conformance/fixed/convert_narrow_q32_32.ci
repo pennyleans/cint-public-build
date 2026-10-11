@@ -1,0 +1,10 @@
+// case: fixed/convert_narrow_q32_32
+// clause: SPEC-01 IM-68, IM-69, IM-106 (Q32.32 32768.0 as Q16.16 is raw 2^31; operation names the default mode)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: fault E_NARROW at 9:14 (the `as`), operation as.checked.q32_32.q16_16.half_even, operand Q32.32 raw 140737488355328, exact 2147483648, limit Q16.16 raw 2147483647; stack depth 0; fuel 1. Box 15, unit 1
+
+export Bool run() {
+    Q32.32 x = 32768.0;
+    return x as Q16.16 != 0;
+}

@@ -1,0 +1,13 @@
+case fixed/constant_fold_overflow
+clause SPEC-01 IM-23, IM-61; SPEC-04 17.2 (a fixed-point constant expression that overflows is C6001 with the mul record)
+format 5
+source compile-error
+outcome compile-error
+diagnostic.code C6001
+diagnostic.position fixed/constant_fold_overflow.ci:8:25
+diagnostic.fault.code E_OVERFLOW
+diagnostic.fault.operation mul.checked.q16_16.half_even
+diagnostic.fault.operand Q16.16 raw 16777216
+diagnostic.fault.operand Q16.16 raw 8388608
+diagnostic.fault.exact 2147483648
+diagnostic.fault.limit Q16.16 raw 2147483647

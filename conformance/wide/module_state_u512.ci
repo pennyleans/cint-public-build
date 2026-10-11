@@ -1,0 +1,16 @@
+// case: wide/module_state_u512
+// clause: SPEC-04 LS-213; SPEC-09 CONF-11 rules 10 and 14 (a module-level U512 array and a U512 scalar: one state.global line, for the scalar only)
+// subset: cint-core-1 (unsigned wide integers)
+// entry: run; args: none
+// spec outcome: value I64 -6, its low 64 bits (as%); prints the U512 value 2^512 - 6 and a line feed; fuel 1 (the entry); state.global wide.module_state_u512 s U512 2^512 - 6, and no line for the array g. Box 15, unit 1
+
+U512[2] g;
+U512 s = 5;
+
+export I64 run() {
+    g[0] = U512.max - 10;
+    s = s + g[0];
+    U512 observed = s;
+    "{observed}\n";
+    return observed as% I64;
+}

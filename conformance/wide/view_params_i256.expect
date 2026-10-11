@@ -1,0 +1,9 @@
+case wide/view_params_i256
+clause SPEC-04 LS-117, LS-119, LS-145 (I256 views as `in` and `inout` parameters, a size parameter and `extent`)
+format 2
+source reference
+outcome value
+stdout-bytes 3
+stdout-sha256 f4ccd05b3271c386ee55d9876c7450012a3b361e5065c09dc22075e38b3cc35c
+return I64 30
+fuel-consumed 11

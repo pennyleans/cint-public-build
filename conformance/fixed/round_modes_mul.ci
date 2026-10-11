@@ -1,0 +1,17 @@
+// case: fixed/round_modes_mul
+// clause: SPEC-01 4.5, IM-61, IM-62 (each rounding mode on products of exact raw value -1.5, -0.5, 0.5 and 1.5)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 0; prints, for 1.5, -1.5, 0.5 and -0.5 raw units, `1 2 1 2 2 2 1 2 1`, `-2 -1 -1 -2 -2 -2 -1 -1 -2`, `0 1 0 1 0` and `0 -1 0 0 -1`; fuel 1. Box 15, unit 1
+
+export I64 run() {
+    Q16.16 one = Q16.16.raw(1);
+    Q16.16 m1 = Q16.16.raw(-1);
+    Q16.16 x = 1.5;
+    Q16.16 h = 0.5;
+    "{mul(one, x, floor)!raw} {mul(one, x, ceil)!raw} {mul(one, x, trunc)!raw} {mul(one, x, away)!raw} {mul(one, x, half_even)!raw} {mul(one, x, half_away)!raw} {mul(one, x, half_trunc)!raw} {mul(one, x, half_up)!raw} {mul(one, x, half_down)!raw}\n";
+    "{mul(m1, x, floor)!raw} {mul(m1, x, ceil)!raw} {mul(m1, x, trunc)!raw} {mul(m1, x, away)!raw} {mul(m1, x, half_even)!raw} {mul(m1, x, half_away)!raw} {mul(m1, x, half_trunc)!raw} {mul(m1, x, half_up)!raw} {mul(m1, x, half_down)!raw}\n";
+    "{mul(one, h, half_even)!raw} {mul(one, h, half_away)!raw} {mul(one, h, half_trunc)!raw} {mul(one, h, half_up)!raw} {mul(one, h, half_down)!raw}\n";
+    "{mul(m1, h, half_even)!raw} {mul(m1, h, half_away)!raw} {mul(m1, h, half_trunc)!raw} {mul(m1, h, half_up)!raw} {mul(m1, h, half_down)!raw}\n";
+    return 0;
+}

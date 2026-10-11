@@ -26,8 +26,10 @@ static bool ci_3_add_4_add3(cint_ctx *ctx, int64_t v_a, int64_t v_b, int64_t v_c
     (void)v_b;
     (void)v_c;
     (void)result;
-    if (!cint_add_i64(ctx, (cint_site){0u, 2u}, v_a, v_b, &t0)) goto fault;
-    if (!cint_add_i64(ctx, (cint_site){0u, 3u}, t0, v_c, &t1)) goto fault;
+    static const cint_site cs2 = {0u, 2u}; (void)cs2;
+    static const cint_site cs3 = {0u, 3u}; (void)cs3;
+    if (!cint_add_i64(ctx, cs2, v_a, v_b, &t0)) goto fault;
+    if (!cint_add_i64(ctx, cs3, t0, v_c, &t1)) goto fault;
     *result = t1;
     return true;
 fault:

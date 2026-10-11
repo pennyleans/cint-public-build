@@ -1,0 +1,13 @@
+// case: wide/array_i128_extremes
+// clause: SPEC-01 IM-11, IM-12; SPEC-04 LS-62, LS-68 (a local array of I128 holds its extremes; an array literal of wide values)
+// subset: cint-core-1 (wide integers)
+// entry: run; args: none
+// spec outcome: value I64 6, its low 64 bits (as%); prints the I128 value 6 (I128.max + I128.min is -1, plus 7) and a line feed; fuel 1 (the entry). Box 15, unit 1
+
+export I64 run() {
+    I128[4] a = [I128.max, I128.min, 0, 0];
+    a[3] = 7;
+    I128 observed = a[0] + a[1] + a[3];
+    "{observed}\n";
+    return observed as% I64;
+}

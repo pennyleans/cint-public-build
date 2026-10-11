@@ -13,7 +13,7 @@ Usage (from the repository root):
                                [--cint PATH] [--emit-cache DIR] [--required FILE]
                                [--write-required FILE] [--interp] [--set NAME]
                                [--backend gpu-cuda [--block {32,256}] [--stand-in]]
-                               [--receipt PATH | --no-receipt]
+                               [--stage {T1,T2,T3,T4}] [--receipt PATH | --no-receipt]
 
 A gcc or clang leg started on Windows runs itself again in WSL
 (Ubuntu-24.04) with python3. The apple-clang leg (SPEC-09 CONF-09, plan task
@@ -33,8 +33,11 @@ One run:
    operator, unary minus, or `as`/`as%` conversion of `cint-boot-1` and its
    operand types); and, unless --quick, the table programs
    `conformance/tables/*.ci` of the 11 non-saturating 8-bit forms and the
-   I64 boundary matrices. Every case falls in exactly one category of SPEC-09
-   CONF-14 (slice 2 decision patch D-8), decided by the pure function
+   I64 boundary matrices, and the kernel tables of the I64 boundary matrices
+   (`tables/kernel_*`, CONF-17: one dispatch of the records that do not
+   fault, and one per faulting record, observed in format 4). Every case
+   falls in exactly one category of SPEC-09 CONF-14 (slice 2 decision patch
+   D-8), decided by the pure function
    `classify()`: compared (an expected compile error included), unsupported by
    this implementation (`conformance/unsupported.txt`), held (`held.txt`),
    outside the subset, or not applicable; anything else is a disagreement.
@@ -86,7 +89,8 @@ One run:
    symbols and `cint_program_abi` and `cint_observer_desc`, and refers only to
    the runtime object's `cint_` functions, the EMIT-31 support list with the
    rows of its own target (on `apple-clang` only, `__chkstk_darwin`, decision
-   25, and `bzero`, ruling 2026-10-05), and `ci_*` and `cg_*` symbols another
+   25, its x86-64 spelling `___chkstk_darwin`, OQ-219, and `bzero`, ruling
+   2026-10-05), and `ci_*` and `cg_*` symbols another
    object of the same program defines; the program library exports only
    `cx_*`, `cm_*`, the two observer symbols, and what the runtime object
    linked into it defines. Mach-O names
@@ -102,22 +106,29 @@ One run:
    `cint-interp observe` (the harness with a SIR directory) or `cint-interp run`
    (a script or main() program), and its records are compared as compiled C's are.
    A program that uses a form the interpreter does not run yet is not compared:
-   `outcome.not_compared.not_executed` names it with the interpreter's reason.
-   No program library is built, so no program is symbol-audited.
+   `outcome.not_compared.not_executed` names it with the interpreter's reason, and no
+   required list names that category. No program library is built, so no program is
+   symbol-audited. The run reads and writes the required rows of `cintc/cpu-sir-interp`,
+   the interpreter's rows of T4.txt (SPEC-09 CONF-15 for T4), and the receipt records stage
+   T4; --stage T4 records T4 in a cpu-c17 run of B1, for T4.txt's `cintc` rows.
 6b. --backend gpu-cuda (with --compiler b1; box 11 unit 4; SPEC-09 CONF-17, RCPT-09) compiles
    every program with CINT_GPU_CUDA and links it with rt/cint_cuda.c and
    rt/cint_cuda_dispatch.c, so each kernel an entry reaches runs on CUDA device 0 from the
    PTX its C carries, with the host protocol of SPEC-02 F-11; the harness is unchanged
    (BX11-22). --block 32 or 256 is the schedule (SPEC-02 Q-3), compiled into the dispatch as
    CINT_CUDA_BLOCK. A kernel back_ptx refuses fails its program's build with BACK-05's
-   E_UNSUPPORTED, and the case is unsupported, with the kernel and the capability. --stand-in
+   E_UNSUPPORTED, and the case is unsupported, with the kernel and the capability, when
+   unsupported.txt lists it for `cintc/gpu-cuda` with that capability (CONF-17); otherwise it
+   is a disagreement. The run reads and writes the required rows of `cintc/gpu-cuda`, the
+   backend axis of T3.txt, and the receipt records stage T3. --stand-in
    runs the kernels on the stand-in driver of rt/tests (cuda_fake.c with CINT_FAKE_PTX and
    ptx_interp.c), which interprets the PTX on the host, one work-item at a time, in descending
    order within a launch unless CINT_FAKE_ORDER is `asc`: the dispatch path on any leg, with no
    device. A device run records the device that tools/cint_cuda_probe.c reports in
    `observations.gpu`, with the block size and the PTX `.version` and `.target`; the identity
    gains `backend`, profile `cuda`, the CUDA sources' digest and, for the stand-in, the
-   stand-in's digest; the receipt goes under results/cint/box11/.
+   stand-in's digest; the receipt goes under results/cint/box11/. --stage T3 records T3 in a
+   cpu-c17 run of B1, for T3.txt's `cintc` rows.
 7. A receipt of schema `cint-conformance-receipt-2`,
    results/cint/slice2/t1/receipt-<leg>-<opt>-<helpers>[-san][-quick].json (the
    schema 1 receipts of slice 1 under results/cint/t1/ are never rewritten), in
@@ -190,15 +201,16 @@ MSVC_WARNINGS = ["/nologo", "/std:c17", "/W4", "/WX"]
 EMIT31_SUPPORT = {"memcpy", "memset", "memmove", "memcmp", "__chkstk", "__security_cookie",
                   "__security_check_cookie", "__GSHandlerCheck", "__stack_chk_fail",
                   "__stack_chk_guard"}
-# EMIT-31 rows of one target only (decision 25). Apple Clang on macOS AArch64 calls Apple's stack
-# probe for frames over one page; `nm -P` prints the Mach-O name `___chkstk_darwin`, and norm()
-# removes exactly the one underscore Mach-O prefixes to every C name, giving `__chkstk_darwin`.
+# EMIT-31 rows of one target only (decision 25). Apple Clang on macOS calls Apple's stack probe for
+# frames over one page; norm() removes exactly the one underscore Mach-O prefixes to every C name.
+# On AArch64 `nm -P` prints `___chkstk_darwin`, giving `__chkstk_darwin`; on x86-64 it prints
+# `____chkstk_darwin`, giving `___chkstk_darwin` (OQ-219). The set is per leg, not per architecture.
 # At -O0 it also zeroes a large local array with `bzero` rather than `memset` (`int64_t l0_a[512]
 # = {0};` of boot/const_extent_limit; ruling 2026-10-05, G-C1, rt/OPEN.md RT-OQ-32). MSVC at /Od
 # guards the zero store of B1's loop `l[z] = 0;` into a local array of 1-byte elements with its
 # /GS range check, `__report_rangecheckfailure` (OQ-211). MSVC at /O2 refers to its C runtime's
 # CPU feature level `__isa_available` from the object of box 09's reduce/dot_value (OQ-215).
-EMIT31_TARGET = {"apple-clang": frozenset({"__chkstk_darwin", "bzero"}),
+EMIT31_TARGET = {"apple-clang": frozenset({"__chkstk_darwin", "___chkstk_darwin", "bzero"}),
                  "msvc": frozenset({"__report_rangecheckfailure", "__isa_available"})}
 # The operator spelling per (op, form) of SPEC-01 4.1 for the cint-boot-1 binary forms.
 BOOT_BINARY = {("add", "checked"): "+", ("sub", "checked"): "-", ("mul", "checked"): "*",
@@ -557,6 +569,12 @@ def msvc_environment() -> dict:
 CATEGORIES = ("compared", "unsupported", "held", "outside_subset", "not_applicable")
 SUBSET_CODES = ("C9100", "C4040")   # the seed's refusals of a program outside cint-boot-1
 COMPILERS = {"seed": "cint-seed", "b1": "cintc"}   # B1: compiler/main.ci through `cint emit-c`
+# The backend axis of a required list (SPEC-09 CONF-17): a B1 run with --backend gpu-cuda reads
+# and writes the rows, and the unsupported.txt lines, of this token; cpu-c17 rows keep `cintc`.
+GPU_TOKEN = "cintc/gpu-cuda"
+# The interpreter's rows of T4.txt (SPEC-09 CONF-15 for T4): a B1 run with --interp reads and
+# writes the rows of this token. A compile refusal is B1's, so unsupported.txt has no such line.
+INTERP_TOKEN = "cintc/cpu-sir-interp"
 # Conformance sets beside the stages, each with its own required list (t27 scoping note 7.2,
 # TT-04): the set's name and the --only texts that select its cases.
 SETS = {"t27-1": ("ternary/",)}
@@ -581,9 +599,16 @@ def read_unsupported(path: pathlib.Path) -> dict:
             raise ValueError("%s line %d: expected `<case> <compiler> <code> <limit-id> <reason>`"
                              % (path.name, n))
         case, compiler, code, limit, reason = parts
-        if compiler not in COMPILERS.values():
+        if compiler not in COMPILERS.values() and compiler != GPU_TOKEN:
             raise ValueError("%s line %d: unknown compiler %s" % (path.name, n, compiler))
-        if not re.fullmatch(r"C9\d{3}", code):
+        if compiler == GPU_TOKEN:
+            # a kernel back_ptx refuses (BACK-05): E_UNSUPPORTED, and the reason opens with
+            # the capability the refusal names (CONF-17)
+            if code != "E_UNSUPPORTED" or limit != "BACK-05" or \
+                    not re.match(r"capability [a-z.]+ ", parts[4]):
+                raise ValueError("%s line %d: a %s line is `E_UNSUPPORTED BACK-05 capability "
+                                 "<name> <reason>`" % (path.name, n, GPU_TOKEN))
+        elif not re.fullmatch(r"C9\d{3}", code):
             raise ValueError("%s line %d: %s is not a C9xxx code" % (path.name, n, code))
         if not LIMIT_RE.match(limit):
             raise ValueError("%s line %d: %s is not a limit identifier" % (path.name, n, limit))
@@ -595,6 +620,20 @@ def read_unsupported(path: pathlib.Path) -> dict:
         previous = key
         entries[(case, compiler)] = (code, limit, reason)
     return entries
+
+
+def backend_refusal(case: str, refusal: dict, unsupported: dict) -> tuple:
+    """The category of a case whose kernel back_ptx refuses (BACK-05): unsupported when
+    unsupported.txt lists the case for `cintc/gpu-cuda` with the capability the refusal names
+    (CONF-17), else a disagreement."""
+    listed = unsupported.get((case, GPU_TOKEN))
+    if listed is not None and listed[2].startswith("capability %s " % refusal["capability"]):
+        return ("unsupported", dict(refusal, compiler=GPU_TOKEN))
+    return ("disagreement", dict(refusal, reason=(
+        "back_ptx refuses kernel %s (capability %s), and unsupported.txt %s" % (
+            refusal["kernel"], refusal["capability"],
+            "does not list the case for %s" % GPU_TOKEN if listed is None
+            else "names another capability"))))
 
 
 def read_required(path: pathlib.Path) -> dict:
@@ -779,8 +818,9 @@ def write_required(path: pathlib.Path, actual: dict, compiler: str, stage: str):
              "# held case; the categories are those of CONF-14. Written by tools/cint_check.py",
              "# --write-required from a full-scope run, then reviewed; sorted by case bytes."]
     for case, (category, detail) in sorted(actual.items(), key=lambda kv: kv[0].encode("utf-8")):
-        if category == "disagreement":
-            raise ValueError("%s is a disagreement, which no required list names" % case)
+        if category in ("disagreement", "not_executed"):
+            raise ValueError("%s is %s, which no required list names" % (
+                case, "a disagreement" if category == "disagreement" else "not executed"))
         token = required_token(category, detail)
         lines.append(" ".join([case, compiler, category] + ([token] if token else [])))
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -792,7 +832,9 @@ def encodings(compiler: str = COMPILERS["seed"]) -> dict:
     B1, which writes the reflection table, also relies on the canonical type signature of
     SPEC-03 A-20 that CONF-16 compares; the seed writes no table."""
     rt = (RT / "cint_rt.c").read_bytes().decode("utf-8")
-    fault = sorted(set(re.findall(r'"(cint-core-1/fault/v\d+)"', rt)))
+    # Version 3 is written only for dot over I1024 elements (BX15-07 C, OQ-263), which no case
+    # of a conformance run reaches yet, so a run relies on the encoder's other version.
+    fault = sorted(set(re.findall(r'"(cint-core-1/fault/v\d+)"', rt)) - {"cint-core-1/fault/v3"})
     formats = set()
     for path in CONF.glob("*/*.expect"):
         m = re.search(rb"^format (\d+)$", path.read_bytes(), re.M)
@@ -803,6 +845,12 @@ def encodings(compiler: str = COMPILERS["seed"]) -> dict:
     if compiler == COMPILERS["b1"]:
         found["type_signature"] = sig.DOMAIN.decode("ascii")
     return found
+
+
+def runtime_header_digest() -> str:
+    """runtime_header_sha256: both runtime headers, since cint_rt.h includes cint_rt_host.h and
+    emitted C compiles against both (rt/OPEN.md RT-OQ-47)."""
+    return files_digest([RT / "cint_rt.h", RT / "cint_rt_host.h"])
 
 
 def runtime_contract() -> str:
@@ -947,15 +995,17 @@ def inventory_program_cases(only, cats, ref_problems, lists):
     return programs
 
 
-def ref_bodies(src: bytes, rel: str, fname: str, arg_lists):
-    """cint_ref's `.expect` body for one call per argument list, each with a fresh entry."""
+def ref_bodies(src: bytes, rel: str, fname, arg_lists, fmt: int = 1):
+    """cint_ref's `.expect` body in format `fmt` for one call per argument list, each with a
+    fresh entry; `fname` names the function, or holds one name per call (a kernel table)."""
     with REF_LOCK:
         prog = check_module(P.parse_module(decode_source(src, rel), rel))
-        f = prog.functions[fname]
+        names = [fname] * len(arg_lists) if isinstance(fname, str) else fname
         out = []
-        for args in arg_lists:
+        for name, args in zip(names, arg_lists):
+            f = prog.functions[name]
             o = _run(prog, "function", f, _check_args(f, args), None, DEFAULT_DEPTH)
-            out.append(body(expect_lines(expect.from_outcome(o, rel))))
+            out.append(body(expect_lines(expect.from_outcome(o, rel, fmt=fmt))))
         return out
 
 
@@ -978,11 +1028,20 @@ def inventory_tables(only, cats, lists):
         p = Program(name, CONF, rel, "table")
         fname = lines[0].split(" ")[1]
         arg_lists = []
+        if name.startswith("tables/kernel_"):
+            # a boundary matrix run as kernels (CONF-17): row(k) or fault_row(k) per record, and
+            # a fault raised by a dispatch is written in format 4 (CONF-11 rule 13)
+            p.format, fname = 4, [line.split(" ")[1] for line in lines]
+        elif re.search(r"_u(?:128|256|512)$", name):
+            # a fault record of U128 to U512 operands is written in format 5 (CONF-11 rule 14,
+            # ruling BX15-03; box 15 unit 4d)
+            p.format = 5
         for n, line in enumerate(lines, start=1):
-            _, _, ta, a, tb, b = line.split(" ")
-            arg_lists.append([Value(ta, int(a)), Value(tb, int(b))])
+            _, _, *typed = line.split(" ")
+            arg_lists.append([Value(typed[i], int(typed[i + 1])) for i in range(0, len(typed), 2)])
             p.cases.append((line, "%s:%d" % (name, n)))
-        p.expected = (lambda s=src, r=rel, f=fname, al=arg_lists: ref_bodies(s, r, f, al))
+        p.expected = (lambda s=src, r=rel, f=fname, al=arg_lists, fm=p.format:
+                      ref_bodies(s, r, f, al, fm))
         programs.append(p)
     return programs
 
@@ -1585,8 +1644,10 @@ def process(p: Program, tc: Toolchain, tools: dict, out: pathlib.Path, alt: path
         else:
             observed = run_compiled(p, tc, tools, work, c_file, res, sir_dir)
         if observed is None and "backend_refusal" in res:   # BACK-05, --backend gpu-cuda
-            res["category"] = ("unsupported", dict(res.pop("backend_refusal"),
-                                                   compiler=lists["compiler"]))
+            res["category"] = backend_refusal(p.name, res.pop("backend_refusal"),
+                                              lists["unsupported"])
+            if res["category"][0] == "disagreement":
+                return not_run(res, p, res["category"][1]["reason"])
             return res
         if observed is None:   # the interpreter leg: a form cpu-sir-interp does not run yet
             res["category"] = ("not_executed", {"reason": res.pop("interp_reason")})
@@ -1948,11 +2009,19 @@ def cuda_device(tc: Toolchain, out: pathlib.Path) -> dict:
             "probe_exit": r.returncode}
 
 
+def interp_digest() -> str:
+    """identity.interp_sha256 of an interpreter run: interp/ and the state code it links."""
+    return files_digest([INTERP / f for f in INTERP_SOURCES] + sorted(INTERP.glob("*.h")) +
+                        [RT / "cint_state.c", RT / "cint_rec.c", RT / "cint_state.h",
+                         RT / "cint_state_internal.h"])
+
+
 def build_interp(tc: Toolchain, tools: dict, out: pathlib.Path) -> pathlib.Path:
     """cint-interp (interp/, with the runtime object) for the interpreter leg."""
     i_dir = out / "interp"
     i_dir.mkdir(parents=True, exist_ok=True)
-    objs = tc.compile([INTERP / f for f in INTERP_SOURCES] + [RT / "cint_state.c"], i_dir, "interp")
+    objs = tc.compile([INTERP / f for f in INTERP_SOURCES] + [RT / "cint_state.c", RT / "cint_rec.c"], i_dir,
+                      "interp")
     return tc.link_exe(objs + [tools["rt_obj"]], i_dir / "cint-interp", "interp")
 
 
@@ -1971,6 +2040,11 @@ def verify_tables(regen: pathlib.Path) -> dict:
         sorted(str(p) for p in bnd64.glob("*.cif1.jsonl"))
     subprocess.run([py, str(tools_dir / "gen_tables.py"), *cifs, "--out", str(regen / "tables"),
                     "--root", str(regen)], check=True, capture_output=True)
+    # the kernel tables of the I64 boundary matrices (CONF-17)
+    subprocess.run([py, str(tools_dir / "gen_tables.py"), "--kernel",
+                    *sorted(str(p) for p in bnd64.glob("*.cif1.jsonl")),
+                    "--out", str(regen / "tables"), "--root", str(regen)],
+                   check=True, capture_output=True)
     match, differ = 0, []
     for line in (CONF / "integer-machine" / "MANIFEST.txt").read_text(encoding="ascii").splitlines():
         if not line or line.startswith("#"):
@@ -2032,6 +2106,10 @@ def main(argv=None) -> int:
     ap.add_argument("--stand-in", action="store_true",
                     help="with --backend gpu-cuda: run the kernels' PTX on the stand-in driver "
                          "of rt/tests, on the host, in place of the CUDA driver")
+    ap.add_argument("--stage", choices=["T1", "T2", "T3", "T4"],
+                    help="the stage the receipt records: T1 for the seed, T2 for B1 on cpu-c17, "
+                         "T3 for B1 on gpu-cuda and T4 for B1 on cpu-sir-interp by default; T3 "
+                         "and T4 are for --compiler b1")
     raw = list(argv if argv is not None else sys.argv[1:])
     ns = ap.parse_args(raw)
     for flag, value in (("--out", ns.out), ("--emit-cache", ns.emit_cache)):
@@ -2047,6 +2125,11 @@ def main(argv=None) -> int:
     if not gpu and (ns.block or ns.stand_in):
         ap.error("--block and --stand-in are for --backend gpu-cuda")
     block = ns.block or 256
+    if ns.stage and (ns.set or (ns.stage == "T1") != (ns.compiler == "seed") or (gpu and ns.stage != "T3")
+                     or (ns.interp and ns.stage != "T4")):
+        ap.error("--stage: T1 is the seed's, T2 to T4 are B1's, a gpu-cuda run is T3, an "
+                 "interpreter run is T4, and a set records no stage")
+    stage = ns.stage or ("T3" if gpu else "T4" if ns.interp else "T2" if ns.compiler == "b1" else "T1")
     if ns.set:
         if ns.only or not ns.required:
             ap.error("--set selects its own cases and takes --required, without --only")
@@ -2098,6 +2181,8 @@ def main(argv=None) -> int:
     alt = out / "alt-tree"
 
     compiler = COMPILERS[ns.compiler]
+    # The rows of the backend axis (CONF-17) and of the interpreter (CONF-15 for T4).
+    row_compiler = GPU_TOKEN if gpu else INTERP_TOKEN if ns.interp else compiler
     try:
         lists = {"held": gen_expect.read_held(), "compiler": compiler,
                  "unsupported": read_unsupported(CONF / "unsupported.txt")}
@@ -2184,19 +2269,18 @@ def main(argv=None) -> int:
             not_compared[cat].append(dict(detail, case=case))
     problems = None
     if required is not None:
-        problems = check_required(required, cats, compiler, required_scope(ns.only, ns.quick),
+        problems = check_required(required, cats, row_compiler, required_scope(ns.only, ns.quick),
                                   exclusions)
         for line in problems[:40]:
             print("required: " + line)
-        n_ex = sorted(c for c in cats if excluded(required, exclusions, c, compiler))
+        n_ex = sorted(c for c in cats if excluded(required, exclusions, c, row_compiler))
         print("required: %d problems; %d cases excluded by the list's boot scope (%s)" % (
             len(problems), len(n_ex), ", ".join("%s %d" % (k, sum(1 for c in n_ex if cats[c][0] == k))
                                                for k in CATEGORIES + ("disagreement",)
                                                if any(cats[c][0] == k for c in n_ex)) or "none"))
     if ns.write_required:
         try:
-            write_required(pathlib.Path(ns.write_required), cats, compiler,
-                           ns.set or ("T2" if ns.compiler == "b1" else "T1"))
+            write_required(pathlib.Path(ns.write_required), cats, row_compiler, ns.set or stage)
         except ValueError as e:
             print("required list not written: %s" % e)
     sanitizer = sum(r["sanitizer"] for r in ran)
@@ -2233,9 +2317,7 @@ def main(argv=None) -> int:
             "compiler_source_method": "sha256 of the CISRC001 source manifest of the import "
                                       "closure of compiler/main.ci (tools/cint_bootstrap.py)",
             "emitter": "cint emit-c"} if ns.compiler == "b1" else {}),
-        **({"executor": "cpu-sir-interp",
-            "interp_sha256": files_digest([INTERP / f for f in INTERP_SOURCES] + sorted(INTERP.glob("*.h")) +
-                                          [RT / "cint_state.c", RT / "cint_state.h"])} if ns.interp else {}),
+        **({"executor": "cpu-sir-interp", "interp_sha256": interp_digest()} if ns.interp else {}),
         **({"backend": "gpu-cuda",
             "cuda_sha256": files_digest([RT / "cint_cuda.c", RT / "cint_cuda.h",
                                          RT / "cint_cuda_dispatch.c"]),
@@ -2245,13 +2327,15 @@ def main(argv=None) -> int:
                if ns.stand_in else {})} if gpu else {}),
         "encodings": encodings(compiler),
         "runtime_contract_version": runtime_contract(),
-        "runtime_header_sha256": sha256((RT / "cint_rt.h").read_bytes()),
+        "runtime_header_sha256": runtime_header_digest(),
         "runtime_library_sha256": files_digest([RT / "cint_rt.c", RT / "cint_rt_internal.h",
-                                                 RT / "cint_mem.c", RT / "cint_mem.h"]),
+                                                 RT / "cint_mem.c", RT / "cint_mem.h",
+                                                 RT / "cint_wide.c", RT / "cint_wide.h",
+                                                 RT / "cint_fixed.c", RT / "cint_fixed.h"]),
         "schema": "cint-conformance-receipt-2",
         "scope": "quick" if ns.quick else "full",
         "seed_sha256": files_digest(sorted(SEED.glob("*.c")) + sorted(SEED.glob("*.h"))),
-        **({"set": ns.set} if ns.set else {"stage": "T2" if ns.compiler == "b1" else "T1"}),
+        **({"set": ns.set} if ns.set else {"stage": stage}),
         "subset": "cint-boot-1",
         "suite_digest_method": TREE_METHOD % ("conformance/", "conformance/"),
         "suite_files": suite_files,
@@ -2328,8 +2412,9 @@ def main(argv=None) -> int:
                       "each program object, and the export table of each program library (EMIT-31 "
                       "and SPEC-03 A-3 as amended by slice 2 patch D-2: a program defines cx_, cm_, "
                       "ci_, cg_, cint_program_abi and cint_observer_desc; refers to the runtime's "
-                      "cint_ functions, the support list (on apple-clang also __chkstk_darwin and "
-                      "bzero, on msvc also __report_rangecheckfailure and __isa_available), and "
+                      "cint_ functions, the support list (on apple-clang also __chkstk_darwin, "
+                      "___chkstk_darwin and bzero, on msvc also __report_rangecheckfailure and "
+                      "__isa_available), and "
                       "ci_ and cg_ of the same program; "
                       "exports cx_, cm_, the two observer symbols and the linked runtime's own "
                       "definitions); toolchain names excluded: MSVC pooled string literals ??_C@ "
@@ -2338,7 +2423,8 @@ def main(argv=None) -> int:
                       "__isa_available_default, "
                       "and the ELF linker's _init, _fini, __bss_start, _edata, _end; Mach-O names "
                       "lose the one leading underscore of the Mach-O C name (nm ___chkstk_darwin "
-                      "is __chkstk_darwin); program_objects counts the program libraries "
+                      "on arm64 is __chkstk_darwin, nm ____chkstk_darwin on x86-64 is "
+                      "___chkstk_darwin); program_objects counts the program libraries "
                       "audited, and entry_programs names the emitted programs with a script or "
                       "void main() entry, linked as executables with a C main and not audited "
                       "(CINTC-OQ-36)",

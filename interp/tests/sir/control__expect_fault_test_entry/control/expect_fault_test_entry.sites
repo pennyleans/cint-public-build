@@ -1,0 +1,18 @@
+module control.expect_fault_test_entry
+sites control/expect_fault_test_entry.ci 1:6:1:fuel.charge 2:9:14:add.checked.i8
+test @control.expect_fault_test_entry 0 {
+  fuel.charge 1                                  #1 @control/expect_fault_test_entry.ci:6:1
+  %t0 = const I8 127
+  local $a.0: I8
+  store.local $a.0, %t0
+  %t1 = const I8 1
+  local $b.1: I8
+  store.local $b.1, %t1
+  %t2 = load.local $a.0
+  %t3 = load.local $b.1
+  %t4 = add.checked.i8 %t2, %t3                  #2 @control/expect_fault_test_entry.ci:9:14
+  local $c.2: I8
+  store.local $c.2, %t4
+  %t5 = load.local $c.2
+  discard %t5
+}

@@ -1,0 +1,5 @@
+void main() {
+    Bool t = true;
+    Bool f = 1 > 2;
+    assert(t == f);
+}

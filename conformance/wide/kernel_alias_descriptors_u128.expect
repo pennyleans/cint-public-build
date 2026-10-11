@@ -1,0 +1,22 @@
+case wide/kernel_alias_descriptors_u128
+clause SPEC-02 A-5, A-6, A-8, V-13; SPEC-09 CONF-11 rules 13 and 14 (adjacent column blocks of a U128 array: an uncertain overlap at dispatch entry, with U128 descriptors)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_ALIAS
+fault.operation bind.alias
+fault.operand I64 1
+fault.operand I64 0
+fault.descriptor U128 none 2 3 2 0 6 3 0 1 write
+fault.descriptor U128 none 2 0 2 0 6 3 0 1 write
+fault.exact none
+fault.limit none
+fault.position wide/kernel_alias_descriptors_u128.ci:13:5
+fault.revision self
+fault.source-map self
+fault.phase entry
+fault.kernel wide.kernel_alias_descriptors_u128.bump
+fault.address 0 none none
+fault.stack-depth 0

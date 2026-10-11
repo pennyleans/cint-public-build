@@ -1,0 +1,22 @@
+module reduce.min_max_values
+sites reduce/min_max_values.ci 1:7:12:fuel.charge 2:9:13:reduce_max.checked.i32 3:9:20:as.checked.i32.i64 4:9:28:mul.checked.i64 5:9:37:reduce_min.checked.i32 6:9:44:as.checked.i32.i64 7:9:34:add.checked.i64
+export func @reduce.min_max_values.run() -> I64 {
+  fuel.charge 1                                  #1 @reduce/min_max_values.ci:7:12
+  local $v.0: I32[4]
+  %t0 = const I32 3
+  array.init $v.0, %t0, 0, 0
+  %t1 = const I32 -7
+  array.init $v.0, %t1, 0, 1
+  %t2 = const I32 12
+  array.init $v.0, %t2, 0, 2
+  %t3 = const I32 0
+  array.init $v.0, %t3, 0, 3
+  %t4 = reduce_max.checked.i32 $v.0              #2 @reduce/min_max_values.ci:9:13
+  %t5 = as.checked.i32.i64 %t4                   #3 @reduce/min_max_values.ci:9:20
+  %t6 = const I64 100
+  %t7 = mul.checked.i64 %t5, %t6                 #4 @reduce/min_max_values.ci:9:28
+  %t8 = reduce_min.checked.i32 $v.0              #5 @reduce/min_max_values.ci:9:37
+  %t9 = as.checked.i32.i64 %t8                   #6 @reduce/min_max_values.ci:9:44
+  %t10 = add.checked.i64 %t7, %t9                #7 @reduce/min_max_values.ci:9:34
+  return %t10
+}

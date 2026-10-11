@@ -1,0 +1,17 @@
+case wide/array_i128_index_bounds
+clause SPEC-01 IM-186; SPEC-04 LS-64 (an index past the extent of an I128 array faults with the element type in the operation)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_BOUNDS
+fault.operation index.checked.i128
+fault.operand I64 4
+fault.exact none
+fault.limit I64 4
+fault.position wide/array_i128_index_bounds.ci:11:13
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

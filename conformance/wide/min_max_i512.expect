@@ -1,0 +1,9 @@
+case wide/min_max_i512
+clause SPEC-01 IM-77; SPEC-04 LS-145 (min and max over I512 elements, with and without an initial value)
+format 2
+source reference
+outcome value
+stdout-bytes 316
+stdout-sha256 5f57c8f5242f49852cce697b217159040acab6d0c293a8d881dde4469a45387c
+return I64 0
+fuel-consumed 5

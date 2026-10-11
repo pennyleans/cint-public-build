@@ -1,0 +1,28 @@
+// Asserts of wide comparisons (SPEC-04 LS-191; rt/OPEN.md RT-OQ-55; box 15 unit 4c): each
+// comparison holds at I128 to I1024, then one fails in a callee, and its E_ASSERT record
+// carries both I512 operands.
+I512 twice(I512 x) {
+    return x * 2;
+}
+
+void check(I512 x, I512 y) {
+    assert(twice(x) == y);
+}
+
+void main() {
+    I128 a = I128.min;
+    I256 b = I256.max;
+    I512 c = -(1 as I512 << 500);
+    I1024 d = I1024.max;
+    I64 n = -3;
+    assert(a < 0);
+    assert(b > a as I256);
+    assert(c <= c);
+    assert(d >= d - 1);
+    assert(c as I1024 != d);
+    assert(n as I128 == -3);
+    assert(a + 1 != a);
+    "held\n";
+    check(c / 2, c);
+    check(c / 4, c);
+}

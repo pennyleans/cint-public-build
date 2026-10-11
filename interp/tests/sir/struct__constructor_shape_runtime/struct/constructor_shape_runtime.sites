@@ -1,0 +1,17 @@
+module struct.constructor_shape_runtime
+sites struct/constructor_shape_runtime.ci 1:9:11:copy.shape 2:11:12:fuel.charge 3:13:5:call.enter
+struct R(data: I64[2])
+func @struct.constructor_shape_runtime.take(%source: I64[_]) {
+  local $sc.0: R
+  copy.shape %source, 0, 2                       #1 @struct/constructor_shape_runtime.ci:9:11
+  array.field.copy $sc.0, data, %source
+  local $r.1: R
+  struct.copy $r.1, $sc.0
+}
+export func @struct.constructor_shape_runtime.run() -> I64 {
+  fuel.charge 1                                  #2 @struct/constructor_shape_runtime.ci:11:12
+  local $source.0: I64[3]
+  call @struct.constructor_shape_runtime.take($source.0) #3 @struct/constructor_shape_runtime.ci:13:5
+  %t0 = const I64 0
+  return %t0
+}

@@ -1,0 +1,20 @@
+module view.index_checked_before_value
+sites view/index_checked_before_value.ci 1:7:12:fuel.charge 2:11:6:index.checked.i64 3:11:14:div.checked.i64
+export func @view.index_checked_before_value.run() -> I64 {
+  fuel.charge 1                                  #1 @view/index_checked_before_value.ci:7:12
+  local $a.0: I64[4]
+  %t0 = const I64 0
+  local $z.1: I64
+  store.local $z.1, %t0
+  %t1 = const I64 -1
+  local $i.2: I64
+  store.local $i.2, %t1
+  %t2 = load.local $i.2
+  index.checked.i64 $a.0, %t2                    #2 @view/index_checked_before_value.ci:11:6
+  %t3 = const I64 1
+  %t4 = load.local $z.1
+  %t5 = div.checked.i64 %t3, %t4                 #3 @view/index_checked_before_value.ci:11:14
+  index.store $a.0, %t2, %t5
+  %t6 = const I64 0
+  return %t6
+}

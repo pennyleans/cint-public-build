@@ -1,0 +1,18 @@
+fault[E_OVERFLOW]: the exact result is outside the type's range
+  --> long.ci:103:10
+    |
+103 | U8 b = a + 100;
+    |          ^ add.checked.u8
+    |
+   = operation: add.checked.u8
+   = operand-count: 2
+   = operand: U8 200
+   = operand: U8 100
+   = exact:   300
+   = limit:   U8 255
+   = revision: 9433099678d1e1e3b26e8ebe71afa4409ae5f4ec8a93abc43d368f559bdb17ed
+   = source-map: none
+   = address: none
+   = stack-depth: 0
+   = fuel-consumed: 1 (not part of the fault record)
+   = state: the program stopped; stdout holds what it wrote before the fault

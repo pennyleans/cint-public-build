@@ -1,0 +1,150 @@
+module money.ci   revision 602173cd38defe996814e3298bd2a45c715a1cea53e3b5f8f84f6d073777ebde
+program   1 module, 6 functions, 51 nodes
+compile fuel   per phase: k x input bytes + c, k = 21524, c = 19876 (rt/cint_bridge.h; SPEC-09 CINTC-09)
+  plan       871 bytes in all modules   18767280 units
+  money.ci   871 bytes   18767280 units for each of compile, measure, and emit
+memory   K x source bytes + 1 MiB + 80 B x program declarations per module (SPEC-09 CINTC-02); K is measured by tools/cint_measure.py
+
+function total_with_tax   money.sites:3   pure
+  signature  (in n: I64, view c: I64[%n], in rate_bp: I64) -> I64
+  fault sites (5): 5 possible, 0 statically excluded
+    total_with_tax#1  money.ci:5:12  fuel.charge                      E_FUEL possible
+    total_with_tax#2  money.ci:6:13  sum.checked.i64.i64              E_OVERFLOW E_FUEL possible
+    total_with_tax#3  money.ci:7:28  mul.checked.i64                  E_OVERFLOW possible
+    total_with_tax#4  money.ci:7:16  div_round.checked.i64.half_even  E_OVERFLOW E_DIV_ZERO possible
+    total_with_tax#5  money.ci:7:14  add.checked.i64                  E_OVERFLOW possible
+  hint       not analyzed: excluding a possible site needs range analysis, which no component performs yet
+  reductions
+    total_with_tax#2  sum.checked.i64.i64  result I64; accumulator 64 + ceil(log2 n) bits for n terms (SPEC-01 IM-80); exact; one checked narrowing to I64 at the end
+  fuel       fuel-v1 charge points (SPEC-01 IM-139, SPEC-09 SIR-07)
+    total_with_tax#1  fuel.charge 1   at the start of the body
+  lowering
+    cpu-sir-interp    supported   the workbench evaluator runs this text (SPEC-09 BACK-01a)
+    cpu-c17 (ref-c)   supported   cintc emits C17 from the same SIR (SPEC-09 BACK-03)
+  sir
+export func @money.total_with_tax(%n: I64, %c: I64[%n], %rate_bp: I64) -> I64 {
+  fuel.charge 1                                  #1 @money.ci:5:12
+  %t0 = sum.checked.i64.i64 %c                   #2 @money.ci:6:13
+  local $s.0: I64
+  store.local $s.0, %t0
+  %t1 = load.local $s.0
+  %t2 = load.local $s.0
+  %t3 = mul.checked.i64 %t2, %rate_bp            #3 @money.ci:7:28
+  %t4 = const I64 10000
+  %t5 = div_round.checked.i64.half_even %t3, %t4 #4 @money.ci:7:16
+  %t6 = add.checked.i64 %t1, %t5                 #5 @money.ci:7:14
+  return %t6
+}
+
+function tax   money.sites:16   pure
+  signature  (in subtotal: I64, in rate_bp: I64) -> I64
+  fault sites (3): 3 possible, 0 statically excluded
+    tax#6  money.ci:10:12  fuel.charge                      E_FUEL possible
+    tax#7  money.ci:11:31  mul.checked.i64                  E_OVERFLOW possible
+    tax#8  money.ci:11:12  div_round.checked.i64.half_even  E_OVERFLOW E_DIV_ZERO possible
+  hint       not analyzed: excluding a possible site needs range analysis, which no component performs yet
+  fuel       fuel-v1 charge points (SPEC-01 IM-139, SPEC-09 SIR-07)
+    tax#6  fuel.charge 1   at the start of the body
+  lowering
+    cpu-sir-interp    supported   the workbench evaluator runs this text (SPEC-09 BACK-01a)
+    cpu-c17 (ref-c)   supported   cintc emits C17 from the same SIR (SPEC-09 BACK-03)
+  sir
+export func @money.tax(%subtotal: I64, %rate_bp: I64) -> I64 {
+  fuel.charge 1                                  #6 @money.ci:10:12
+  %t0 = mul.checked.i64 %subtotal, %rate_bp      #7 @money.ci:11:31
+  %t1 = const I64 10000
+  %t2 = div_round.checked.i64.half_even %t0, %t1 #8 @money.ci:11:12
+  return %t2
+}
+
+function add_cents   money.sites:23   pure
+  signature  (in a: I64, in b: I64) -> I64
+  fault sites (2): 2 possible, 0 statically excluded
+    add_cents#9   money.ci:14:12  fuel.charge      E_FUEL possible
+    add_cents#10  money.ci:15:14  add.checked.i64  E_OVERFLOW possible
+  hint       not analyzed: excluding a possible site needs range analysis, which no component performs yet
+  fuel       fuel-v1 charge points (SPEC-01 IM-139, SPEC-09 SIR-07)
+    add_cents#9   fuel.charge 1   at the start of the body
+  lowering
+    cpu-sir-interp    supported   the workbench evaluator runs this text (SPEC-09 BACK-01a)
+    cpu-c17 (ref-c)   supported   cintc emits C17 from the same SIR (SPEC-09 BACK-03)
+  sir
+export func @money.add_cents(%a: I64, %b: I64) -> I64 {
+  fuel.charge 1                                  #9 @money.ci:14:12
+  %t0 = add.checked.i64 %a, %b                   #10 @money.ci:15:14
+  return %t0
+}
+
+function priced   money.sites:28   pure
+  signature  () -> I64
+  fault sites (2): 2 possible, 0 statically excluded
+    priced#11  money.ci:18:12  fuel.charge  E_FUEL possible
+    priced#12  money.ci:20:12  call.enter   E_FUEL E_DEPTH possible
+  hint       not analyzed: excluding a possible site needs range analysis, which no component performs yet
+  fuel       fuel-v1 charge points (SPEC-01 IM-139, SPEC-09 SIR-07)
+    priced#11  fuel.charge 1   at the start of the body
+    priced#12  call.enter      1 per call of money.total_with_tax
+  lowering
+    cpu-sir-interp    supported   the workbench evaluator runs this text (SPEC-09 BACK-01a)
+    cpu-c17 (ref-c)   supported   cintc emits C17 from the same SIR (SPEC-09 BACK-03)
+  sir
+export func @money.priced() -> I64 {
+  fuel.charge 1                                  #11 @money.ci:18:12
+  local $cents.0: I64[3]
+  %t0 = const I64 1999
+  array.init $cents.0, %t0, 0, 0
+  %t1 = const I64 425
+  array.init $cents.0, %t1, 0, 1
+  %t2 = const I64 10
+  array.init $cents.0, %t2, 0, 2
+  %t3 = const I64 825
+  %t4 = call @money.total_with_tax(extent $cents.0, $cents.0, %t3) #12 @money.ci:20:12
+  return %t4
+}
+
+function overflow   money.sites:41   pure
+  signature  () -> I64
+  fault sites (2): 2 possible, 0 statically excluded
+    overflow#13  money.ci:24:12  fuel.charge  E_FUEL possible
+    overflow#14  money.ci:26:12  call.enter   E_FUEL E_DEPTH possible
+  hint       not analyzed: excluding a possible site needs range analysis, which no component performs yet
+  fuel       fuel-v1 charge points (SPEC-01 IM-139, SPEC-09 SIR-07)
+    overflow#13  fuel.charge 1   at the start of the body
+    overflow#14  call.enter      1 per call of money.add_cents
+  lowering
+    cpu-sir-interp    supported   the workbench evaluator runs this text (SPEC-09 BACK-01a)
+    cpu-c17 (ref-c)   supported   cintc emits C17 from the same SIR (SPEC-09 BACK-03)
+  sir
+export func @money.overflow() -> I64 {
+  fuel.charge 1                                  #13 @money.ci:24:12
+  %t0 = const I64 9223372036854775800
+  local $big.0: I64
+  store.local $big.0, %t0
+  %t1 = load.local $big.0
+  %t2 = const I64 12
+  %t3 = call @money.add_cents(%t1, %t2)          #14 @money.ci:26:12
+  return %t3
+}
+
+test 0   money.sites:51   pure
+  fault sites (3): 3 possible, 0 statically excluded
+    test0#15  money.ci:29:1   fuel.charge          E_FUEL possible
+    test0#16  money.ci:30:12  call.enter           E_FUEL E_DEPTH possible
+    test0#17  money.ci:30:12  assert.checked.bool  E_ASSERT possible
+  hint       not analyzed: excluding a possible site needs range analysis, which no component performs yet
+  fuel       fuel-v1 charge points (SPEC-01 IM-139, SPEC-09 SIR-07)
+    test0#15  fuel.charge 1   at the start of the body
+    test0#16  call.enter      1 per call of money.tax
+  lowering
+    cpu-sir-interp    supported   the workbench evaluator runs this text (SPEC-09 BACK-01a)
+    cpu-c17 (ref-c)   supported   cintc emits C17 from the same SIR (SPEC-09 BACK-03)
+  sir
+test @money 0 {
+  fuel.charge 1                                  #15 @money.ci:29:1
+  %t0 = const I64 200
+  %t1 = const I64 825
+  %t2 = call @money.tax(%t0, %t1)                #16 @money.ci:30:12
+  %t3 = const I64 16
+  %t4 = cmp.eq.i64 %t2, %t3
+  assert.checked.bool %t4                        #17 @money.ci:30:12
+}

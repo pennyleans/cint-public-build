@@ -1,0 +1,9 @@
+case wide/array_i1024_rank2_row_sum
+clause SPEC-01 IM-77, IM-80; SPEC-04 LS-62, LS-160 (a rank-2 I1024 array, a partial index for one row, and sum over it)
+format 2
+source reference
+outcome value
+stdout-bytes 3
+stdout-sha256 a1fb50e6c86fae1679ef3351296fd6713411a08cf8dd1790a4fd05fae8688164
+return I64 12
+fuel-consumed 10

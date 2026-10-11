@@ -200,6 +200,47 @@ class BoundaryGenerator(unittest.TestCase):
             with self.assertRaises(gen_boundary64.Unspecified):
                 gen_boundary64.render("add", "checked", t)
 
+    def test_wide_sets_follow_the_i64_rule(self):
+        # Box 15 unit 1 (ref/OPEN.md O-3): the rule gives the I64 set at w = 64, and at w = 128
+        # the square-root bracket of 2^127.
+        self.assertEqual(gen_boundary64.analogous(64), gen_boundary64.VALUES["I64"])
+        v = gen_boundary64.VALUES["I128"]
+        self.assertEqual(v[2:4] + v[9:12], [-2**64, -2**63, 2**63 - 1, 2**63, 2**64])
+        self.assertEqual(v[12:14], [13043817825332782212, 13043817825332782213])
+        self.assertTrue(v[12] ** 2 <= 2**127 < v[13] ** 2)
+        for w in (128, 256, 512, 1024):
+            v = gen_boundary64.VALUES["I%d" % w]
+            self.assertEqual((len(v), len(set(v))), (16, 16))
+            self.assertEqual((v[0], v[-1]), (-2**(w - 1), 2**(w - 1) - 1))
+
+    def test_unsigned_wide_sets_are_the_signed_bit_patterns(self):
+        # Box 15 unit 1 (ref/OPEN.md O-3): U<w> takes the I<w> set modulo 2^w, ascending.
+        v = gen_boundary64.VALUES["U128"]
+        self.assertEqual(v[:5] + v[7:12], [0, 1, 2, 2**63 - 1, 2**63, 2**64, 2**127 - 2, 2**127 - 1, 2**127,
+                                           2**127 + 1])
+        self.assertEqual(v[12:], [2**128 - 2**64, 2**128 - 2**63, 2**128 - 2, 2**128 - 1])
+        for w in (128, 256, 512):
+            v = gen_boundary64.VALUES["U%d" % w]
+            self.assertEqual(v, sorted(x % 2**w for x in gen_boundary64.VALUES["I%d" % w]))
+            self.assertEqual((len(set(v)), v[0], v[-1]), (16, 0, 2**w - 1))
+        self.assertNotIn("U1024", gen_boundary64.VALUES)
+
+    def test_committed_wide_matrices_and_tables_are_generated(self):
+        # tools/cint_check.py --verify-tables regenerates the 8-bit and I64 files only, so this
+        # checks the wide ones against a fresh generation.
+        conf = os.path.join(ROOT, "conformance")
+        for t in ("I128", "I256", "I512", "I1024", "U128", "U256", "U512"):
+            for op, form in gen_exhaustive8.ALL_FORMS:
+                rel = "integer-machine/bnd%s/%s" % (t[1:], gen_boundary64.file_name(op, form, t))
+                cif = gen_boundary64.render(op, form, t)
+                with open(os.path.join(conf, rel), "rb") as fh:
+                    self.assertEqual(fh.read(), cif, rel)
+                src, cases = gen_tables.render(cif, rel)
+                name = imeval.op_id(op, form, t).replace(".", "_")
+                for ext, blob in ((".ci", src), (".cases", cases)):
+                    with open(os.path.join(conf, "tables", name + ext), "rb") as fh:
+                        self.assertEqual(fh.read(), blob, name + ext)
+
 
 class TableGenerator(unittest.TestCase):
 
@@ -217,6 +258,54 @@ class TableGenerator(unittest.TestCase):
         self.assertEqual(gen_tables.render(cif, "integer-machine/exh8/add.checked.i8.cif1.jsonl"),
                          (src, cases))
         self.assertIn(hashlib.sha256(cif).hexdigest(), text)
+
+    def test_kernel_table_program_and_cases(self):
+        # SPEC-09 CONF-17: the records that do not fault in one dispatch, each faulting record
+        # in a dispatch of its own; line n of the case list is still record n.
+        cif = gen_boundary64.render("add", "checked", "I64")
+        recs = parse_lines(cif)
+        src, cases = gen_tables.render_kernel(cif, "integer-machine/bnd64/add.checked.i64.cif1.jsonl")
+        self.assertNotIn(b"\r", src)
+        self.assertNotIn(b"\r", cases)
+        text = src.decode("ascii")
+        faulting = [r for r in recs if "fault" in r["expect"]]
+        self.assertIn("// records: 256, of which %d fault\n" % len(faulting), text)
+        self.assertIn("kernel apply[n](in I64[n] a, in I64[n] b, out I64[n] r) over [i: n] {\n"
+                      "    r[i] = a[i] + b[i];\n}\n", text)
+        self.assertIn("export I64 row(I64 k) {\n    I64[%d] a = [\n" % (256 - len(faulting)), text)
+        self.assertIn("export I64 fault_row(I64 k) {\n    I64[%d] a = [\n" % len(faulting), text)
+        self.assertIn(hashlib.sha256(cif).hexdigest(), text)
+        lines = cases.decode("ascii").split("\n")
+        self.assertEqual(lines[-1], "")
+        self.assertEqual(len(lines) - 1, 256)
+        seen = {"row": 0, "fault_row": 0}
+        for line, r in zip(lines, recs):
+            entry = "fault_row" if "fault" in r["expect"] else "row"
+            self.assertEqual(line, "tables.kernel_add_checked_i64 %s I64 %d" % (entry, seen[entry]))
+            seen[entry] += 1
+        self.assertEqual(gen_tables.render_kernel(
+            cif, "integer-machine/bnd64/add.checked.i64.cif1.jsonl"), (src, cases))
+
+    def test_wide_table_program_and_cases(self):
+        # Box 15 note 5.4: the operands in module-level arrays, and row(k) printing record k.
+        cif = gen_boundary64.render("mul", "sat", "I256")
+        recs = parse_lines(cif)
+        src, cases = gen_tables.render(cif, "integer-machine/bnd256/mul.sat.i256.cif1.jsonl")
+        self.assertNotIn(b"\r", src)
+        text = src.decode("ascii")
+        self.assertIn("// subset: cint-core-1 (wide integer types are outside cint-boot-1", text)
+        self.assertIn("\nI256[256] a = [\n    %s, %s,\n" % (recs[0]["args"][0]["v"], recs[1]["args"][0]["v"]),
+                      text)
+        self.assertIn("\nI256[256] b = [\n", text)
+        self.assertTrue(text.endswith("export I64 row(I64 k) {\n    \"{a[k] *| b[k]}\\n\";\n"
+                                      "    return 0;\n}\n"))
+        lines = cases.decode("ascii").split("\n")
+        self.assertEqual(lines[-1], "")
+        self.assertEqual(lines[:-1], ["tables.mul_sat_i256 row I64 %d" % k for k in range(256)])
+
+    def test_kernel_table_takes_i64_matrices_only(self):
+        with self.assertRaises(ValueError):
+            gen_tables.render_kernel(gen_exhaustive8.render("add", "checked", "I8"), "x")
 
     def test_operator_spelling(self):
         spell = gen_tables.OPERATOR

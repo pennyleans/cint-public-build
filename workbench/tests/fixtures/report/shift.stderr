@@ -1,0 +1,18 @@
+fault[E_SHIFT]: shift count outside 0..w-1
+  --> shift.ci:3:24
+   |
+ 3 | 	"café €\n";	I64 v = 1 << s;
+   | 	           	          ^ shl.checked.i64
+   |
+   = operation: shl.checked.i64
+   = operand-count: 2
+   = operand: I64 1
+   = operand: I64 70
+   = exact:   none
+   = limit:   I64 63
+   = revision: e19ff2622b817d245d7b46bea458b0f9d971188546057657751128f67fa12a57
+   = source-map: none
+   = address: none
+   = stack-depth: 0
+   = fuel-consumed: 1 (not part of the fault record)
+   = state: the program stopped; stdout holds what it wrote before the fault

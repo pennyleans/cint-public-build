@@ -1,0 +1,9 @@
+case fixed/convert_wrap_and_result
+clause SPEC-01 IM-68, IM-69, IM-188 (`as%` wraps the rounded raw value; `as?` returns .narrow where `as` faults E_NARROW)
+format 5
+source reference
+outcome value
+stdout-bytes 20
+stdout-sha256 4a6a3136414e50dad440805a208ee1f2da6b5d4ea8e2ce8f62b41c5e35b3a99c
+return I64 -2147450880
+fuel-consumed 1

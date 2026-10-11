@@ -1,0 +1,15 @@
+// case: fixed/sqrt_table
+// clause: SPEC-01 IM-67 (the rows of the 5.5 table, as raw values; sqrt(a) uses half_even)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 0; prints `92681 92682 46340 46341` and `6074000999 6074001000 32767 1.4141998291015625` (the 5.5 table); fuel 1. Box 15, unit 1
+
+export I64 run() {
+    Q16.16 two = 2.0;
+    Q16.16 half = 0.5;
+    Q32.32 wide = 2.0;
+    Q1.15 near = Q1.15.raw(32767);
+    "{sqrt(two, floor)!raw} {sqrt(two)!raw} {sqrt(half, floor)!raw} {sqrt(half)!raw}\n";
+    "{sqrt(wide, floor)!raw} {sqrt(wide, half_even)!raw} {sqrt(near, floor)!raw} {sqrt(two, floor)}\n";
+    return 0;
+}

@@ -1,0 +1,9 @@
+case fixed/sqrt_table
+clause SPEC-01 IM-67 (the rows of the 5.5 table, as raw values; sqrt(a) uses half_even)
+format 5
+source reference
+outcome value
+stdout-bytes 71
+stdout-sha256 b28ecb5413bd497bb24e72a86578a2a7b2d4bf716ae6a0638dee8cf63af624f4
+return I64 0
+fuel-consumed 1

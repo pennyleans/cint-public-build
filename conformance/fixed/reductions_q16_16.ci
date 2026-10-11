@@ -1,0 +1,11 @@
+// case: fixed/reductions_q16_16
+// clause: SPEC-02 R-4; SPEC-01 IM-77, IM-79 (the reductions act on the stored integers and keep the format)
+// subset: cint-core-1 (fixed point, arrays)
+// entry: run; args: none
+// spec outcome: value I64 221184 (3.375); prints `3.375 -0.5 2.25 4.375 3.375 3.375 -1.0`; fuel 9 (the entry and eight reductions of 4 elements). Box 15, unit 1
+
+export I64 run() {
+    Q16.16[4] a = [1.5, 2.25, -0.5, 0.125];
+    "{sum(a)} {min(a)} {max(a)} {fold_checked(add, 1.0, a)} {sum_wrap(a)} {sum_sat(a)} {min(-1.0, a)}\n";
+    return sum(a).raw as I64;
+}

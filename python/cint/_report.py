@@ -13,6 +13,7 @@ import numbers
 from ._elem import parse_elem
 
 REASONS = {
+    "fault-readback": "a device array read back for the host's re-execution of a faulting work-item (SPEC-02 B-16b)",
     "publish-copy": "a borrowed output staged and copied on success (SPEC-03 P-15)",
     "snapshot": "a borrowed input copied while recording (SPEC-03 P-16)",
     "staging": "an output staged because it could not publish by renaming (SPEC-03 M-31)",

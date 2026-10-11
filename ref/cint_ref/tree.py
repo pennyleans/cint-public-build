@@ -43,6 +43,7 @@ class Expr(Node):
 class Lit(Expr):
     value: object = None        # int, or Fraction for a fraction literal
     kind: str = "int"           # int, char or frac
+    round_mode: str | None = None   # a fraction literal's `round` clause (SPEC-04 LS-37)
 
 
 @dataclass(eq=False)
@@ -455,3 +456,4 @@ class Module:
     box12: bool = True                               # parsed with the box 12 surface (parser.parse_module)
     memories: list = field(default_factory=list)     # module-level arena and pool declarations (VarDecl)
     memory: bool = True                              # parsed with the arena and pool surface
+    fixed: bool = True                               # parsed with the box 15 fixed-point surface

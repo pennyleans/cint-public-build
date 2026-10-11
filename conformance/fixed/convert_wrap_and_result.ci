@@ -1,0 +1,15 @@
+// case: fixed/convert_wrap_and_result
+// clause: SPEC-01 IM-68, IM-69, IM-188 (`as%` wraps the rounded raw value; `as?` returns .narrow where `as` faults E_NARROW)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 -2147450880; prints `-2147450880 1.0 3.0` (32768.5 truncates to raw 2147516416, which wraps); fuel 1. Box 15, unit 1
+
+export I64 run() {
+    Q32.32 x = 32768.5;
+    Q16.16 w = x as% Q16.16 round trunc;
+    I64 n = 40000;
+    Q16.16 y = n as? Q16.16 catch 1.0;
+    Q16.16 z = 3 as% Q16.16;
+    "{w!raw} {y} {z}\n";
+    return w.raw as I64;
+}

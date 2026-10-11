@@ -20,12 +20,14 @@ entries gets one file per entry, `<case>.<entry>.expect`, with the case name
 `<case>.<entry>` (ref/OPEN.md I-3).
 
 The `.expect` format (SPEC-09 CONF-11) is the frozen file's own: a file whose
-third line is `format 2`, `format 3` or `format 4` is regenerated and checked in
-that format, any other in format 1. A case without a file is written in the
-format `--format` names (default 1); `--format` never changes the format of an
+third line is `format 2` to `format 5` is regenerated and checked in that
+format, any other in format 1. A case without a file is written in the format
+`--format` names (default 1); `--format` never changes the format of an
 existing file. Format 3 (BX12-21) is for a case whose entry returns an error,
 which no earlier format can write (CONF-11 rule 12); format 4 (box 09 ruling R9)
-is for a case whose fault is raised by a kernel dispatch.
+is for a case whose fault is raised by a kernel dispatch; format 5 (box 15
+ruling BX15-03) is for a case that writes a `U128` to `U512` or fixed-point value
+(rule 14).
 
 A `boot/` refusal case with a `seed outcome` header line is a program of
 `cint-core-1` that the seed must refuse (SPEC-09 BOOT-01, SEED-06). Its
@@ -57,7 +59,7 @@ or cannot run (array arguments), but that held.txt does not list, is reported
 as unlisted and gets no `.expect` file.
 
 Usage (from the repository root):
-    python conformance/tools/gen_expect.py [--check] [--format 1|2|3|4] [case.ci ...]
+    python conformance/tools/gen_expect.py [--check] [--format 1|2|3|4|5] [case.ci ...]
 
 `--check` writes nothing and exits 1 if any existing `.expect` differs from a
 fresh run, if a held case still has an `.expect` file, or if a case is held
@@ -75,7 +77,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CONFORMANCE = os.path.join(ROOT, "conformance")
 CATEGORIES = ("arith", "control", "switch", "struct", "diag", "determinism", "boot", "module", "view",
-              "reduce", "kernel", "errors", "cleanup", "ternary", "memory")
+              "reduce", "kernel", "errors", "cleanup", "ternary", "memory", "wide", "fixed")
 SEED_OUTCOME = re.compile(r"^// seed outcome: (C[0-9]{4}) at ([1-9][0-9]*):([1-9][0-9]*)$", re.M)
 HELD = os.path.join(CONFORMANCE, "held.txt")
 CINTC = ".cintc"   # the per-compiler expectation of a boot/ refusal case (CONF-11, decision 26)
@@ -163,13 +165,13 @@ def seed_expect(text, h, case_id):
 
 
 def expect_format(path):
-    """The CONF-11 format of an existing `.expect` file: 2, 3 or 4 when its third line is
-    `format 2`, `format 3` or `format 4`, else 1; None when the file does not exist."""
+    """The CONF-11 format of an existing `.expect` file: 2 to 5 when its third line is
+    `format 2` to `format 5`, else 1; None when the file does not exist."""
     if not os.path.exists(path):
         return None
     with open(path, "rb") as fh:
         lines = fh.read().split(b"\n", 3)
-    if len(lines) > 3 and lines[2] in (b"format 2", b"format 3", b"format 4"):
+    if len(lines) > 3 and lines[2] in (b"format 2", b"format 3", b"format 4", b"format 5"):
         return int(lines[2][len(b"format "):])
     return 1
 
@@ -200,7 +202,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("cases", nargs="*")
     ap.add_argument("--check", action="store_true")
-    ap.add_argument("--format", type=int, choices=(1, 2, 3, 4), default=1,
+    ap.add_argument("--format", type=int, choices=(1, 2, 3, 4, 5), default=1,
                     help="the .expect format of a case that has no file yet (CONF-11)")
     ns = ap.parse_args(argv)
     paths = ns.cases or sorted(p for c in CATEGORIES for p in glob.glob(os.path.join(CONFORMANCE, c, "*.ci")))

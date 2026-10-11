@@ -1,0 +1,22 @@
+// Test program of interp/tests/test_interp.py (box 13 MLA), not a conformance case: the host
+// interp/tests/rec_host.c records its program entry at `dispatch` density on both CPU
+// backends. The entry writes the module-level array `seen` before and between dispatches, so
+// each dispatch boundary's state holds the elements written so far.
+
+I64[3] seen;
+I64 total = 0;
+
+kernel sum_of[n](in I64[n] x, out I64 s) over [i: n] {
+    reduce s = sum(x[i]);
+}
+
+void main() {
+    I64[3] x = [1, 2, 3];
+    seen[0] = 7;
+    sum_of(x, total);
+    seen[1] = total;
+    x[2] = seen[1];
+    sum_of(x, total);
+    seen[2] = total;
+    "total {total}\n";
+}

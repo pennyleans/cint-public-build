@@ -1,4 +1,4 @@
-"""Tests for conformance/tools/fuzz_decoders.py (slice 2 patch D-10): the fuzz
+"""Tests for conformance/tools/fuzz_decoders.py (slice 2 patch D-10; OQ-14): the fuzz
 targets run, find no failure, and are deterministic for a seed.
 
 Run from the repository root:
@@ -32,10 +32,19 @@ class FuzzTargets(unittest.TestCase):
         self.assertGreater(rejected, 1000)
         self.assertEqual(fuzz_decoders.fuzz_expect(7, 3000)[3], digest)
 
+    def test_record_py_target(self):
+        accepted, rejected, failures, digest = fuzz_decoders.fuzz_record_py(7, 3000)
+        corpus = fuzz_decoders.record_corpus() + fuzz_decoders.record_v3_corpus()
+        self.assertEqual(failures, [])
+        self.assertEqual(accepted + rejected, len(corpus) + 3000)
+        self.assertGreater(accepted, len(corpus))
+        self.assertEqual(fuzz_decoders.fuzz_record_py(7, 3000)[3], digest)
+
     def test_corpus_holds_both_versions_and_kinds(self):
         corpus = fuzz_decoders.record_corpus()
         self.assertEqual({k for _, k in corpus}, {"compile-time", "run-time"})
         self.assertEqual({b[4:24] for b, _ in corpus}, {b"cint-core-1/fault/v1", b"cint-core-1/fault/v2"})
+        self.assertEqual({b[4:24] for b, _ in fuzz_decoders.record_v3_corpus()}, {b"cint-core-1/fault/v3"})
         self.assertTrue(any(b"format 2\n" in t for t in fuzz_decoders.expect_corpus()))
 
     def test_draws_are_bounded(self):

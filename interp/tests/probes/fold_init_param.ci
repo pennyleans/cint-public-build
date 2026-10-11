@@ -1,0 +1,17 @@
+// case: probes/fold_init_param
+// clause: box 13 unit 7 probe: a reduction whose initial value is a parameter (fold_checked, reduce_min)
+// entry: run; args: none
+
+I64 f(I64 s) {
+    I64[3] a = [1, 2, 3];
+    return fold_checked(add, s, a);
+}
+
+I8 g(I64 z, I8 lo) {
+    I8[3] a = [5, 7, 9];
+    return min(lo, a[3..]);
+}
+
+export I64 run() {
+    return f(10) * 100 + (g(0, 4 as I8) as I64);
+}

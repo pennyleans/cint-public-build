@@ -8,6 +8,7 @@ import os
 import pathlib
 import re
 import shutil
+import signal
 import struct
 import subprocess
 import sys
@@ -1004,11 +1005,12 @@ class RunTests(unittest.TestCase):
         self.assertEqual(records[0]["identity"], records[1]["identity"])
         self.assertEqual(records[0]["outcome"], records[1]["outcome"])
 
-    def fault_record(self, operands=(), exact=None, path=b"hello.ci", kernel=None):
+    def fault_record(self, operands=(), exact=None, path=b"hello.ci", kernel=None, version=2,
+                     operation=b"add.checked.i64"):
         text = lambda value: struct.pack("<I", len(value)) + value
         position = text(path) + struct.pack("<II", 1, 1)
         address = b"\x00" if kernel is None else b"\x01" + text(kernel) + struct.pack("<qBB", 0, 0, 0)
-        return (text(b"cint-core-1/fault/v2") + struct.pack("<H", 1) + text(b"add.checked.i64") +
+        return (text(b"cint-core-1/fault/v%d" % version) + struct.pack("<H", 1) + text(operation) +
                 struct.pack("<I", len(operands)) + b"".join(operands) +
                 (b"\x00" if exact is None else b"\x01" + exact) +
                 b"\x00" + position + b"\x00\x00" + address + struct.pack("<I", 0))
@@ -1126,6 +1128,28 @@ class RunTests(unittest.TestCase):
         for data in (self.fault_record(path=b"\xff.ci"), self.fault_record(kernel=b"\xff")):
             with self.subTest(record=data.hex()):
                 self.tool_error(self.fake_record(data), 7)
+
+    def test_runtime_fault_decoder_version_3(self):
+        # A run-time record of dot.checked.i1024.<R> is of version 3 and holds a Z of up to 264
+        # bytes; every other record is of version 2, and no compile-time record is of version 3
+        # (SPEC-01 IM-148, IM-149; BX15-07 C).
+        path = self.out / "v3-record.bin"
+        dot = b"dot.checked.i1024.i1024"
+        count = b"\x14" + struct.pack("<q", 1 << 62)
+        z = lambda n: b"\x0f" + struct.pack("<I", n) + b"\x00" * (n - 1) + b"\x10"
+        path.write_bytes(self.fault_record([count], exact=z(264), version=3, operation=dot))
+        result = self.unit_invoke(["--decode", path, "0"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["exact"], {"t": "Z", "v": str(1 << 2108)})
+        for name, data, trailing in (
+                ("265 bytes", self.fault_record([count], exact=z(265), version=3, operation=dot), "0"),
+                ("other operation", self.fault_record(exact=z(257), version=3), "0"),
+                ("dot in version 2", self.fault_record([count], exact=z(257), operation=dot), "0"),
+                ("compile-time", self.fault_record([count], exact=z(264), version=3, operation=dot) +
+                 b"\x00" * 32, "1")):
+            with self.subTest(case=name):
+                path.write_bytes(data)
+                self.assertEqual(self.unit_invoke(["--decode", path, trailing]).returncode, 7)
 
     def test_compile_fault_decoder_large_z_bounds(self):
         path = self.out / "compile-record.bin"
@@ -1353,8 +1377,8 @@ class RunTests(unittest.TestCase):
     def test_build_library(self):
         # `cint build --lib` (SPEC-06 3.1; box 10 default BX10-07): one shared library per program,
         # exporting the cx wrappers, the cm descriptors, the library descriptor (SPEC-03 A-19),
-        # the observer symbols, and the runtime's host functions (CINT_RT_API in rt/cint_rt.h),
-        # and nothing else (SPEC-09 EMIT-31).
+        # the observer symbols, and the runtime's host functions (CINT_RT_API in rt/cint_rt.h and
+        # rt/cint_rt_host.h, which it includes; RT-OQ-47), and nothing else (SPEC-09 EMIT-31).
         sys.path.insert(0, str(ROOT / "tools"))
         import cint_check as cc
         root = self.project("build-lib", {
@@ -1369,7 +1393,7 @@ class RunTests(unittest.TestCase):
         library = self.out / "build-lib-out" / {"msvc": "shapes.dll"}.get(
             CONFIG.leg, "libshapes" + (".dylib" if sys.platform == "darwin" else ".so"))
         self.assertIn(("built: " + str(library)).encode("utf-8"), result.stderr)
-        header = (ROOT / "rt/cint_rt.h").read_text(encoding="utf-8")
+        header = "".join((ROOT / "rt" / name).read_text(encoding="utf-8") for name in ("cint_rt.h", "cint_rt_host.h"))
         host = set(re.findall(r"^CINT_RT_API [^(]*?\b(cint_\w+)\(", header, re.M))
         self.assertIn("cint_fault_get", host)
         tool = cc.Toolchain(CONFIG.leg, "0", "portable", False)
@@ -1420,6 +1444,60 @@ class RunTests(unittest.TestCase):
                                  ("run", [ROOT / "cli/tests/fixtures/three_tests.ci"])):
             with self.subTest(subcommand=subcommand, args=args):
                 self.tool_error(self.command(subcommand, ["--json", *args]), 4)
+
+    # `cint <name>` (SPEC-06 3.1, BX13-15): cint-<name> from cint's directory, here a copy of cint
+    # beside a stand-in tool, on cint's own stdin, stdout and stderr, with the tool's exit status.
+    def handoff(self, args, input_bytes=b""):
+        here = self.out / "handoff"
+        suffix = ".exe" if CONFIG.leg == "msvc" else ""
+        if not here.is_dir():
+            here.mkdir()
+            shutil.copy2(self.exe, here / self.exe.name)
+            tool = here / ("cint-handoff-tool" + suffix)
+            flags = [value for key, value in self.rows if key == "flag"]
+            command = [self.values["cc"], *flags, str(ROOT / "cli/tests/fixtures/handoff_tool.c")]
+            command += ["/Fe" + str(tool), "/Fo" + str(here / "handoff_tool.obj")] if CONFIG.leg == "msvc" else ["-o", str(tool)]
+            build = subprocess.run(command, cwd=here, env=self.env, capture_output=True, check=False, timeout=60)
+            self.assertEqual(build.returncode, 0, (build.stdout + build.stderr).decode("utf-8", "replace"))
+            shutil.copy2(tool, here / ("cint-run" + suffix))
+        type(self).serial += 1
+        name = "%03d-%s" % (self.serial, self._testMethodName)
+        result = subprocess.run([str(here / self.exe.name), *args], cwd=here, env=self.env, input=input_bytes,
+                                capture_output=True, check=False, timeout=60)
+        (self.out / (name + ".stdout")).write_bytes(result.stdout)
+        (self.out / (name + ".stderr")).write_bytes(result.stderr)
+        return result
+
+    def test_handoff_arguments_channels_and_status(self):
+        args = ["a", "b c", 'd "e"', "", "f\\", "g h\\", "exit=3"]
+        result = self.handoff(["handoff-tool", *args], b"line one\nline two\n")
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(result.stdout, "".join("arg %s\n" % a for a in args).encode() + b"line one\nline two\n")
+        self.assertEqual(result.stderr, b"handoff tool stderr\n")
+        # A --json before the name goes to the tool as well, and its status passes through unmapped.
+        result = self.handoff(["--json", "handoff-tool", "exit=42"])
+        self.assertEqual((result.returncode, result.stdout, result.stderr),
+                         (42, b"arg --json\narg exit=42\n", b"handoff tool stderr\n"))
+
+    @unittest.skipIf(os.name == "nt", "a POSIX signal")
+    def test_handoff_signal_passes_through(self):
+        # cint is replaced by the tool, so the tool's own end reaches the caller.
+        result = self.handoff(["handoff-tool", "signal"])
+        self.assertEqual(result.returncode, -signal.SIGTERM, result.stderr)
+
+    def test_handoff_unknown_and_builtin_names(self):
+        for args, said in ((["--json", "no-such-tool"], "no cint-no-such-tool beside cint"),
+                           (["--json", "../cint-handoff-tool"], "NAME runs cint-NAME"),
+                           (["--json", "Handoff-tool"], "NAME runs cint-NAME"),
+                           (["--json", "--bogus"], "NAME runs cint-NAME"),
+                           (["--json", "run"], "no FILE.ci given")):   # cint-run is there; run stays cint's own
+            with self.subTest(args=args):
+                result = self.handoff(args)
+                self.assertEqual(result.stdout, b"")
+                self.assertIn(said, self.tool_error(result, 4)["message"])
+        result = self.handoff(["no-such-tool"])
+        self.assertEqual(result.returncode, 4)
+        self.assertTrue(result.stderr.startswith(b"usage: cint "), result.stderr)
 
 
 class ParityTests(RunTests):

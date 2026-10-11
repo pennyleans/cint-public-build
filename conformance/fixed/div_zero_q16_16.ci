@@ -1,0 +1,11 @@
+// case: fixed/div_zero_q16_16
+// clause: SPEC-01 IM-65 (B == 0 faults E_DIV_ZERO before any other check; no exact, no limit)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: fault E_DIV_ZERO at 10:14 (the `/`), operation div.checked.q16_16.half_even, operands Q16.16 raw 65536 and Q16.16 raw 0, no exact, no limit; stack depth 0; fuel 1. Box 15, unit 1
+
+export Bool run() {
+    Q16.16 a = 1.0;
+    Q16.16 b = 0.0;
+    return a / b != 0;
+}

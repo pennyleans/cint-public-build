@@ -1,0 +1,17 @@
+case fixed/dot_overflow_q8_8
+clause SPEC-01 IM-87, IM-81 (BX15-04 A: one range check after the rounding; the operation names the mode)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 2
+fault.code E_OVERFLOW
+fault.operation dot.checked.q8_8.q8_8.floor
+fault.operand I64 2
+fault.exact 5120000
+fault.limit Q8.8 raw 32767
+fault.position fixed/dot_overflow_q8_8.ci:9:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

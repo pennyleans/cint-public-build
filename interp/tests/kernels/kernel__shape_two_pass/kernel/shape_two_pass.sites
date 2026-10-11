@@ -1,0 +1,59 @@
+module kernel.shape_two_pass
+sites kernel/shape_two_pass.ci 1:8:6:index.checked.i64 2:8:13:index.checked.i64 3:12:5:dispatch 4:15:12:fuel.charge 5:18:5:call.enter 6:19:13:index.checked.i64
+kernel @kernel.shape_two_pass.k(%a: I64[_], %b: I64[_]) {
+  dispatch.entry
+  local $n.0: I64
+  %t0 = view.extent %b, 0
+  store.local $n.0, %t0
+  %t1 = load.local $n.0
+  %t2 = const I64 1
+  %t3 = add.checked.i64 %t1, %t2
+  bind.shape %a, 0, 0, %t3
+  %t4 = load.local $n.0
+  store.local $sc.1, %t4
+  bind.alias %b, %a
+  dispatch.charge $sc.2, 1, $sc.1
+  dispatch.stage $sc.3, %b, 1
+  dispatch.push
+  %t5 = const I64 0
+  store.local $sc.4, %t5
+  loop L16 {
+    %t6 = load.local $sc.4
+    %t7 = load.local $sc.2
+    %t8 = cmp.lt.i64 %t6, %t7
+    while %t8
+    %t9 = load.local $sc.4
+    dispatch.item %t9, 1, $i.5, $sc.1
+    %t10 = load.local $i.5
+    index.checked.i64 $sc.3, %t10                #1 @kernel/shape_two_pass.ci:8:6
+    %t11 = view.offset $sc.3, %t10, 0
+    dispatch.step
+    %t12 = load.local $i.5
+    index.checked.i64 %a, %t12                   #2 @kernel/shape_two_pass.ci:8:13
+    %t13 = view.offset %a, %t12, 0
+    dispatch.step
+    %t14 = index.load %a, %t13
+    index.store $sc.3, %t11, %t14
+    next
+    %t15 = load.local $sc.4
+    %t16 = const I64 1
+    %t17 = add.wrap.i64 %t15, %t16
+    store.local $sc.4, %t17
+  }
+  dispatch.phase 2
+  dispatch.pop
+  dispatch.publish %b, $sc.3
+}
+func @kernel.shape_two_pass.go(%a: I64[_], %b: I64[_]) {
+  dispatch @kernel.shape_two_pass.k(%a, %b), 2   #3 @kernel/shape_two_pass.ci:12:5
+}
+export func @kernel.shape_two_pass.run() -> I64 {
+  fuel.charge 1                                  #4 @kernel/shape_two_pass.ci:15:12
+  local $a.0: I64[5]
+  local $b.1: I64[3]
+  call @kernel.shape_two_pass.go($a.0, $b.1)     #5 @kernel/shape_two_pass.ci:18:5
+  %t0 = const I64 0
+  index.checked.i64 $b.1, %t0                    #6 @kernel/shape_two_pass.ci:19:13
+  %t1 = index.load $b.1, %t0
+  return %t1
+}

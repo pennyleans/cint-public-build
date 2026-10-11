@@ -1,0 +1,14 @@
+// case: fixed/literal_grid_q16_16
+// clause: SPEC-04 LS-33, LS-35, LS-37; SPEC-01 IM-27; SPEC-09 CONF-11 rule 14 (literals on the grid, an integer literal in a fixed-point context, a fixed-point return value)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 278528, the raw integer; prints, with `!raw`, the Q16.16 value raw 278528 (4.25) and a line feed; fuel 1. Box 15, unit 1
+
+export I64 run() {
+    Q16.16 a = 1.5;
+    Q16.16 b = 3;
+    Q16.16 c = -0.25;
+    Q16.16 observed = a + b + c;
+    "{observed!raw}\n";
+    return observed.raw as I64;
+}

@@ -79,6 +79,20 @@ class Bootstrap(unittest.TestCase):
         with self.assertRaises(ValueError):
             boot.compiler_closure({"compiler/main.ci": b"import absent;\n"})
 
+    def test_compiler_closure_is_rescanned_when_any_byte_changes(self):
+        sources = {"compiler/main.ci": b"import dep;\n", "compiler/dep.ci": b"// leaf\n",
+                   "compiler/late.ci": b"// leaf\n"}
+        first = boot.compiler_closure(sources)
+        first["compiler/late.ci"] = b"changed by the caller\n"
+        self.assertEqual(boot.compiler_closure(sources),
+                         {"compiler/dep.ci": b"// leaf\n", "compiler/main.ci": b"import dep;\n"})
+        sources["compiler/dep.ci"] = b"import late;\n"
+        self.assertEqual(list(boot.compiler_closure(sources)),
+                         ["compiler/dep.ci", "compiler/late.ci", "compiler/main.ci"])
+        del sources["compiler/late.ci"]
+        with self.assertRaises(ValueError):
+            boot.compiler_closure(sources)
+
     def test_digest_verification_rejects_wrong_or_missing_compiler_results(self):
         with tempfile.TemporaryDirectory() as temp:
             path = pathlib.Path(temp) / "source"
@@ -127,6 +141,18 @@ class Bootstrap(unittest.TestCase):
         for digest in ("", "a" * 63, "A" * 64, "x\nflag malicious"):
             with self.subTest(digest=digest), self.assertRaises(ValueError):
                 boot.cli_compile_flags([], "gcc", digest)
+
+    def test_release_flags_raise_optimization_and_helpers_only(self):
+        gnu = boot.cc.GNU_WARNINGS + ["-O0", "-DCINT_RT_HELPERS_PORTABLE", "-fPIC"]
+        msvc = boot.cc.MSVC_WARNINGS + ["/Od", "/DCINT_RT_HELPERS_PORTABLE"]
+        self.assertEqual(boot.release_flags(gnu),
+                         boot.cc.GNU_WARNINGS + ["-O2", "-DCINT_RT_HELPERS_BUILTIN", "-fPIC"])
+        self.assertEqual(boot.release_flags(msvc), boot.cc.MSVC_WARNINGS + ["/O2", "/DCINT_RT_HELPERS_BUILTIN"])
+        self.assertEqual(gnu[-3:], ["-O0", "-DCINT_RT_HELPERS_PORTABLE", "-fPIC"])
+        for flags in (["-O0"], ["-DCINT_RT_HELPERS_PORTABLE"], ["-O2", "-DCINT_RT_HELPERS_BUILTIN"],
+                      ["-O0", "-O0", "-DCINT_RT_HELPERS_PORTABLE"]):
+            with self.subTest(flags=flags), self.assertRaises(ValueError):
+                boot.release_flags(flags)
 
     def test_output_root_cannot_overlap_checkout(self):
         with tempfile.TemporaryDirectory() as temp:

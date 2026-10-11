@@ -139,6 +139,29 @@ export const I32 T_U8 = 0x21;
 export const I32 T_U16 = 0x22;
 export const I32 T_U32 = 0x23;
 export const I32 T_U64 = 0x24;
+// The wide integers (box 15 unit 4, the unsigned ones from unit 4d; SPEC-01 IM-11 to IM-17):
+// a struct of w / 64 limbs in C (rt/cint_wide.h). Their SO_CONST takes its value from the
+// source (wide_const).
+export const I32 T_I128 = 0x15;
+export const I32 T_I256 = 0x16;
+export const I32 T_I512 = 0x17;
+export const I32 T_I1024 = 0x18;
+export const I32 T_U128 = 0x25;
+export const I32 T_U256 = 0x26;
+export const I32 T_U512 = 0x27;
+// The forms of a wide SO_CONST, in its c (back_c.ci reads the value from the source): WC_VAL,
+// val sign-extended; WC_LIT and WC_NEG, the integer literal token f and its negation, modulo
+// 2^w; WC_MIN and WC_MAX, the type's bounds; WC_BYTES, a constant's value that check.ci
+// folded (box 15 unit 4b), stored at f in the literal-value table, val bytes; WC_DECL, the
+// value of the imported constant whose record is row f of the declaration table (CINTC-16
+// limb rows). A narrow SO_CONST does not read c or f.
+export const I32 WC_VAL = 0;
+export const I32 WC_LIT = 1;
+export const I32 WC_NEG = 2;
+export const I32 WC_MIN = 3;
+export const I32 WC_MAX = 4;
+export const I32 WC_BYTES = 5;
+export const I32 WC_DECL = 6;
 // Box 12: a handle (SPEC-03 M-12), a cint_handle in C (rt/cint_mem.h); decl.ci's tag of a
 // memory type.
 export const I32 T_HANDLE = 0x74;
@@ -275,13 +298,13 @@ export const I32 SO_ACOPY = 58;
 export const I32 SO_BUILTIN = 59;
 // Box 09 (SPEC-02, SPEC-04 LS-62 to LS-70, LS-161 to LS-165; rulings R1 to R10). A view
 // node's slot operands are SK_ARRAY, SK_VIEW, SK_APLACE or SK_NVIEW slots.
-//   SO_VBEGIN     view a := the view of slot b; with b a flat SK_ARRAY and a of rank 2 to 4,
-//                 b's elements in row-major order with the extents in val's 12-bit fields
-//                 from dimension 0
+//   SO_VBEGIN     view a := the view of slot b; with b a flat SK_ARRAY or (BX22-06) an
+//                 SK_APLACE and a of rank 2 to 4, b's elements in row-major order with the
+//                 extents in val's 12-bit fields from dimension 0
 //   SO_VPICK      index b (I64, checked before) into dimension f of view a: its origin moves
 //                 b strides of that dimension (ruling R1)
 //   SO_VSLICE     slice.checked.<E>: dimension f % 8 of view a, low bound b and high bound c
-//                 (-1 when not written; f / 64: 1 low, 2 high, 4 `..=`), step val; e is the
+//                 (NO_OPERAND when not written; f / 64: 1 low, 2 high, 4 `..=`), step val; e is the
 //                 sliced slot, whose rank decides the record's dimension operand (rulings R2, R3)
 //   SO_VEND       view a after the f items of a subscript of slot b: the dimensions in the mask
 //                 val leave it, and its rank becomes its slot's
@@ -292,7 +315,7 @@ export const I32 SO_BUILTIN = 59;
 //   SO_VCOPY      copy.shape, copy.alias: the view of slot b copied into the view of slot a
 //                 (SPEC-01 IM-187; ty the element type)
 //   SO_REDUCE     dst = reduction f (CINT_REDUCE_* of rt/cint_rt.h) over the view of slot a, b
-//                 the second view of dot (-1 otherwise), c the initial value (-1 for none);
+//                 the second view of dot (-1 otherwise), c the initial value (NO_OPERAND for none);
 //                 val the element type, ty the result's (rulings R5, R6)
 //   SO_VEXT       dst = the extent of dimension f of the view of slot a; f -1 for its size
 //   SO_CALIAS     bind.alias: the views of slot a, the `inout` argument c, and slot b,
@@ -361,6 +384,15 @@ export const I32 SO_KPHASE = 86;
 export const I32 SO_KEPI = 87;
 export const I32 SO_KPOP = 88;
 export const I32 SO_KPUB = 89;
+// Box 15 (SPEC-04 LS-145; SPEC-02 V-10, V-11), the array built-ins `fill` and `reshape`:
+//   SO_VFILL      value b (of the element type ty) into every element of the view of slot a,
+//                 in C a copy from a view of b with every stride 0 (no fault but the host
+//                 boundary's, at the callee)
+//   SO_VRESHAPE   view a := the view of slot b, row-major from its origin, with the f extents
+//                 in val's 16-bit fields from dimension 0 (the checker admits only a row-major
+//                 b of the same element count)
+export const I32 SO_VFILL = 90;
+export const I32 SO_VRESHAPE = 91;
 // The site of a node that faults at the dispatch site, a parameter of the kernel's C function.
 export const I32 KSITE = -1;
 // Box 12 (SPEC-04 LS-92 to LS-97, LS-129 to LS-131, LS-185 to LS-190, LS-315), opcodes 100
@@ -661,11 +693,16 @@ export void plan_lower[t](inout limits.TablePlan[t] rows, I64 k, I64 n, U32 sir_
 // ---------------------------------------------------------------- types
 
 export Bool is_int(I32 ty) {
-    return (ty >= T_I8 && ty <= T_I64) || (ty >= T_U8 && ty <= T_U64);
+    return (ty >= T_I8 && ty <= T_I1024) || (ty >= T_U8 && ty <= T_U512);
 }
 
 export Bool is_signed(I32 ty) {
-    return ty >= T_I8 && ty <= T_I64;
+    return ty >= T_I8 && ty <= T_I1024;
+}
+
+// Whether ty is one of the wide integers, I128 to I1024 and U128 to U512.
+export Bool is_wide(I32 ty) {
+    return (ty >= T_I128 && ty <= T_I1024) || (ty >= T_U128 && ty <= T_U512);
 }
 
 // The type of identifier class `cls` (scan.IDC_*), or 0 when lowering has no such type.
@@ -675,10 +712,17 @@ I32 class_type(I32 cls) {
         case scan.IDC_I16: return T_I16;
         case scan.IDC_I32: return T_I32;
         case scan.IDC_I64: return T_I64;
+        case scan.IDC_I128: return T_I128;
+        case scan.IDC_I256: return T_I256;
+        case scan.IDC_I512: return T_I512;
+        case scan.IDC_I1024: return T_I1024;
         case scan.IDC_U8: return T_U8;
         case scan.IDC_U16: return T_U16;
         case scan.IDC_U32: return T_U32;
         case scan.IDC_U64: return T_U64;
+        case scan.IDC_U128: return T_U128;
+        case scan.IDC_U256: return T_U256;
+        case scan.IDC_U512: return T_U512;
         case scan.IDC_BOOL: return T_BOOL;
         default: return T_NONE;
     }
@@ -720,7 +764,7 @@ I32 scalar_type(I64 ty) {
     if (resolve.is_errset(ty)) {
         return resolve.errset_under(ty) as I32;
     }
-    if (ty == fold.TY_BOOL || (ty >= fold.TY_I8 && ty <= fold.TY_I64) || (ty >= fold.TY_U8 && ty <= fold.TY_U64)) {
+    if (ty == fold.TY_BOOL || resolve.is_int(ty)) {
         return ty as I32;
     }
     return T_NONE;
@@ -811,8 +855,16 @@ export Bool field_array(I32 ty) {
 
 // Marks record-array fields separately so a plain record slot above 8191 stays plain.
 export const I32 FIELD_RECORD_ARRAY = 1073741824;
-// Retains scalar field-array identity even when its extent is zero.
+// Retains scalar field-array identity even when its extent is zero. With a nonzero extent
+// it marks a field of rank 2 to 4 (BX22-06), whose slot type is that of a rank-1 field of its
+// element count: the C struct, the SIR struct line and whole-field copies take it flat, and
+// its shape is the checker's (the type of an N_FIELD node, a declaration row's extents).
 export const I32 FIELD_SCALAR_ARRAY = 268435456;
+
+// Whether field type ty is of rank 2 to 4.
+export Bool field_shaped(I32 ty) {
+    return ty > 255 && ty < T_STRUCT && (ty & FIELD_SCALAR_ARRAY) != 0 && array_extent(ty) > 0;
+}
 
 // Task 2.14: an array or a view of struct elements (SPEC-04 4.3, LS-119) is an SK_ARRAY or
 // SK_VIEW slot whose ty is T_STRUCT plus the struct's SK_SDECL slot s plus SARRAY_STEP
@@ -1125,6 +1177,10 @@ I64 import_record(inout U8[_] text, in scan.Token[_] toks, inout limits.Decl[_] 
         } else if (d[r].rank == 1 && d[r].ext_kind == limits.DX_LITERAL && d[r].b >= 0) {
             fty = fty | ((d[r].b as I32) << 8);
             if (d[r].b == 0) { fty = fty | FIELD_SCALAR_ARRAY; }
+        } else if (d[r].rank >= 2 && d[r].rank <= 4 && d[r].ext_kind == limits.DX_LITERAL &&
+                decl.row_count(d, r) > 0 && decl.row_count(d, r) <= 4096) {
+            // A field of rank 2 to 4 (BX22-06), flat as declare_struct makes it.
+            fty = fty | ((decl.row_count(d, r) as I32) << 8) | FIELD_SCALAR_ARRAY;
         } else if (d[r].rank != 0) {
             unsupported(toks, diag, ls, tk, U_STRUCT);
             return -1;
@@ -1256,7 +1312,7 @@ void declare_struct[n, t, m, nl, r](in U8[n] text, in scan.Token[t] toks, in par
             I64 aty = sem[fd].ty;
             if (resolve.is_array(aty) && !resolve.is_struct(resolve.array_elem(aty)) &&
                     !resolve.is_mem(resolve.array_elem(aty))) {
-                I64 nitems = resolve.array_extent(aty);
+                I64 nitems = resolve.field_count(aty);
                 I64 elem = resolve.array_elem(aty);
                 if (resolve.is_errset(elem)) {
                     elem = resolve.errset_under(elem);
@@ -1265,7 +1321,7 @@ void declare_struct[n, t, m, nl, r](in U8[n] text, in scan.Token[t] toks, in par
                 if (elem != fold.TY_BOOL) { bytes = fold.ty_width(elem) / 8; }
                 if (nitems >= 0 && nitems * bytes <= 4096) {
                     ty = (elem as I32) | ((nitems as I32) << 8);
-                    if (nitems == 0) { ty = ty | FIELD_SCALAR_ARRAY; }
+                    if (nitems == 0 || resolve.array_rank(aty) > 1) { ty = ty | FIELD_SCALAR_ARRAY; }
                 }
             }
         }
@@ -1550,8 +1606,8 @@ I64 find_slot[n, t](in U8[n] text, in scan.Token[t] toks, in SirFunc[_] funcs, i
         }
     }
     for g in 0..ls[0].nslot {
-        if ((slots[g].kind == SK_GLOBAL || slots[g].kind == SK_ARENA_M || slots[g].kind == SK_POOL_M) &&
-                same_name(text, toks, slots[g].name as I64, tk)) {
+        if ((slots[g].kind == SK_GLOBAL || slots[g].kind == SK_ARENA_M || slots[g].kind == SK_POOL_M ||
+                module_array(slots, g) || module_struct(slots, g)) && same_name(text, toks, slots[g].name as I64, tk)) {
             return g;
         }
     }
@@ -1636,6 +1692,90 @@ void const_value[n, t, m](in U8[n] text, in scan.Token[t] toks, in parse.Node[m]
         }
         y = nodes[c].b as I64;
         hops += 1;
+    }
+}
+
+// Gives SO_CONST node i of a wide type (box 15 unit 4) the value of constant expression x
+// when it is a literal, a negative literal, `T.min` or `T.max`, an imported constant, or a
+// name of a constant (followed through at most 64 names): its c and f (WC_*), and val. A
+// constant whose initializer is another expression has the value check.ci folded, stored in
+// the literal-value table (Sem.lit_at and lit_len of its declaration; box 15 unit 4b). False
+// otherwise: another expression, which only a module-level initializer can give here.
+Bool wide_const[n, t, m](in U8[n] text, in scan.Token[t] toks, in parse.Node[m] nodes, in resolve.Sem[_] sem,
+        in LState[_] ls, inout Sir[_] sir, I64 i, I64 x) {
+    I64 y = x;
+    I64 hops = 0;
+    I64[2] lit;
+    while (y >= 0 && hops < 64) {
+        I32 k = nodes[y].kind;
+        if (k == parse.N_LIT || k == parse.N_NEGLIT) {
+            I64 lt = nodes[y].tok as I64;
+            if (k == parse.N_NEGLIT) {
+                lt = nodes[y].c as I64;
+            }
+            if (!literal_value(text, toks, lt, lit)) {
+                return false;
+            }
+            literal_form(toks, sir, i, lt, k == parse.N_NEGLIT, lit[0]);
+            return true;
+        }
+        if (k == parse.N_TYPEPROP) {
+            I64 pt = nodes[y].c as I64;
+            sir[i].val = 0;
+            sir[i].f = 0;
+            if (spells(text, toks, pt, "min")) {
+                sir[i].c = WC_MIN;
+            } else if (spells(text, toks, pt, "max")) {
+                sir[i].c = WC_MAX;
+            } else {
+                return false;
+            }
+            return true;
+        }
+        if (k == parse.N_FIELD && (sem[y].flags & resolve.SEM_IMPORT) != 0) {
+            sir[i].c = WC_DECL;
+            sir[i].f = sem[y].lit_at as I32;
+            sir[i].val = sem[y].bits as% I64;
+            return true;
+        }
+        if (k != parse.N_NAME) {
+            return false;
+        }
+        I64 c = find_const(text, toks, nodes, ls, nodes[y].tok as I64);
+        if (c < 0) {
+            return false;
+        }
+        y = nodes[c].b as I64;
+        I32 yk = nodes[y].kind;
+        if (yk != parse.N_LIT && yk != parse.N_NEGLIT && yk != parse.N_TYPEPROP && yk != parse.N_NAME) {
+            if (sem[c].lit_at < 0) {
+                return false;
+            }
+            sir[i].c = WC_BYTES;
+            sir[i].f = sem[c].lit_at as I32;
+            sir[i].val = sem[c].lit_len;
+            return true;
+        }
+        hops += 1;
+    }
+    return false;
+}
+
+// The value of SO_CONST node i from literal token lt, negated when neg, whose value modulo
+// 2^64 is v: an integer literal's token in f (WC_LIT or WC_NEG), a character's value in val.
+void literal_form[t](in scan.Token[t] toks, inout Sir[_] sir, I64 i, I64 lt, Bool neg, I64 v) {
+    sir[i].val = v;
+    sir[i].c = WC_VAL;
+    sir[i].f = 0;
+    if (neg) {
+        sir[i].val = 0 -% v;
+    }
+    if (toks[lt].kind == scan.TK_INT) {
+        sir[i].c = WC_LIT;
+        if (neg) {
+            sir[i].c = WC_NEG;
+        }
+        sir[i].f = lt as I32;
     }
 }
 
@@ -1915,6 +2055,49 @@ I64 field_ref(in scan.Token[_] toks, inout Sir[_] sir, inout SirSlot[_] slots,
     sir[i].b = base as I32;
     sir[i].c = j as I32;
     return h;
+}
+
+// The view of an array field at place h whose checker type ty has rank 2 to 4 (BX22-06): a
+// hidden SK_NVIEW over its flat elements in row-major order (SO_VBEGIN, the extents packed
+// as a local array's), or h itself for rank 1; -1 on error.
+I64 field_view(in scan.Token[_] toks, inout Sir[_] sir, inout SirSlot[_] slots,
+        inout limits.CompilerDiag[_] diag, inout LState[_] ls, I64 h, I64 ty, I64 tk) {
+    if (h < 0 || !resolve.is_array(ty) || resolve.array_rank(ty) < 2) {
+        return h;
+    }
+    I64 rk = resolve.array_rank(ty);
+    I32 ety = array_elem(slots[h].ty);
+    I64 packed = 0;
+    for d in 0..rk {
+        packed = packed + (resolve.dim_extent(ty, d) << (12 * d));
+    }
+    I64 v = new_view(toks, slots, diag, ls, ety, rk, tk);
+    if (v < 0 || view_node(toks, sir, diag, ls, SO_VBEGIN, ety, v, h, -1, 0, packed, tk) < 0) {
+        return -1;
+    }
+    return v;
+}
+
+// The checker type of field j, of rank 2 to 4, of the struct of SK_SDECL slot s: the type of
+// its N_FIELD_DECL node when this module declares the struct, else that of argument node g
+// when its extents are static (the checker then took it as the field's); 0 otherwise.
+I64 field_shape(in parse.Node[_] nodes, in resolve.Sem[_] sem, in SirSlot[_] slots, in LState[_] ls,
+        I64 s, I64 j, I64 g) {
+    I64 x = -1;
+    if (slots[s].live == 1) { x = nodes[ls[0].root].a as I64; }
+    while (x >= 0) {
+        if (nodes[x].kind == parse.N_STRUCT && nodes[x].tok as I64 == slots[s].name as I64) {
+            I64 fd = nodes[x].a as I64;
+            for k in 0..j { fd = nodes[fd].next as I64; }
+            return sem[fd].ty;
+        }
+        x = nodes[x].next as I64;
+    }
+    I64 ty = sem[g].ty;
+    for d in 0..resolve.array_rank(ty) {
+        if (resolve.dim_extent(ty, d) < 1) { return 0; }
+    }
+    return ty;
 }
 
 // Retains the checked element's address for nested fields and whole-record copies.
@@ -2205,8 +2388,8 @@ void index_step[n, t, m, ns, s, r](in U8[n] text, in scan.Token[t] toks, in pars
     g = nodes[x].b as I64;
     while (g >= 0) {
         if (nodes[g].kind == parse.N_SLICE) {
-            I64 lo = -1;
-            I64 hi = -1;
+            I64 lo = NO_OPERAND;
+            I64 hi = NO_OPERAND;
             I64 flags = 0;
             if (nodes[g].a >= 0) {
                 lo = st[q].a as I64;
@@ -2257,8 +2440,11 @@ void index_step[n, t, m, ns, s, r](in U8[n] text, in scan.Token[t] toks, in pars
 }
 
 // Whether part j of array built-in call x (after af_skip) is an array: both of `copy` and
-// `dot`, else the last value.
+// `dot`, the first of `fill`, else the last value.
 Bool arrayfn_array(I64 id, I64 j, I64 nv) {
+    if (id == resolve.AF_FILL) {
+        return j == 0;
+    }
     return id == resolve.AF_COPY || id == resolve.AF_DOT || j == nv - 1;
 }
 
@@ -2276,11 +2462,12 @@ I64 arrayfn_skip(in parse.Node[_] nodes, in resolve.Sem[_] sem, I64 x) {
     return 0;
 }
 
-// The values of array built-in call x that are evaluated: its arrays and initial values; a
-// dimension argument of `extent` or `reverse` is a folded constant.
+// The values of array built-in call x that are evaluated: its arrays, initial values and the
+// value of `fill`; a dimension argument of `extent` or `reverse` and the extents of `reshape`
+// are folded constants.
 I64 arrayfn_values(in parse.Node[_] nodes, in resolve.Sem[_] sem, I64 x) {
     I64 id = sem[x].lit_at;
-    if (id == resolve.AF_EXTENT || id == resolve.AF_REVERSE) {
+    if (id == resolve.AF_EXTENT || id == resolve.AF_REVERSE || id == resolve.AF_RESHAPE) {
         return 1;
     }
     I64 nv = 0;
@@ -2312,10 +2499,12 @@ I64 reduce_op(in resolve.Sem[_] sem, I64 x) {
 }
 
 // A call of an array built-in (SEM_ARRAYFN; SPEC-04 LS-70, LS-145; rulings R4 to R6), frame
-// f as index_step's: its values in written order, arrays as views and initial values of
-// the element type; then `len`, `extent` and `size` as SO_VEXT, `transpose` and `reverse`
-// as a hidden view (SO_VTRANS, SO_VREV), `copy` as SO_VCOPY at the callee, a reduction as
-// SO_REDUCE at the callee (its fault position, the operation's identifier).
+// f as index_step's: its values in written order, arrays as views and initial values and
+// the value of `fill` of the element type; then `len`, `extent` and `size` as SO_VEXT,
+// `transpose`, `reverse` and `reshape` as a hidden view (SO_VTRANS, SO_VREV, SO_VRESHAPE),
+// `copy` as SO_VCOPY and `fill` as SO_VFILL at the callee, a reduction as SO_REDUCE at the
+// callee (its fault position, the operation's identifier). An array of structs is C9102
+// (U_VIEW) for each, `fill`'s before its value.
 void arrayfn_step[n, t, m, ns, s, r](in U8[n] text, in scan.Token[t] toks, in parse.Node[m] nodes,
         in resolve.Sem[_] sem, inout Sir[ns] sir, in SirFunc[_] funcs, inout SirSlot[_] slots, inout parse.Frame[s] st,
         inout limits.CompilerDiag[r] diag, inout LState[_] ls, I64 f) {
@@ -2336,16 +2525,31 @@ void arrayfn_step[n, t, m, ns, s, r](in U8[n] text, in scan.Token[t] toks, in pa
     }
     I64 j = st[at].g as I64;
     I64 nv = arrayfn_values(nodes, sem, x);
+    if (id == resolve.AF_FILL && j == 1 && view_value(toks, slots, diag, ls, st[at - 1].a as I64, tk) < 0) {
+        return;
+    }
     if (j < nv) {
-        I32 w = sem[x].opty as I32;
-        if (arrayfn_array(id, j, nv)) {
-            w = VIEW_ANY << 8;
+        I32 w = VIEW_ANY << 8;
+        if (!arrayfn_array(id, j, nv)) {
+            w = sem[x].opty as I32;
         }
         _ = push(toks, st, diag, ls, K_EXPR, call_arg(nodes, x, j + arrayfn_skip(nodes, sem, x)), w, tk);
         return;
     }
     I64 v0 = at - j;
     I64 first = st[at].c as I64;
+    if (id == resolve.AF_FILL) {
+        I64 fk = view_value(toks, slots, diag, ls, st[v0].a as I64, tk);
+        I64 fv = st[v0 + 1].a as I64;
+        ls[0].sp = v0 + 1;
+        if (fk < 0 || !lease_check(toks, sir, slots, diag, ls, fk, tk)) {
+            return;
+        }
+        I64 i = view_node(toks, sir, diag, ls, SO_VFILL, array_elem(slots[fk].ty), fk, fv, -1, 0, 0, tk);
+        site(sir, ls, i);
+        give(ls, i, T_NONE, first, ls[0].nsir);
+        return;
+    }
     I64 k = view_value(toks, slots, diag, ls, st[at - 1].a as I64, tk);
     if (k < 0) {
         return;
@@ -2385,6 +2589,26 @@ void arrayfn_step[n, t, m, ns, s, r](in U8[n] text, in scan.Token[t] toks, in pa
         give(ls, VIEW_ARG - h, slots[h].ty, first, ls[0].nsir);
         return;
     }
+    if (id == resolve.AF_RESHAPE) {
+        if (leased(slots, ls[0].nslot, k)) {
+            unsupported(toks, diag, ls, tk, U_MEMORY);
+            return;
+        }
+        I64 rank = 0;
+        I64 packed = 0;
+        I64 g = nodes[nodes[x].b as I64].next as I64;
+        while (g >= 0) {
+            packed = packed | ((sem[g].bits as% I64) << (16 * rank));
+            rank += 1;
+            g = nodes[g].next as I64;
+        }
+        I64 h = new_view(toks, slots, diag, ls, ety, rank, tk);
+        if (view_node(toks, sir, diag, ls, SO_VRESHAPE, ety, h, k, -1, rank, packed, tk) < 0) {
+            return;
+        }
+        give(ls, VIEW_ARG - h, slots[h].ty, first, ls[0].nsir);
+        return;
+    }
     if (id == resolve.AF_COPY) {
         I64 dk = view_value(toks, slots, diag, ls, st[v0].a as I64, tk);
         if (dk < 0 || !lease_check(toks, sir, slots, diag, ls, dk, tk) || !lease_check(toks, sir, slots, diag, ls, k, tk)) {
@@ -2401,7 +2625,7 @@ void arrayfn_step[n, t, m, ns, s, r](in U8[n] text, in scan.Token[t] toks, in pa
         return;
     }
     I64 ys = -1;
-    I64 init = -1;
+    I64 init = NO_OPERAND;
     if (id == resolve.AF_DOT) {
         ys = k;
         k = view_value(toks, slots, diag, ls, st[v0].a as I64, tk);
@@ -2469,10 +2693,60 @@ void kernel_bin_step[t, ns, r](in scan.Token[t] toks, inout Sir[ns] sir, in SirF
 
 // ---------------------------------------------------------------- box 12 memory steps
 
+// Whether type ty is a struct that holds a field of rank 2 to 4 (BX22-06), directly or in a
+// struct field at any depth, whose shape the element type of an arena or a pool would need
+// (SPEC-03 A-20); C9102 there until the type writers take it. The walk visits each struct
+// once and keeps its state in the struct slots, as back_c.mem_walk does: an open struct's
+// kind is -3 minus its parent (-2 for the first), its `live` the next field, and its first
+// field's kind keeps the struct's `live`; a completed one's kind is -1. It stops at the first
+// such field, then restores the slots.
+Bool reaches_shaped(inout SirSlot[_] slots, in LState[_] ls, I32 ty) {
+    if (ty < T_STRUCT || field_array(ty)) {
+        return false;
+    }
+    Bool found = false;
+    I64 current = (ty - T_STRUCT) as I64;
+    slots[current + 1].kind = slots[current].live;
+    slots[current].live = 0;
+    slots[current].kind = -2;
+    while (current >= 0 && !found) {
+        I64 cursor = slots[current].live as I64;
+        if (cursor < slots[current].ty as I64) {
+            slots[current].live += 1;
+            I32 dep = slots[current + 1 + cursor].ty;
+            found = field_shaped(dep);
+            if (dep >= T_STRUCT) {
+                if (field_array(dep)) { dep = array_elem(dep); }
+                I64 child = (dep - T_STRUCT) as I64;
+                if (slots[child].kind == SK_SDECL) {
+                    slots[child + 1].kind = slots[child].live;
+                    slots[child].live = 0;
+                    slots[child].kind = (-3 - current) as I32;
+                    current = child;
+                }
+            }
+            continue;
+        }
+        I64 parent = -3 - (slots[current].kind as I64);
+        slots[current].kind = -1;
+        current = parent;
+    }
+    I64 k = 0;
+    while (k < ls[0].nslot && (slots[k].kind == SK_SDECL || slots[k].kind < 0)) {
+        if (slots[k].kind < 0) {
+            slots[k].live = slots[k + 1].kind;
+            slots[k + 1].kind = SK_FIELD;
+            slots[k].kind = SK_SDECL;
+        }
+        k += 1 + (slots[k].ty as I64);
+    }
+    return found;
+}
+
 // Box 12: the module-level arenas and pools in declaration order (SK_ARENA_M, SK_POOL_M), a
 // script's too (SPEC-03 M-13, M-20). B1 gives them to the root module only, of a scalar or
-// struct element and a capacity of at most 2^31 - 1 elements; else C9102 (U_MEMORY;
-// compiler/OPEN.md CINTC-OQ-64).
+// struct element (one that reaches no field of rank 2 to 4, reaches_shaped) and a capacity
+// of at most 2^31 - 1 elements; else C9102 (U_MEMORY; compiler/OPEN.md CINTC-OQ-64).
 void declare_memories[n, t, m, r](in U8[n] text, in scan.Token[t] toks, in parse.Node[m] nodes, in resolve.Sem[_] sem,
         inout SirSlot[_] slots, inout limits.CompilerDiag[r] diag, inout LState[_] ls, I64 root, Bool is_root) {
     I64 x = nodes[root].a as I64;
@@ -2482,7 +2756,7 @@ void declare_memories[n, t, m, r](in U8[n] text, in scan.Token[t] toks, in parse
             I64 tn = nodes[x].a as I64;
             I64 cap = sem[nodes[tn].c as I64].bits as% I64;
             I32 ety = mem_slot_elem(text, toks, nodes, slots, ls, tn, sem[x].ty);
-            if (!is_root || ety == T_NONE || cap < 0 || cap > 2147483647) {
+            if (!is_root || ety == T_NONE || cap < 0 || cap > 2147483647 || reaches_shaped(slots, ls, ety)) {
                 unsupported(toks, diag, ls, tk, U_MEMORY);
                 return;
             }
@@ -2805,6 +3079,11 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
             if (want != T_NONE) {
                 sir[i].val = wrap_to(want, lit[0]);
             }
+            if (want == T_NONE || is_wide(want)) {
+                // The literal's token, for a wide type here or when settle gives it one.
+                literal_form(toks, sir, i, lt, kind == parse.N_NEGLIT, 0);
+                sir[i].val = lit[0];
+            }
             give(ls, i, want, i, i + 1);
         case parse.N_BOOL:
             I64 i = def_sir(toks, sir, diag, ls, SO_CONST, T_BOOL, tk);
@@ -2860,6 +3139,18 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
                 unsupported(toks, diag, ls, tk, U_TYPE);
                 return;
             }
+            if (is_wide(cty)) {
+                I64 i = def_sir(toks, sir, diag, ls, SO_CONST, cty, tk);
+                if (i < 0) {
+                    return;
+                }
+                if (!wide_const(text, toks, nodes, sem, ls, sir, i, x)) {
+                    unsupported(toks, diag, ls, tk, U_EXPRESSION);
+                    return;
+                }
+                give(ls, i, cty, i, i + 1);
+                return;
+            }
             const_value(text, toks, nodes, ls, nodes[c].b as I64, lit);
             if (lit[1] == 0 && in_kernel(funcs, ls)) {
                 // In a kernel the checker's folded value, so that no step is counted (IM-113).
@@ -2901,6 +3192,10 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
                 return;
             }
             sir[i].val = lit[0];
+            if (is_wide(pty) && !wide_const(text, toks, nodes, sem, ls, sir, i, x)) {
+                unsupported(toks, diag, ls, tk, U_EXPRESSION);
+                return;
+            }
             give(ls, i, pty, i, i + 1);
         case parse.N_STRING:
             if (want <= 255 || array_elem(want) != T_U8) {
@@ -2914,6 +3209,12 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
             sir[sd].f = nodes[x].op;
             sir[sd].c = resolve.string_length(text, toks, tk, nodes[x].op as I64) as I32;
             give(ls, STR_ARG - sd, want, sd, sd + 1);
+        case parse.N_ARRAY:
+            if (want <= 255) {
+                unsupported(toks, diag, ls, tk, U_VIEW);
+                return;
+            }
+            literal_step(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, f, want);
         case parse.N_FIELD:
             if (nodes[nodes[x].a as I64].kind == parse.N_INDEX &&
                     nodes[nodes[nodes[x].a as I64].a as I64].kind == parse.N_NAME &&
@@ -2948,9 +3249,10 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
                     sir[er].a = base as I32;
                     sir[er].b = ek as I32;
                     sir[er].c = ev as I32;
-                    I64 h = field_ref(toks, sir, slots, diag, ls, base, ej, tk);
+                    I64 h = field_view(toks, sir, slots, diag, ls, field_ref(toks, sir, slots, diag, ls, base, ej, tk),
+                        sem[x].ty, tk);
                     if (h < 0) { return; }
-                    give(ls, VIEW_ARG - h, efty, efirst, ls[0].nsir);
+                    give(ls, VIEW_ARG - h, slots[h].ty, efirst, ls[0].nsir);
                     return;
                 }
                 I64 ei = def_sir(toks, sir, diag, ls, SO_EFLOAD, efty, tk);
@@ -2991,6 +3293,12 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
                     return;
                 }
                 sir[ci].val = wrap_to(ity, bits as% I64);
+                if (is_wide(ity)) {
+                    // Its limbs are in its record's limb rows (CINTC-16; box 15 unit 4b).
+                    sir[ci].c = WC_DECL;
+                    sir[ci].f = funcs[ic].entry;
+                    sir[ci].val = bits as% I64;
+                }
                 give(ls, ci, ity, ci, ci + 1);
                 return;
             }
@@ -3016,9 +3324,10 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
             I64 j = field_index(text, toks, slots, slots[sk].ty, tk);
             I32 fty = field_type(slots, slots[sk].ty, j);
             if (field_array(fty)) {
-                I64 h = field_ref(toks, sir, slots, diag, ls, sk, j, tk);
+                I64 h = field_view(toks, sir, slots, diag, ls, field_ref(toks, sir, slots, diag, ls, sk, j, tk),
+                    sem[x].ty, tk);
                 if (h < 0) { return; }
-                give(ls, VIEW_ARG - h, fty, bfirst, ls[0].nsir);
+                give(ls, VIEW_ARG - h, slots[h].ty, bfirst, ls[0].nsir);
                 return;
             }
             if (fty >= T_STRUCT && want == fty && !place) {
@@ -3312,6 +3621,11 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
                     return;
                 }
                 sir[i].val = wrap_to(to, lit[0]);
+                if (is_wide(to)) {
+                    // Its value modulo 2^w (`as%`; the checker has decided `as`).
+                    literal_form(toks, sir, i, lt, nodes[a].kind == parse.N_NEGLIT, 0);
+                    sir[i].val = lit[0];
+                }
                 // Inside a dispatch the conversion of a literal is a counted step (IM-113).
                 kernel_step(toks, sir, funcs, diag, ls, tk);
                 give(ls, i, to, i, i + 1);
@@ -3563,6 +3877,10 @@ void constructor_step[s](in U8[_] text, in scan.Token[_] toks, in parse.Node[_] 
         st[f].c = fty;
         st[f].d = nodes[st[sp].b as I64].tok;
         st[f].e = -1;
+        // The argument's node, whose checker type gives the shape of a field of rank 2 to 4
+        // of an imported struct (field_shape).
+        st[f].f = st[sp].b;
+        if (nodes[st[f].f as I64].kind == parse.N_NAMEDARG) { st[f].f = nodes[st[f].f as I64].a; }
         ls[0].sp = sp + 1;
         at = sp;
         st[at].g += 1;
@@ -3586,10 +3904,25 @@ void constructor_step[s](in U8[_] text, in scan.Token[_] toks, in parse.Node[_] 
                 tmp = st[v].c; st[v].c = st[to].c; st[to].c = tmp;
                 tmp = st[v].d; st[v].d = st[to].d; st[to].d = tmp;
                 tmp = st[v].e; st[v].e = st[to].e; st[to].e = tmp;
+                tmp = st[v].f; st[v].f = st[to].f; st[to].f = tmp;
                 swaps += 1;
             }
         }
         for v in at - saved..at {
+            if (field_shaped(st[v].c)) {
+                // A field of rank 2 to 4 (BX22-06): copy.shape per dimension and the copy
+                // into its view, here so the shapes are checked in declaration order.
+                I64 shape = field_shape(nodes, sem, slots, ls, (ty - T_STRUCT) as I64, st[v].b as I64,
+                    st[v].f as I64);
+                if (shape == 0) {
+                    unsupported(toks, diag, ls, st[v].d as I64, U_STRUCT); return;
+                }
+                I64 fv = field_view(toks, sir, slots, diag, ls, field_ref(toks, sir, slots, diag, ls,
+                    st[at].a as I64, st[v].b as I64, tk), shape, tk);
+                if (fv < 0) { return; }
+                array_copy(toks, sir, slots, diag, ls, fv, st[v].a as I64, tk);
+                continue;
+            }
             if (field_array(st[v].c) && slot_extent(slots, st[v].a as I64) < 0) {
                 I64 sh = add_sir(toks, sir, diag, ls, SO_COPY_SHAPE, T_NONE, tk);
                 if (sh < 0) { return; }
@@ -3602,6 +3935,7 @@ void constructor_step[s](in U8[_] text, in scan.Token[_] toks, in parse.Node[_] 
             }
         }
         for v in at - saved..at {
+            if (field_shaped(st[v].c)) { continue; }
             I32 op = SO_FSTORE;
             if (st[v].c >= T_STRUCT) { op = SO_FSCOPY; }
             if (field_array(st[v].c)) { op = SO_FACOPY; }
@@ -3725,6 +4059,10 @@ void cond_step[t, m, ns, r](in scan.Token[t] toks, in parse.Node[m] nodes, in re
 // whose SO_SDATA node is i is STR_ARG - i.
 const I64 VIEW_ARG = -1073741824;
 const I64 STR_ARG = -1879048192;
+
+// The b or c of SO_VSLICE (a bound not written) and the c of SO_REDUCE (no initial value):
+// an operand is a node (0 or more) or parameter p (-1 - p), so -1 would name parameter 0.
+export const I64 NO_OPERAND = -2147483648;
 
 // The static extent of view argument value v, or -1.
 I64 arg_extent(in Sir[_] sir, in SirSlot[_] slots, I64 v) {
@@ -3957,10 +4295,12 @@ void call_step[n, t, m, ns, s, r](in U8[n] text, in scan.Token[t] toks, in parse
                 nodes[arg].kind != parse.N_NAME &&
                 !((nodes[arg].kind == parse.N_FIELD || nodes[arg].kind == parse.N_INDEX) &&
                 (slots[p0 + k].kind == SK_SPARAM || slots[p0 + k].kind == SK_SREF)) &&
-                !(nodes[arg].kind == parse.N_FIELD && slots[p0 + k].kind == SK_VIEW) &&
+                !(nodes[arg].kind == parse.N_FIELD && (slots[p0 + k].kind == SK_VIEW ||
+                (slots[p0 + k].kind == SK_NVIEW && resolve.is_array(sem[arg].ty)))) &&
                 !(nodes[arg].kind == parse.N_CALL && slots[p0 + k].kind == SK_SPARAM) &&
                 !(nodes[arg].kind == parse.N_STRING && slots[p0 + k].kind == SK_VIEW &&
-                array_elem(slots[p0 + k].ty) == T_U8)) {
+                array_elem(slots[p0 + k].ty) == T_U8) &&
+                !(nodes[arg].kind == parse.N_ARRAY && (slots[p0 + k].kind == SK_VIEW || slots[p0 + k].kind == SK_NVIEW))) {
             unsupported(toks, diag, ls, nodes[arg].tok as I64, U_VIEW);
             return;
         }
@@ -5876,6 +6216,127 @@ void literal_items[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in pars
     }
 }
 
+// Row cursor d (0 to 3) of the array literal of frame f (literal_step): frame fields e to h.
+I64 lit_row(in parse.Frame[_] st, I64 f, I64 d) {
+    if (d == 0) {
+        return st[f].e as I64;
+    } else if (d == 1) {
+        return st[f].f as I64;
+    } else if (d == 2) {
+        return st[f].g as I64;
+    }
+    return st[f].h as I64;
+}
+
+void set_lit_row(inout parse.Frame[_] st, I64 f, I64 d, I64 g) {
+    if (d == 0) {
+        st[f].e = g as I32;
+    } else if (d == 1) {
+        st[f].f = g as I32;
+    } else if (d == 2) {
+        st[f].g = g as I32;
+    } else {
+        st[f].h = g as I32;
+    }
+}
+
+// One step of array literal x, the argument of a view parameter (SPEC-04 LS-66), in frame f: a
+// hidden local array of the literal's extents (SO_LOCAL; slot a), the hidden SK_NVIEW of a
+// literal of rank 2 to 4 (SO_VBEGIN; slot b), then each item depth first (its rows in e to h)
+// and its store into element c (SO_AINIT), as literal_items stores an initializer's; then the
+// array, given as a named array is (VIEW_ARG - b) from node d. It charges the frame arena
+// nothing, as `cint_ref` _arraylit charges none; more than 4,096 bytes of elements, or struct
+// elements, are C9102 (U_VIEW).
+void literal_step[n, t, m, ns, nl, r](in U8[n] text, in scan.Token[t] toks, in parse.Node[m] nodes,
+        in resolve.Sem[_] sem, inout Sir[ns] sir, in SirFunc[_] funcs, inout SirSlot[nl] slots, inout parse.Frame[_] st,
+        inout limits.CompilerDiag[r] diag, inout LState[_] ls, I64 f, I32 want) {
+    I64 x = st[f].node as I64;
+    I64 tk = nodes[x].tok as I64;
+    I64 ty = sem[x].ty;
+    I64 rk = resolve.array_rank(ty);
+    if (resolve.is_struct(slot_elem(ty))) {
+        // Struct elements (U_VIEW), refused before their type is narrowed to ety.
+        unsupported(toks, diag, ls, tk, U_VIEW);
+        return;
+    }
+    I32 ety = slot_elem(ty) as I32;
+    I64 g = x;
+    if (st[f].state == 0) {
+        I64 total = 1;
+        I64 packed = 0;
+        for d in 0..rk {
+            I64 e = resolve.dim_extent(ty, d);
+            total = total * e;
+            packed = packed + (e << (12 * d));
+            if (total > 4096) {
+                total = 4097;
+            }
+        }
+        I64 bytes = 1;
+        if (ety != T_BOOL) {
+            bytes = fold.ty_width(ety as I64) / 8;
+        }
+        if (!resolve.is_array(ty) || total * bytes > 4096) {
+            unsupported(toks, diag, ls, tk, U_VIEW);
+            return;
+        }
+        st[f].d = ls[0].nsir as I32;
+        I64 flat = add_slot(toks, slots, diag, ls, -1, ety | ((total as I32) << 8), SK_ARRAY, tk);
+        I64 da = add_sir(toks, sir, diag, ls, SO_LOCAL, ety | ((total as I32) << 8), tk);
+        if (da < 0) {
+            return;
+        }
+        sir[da].a = flat as I32;
+        I64 k = flat;
+        if (rk > 1) {
+            k = add_slot(toks, slots, diag, ls, -1, ety | ((rk as I32) << 8), SK_NVIEW, tk);
+            if (view_node(toks, sir, diag, ls, SO_VBEGIN, ety, k, flat, -1, 0, packed, tk) < 0) {
+                return;
+            }
+        }
+        st[f].state = 1;
+        st[f].a = flat as I32;
+        st[f].b = k as I32;
+        st[f].c = 0;
+        for d in 0..rk {
+            if (g >= 0) {
+                g = nodes[g].a as I64;
+            }
+            set_lit_row(st, f, d, g);
+        }
+    } else {
+        // An item is lowered: its store, then the next item, depth first.
+        if (ls[0].rty == T_NONE as I64 && (ls[0].rv < 0 || sir[ls[0].rv].dst >= 0)) {
+            settle(sir, ls[0].rfirst, ls[0].rend, ety);
+            ls[0].rty = ety as I64;
+        }
+        I64 d = rk - 1;
+        g = lit_row(st, f, d);
+        if (view_node(toks, sir, diag, ls, SO_AINIT, ety, st[f].a as I64, ls[0].rv, -1, 0, st[f].c as I64,
+                nodes[g].tok as I64) < 0) {
+            return;
+        }
+        st[f].c += 1;
+        g = nodes[g].next as I64;
+        set_lit_row(st, f, d, g);
+        while (g < 0 && d > 0) {
+            d -= 1;
+            g = nodes[lit_row(st, f, d)].next as I64;
+            set_lit_row(st, f, d, g);
+        }
+        while (g >= 0 && d < rk - 1) {
+            d += 1;
+            g = nodes[g].a as I64;
+            set_lit_row(st, f, d, g);
+        }
+    }
+    if (g >= 0) {
+        _ = push(toks, st, diag, ls, K_EXPR, g, ety, nodes[g].tok as I64);
+        return;
+    }
+    give(ls, VIEW_ARG - (st[f].b as I64), want, st[f].d as I64, ls[0].nsir);
+}
+
 // A local array of box 09 (box09_local; SPEC-04 LS-62 to LS-67, ruling R10), declaration x
 // at its name tk. Static extents of at most 4,096 bytes of elements (EMIT-30): its charge to
 // the frame arena (SO_FRAME), then an SK_ARRAY of rank 1, or a hidden flat SK_ARRAY and the
@@ -6002,11 +6463,11 @@ void lower_view_var[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in par
         inout limits.CompilerDiag[r] diag, inout LState[_] ls, I64 x) {
     I64 tk = nodes[x].tok as I64;
     I64 ty = sem[x].ty;
-    I32 ety = slot_elem(ty) as I32;
-    if (!resolve.is_array(ty) || resolve.is_struct(ety as I64) || nodes[x].b < 0) {
+    if (!resolve.is_array(ty) || resolve.is_struct(slot_elem(ty)) || nodes[x].b < 0) {
         unsupported(toks, diag, ls, tk, U_VIEW);
         return;
     }
+    I32 ety = slot_elem(ty) as I32;
     I64 init = nodes[x].b as I64;
     if (!lower_expr(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, init, ety | (VIEW_ANY << 8))) {
         return;
@@ -6059,7 +6520,8 @@ void lower_view_assign[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in 
 
 // An assignment to an element on the view path (general_index): the place with its checks
 // (index_step with want W_ELEMENT), then, for a compound assignment, the element's load,
-// the value and the operation, else the value; then SO_ESTORE.
+// the value and the operation, else the value; then SO_ESTORE. A struct element (of an arena
+// allocation) is a place (SO_EREF) that the value is copied into.
 void lower_view_element[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.Node[m] nodes,
         in resolve.Sem[_] sem, inout Sir[ns] sir, in SirFunc[_] funcs, inout SirSlot[_] slots, inout parse.Frame[_] st,
         inout limits.CompilerDiag[r] diag, inout LState[_] ls, I64 x) {
@@ -6069,6 +6531,18 @@ void lower_view_element[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in
         return;
     }
     I64 iv = ls[0].rv;
+    if (iv <= VIEW_ARG && iv > STR_ARG) {
+        I64 h = VIEW_ARG - iv;
+        if (nodes[x].kind != parse.N_ASSIGN || nodes[x].op != scan.OP_ASSIGN) {
+            unsupported(toks, diag, ls, tk, U_STRUCT);
+            return;
+        }
+        I64 src = struct_value(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, nodes[x].b as I64, slots[h].ty);
+        if (src >= 0) {
+            scopy(toks, sir, diag, ls, h, src, tk);
+        }
+        return;
+    }
     I64 k = ls[0].rend;
     I32 ty = array_elem(slots[k].ty);
     I32 op = nodes[x].op;
@@ -6435,7 +6909,8 @@ void lower_field_assign[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in
             sir[er].b = k as I32;
             sir[er].c = iv as I32;
         }
-        I64 h = field_ref(toks, sir, slots, diag, ls, base, j, nodes[target].tok as I64);
+        I64 h = field_view(toks, sir, slots, diag, ls, field_ref(toks, sir, slots, diag, ls, base, j,
+            nodes[target].tok as I64), sem[target].ty, nodes[target].tok as I64);
         if (h < 0) { return; }
         array_assign(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, h, nodes[x].b as I64, tk);
         return;
@@ -7373,7 +7848,7 @@ Bool view_writable(in Sir[_] sir, in SirFunc[_] funcs, in SirSlot[_] slots, in L
         I64 i = ls[0].nsir - 1;
         while (i >= funcs[fn].first as I64 && src < 0) {
             I32 op = sir[i].op & OP_MASK;
-            if ((op == SO_VBEGIN || op == SO_VTRANS || op == SO_VREV) && sir[i].a as I64 == k) {
+            if ((op == SO_VBEGIN || op == SO_VTRANS || op == SO_VREV || op == SO_VRESHAPE) && sir[i].a as I64 == k) {
                 if (sir[i].e == 2) {
                     return false;
                 }
@@ -8176,7 +8651,8 @@ void declare_func[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in parse
             if (resolve.is_handle(resolve.union_value(sem[x].ty))) {
                 result = T_HANDLE;
             }
-            if (result == T_NONE) {
+            if (result == T_NONE || is_wide(result)) {
+                // A wide value in an error union is not lowered yet (box 15 unit 4).
                 unsupported(toks, diag, ls, nodes[nodes[x].a as I64].tok as I64, U_TYPE);
                 return;
             }
@@ -8200,6 +8676,13 @@ void declare_func[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in parse
         }
     }
     Bool exported = (nodes[x].flags & parse.F_EXPORT) != 0;
+    if (exported && root && is_wide(result)) {
+        // An entry's wide result has no observer, wrapper or reflection form yet (box 15
+        // unit 4; compiler/OPEN.md CINTC-OQ-15). An export of another module needs none: it
+        // has no wrapper or reflection form, and no observer entry (box 15 unit 4c).
+        unsupported(toks, diag, ls, nodes[nodes[x].a as I64].tok as I64, U_TYPE);
+        return;
+    }
     if ((exported || !root) && result == T_HANDLE) {
         // An entry's handle has no observer or wrapper form, and B1 gives memory to the root
         // module only (box 12; CINTC-OQ-64).
@@ -8256,6 +8739,16 @@ void declare_func[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in parse
         }
         I32 ty = decl_type(toks, nodes, sem, nodes[p].a as I64, p);
         I32 kind = SK_PARAM;
+        if (exported && (is_wide(ty) || (resolve.is_array(sem[p].ty) &&
+                fold.ty_wide(resolve.array_elem(sem[p].ty))))) {
+            // Nor has an entry's wide parameter (box 15 unit 4); another module's export
+            // takes one, without an observer entry (unit 4c).
+            if (root) {
+                unsupported(toks, diag, ls, nodes[p].tok as I64, U_TYPE);
+                return;
+            }
+            aggregate = true;
+        }
         // An error-set parameter has no observer argument form yet (box 12).
         aggregate = aggregate || resolve.is_errset(sem[p].ty);
         if (ty == T_NONE && nodes[p].b < 0 && (nodes[p].op == 0 || nodes[p].op == scan.KW_IN)) {
@@ -8319,7 +8812,8 @@ void declare_func[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in parse
     }
     if ((nodes[x].flags & parse.F_EXPORT) != 0) {
         funcs[k].flags = FN_EXPORT | FN_OBSERVE;
-        if (funcs[k].nparam > 16 || aggregate || result >= T_STRUCT || resolve.is_errset(sem[x].ty)) {
+        if (funcs[k].nparam > 16 || aggregate || result >= T_STRUCT || is_wide(result) ||
+                resolve.is_errset(sem[x].ty)) {
             funcs[k].flags = FN_EXPORT;
         }
     }
@@ -8497,6 +8991,7 @@ void lower_func[t, m, ns, nf, r](inout U8[_] text, in scan.Token[t] toks, in par
         site(sir, ls, c);
         funcs[k].entry = sir[c].site;
     }
+    module_views(text, toks, nodes, sem, sir, slots, diag, ls, x);
     lower_stmts(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, x);
     for i in (funcs[k].first as I64)..ls[0].nsir {
         if ((sir[i].op & OP_MASK) == SO_VALLOC) {
@@ -8508,19 +9003,90 @@ void lower_func[t, m, ns, nf, r](inout U8[_] text, in scan.Token[t] toks, in par
     funcs[k].ntemp = ls[0].temps as I32;
 }
 
+// The views of the module-level arrays of rank 2 to 4 that body x of a function names (box 13
+// MLA): for each, an SK_NVIEW of the array's name over its flat slot (SO_VBEGIN, its extents
+// packed as declare_array_global packs them), which find_slot finds before the module's
+// slot. A body names an array when a token up to the `}` that closes it is the array's name
+// (a parameter or a local of that name is C3001). Bound: O(a * (n + s)) for a such arrays,
+// n tokens of the body and s slots.
+void module_views[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.Node[m] nodes, in resolve.Sem[_] sem,
+        inout Sir[ns] sir, inout SirSlot[_] slots, inout limits.CompilerDiag[r] diag, inout LState[_] ls, I64 x) {
+    if (ls[0].script != 0 || x < 0 || nodes[x].kind != parse.N_BLOCK) {
+        return;
+    }
+    I64 open = nodes[x].tok as I64;
+    I64 y = nodes[ls[0].root].a as I64;
+    while (y >= 0 && ls[0].err == 0) {
+        I64 tk = nodes[y].tok as I64;
+        I64 g = -1;
+        if (nodes[y].kind == parse.N_VAR && (nodes[y].flags & parse.F_CONST) == 0 && !resolve.is_memory_decl(nodes, y) &&
+                resolve.is_array(sem[y].ty) && resolve.array_rank(sem[y].ty) > 1 && body_names(text, toks, open, tk)) {
+            for q in 0..ls[0].nslot {
+                if (module_array(slots, q) && (slots[q].name as I64) == tk) {
+                    g = q;
+                }
+            }
+        }
+        if (g >= 0) {
+            I64 ty = sem[y].ty;
+            I64 rk = resolve.array_rank(ty);
+            I64 packed = 0;
+            for d in 0..rk {
+                packed = packed + (resolve.dim_extent(ty, d) << (12 * d));
+            }
+            I32 ety = array_elem(slots[g].ty);
+            I64 v = add_slot(toks, slots, diag, ls, tk, ety | ((rk as I32) << 8), SK_NVIEW, open);
+            if (v < 0 || view_node(toks, sir, diag, ls, SO_VBEGIN, ety, v, g, -1, 0, packed, open) < 0) {
+                return;
+            }
+        }
+        y = nodes[y].next as I64;
+    }
+}
+
+// Whether an identifier token after `{` token open, up to the `}` that closes it, is the
+// name of token tk.
+Bool body_names[n, t](in U8[n] text, in scan.Token[t] toks, I64 open, I64 tk) {
+    I64 depth = 1;
+    I64 j = open + 1;
+    while (j < t && depth > 0 && toks[j].kind != scan.TK_EOF) {
+        if (toks[j].kind == scan.TK_OP && toks[j].sub == scan.OP_LBRACE) {
+            depth += 1;
+        } else if (toks[j].kind == scan.TK_OP && toks[j].sub == scan.OP_RBRACE) {
+            depth -= 1;
+        } else if (toks[j].kind == scan.TK_IDENT && same_name(text, toks, j, tk)) {
+            return true;
+        }
+        j += 1;
+    }
+    return false;
+}
+
 // The module state of an importable module (SK_GLOBAL): one slot per module-level
 // variable, in declaration order, and its initial value, the checker's folded initializer
-// or the type's zero (LS-113). A variable of a type other than a scalar is C9102
-// U_MODULE_STATE.
-void declare_globals[t, m, ns, r](in scan.Token[t] toks, in parse.Node[m] nodes, in resolve.Sem[_] sem,
-        inout Sir[ns] sir, inout SirSlot[_] slots, inout limits.CompilerDiag[r] diag, inout LState[_] ls,
-        I64 root) {
+// or the type's zero (LS-113). A Handle variable of the root module (OQ-242) starts as the
+// null handle; in another module it is C9102 U_MEMORY. A variable of a type other than a
+// scalar, a Handle, a module-level array or (box 15) a struct is C9102 U_MODULE_STATE.
+void declare_globals[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.Node[m] nodes,
+        in resolve.Sem[_] sem, inout Sir[ns] sir, inout SirSlot[_] slots, inout limits.CompilerDiag[r] diag,
+        inout LState[_] ls, I64 root, Bool is_root) {
     I64 x = nodes[root].a as I64;
     while (x >= 0 && ls[0].err == 0) {
-        if (nodes[x].kind == parse.N_VAR && (nodes[x].flags & parse.F_CONST) == 0 && !resolve.is_memory_decl(nodes, x)) {
+        if (nodes[x].kind == parse.N_VAR && (nodes[x].flags & parse.F_CONST) == 0 && !resolve.is_memory_decl(nodes, x) &&
+                resolve.is_array(sem[x].ty)) {
+            declare_array_global(text, toks, nodes, sem, sir, slots, diag, ls, x);
+        } else if (nodes[x].kind == parse.N_VAR && (nodes[x].flags & parse.F_CONST) == 0 &&
+                !resolve.is_memory_decl(nodes, x) && resolve.is_struct(sem[x].ty)) {
+            declare_struct_global(text, toks, nodes, sem, sir, slots, diag, ls, x);
+        } else if (nodes[x].kind == parse.N_VAR && (nodes[x].flags & parse.F_CONST) == 0 &&
+                !resolve.is_memory_decl(nodes, x)) {
             I64 tk = nodes[x].tok as I64;
             I32 ty = decl_type(toks, nodes, sem, nodes[x].a as I64, x);
-            if (ty == T_NONE || ty > T_U64) {
+            if (ty == T_HANDLE && !is_root) {
+                unsupported(toks, diag, ls, tk, U_MEMORY);
+                return;
+            }
+            if (ty == T_NONE || (ty != T_BOOL && !is_int(ty) && ty != T_HANDLE)) {
                 unsupported(toks, diag, ls, tk, U_MODULE_STATE);
                 return;
             }
@@ -8530,12 +9096,294 @@ void declare_globals[t, m, ns, r](in scan.Token[t] toks, in parse.Node[m] nodes,
                 return;
             }
             sir[c].a = k as I32;
-            if (nodes[x].b >= 0) {
+            if (nodes[x].b >= 0 && ty != T_HANDLE) {
                 sir[c].val = wrap_to(ty, sem[nodes[x].b as I64].bits as% I64);
+                if (is_wide(ty) && !wide_const(text, toks, nodes, sem, ls, sir, c, nodes[x].b as I64)) {
+                    // A composite initializer: its value, which check.ci kept (box 15 unit 4b).
+                    if (sem[x].lit_at < 0) {
+                        unsupported(toks, diag, ls, tk, U_EXPRESSION);
+                        return;
+                    }
+                    sir[c].c = WC_BYTES;
+                    sir[c].f = sem[x].lit_at as I32;
+                    sir[c].val = sem[x].lit_len;
+                }
             }
         }
         x = nodes[x].next as I64;
     }
+}
+
+// A module-level array (box 13 MLA; SPEC-04 LS-113, decisions on OQ-233 and OQ-239),
+// declaration x: an SK_ARRAY slot of the module state whose live is MODULE_ARRAY, of integer
+// or Bool elements, flat for rank 2 to 4 (its elements in row-major order), then its initial
+// value as an SO_CONST node outside every function (dst -1, a the slot, f the rank, val the
+// extents in 12-bit fields from dimension 0 when the rank is 2 to 4) whose b is the number of
+// items written after it, 0 for a zero-filled array: one SO_CONST node per item of its
+// literal, rows depth first (dst -1, a -1, b its index), with the checker's folded value.
+// More than MODULE_ARRAY_BYTES bytes of elements is C9102 U_MODULE_STATE. A function that
+// names an array of rank 2 to 4 views it (module_views).
+void declare_array_global[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.Node[m] nodes,
+        in resolve.Sem[_] sem, inout Sir[ns] sir, inout SirSlot[_] slots, inout limits.CompilerDiag[r] diag,
+        inout LState[_] ls, I64 x) {
+    I64 tk = nodes[x].tok as I64;
+    I64 ty = sem[x].ty;
+    I32 ety = slot_elem(ty) as I32;
+    I64 rk = resolve.array_rank(ty);
+    I64 bytes = 1;
+    if (ety != T_BOOL) {
+        bytes = fold.ty_width(ety as I64) / 8;
+    }
+    // Each extent of rank 2 to 4 is at most resolve.NARRAY_EXTENT_MAX, so it fits its field.
+    I64 total = 1;
+    I64 packed = 0;
+    Bool fits = true;
+    for d in 0..rk {
+        I64 e = resolve.dim_extent(ty, d);
+        fits = fits && e >= 0 && total <= MODULE_ARRAY_BYTES;
+        if (fits) {
+            total = total * e;
+            packed = packed + (e << (12 * d));
+        }
+    }
+    if (ety == T_NONE || (ety != T_BOOL && !is_int(ety)) || !fits || total > MODULE_ARRAY_BYTES / bytes) {
+        unsupported(toks, diag, ls, tk, U_MODULE_STATE);
+        return;
+    }
+    I32 aty = ety | ((total as I32) << 8);
+    I64 k = add_slot(toks, slots, diag, ls, tk, aty, SK_ARRAY, tk);
+    I64 c = add_sir(toks, sir, diag, ls, SO_CONST, aty, tk);
+    if (k < 0 || c < 0) {
+        return;
+    }
+    slots[k].live = MODULE_ARRAY;
+    sir[c].a = k as I32;
+    sir[c].b = 0;
+    sir[c].f = rk as I32;
+    if (rk > 1) {
+        sir[c].val = packed;
+    }
+    I64 init = nodes[x].b as I64;
+    if (init < 0) {
+        return;
+    }
+    // The items, the rows of rank 2 to 4 depth first, as check.const_init walks them.
+    I64 g = nodes[init].a as I64;
+    I64 d = 0;
+    I64[4] up;
+    while (g >= 0 || d > 0) {
+        if (g < 0) {
+            d -= 1;
+            g = nodes[up[d]].next as I64;
+        } else if (nodes[g].kind == parse.N_ARRAY && d < 4) {
+            up[d] = g;
+            d += 1;
+            g = nodes[g].a as I64;
+        } else {
+            I64 v = add_sir(toks, sir, diag, ls, SO_CONST, ety, nodes[g].tok as I64);
+            if (v < 0) {
+                return;
+            }
+            sir[v].a = -1;
+            sir[v].b = sir[c].b;
+            sir[v].val = wrap_to(ety, sem[g].bits as% I64);
+            if (is_wide(ety) && !wide_const(text, toks, nodes, sem, ls, sir, v, g)) {
+                unsupported(toks, diag, ls, nodes[g].tok as I64, U_EXPRESSION);
+                return;
+            }
+            sir[c].b += 1;
+            g = nodes[g].next as I64;
+        }
+    }
+}
+
+// Whether slot k is a module-level array (declare_array_global).
+export Bool module_array(in SirSlot[_] slots, I64 k) {
+    return k >= 0 && slots[k].kind == SK_ARRAY && slots[k].live == MODULE_ARRAY;
+}
+
+export const I32 MODULE_ARRAY = 3;
+export const I64 MODULE_ARRAY_BYTES = 65536;
+
+// A module-level struct (box 15; decision 2026-10-09 on OQ-260), declaration x: an SK_STRUCT
+// slot of the module state whose live is MODULE_STRUCT, then its initial value as an SO_CONST
+// node outside every function (dst -1, a the slot, ty its type) whose b is the number of items
+// written after it, 0 for a zero-filled struct: one SO_CONST node per scalar of its payload in
+// payload order (fields in declaration order, a struct's in place, an array's elements in
+// row-major order; dst -1, a -1, b its index), with the checker's folded value, taken from
+// the constructors and array literals of the initializer (named arguments by their fields).
+// C9102 U_MODULE_STATE for a payload of more than MODULE_ARRAY_BYTES bytes, a field of no
+// storage (an array of extent 0, or a struct that has none), or nesting deeper than
+// STRUCT_DEPTH, which keeps C's braces within its compilers' limits. The walk keeps one frame
+// per open struct (fe -1) or array of structs (fe the elements left, fc the next item).
+void declare_struct_global[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.Node[m] nodes,
+        in resolve.Sem[_] sem, inout Sir[ns] sir, inout SirSlot[_] slots, inout limits.CompilerDiag[r] diag,
+        inout LState[_] ls, I64 x) {
+    I64 tk = nodes[x].tok as I64;
+    I32 sty = struct_type_of(text, toks, nodes, slots, ls, nodes[x].a as I64);
+    if (sty < T_STRUCT || field_array(sty)) {
+        unsupported(toks, diag, ls, tk, U_MODULE_STATE);
+        return;
+    }
+    I64 k = add_slot(toks, slots, diag, ls, tk, sty, SK_STRUCT, tk);
+    I64 c = add_sir(toks, sir, diag, ls, SO_CONST, sty, tk);
+    if (k < 0 || c < 0) {
+        return;
+    }
+    slots[k].live = MODULE_STRUCT;
+    sir[c].a = k as I32;
+    sir[c].b = 0;
+    I64[32] fs;
+    I64[32] fj;
+    I64[32] fc;
+    I64[32] fe;
+    fs[0] = (sty - T_STRUCT) as I64;
+    fj[0] = 0;
+    fc[0] = nodes[x].b as I64;
+    fe[0] = -1;
+    I64 d = 1;
+    I64 bytes = 0;
+    Bool ok = true;
+    while (d > 0 && ok && ls[0].err == 0) {
+        I64 top = d - 1;
+        if (fe[top] >= 0) {
+            if (fe[top] == 0) {
+                d -= 1;
+                continue;
+            }
+            fe[top] -= 1;
+            I64 item = fc[top];
+            if (item >= 0) {
+                fc[top] = nodes[item].next as I64;
+            }
+            ok = d < STRUCT_DEPTH;
+            if (ok) {
+                fs[d] = fs[top];
+                fj[d] = 0;
+                fc[d] = item;
+                fe[d] = -1;
+                d += 1;
+            }
+            continue;
+        }
+        I64 s = fs[top];
+        I64 j = fj[top];
+        if (j == slots[s].ty as I64) {
+            d -= 1;
+            continue;
+        }
+        fj[top] = j + 1;
+        I32 fty = slots[s + 1 + j].ty;
+        I64 arg = -1;
+        if (fc[top] >= 0) {
+            arg = ctor_arg(text, toks, nodes, slots, T_STRUCT + (s as I32), fc[top], j);
+            ok = arg >= 0;
+        }
+        I32 elem = fty;
+        I64 nelem = 1;
+        if (field_array(fty)) {
+            elem = array_elem(fty);
+            nelem = array_extent(fty);
+        }
+        ok = ok && nelem > 0;
+        if (ok && elem >= T_STRUCT) {
+            I64 es = (elem - T_STRUCT) as I64;
+            ok = slots[es + 1].live > 0 && d < STRUCT_DEPTH;
+            if (ok) {
+                fs[d] = es;
+                fj[d] = 0;
+                fc[d] = arg;
+                fe[d] = -1;
+                if (field_array(fty)) {
+                    fe[d] = nelem;
+                    if (arg >= 0) { fc[d] = nodes[arg].a as I64; }
+                }
+                d += 1;
+            }
+            continue;
+        }
+        I64 width = 1;
+        if (elem != T_BOOL) { width = fold.ty_width(elem as I64) / 8; }
+        bytes += nelem * width;
+        ok = ok && bytes <= MODULE_ARRAY_BYTES;
+        if (ok && arg >= 0) {
+            ok = struct_items(text, toks, nodes, sem, sir, diag, ls, c, elem, arg, nelem);
+        }
+    }
+    if (!ok && ls[0].err == 0) {
+        unsupported(toks, diag, ls, tk, U_MODULE_STATE);
+    }
+}
+
+export const I32 MODULE_STRUCT = 4;
+const I64 STRUCT_DEPTH = 32;
+
+// Whether slot k is a module-level struct (declare_struct_global).
+export Bool module_struct(in SirSlot[_] slots, I64 k) {
+    return k >= 0 && slots[k].kind == SK_STRUCT && slots[k].live == MODULE_STRUCT;
+}
+
+// The value node of field j of struct type sty in constructor call x: its positional argument,
+// or the value of its named one; -1 for none.
+I64 ctor_arg[n, t, m](in U8[n] text, in scan.Token[t] toks, in parse.Node[m] nodes, in SirSlot[_] slots, I32 sty,
+        I64 x, I64 j) {
+    I64 g = nodes[x].b as I64;
+    I64 pos = 0;
+    while (g >= 0) {
+        if (nodes[g].kind == parse.N_NAMEDARG) {
+            if (field_index(text, toks, slots, sty, nodes[g].tok as I64) == j) {
+                return nodes[g].a as I64;
+            }
+        } else if (pos == j) {
+            return g;
+        }
+        pos += 1;
+        g = nodes[g].next as I64;
+    }
+    return -1;
+}
+
+// The n items of type ety that node v gives a scalar field or (rows of rank 2 to 4 depth first)
+// an array field of global node c, after its last item; false when their count is not n.
+Bool struct_items[n0, t, m, ns, r](in U8[n0] text, in scan.Token[t] toks, in parse.Node[m] nodes,
+        in resolve.Sem[_] sem, inout Sir[ns] sir, inout limits.CompilerDiag[r] diag, inout LState[_] ls, I64 c,
+        I32 ety, I64 v, I64 n) {
+    I64 g = v;
+    I64 d = 0;
+    I64[4] up;
+    if (nodes[v].kind == parse.N_ARRAY) {
+        g = nodes[v].a as I64;
+    }
+    I64 got = 0;
+    while (g >= 0 || d > 0) {
+        if (g < 0) {
+            d -= 1;
+            g = nodes[up[d]].next as I64;
+        } else if (nodes[g].kind == parse.N_ARRAY && d < 4) {
+            up[d] = g;
+            d += 1;
+            g = nodes[g].a as I64;
+        } else {
+            I64 q = add_sir(toks, sir, diag, ls, SO_CONST, ety, nodes[g].tok as I64);
+            if (q < 0) {
+                return true;
+            }
+            sir[q].a = -1;
+            sir[q].b = sir[c].b;
+            sir[q].val = wrap_to(ety, sem[g].bits as% I64);
+            if (is_wide(ety) && !wide_const(text, toks, nodes, sem, ls, sir, q, g)) {
+                // A wide value of another form (box 15 unit 4).
+                return false;
+            }
+            sir[c].b += 1;
+            got += 1;
+            if (nodes[v].kind != parse.N_ARRAY) {
+                return got == n;
+            }
+            g = nodes[g].next as I64;
+        }
+    }
+    return got == n;
 }
 
 // The test blocks of the module (SPEC-04 LS-232), one FN_TEST function each in source order
@@ -8697,7 +9545,7 @@ export I64 lower_module[t, m, ns, nf, r, s](inout U8[_] text, in scan.Token[t] t
     if (ls[0].script == 0 && first_stmt >= 0) {
         // Module-level variables of an importable module (SPEC-04 LS-113): constants are
         // folded where they are named; each scalar variable is module state (SK_GLOBAL).
-        declare_globals(toks, nodes, sem, sir, slots, diag, ls, root);
+        declare_globals(text, toks, nodes, sem, sir, slots, diag, ls, root, is_root);
         if (ls[0].err != 0) {
             return 1;
         }

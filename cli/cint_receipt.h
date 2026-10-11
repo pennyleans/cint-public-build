@@ -49,10 +49,13 @@ typedef struct cli_module {
     int mark;           /* the dependency order walk: 1 entered, 2 placed */
 } cli_module;
 
+/* The most runtime_source rows a toolchain file may have; the receipt's runtime identity names every one. */
+#define CLI_MAX_RT 32u
+
 typedef struct toolchain {
     char *leg, *cc, *cc_version, *include, *runtime_object, *cache, *host, *compiler_sources, *executable_sha256;
     char *runtime_library_object;   /* the runtime compiled with CINT_RT_LIBRARY, for `build --lib` */
-    char *flags[64], *rt_sources[64];
+    char *flags[64], *rt_sources[CLI_MAX_RT + 1u];   /* one row more than the most, so load_toolchain refuses it */
     size_t nflags, nrt;
 } toolchain;
 

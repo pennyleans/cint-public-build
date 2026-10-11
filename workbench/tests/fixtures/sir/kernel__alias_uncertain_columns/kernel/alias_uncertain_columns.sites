@@ -1,0 +1,86 @@
+module kernel.alias_uncertain_columns
+sites kernel/alias_uncertain_columns.ci 1:8:6:index.checked.i32 2:8:6:index.checked.i32 3:8:16:index.checked.i32 4:8:16:index.checked.i32 5:8:23:add.checked.i32 6:11:12:fuel.charge 7:13:12:slice.checked.i32 8:13:12:slice.checked.i32 9:13:25:slice.checked.i32 10:13:25:slice.checked.i32 11:13:5:dispatch 12:14:13:index.checked.i32 13:14:13:index.checked.i32
+kernel @kernel.alias_uncertain_columns.copy2(%u: I32[_, _], %v: I32[_, _]) {
+  dispatch.entry
+  local $h.0: I64
+  local $w.1: I64
+  %t0 = view.extent %u, 0
+  store.local $h.0, %t0
+  %t1 = view.extent %u, 1
+  store.local $w.1, %t1
+  %t2 = load.local $h.0
+  bind.shape %v, 1, 0, %t2
+  %t3 = load.local $w.1
+  bind.shape %v, 1, 1, %t3
+  %t4 = load.local $h.0
+  store.local $sc.2, %t4
+  %t5 = load.local $w.1
+  store.local $sc.3, %t5
+  bind.alias %v, %u
+  dispatch.charge $sc.4, 2, $sc.2, $sc.3
+  dispatch.stage $sc.5, %v, 1
+  dispatch.push
+  %t6 = const I64 0
+  store.local $sc.6, %t6
+  loop L21 {
+    %t7 = load.local $sc.6
+    %t8 = load.local $sc.4
+    %t9 = cmp.lt.i64 %t7, %t8
+    while %t9
+    %t10 = load.local $sc.6
+    dispatch.item %t10, 2, $y.7, $x.8, $sc.2, $sc.3
+    %t11 = load.local $y.7
+    %t12 = load.local $x.8
+    index.checked.i32 $sc.5, %t11, 0             #1 @kernel/alias_uncertain_columns.ci:8:6
+    index.checked.i32 $sc.5, %t12, 1             #2 @kernel/alias_uncertain_columns.ci:8:6
+    %t13 = view.offset $sc.5, %t11, 0
+    %t14 = view.offset $sc.5, %t12, %t13, 1
+    dispatch.step
+    %t15 = load.local $y.7
+    %t16 = load.local $x.8
+    index.checked.i32 %u, %t15, 0                #3 @kernel/alias_uncertain_columns.ci:8:16
+    index.checked.i32 %u, %t16, 1                #4 @kernel/alias_uncertain_columns.ci:8:16
+    %t17 = view.offset %u, %t15, 0
+    %t18 = view.offset %u, %t16, %t17, 1
+    dispatch.step
+    %t19 = index.load %u, %t18
+    %t20 = const I32 1
+    %t21 = add.checked.i32 %t19, %t20            #5 @kernel/alias_uncertain_columns.ci:8:23
+    dispatch.step
+    index.store $sc.5, %t14, %t21
+    next
+    %t22 = load.local $sc.6
+    %t23 = const I64 1
+    %t24 = add.wrap.i64 %t22, %t23
+    store.local $sc.6, %t24
+  }
+  dispatch.phase 2
+  dispatch.pop
+  dispatch.publish %v, $sc.5
+}
+export func @kernel.alias_uncertain_columns.run() -> I32 {
+  fuel.charge 1                                  #6 @kernel/alias_uncertain_columns.ci:11:12
+  local $sc.0: I32[128]
+  view.begin $m.1: I32[_, _], $sc.0, 0, 65544
+  %t0 = const I64 0
+  %t1 = const I64 8
+  view.begin $sc.2: I32[_, _], $m.1, 0, 0
+  slice.checked.i32 $sc.2, _, _, 0, 1            #7 @kernel/alias_uncertain_columns.ci:13:12
+  slice.checked.i32 $sc.2, %t0, %t1, 201, 1      #8 @kernel/alias_uncertain_columns.ci:13:12
+  view.end $sc.2, $m.1, 2, 0
+  %t2 = const I64 8
+  %t3 = const I64 16
+  view.begin $sc.3: I32[_, _], $m.1, 0, 0
+  slice.checked.i32 $sc.3, _, _, 0, 1            #9 @kernel/alias_uncertain_columns.ci:13:25
+  slice.checked.i32 $sc.3, %t2, %t3, 201, 1      #10 @kernel/alias_uncertain_columns.ci:13:25
+  view.end $sc.3, $m.1, 2, 0
+  dispatch @kernel.alias_uncertain_columns.copy2($sc.2, $sc.3), 3 #11 @kernel/alias_uncertain_columns.ci:13:5
+  %t4 = const I64 0
+  %t5 = const I64 8
+  index.checked.i32 $m.1, %t4, 0                 #12 @kernel/alias_uncertain_columns.ci:14:13
+  index.checked.i32 $m.1, %t5, 1                 #13 @kernel/alias_uncertain_columns.ci:14:13
+  %t6 = view.offset $m.1, %t4, 0
+  %t7 = view.offset $m.1, %t5, %t6, 1
+  %t8 = index.load $m.1, %t7
+  return %t8
+}

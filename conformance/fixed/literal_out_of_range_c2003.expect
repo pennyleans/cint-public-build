@@ -1,0 +1,7 @@
+case fixed/literal_out_of_range_c2003
+clause SPEC-04 LS-37, LS-53, 17.2 (128.0 is outside Q8.8, whose largest value is 127.99609375)
+format 5
+source compile-error
+outcome compile-error
+diagnostic.code C2003
+diagnostic.position fixed/literal_out_of_range_c2003.ci:8:14

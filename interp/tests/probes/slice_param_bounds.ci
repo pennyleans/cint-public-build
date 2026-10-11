@@ -1,0 +1,17 @@
+// case: probes/slice_param_bounds
+// clause: box 13 unit 7 probe: slice bounds that are parameters 0 and 1 (slice.checked)
+// entry: run; args: none
+
+I64 s0(I64 k, I64 j) {
+    I64[6] a = [1, 2, 3, 4, 5, 6];
+    return sum(a[k..j]);
+}
+
+I64 s1(I64 j, I64 k) {
+    I64[6] a = [1, 2, 3, 4, 5, 6];
+    return sum(a[k..j]);
+}
+
+export I64 run() {
+    return s0(2, 5) * 100 + s1(5, 2);
+}

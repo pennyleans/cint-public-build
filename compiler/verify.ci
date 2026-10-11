@@ -66,7 +66,8 @@ export Bool can_fault(in lowering.Sir[_] sir, I64 i) {
         case lowering.SO_CALL, lowering.SO_FUEL, lowering.SO_PRINT_BEGIN, lowering.SO_ICHECK, lowering.SO_SHAPE,
                 lowering.SO_ASSERT, lowering.SO_COPY_SHAPE:
             return true;
-        case lowering.SO_VSLICE, lowering.SO_VCOPY, lowering.SO_REDUCE, lowering.SO_CALIAS, lowering.SO_VALLOC:
+        case lowering.SO_VSLICE, lowering.SO_VCOPY, lowering.SO_REDUCE, lowering.SO_CALIAS, lowering.SO_VALLOC,
+                lowering.SO_VFILL:
             return true;
         case lowering.SO_MEMBER, lowering.SO_MVIEW, lowering.SO_LEASE, lowering.SO_PREF:
             return true;
@@ -113,13 +114,14 @@ Bool operand[nf](in lowering.Sir[_] sir, in lowering.SirFunc[nf] funcs, in lower
     return true;
 }
 
-// Whether slot k is a local array or view, or a view parameter of function fn.
+// Whether slot k is a local array or view, a view parameter of function fn, or a module-level
+// array (box 13 MLA), which every function of the module reads and writes.
 Bool element_slot(in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I64 k) {
     if (k < 0) {
         return false;
     }
     if (slots[k].kind == lowering.SK_ARRAY || slots[k].kind == lowering.SK_APLACE) {
-        return local_slot(funcs, fn, k);
+        return local_slot(funcs, fn, k) || lowering.module_array(slots, k);
     }
     I64 p0 = funcs[fn].pslot0 as I64;
     if (slots[k].kind == lowering.SK_NVIEW) {
@@ -139,20 +141,21 @@ Bool elements_of(in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64
     return element_slot(funcs, slots, fn, k) && lowering.array_elem(slots[k].ty) == ty;
 }
 
-// Whether v is -1 or an I64 operand at node i.
+// Whether v is lowering.NO_OPERAND or an I64 operand at node i.
 Bool index_or_none(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn,
         I64 i, I64 v) {
     I64[1] tv;
-    return v == -1 || (operand(sir, funcs, slots, fn, i, v, tv) && tv[0] == lowering.T_I64 as I64);
+    return v == lowering.NO_OPERAND || (operand(sir, funcs, slots, fn, i, v, tv) && tv[0] == lowering.T_I64 as I64);
 }
 
-// Whether slot k is a struct variable or a struct parameter of function fn.
+// Whether slot k is a struct variable or a struct parameter of function fn, or (box 15) a
+// module-level struct, which every function of the module reads and writes.
 Bool struct_slot(in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I64 k) {
     if (k < 0) {
         return false;
     }
     if (slots[k].kind == lowering.SK_STRUCT || slots[k].kind == lowering.SK_SPLACE) {
-        return local_slot(funcs, fn, k);
+        return local_slot(funcs, fn, k) || lowering.module_struct(slots, k);
     }
     I64 p0 = funcs[fn].pslot0 as I64;
     return (slots[k].kind == lowering.SK_SPARAM || slots[k].kind == lowering.SK_SREF) && k >= p0 &&
@@ -561,10 +564,17 @@ export I64 check_func[nf](inout lowering.Sir[_] sir, in lowering.SirFunc[nf] fun
                     (sir[i].c == -1 || (sir[i].c >= 0 && (sir[i].c as I64) < i && kind_of(sir, sir[i].c as I64) == lowering.SO_EOFF));
             case lowering.SO_VCOPY:
                 ok = elements_of(funcs, slots, fn, a, ty) && elements_of(funcs, slots, fn, b, ty) && sir[i].dst < 0;
+            case lowering.SO_VFILL:
+                ok = elements_of(funcs, slots, fn, a, ty) && operand(sir, funcs, slots, fn, i, b, tb) &&
+                    tb[0] == ty as I64 && sir[i].dst < 0;
+            case lowering.SO_VRESHAPE:
+                ok = view_local(funcs, slots, fn, a, ty) && elements_of(funcs, slots, fn, b, ty) && sir[i].dst < 0 &&
+                    (sir[i].f as I64) == lowering.slot_rank(slots, a) && sir[i].val >= 0;
             case lowering.SO_REDUCE:
                 ok = sir[i].dst >= 0 && scalar(ty) && elements_of(funcs, slots, fn, a, sir[i].val as I32) &&
                     (b == -1 || elements_of(funcs, slots, fn, b, sir[i].val as I32)) && sir[i].f >= 1 && sir[i].f <= 9 &&
-                    (sir[i].c == -1 || (operand(sir, funcs, slots, fn, i, sir[i].c as I64, ta) && ta[0] == sir[i].val));
+                    ((sir[i].c as I64) == lowering.NO_OPERAND ||
+                     (operand(sir, funcs, slots, fn, i, sir[i].c as I64, ta) && ta[0] == sir[i].val));
             case lowering.SO_VEXT:
                 ok = sir[i].dst >= 0 && ty == lowering.T_I64 && element_slot(funcs, slots, fn, a) && sir[i].f >= -1 &&
                     (sir[i].f as I64) < lowering.slot_rank(slots, a);

@@ -1,0 +1,21 @@
+case wide/kernel_mul_overflow_i128
+clause SPEC-02 F-3, F-6, X-8; SPEC-01 IM-106 (a work-item's I128 product overflows; the record has the kernel form with I128 operands)
+format 4
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 4
+fault.code E_OVERFLOW
+fault.operation mul.checked.i128
+fault.operand I128 170141183460469231731687303715884105727
+fault.operand I128 170141183460469231731687303715884105727
+fault.exact 28948022309329048855892746252171976962977213799489202546401021394546514198529
+fault.limit I128 170141183460469231731687303715884105727
+fault.position wide/kernel_mul_overflow_i128.ci:8:17
+fault.revision self
+fault.source-map self
+fault.phase work-item
+fault.kernel wide.kernel_mul_overflow_i128.square
+fault.address 0 1 3
+fault.stack-depth 1
+fault.stack wide/kernel_mul_overflow_i128.ci:14:5

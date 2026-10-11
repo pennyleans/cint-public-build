@@ -1,0 +1,11 @@
+// case: wide/mul_full_u512_refused
+// clause: SPEC-01 IM-6, IM-16 (U512 has no mul_full)
+// subset: cint-core-1 (unsigned wide integers, built-in mul_full)
+// entry: run; args: none
+// spec outcome: compile-error C2103 at 9:9 (callee `mul_full`). Box 15, unit 1
+
+export I64 run() {
+    U512 a = 2;
+    _ = mul_full(a, a);
+    return 0;
+}

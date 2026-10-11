@@ -1,0 +1,39 @@
+// case: probes/module_arrays
+// clause: box 13 MLA probe: module-level arrays read and written by several functions, passed as views, copied, reduced and sliced
+// entry: run; args: none
+
+I64[4] acc;
+I64[3] base = [3, 1, 4];
+U8[3] bytes = [250, 2, 7];
+Bool[2] flags = [true, false];
+
+void add(I64 i, I64 v) {
+    acc[i] += v;
+}
+
+I64 digits(in I64[_] v) {
+    I64 t = 0;
+    for i in 0..len(v) {
+        t = t * 10 + v[i];
+    }
+    return t;
+}
+
+void bump(inout I64[_] v) {
+    v[0] += 5;
+}
+
+export I64 run() {
+    add(1, 7);
+    add(3, base[2]);
+    bump(base);
+    I64[3] moved = base;
+    moved[1] = 9;
+    base = moved;
+    bytes[2] += bytes[1];
+    if (!flags[1]) {
+        flags[1] = true;
+        acc[0] = sum(base);
+    }
+    return digits(acc) * 1000000 + digits(base[1..3]) * 1000 + bytes[2] as I64 * 10 + len(bytes);
+}

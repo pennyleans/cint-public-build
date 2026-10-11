@@ -296,7 +296,7 @@ class ExpectFormat2(unittest.TestCase):
         bad = [good.replace("format 2\n", ""),                                   # v2 lines in a v1 file
                good.replace("fault.source-map self\n", ""),                      # rule 5
                good.replace("fault.stack deep.ci:6:12\n", ""),                   # rule 5: count
-               good.replace("format 2\n", "format 5\n"),
+               good.replace("format 2\n", "format 6\n"),                         # no format 6
                good.replace("clause x\nformat 2\n", "format 2\nclause x\n")]
         for text in bad:
             with self.assertRaises(ValueError):

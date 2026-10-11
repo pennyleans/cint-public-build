@@ -1,0 +1,27 @@
+// case: wide/view_params_i256
+// clause: SPEC-04 LS-117, LS-119, LS-145 (I256 views as `in` and `inout` parameters, a size parameter and `extent`)
+// subset: cint-core-1 (wide integers, array built-ins)
+// entry: run; args: none
+// spec outcome: value I64 30, its low 64 bits (as%); prints the I256 value 30 (1 to 4 doubled in place sum to 20 in the callee; extent 4 times 2, plus 2) and a line feed; fuel 11 (entry, call to scale and its 4 iterations, call to total and its 4 iterations). Box 15, unit 1
+
+I256 total[n](in I256[n] xs) {
+    I256 s = 0;
+    for i in 0..n {
+        s = s + xs[i];
+    }
+    return s;
+}
+
+void scale(inout I256[_] v, I256 k) {
+    for i in 0..extent(v, 0) {
+        v[i] = v[i] * k;
+    }
+}
+
+export I64 run() {
+    I256[4] a = [1, 2, 3, 4];
+    scale(a, 2);
+    I256 observed = total(a) + (extent(a, 0) as I256) * 2 + 2;
+    "{observed}\n";
+    return observed as% I64;
+}

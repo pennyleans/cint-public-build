@@ -1,0 +1,21 @@
+// case: fixed/literal_round_negative
+// clause: SPEC-04 LS-28, LS-37 (SPEC-04I.12, decision 2026-10-09 on OQ-265); SPEC-01 4.5, IM-27 (a round clause after a negative fraction literal rounds the negative value once)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 -6553; prints `-6553 -6554 -6553 -6554 -6554 -6554` (-0.1 is raw -6553.6: ceil -6553, floor -6554, trunc -6553, half_even, half_up and half_down -6554) and `0 -1 0 -128` (-0.5 in Q8.0: half_up 0, half_down -1, half_even 0; -128.5 with ceil is -128, in range); fuel 1. Box 15, unit 1
+
+export I64 run() {
+    Q16.16 c = -0.1 round ceil;
+    Q16.16 f = -0.1 round floor;
+    Q16.16 t = - 0.1 round trunc;
+    Q16.16 e = -/* one literal */0.1 round half_even;
+    Q16.16 u = -0.1 round half_up;
+    Q16.16 d = -0.1 round half_down;
+    Q8.0 tu = -0.5 round half_up;
+    Q8.0 td = -0.5 round half_down;
+    Q8.0 te = -0.5 round half_even;
+    Q8.0 lo = -128.5 round ceil;
+    "{c!raw} {f!raw} {t!raw} {e!raw} {u!raw} {d!raw}\n";
+    "{tu!raw} {td!raw} {te!raw} {lo!raw}\n";
+    return c.raw as I64;
+}

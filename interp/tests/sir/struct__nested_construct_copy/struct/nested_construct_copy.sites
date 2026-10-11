@@ -1,0 +1,38 @@
+module struct.nested_construct_copy
+sites struct/nested_construct_copy.ci 1:10:12:fuel.charge 2:10:101:mul.checked.i64 3:10:107:add.checked.i64
+struct A(b: B)
+struct B(c: C)
+struct C(v: I64)
+export func @struct.nested_construct_copy.run() -> I64 {
+  fuel.charge 1                                  #1 @struct/nested_construct_copy.ci:10:12
+  local $sc.0: A
+  local $sc.1: B
+  local $sc.2: C
+  %t0 = const I64 7
+  field.store $sc.2, v, %t0
+  field.copy $sc.1, c, $sc.2
+  field.copy $sc.0, b, $sc.1
+  local $a.3: A
+  struct.copy $a.3, $sc.0
+  local $b.4: A
+  struct.copy $b.4, $a.3
+  field.address $sc.5, $b.4, b
+  field.address $sc.6, $sc.5, c
+  %t1 = const I64 9
+  field.store $sc.6, v, %t1
+  field.address $sc.7, $a.3, b
+  field.address $sc.8, $sc.7, c
+  %t2 = field.load $sc.8, v
+  local $old.9: I64
+  store.local $old.9, %t2
+  field.copy.out $sc.10, $b.4, b
+  field.copy $a.3, b, $sc.10
+  %t3 = load.local $old.9
+  %t4 = const I64 100
+  %t5 = mul.checked.i64 %t3, %t4                 #2 @struct/nested_construct_copy.ci:10:101
+  field.address $sc.11, $a.3, b
+  field.address $sc.12, $sc.11, c
+  %t6 = field.load $sc.12, v
+  %t7 = add.checked.i64 %t5, %t6                 #3 @struct/nested_construct_copy.ci:10:107
+  return %t7
+}

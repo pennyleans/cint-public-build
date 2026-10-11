@@ -1,0 +1,18 @@
+case fixed/qmul_overflow
+clause SPEC-01 IM-63, IM-106 (BX15-05 A: one checked range check against R; exact is the rounded raw value)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_OVERFLOW
+fault.operation qmul.checked.q16_16.q16_16.q16_16.floor
+fault.operand Q16.16 raw 13107200
+fault.operand Q16.16 raw 13107200
+fault.exact 2621440000
+fault.limit Q16.16 raw 2147483647
+fault.position fixed/qmul_overflow.ci:9:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

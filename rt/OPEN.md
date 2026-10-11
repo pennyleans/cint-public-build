@@ -146,7 +146,7 @@ Status: Recorded.
 
 Status: Proposed.
 
-### RT-OQ-29. The bridge of slice 2 task 2.6: choices, and the size ceiling
+### RT-OQ-29. The Python bridge: choices, and the size ceiling
 
 Status: Closed, 2026-10-03.
 
@@ -199,5 +199,73 @@ Status: Proposed.
 Status: Proposed.
 
 ### RT-OQ-42. Checkpoints, restore, the interrupt and the change of revision
+
+Status: Proposed.
+
+### RT-OQ-43. Device contexts, `device(1)` memory and ABI 3.1
+
+Status: Proposed.
+
+### RT-OQ-44. Recordings and replay
+
+Status: Proposed.
+
+### RT-OQ-45. Cases and the source-map digest
+
+Status: Proposed.
+
+### RT-OQ-46. Arenas and pools in canonical state
+
+Status: Decided, 2026-10-08.
+
+### RT-OQ-47. The host header and the inline call protocol
+
+Status: Proposed.
+
+### RT-OQ-48. Recordings at `dispatch` density
+
+Status: Proposed.
+
+### RT-OQ-49. Module-level arrays in the module state
+
+Status: Decided, 2026-10-08.
+
+### RT-OQ-50. Module-level handles in the module state
+
+Status: Proposed.
+
+### RT-OQ-51. Module-level structs in the module state
+
+Status: Decided, 2026-10-09.
+
+### RT-OQ-52. Shift counts of a wide type
+
+Status: Proposed.
+
+### RT-OQ-53. The fixed-point helpers
+
+Status: Proposed.
+
+### RT-OQ-54. Reductions with a wide side
+
+Status: Proposed.
+
+### RT-OQ-55. Formatted print and failed asserts of a wide type
+
+Status: Proposed.
+
+### RT-OQ-56. Formatted print of fixed point, and `!bits`
+
+Status: Proposed.
+
+### RT-OQ-57. Reductions over fixed point, and `dot` with a rounding mode
+
+Status: Proposed.
+
+### RT-OQ-58. Saturating conversions `as|`
+
+Status: Proposed.
+
+### RT-OQ-59. The fixed-point result forms
 
 Status: Proposed.

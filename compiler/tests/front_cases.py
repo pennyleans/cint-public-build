@@ -242,11 +242,10 @@ def module_cases() -> list:
 # outcome SPEC-04 18 gives, as ("error", code, line, column) or ("accept",). Keyed by the
 # case's text (a statement, a literal, or a module). A refused case not listed must parse.
 EXPECT = {
-    # SPEC-04 18.6 primary: a fraction with a rounding clause; 18.4 elem_type: Pool(T),
-    # Handle(T). A slice with no low bound (`a[..]`, `m[.., j]`) is box 09 text, and an error
-    # union as a function's result and an error set are box 12 text, which `cint_ref` parses
-    # (front_ref.py), so their cases expect the reference's tree.
-    "I64 x = 0.5 round nearest;\n": ("accept",),
+    # SPEC-04 18.4 elem_type: Pool(T), Handle(T). A slice with no low bound (`a[..]`,
+    # `m[.., j]`) is box 09 text, an error union as a function's result and an error set are
+    # box 12 text, and a fraction with a rounding clause is box 15 text, which `cint_ref`
+    # parses (front_ref.py), so their cases expect the reference's tree.
     "Pool(I64) p = q;\n": ("accept",),
     "Handle(Pool(I64)) h = q;\n": ("accept",),
     # Refused by cint_ref; the error of SPEC-04 18 (C1043 for a `do` body, D-4).

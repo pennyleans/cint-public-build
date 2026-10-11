@@ -583,7 +583,7 @@ def _form_name(sig: Signature, t) -> str:
 
 
 def _no_form(sig: Signature, what: str, t) -> NoPythonForm:
-    return NoPythonForm("%s is %s, which has no Python form in box 10 (BX10-27): the export is listed and "
+    return NoPythonForm("%s is %s, which has no Python form yet: the export is listed and "
                         "reachable through ctx.entry, but not callable" % (what, _form_name(sig, t)))
 
 

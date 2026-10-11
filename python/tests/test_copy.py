@@ -157,7 +157,7 @@ class Copies(unittest.TestCase):
             cint.copy(array.array("d", [1.5]))
         self.assertIn("cint.from_float(a, \"Q32.32\", rounding=\"half_even\")", str(caught.exception))
         with self.assertRaises(NotImplementedError):
-            cint.copy([1], elem="I64", device="cuda:0")
+            cint.copy([1], elem="I64", device="vulkan:0")
         self.assertEqual(cint.copy([1], elem="I64", device="cpu").tolist(), [1])
         with self.assertRaises(TypeError):
             cint.copy([1.5], elem="Q16.16", from_float="half_even")
@@ -169,7 +169,7 @@ class Copies(unittest.TestCase):
         b = cint.copy(p)
         self.assertEqual((b.elem, b.tolist(), p.deleted), ("I32", [3, 4, 5], 1))
         with self.assertRaises(cint.Refused):
-            cint.copy(Producer([1], device=(2, 0)))
+            cint.copy(Producer([1], device=(7, 0)))
 
     @unittest.skipIf(numpy is None, "NumPy is not installed")
     def test_numpy_dlpack_source(self):
@@ -223,7 +223,9 @@ class Buffers(unittest.TestCase):
         with self.assertRaises(ValueError):
             cint.empty((2,), "Str")
         with self.assertRaises(NotImplementedError):
-            cint.empty((2,), "U8", device="cuda:0")
+            cint.empty((2,), "U8", device="vulkan:0")
+        with self.assertRaises(ValueError):
+            cint.empty((2,), "U8", device="cuda")
 
     def test_memoryview_formats(self):
         cases = [("I64", "q"), ("U8", "B"), ("Bool", "?"), ("T1", "b"), ("T27", "q"), ("Q16.16", "i"),

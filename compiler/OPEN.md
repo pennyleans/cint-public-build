@@ -142,7 +142,7 @@ Status: Proposed.
 
 Status: Recorded.
 
-### CINTC-OQ-48. B1 and the seed-only expectations of `boot/` refusal cases
+### CINTC-OQ-48. The seed-built compiler and the seed-only expectations of `boot/` refusal cases
 
 Status: Closed.
 
@@ -170,10 +170,10 @@ Status: Proposed.
 
 Status: Proposed.
 
-### CINTC-OQ-63. Box 12 in `cintc`: error unions, `defer`, `errdefer` and the `*_result` built-ins
+### CINTC-OQ-63. Error unions, `defer`, `errdefer` and the `*_result` built-ins in `cintc`
 
 Status: Decided, 2026-10-05.
 
-### CINTC-OQ-64. Box 12 memory lifetimes in `cintc`: the checker, the lowering and the C
+### CINTC-OQ-64. Memory lifetimes in `cintc`: the checker, the lowering and the C
 
 Status: Proposed.

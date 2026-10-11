@@ -1,0 +1,20 @@
+module control.script_with_test
+sites control/script_with_test.ci 1:6:1:fuel.charge 2:7:1:print 3:9:1:fuel.charge 4:10:14:add.checked.i64 5:10:12:assert.checked.bool
+script @control.script_with_test {
+  fuel.charge 1                                  #1 @control/script_with_test.ci:6:1
+  %t0 = const I64 2
+  local $n.0: I64
+  store.local $n.0, %t0
+  print.begin                                    #2 @control/script_with_test.ci:7:1
+  print.bytes "script\n"
+  print.end
+}
+test @control.script_with_test 0 {
+  fuel.charge 1                                  #3 @control/script_with_test.ci:9:1
+  %t0 = const I64 1
+  %t1 = const I64 1
+  %t2 = add.checked.i64 %t0, %t1                 #4 @control/script_with_test.ci:10:14
+  %t3 = const I64 3
+  %t4 = cmp.eq.i64 %t2, %t3
+  assert.checked.bool %t4                        #5 @control/script_with_test.ci:10:12
+}

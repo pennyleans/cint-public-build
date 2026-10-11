@@ -1,0 +1,25 @@
+// case: wide/struct_field_u256
+// clause: SPEC-04 LS-67, LS-73, LS-77; SPEC-01 IM-6, IM-46; SPEC-09 CONF-11 rule 14 (a struct with a U256 array field and a U128 field, returned by value)
+// subset: cint-core-1 (unsigned wide integers)
+// entry: run; args: none
+// spec outcome: value I64 6, its low 64 bits (as%); prints the U256 value 2^128 + 6 (U256.max >> 128 is 2^128 - 1, and k is 7) and a line feed; fuel 2 (entry, call to make). Box 15, unit 1
+
+struct P {
+    U256[2] v;
+    U128 k;
+}
+
+P make(U256 a) {
+    P p;
+    p.v[0] = a;
+    p.v[1] = a >> 128;
+    p.k = 7;
+    return p;
+}
+
+export I64 run() {
+    P p = make(U256.max);
+    U256 observed = p.v[1] + (p.k as U256);
+    "{observed}\n";
+    return observed as% I64;
+}

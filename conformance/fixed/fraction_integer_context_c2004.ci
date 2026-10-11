@@ -1,0 +1,10 @@
+// case: fixed/fraction_integer_context_c2004
+// clause: SPEC-04 LS-35, 17.2 (a fraction literal cannot have an integer type)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: compile-error C2004 at 8:13 (the literal 0.5). Box 15, unit 1
+
+export I64 run() {
+    I64 x = 0.5;
+    return x;
+}

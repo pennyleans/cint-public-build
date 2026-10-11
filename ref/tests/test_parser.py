@@ -209,11 +209,23 @@ class Statements(unittest.TestCase):
 
     def test_outside_scalar_surface_is_refused(self):
         # Arrays and `import` are implemented since slice 2 task 2.8; ranks 2 to 4, slices and
-        # kernels since box 09; error sets, error unions and `defer` since box 12.
-        for src in ["Q16.16 q = 0.5;", "enum E : U8 { a }", 'profile "cint-boot-1";']:
+        # kernels since box 09; error sets, error unions and `defer` since box 12; fixed point
+        # since box 15.
+        for src in ["enum E : U8 { a }", 'profile "cint-boot-1";']:
             with self.subTest(src=src):
                 with self.assertRaises(Refused):
                     parse(src)
+
+    def test_fixed_point_surface_flag(self):
+        # `fixed=False` refuses the box 15 fixed-point forms at the same tokens as before them.
+        for src, col in [("Q16.16 q = 0.5;", 1), ("I64 x = Q16.16.raw(1).raw;", 9), ("I64 x = Q8.8.max;", 9)]:
+            with self.subTest(src=src):
+                parse(src)
+                with self.assertRaises(Refused) as cm:
+                    P.parse_module(src, "t.ci", fixed=False)
+                self.assertEqual(cm.exception.position.column, col)
+        m = P.parse_module("Q16.16 q = 0.1 round half_even;", "t.ci")
+        self.assertEqual(m.statements[0].init.round_mode, "half_even")
 
     def test_surface_before_box09_is_kept(self):
         # The front and check suites of compiler/tests parse with box09=False: the box 09

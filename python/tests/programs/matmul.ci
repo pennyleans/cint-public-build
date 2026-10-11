@@ -1,0 +1,28 @@
+// The T3 matrix multiply as kernels (SPEC-09 section 14; box 11 unit 6b), called from Python
+// with host and device arrays (python/tests/test_device.py): I8 activations times ternary
+// weights, -1, 0 or 1 stored as I8, one work-item per element of the product.
+
+// The product in I32: each term widened, the sum checked as an I32.
+export kernel matmul[m, k, n](in I8[m, k] x, in I8[k, n] w, out I32[m, n] y) over [i: m, j: n] {
+    I32 acc = 0;
+    for p in 0..k {
+        acc = acc + (x[i, p] as I32) * (w[p, j] as I32);
+    }
+    y[i, j] = acc;
+}
+
+// The same sum kept in I8: the first term that takes it outside -128 to 127 faults
+// E_OVERFLOW in its work-item, and no element of y is published.
+export kernel matmul_narrow[m, k, n](in I8[m, k] x, in I8[k, n] w, out I32[m, n] y) over [i: m, j: n] {
+    I8 acc = 0;
+    for p in 0..k {
+        acc = acc + x[i, p] * w[p, j];
+    }
+    y[i, j] = acc as I32;
+}
+
+// The product dispatched from `.ci` into the caller's y, which the function only passes to
+// the dispatch, so it may be a device array (OQ-217).
+export void product[m, k, n](in I8[m, k] x, in I8[k, n] w, inout I32[m, n] y) {
+    matmul(x, w, y);
+}

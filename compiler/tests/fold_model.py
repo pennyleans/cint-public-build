@@ -180,7 +180,10 @@ def record_case(rec: dict):
 
 def table_cases() -> list:
     cases = []
-    tables = sorted((ROOT / "conformance" / "tables").glob("*.ci"))
+    # The 42 tables over I8, U8 and I64; the kernel tables (box 11) and the wide ones (box 15)
+    # are programs that the T2 matrix runs.
+    tables = sorted(ci for ci in (ROOT / "conformance" / "tables").glob("*.ci")
+                    if not ci.name.startswith("kernel_") and ci.stem.rsplit("_", 1)[1] in ("i8", "u8", "i64"))
     if len(tables) != 42:
         raise SystemExit("expected 42 tables, found %d" % len(tables))
     for ci in tables:
@@ -343,6 +346,9 @@ def conformance_cases() -> list:
                 operands.append(rest)
             else:
                 fields[key] = rest
+        if any(line.split(" ")[1].startswith("Q") for line in fault if line.count(" ") > 2):
+            # A fixed-point fault (box 15 unit 1): B1 folds no fixed point until unit 4e.
+            continue
         exact = None if fields["exact"] == "none" else int(fields["exact"])
         limit = None if fields["limit"] == "none" else typed(fields["limit"])
         if fields["operation"] == "unassigned":

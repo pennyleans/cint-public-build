@@ -1,0 +1,7 @@
+case fixed/type_name_c2005
+clause SPEC-04 LS-36, 17.2; SPEC-01 IM-54 (i + f is 8, 16, 32 or 64; Q17.16 has 33 bits)
+format 5
+source compile-error
+outcome compile-error
+diagnostic.code C2005
+diagnostic.position fixed/type_name_c2005.ci:8:5

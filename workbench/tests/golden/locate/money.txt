@@ -1,0 +1,35 @@
+program    money.ci   evaluator cpu-sir-interp, under a recording
+target     boundary 1 of 1, overflow(): the first fault, reproduced by replay
+bracket    the initial state; then boundary 1
+fault[E_OVERFLOW]: the exact result is outside the type's range
+  --> money.ci:15:14
+   |
+15 |     return a + b;
+   |              ^ add.checked.i64
+   |
+   = operation: add.checked.i64
+   = operand-count: 2
+   = operand: I64 9223372036854775800
+   = operand: I64 12
+   = exact:   9223372036854775812
+   = limit:   I64 9223372036854775807
+   = revision: 602173cd38defe996814e3298bd2a45c715a1cea53e3b5f8f84f6d073777ebde
+   = source-map: none
+   = address: none
+   = stack-depth: 1
+   = called from: money.ci:26:12
+   = fuel-consumed: 2 (not part of the fault record)
+   = state: the post-fault state of SPEC-01 IM-121, reached by replay
+   = noncanonical: not part of the fault record
+   = stack-source: money.ci:26:12
+   |
+26 |     return add_cents(big, 12);
+   |            ^
+   |
+   = workbench-position: boundary 1
+   = site: add_cents#10
+   = backend: cpu-sir-interp, by replay
+the last 2 counted operations of boundary 1, of 2 trace events (:trace shows them all)
+  ord  position           operation              operands                 value
+    0  money.ci:26:12     call                   9223372036854775800, 12
+    1  money.ci:15:14     add.checked.i64        9223372036854775800, 12  E_OVERFLOW

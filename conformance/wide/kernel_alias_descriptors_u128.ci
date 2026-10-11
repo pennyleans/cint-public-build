@@ -1,0 +1,15 @@
+// case: wide/kernel_alias_descriptors_u128
+// clause: SPEC-02 A-5, A-6, A-8, V-13; SPEC-09 CONF-11 rules 13 and 14 (adjacent column blocks of a U128 array: an uncertain overlap at dispatch entry, with U128 descriptors)
+// subset: cint-core-1 (unsigned wide integers, kernel, array slices)
+// entry: run; args: none
+// spec outcome: fault E_ALIAS at 13:5 (the dispatch site), phase entry, address dispatch 0, operation bind.alias, operands I64 1 (v) and I64 0 (u), descriptors U128 none 2 3 2 0 6 3 0 1 write and U128 none 2 0 2 0 6 3 0 1 write; stack depth 0; fuel 1. Encoding: box 09 ruling R9. Box 15, unit 1
+
+kernel bump[h, w](in U128[h, w] u, out U128[h, w] v) over [y: h, x: w] {
+    v[y, x] = u[y, x] + 1;
+}
+
+export Bool run() {
+    U128[2, 6] m;
+    bump(m[.., 0..3], m[.., 3..6]);
+    return m[0, 3] != 0;
+}

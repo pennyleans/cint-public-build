@@ -1,0 +1,16 @@
+// advance.ci, profile cint-core-1: the complete example of SPEC-03 6.7, run on the CPU
+// and on CUDA from python/tests/test_device.py.
+export kernel advance[n](in I64[n] pos, in I64[n] vel, in I64 dt, out I64[n] next) {
+    next = pos + vel * dt;          // checked; any element overflow faults
+}
+
+export I64 total[n](in I64[n] x) {
+    return sum(x);                  // exact wide accumulator, one checked narrowing
+}
+
+test "advance boundary" expect_fault E_OVERFLOW {   // SPEC-04 section 12
+    I64[2] p = [9223372036854775800, 0];
+    I64[2] v = [1, 1];
+    I64[2] q;
+    advance(p, v, 8, q);            // 9223372036854775800 + 8 overflows; the fault ends the test
+}

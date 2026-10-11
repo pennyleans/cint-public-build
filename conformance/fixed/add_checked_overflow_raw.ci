@@ -1,0 +1,11 @@
+// case: fixed/add_checked_overflow_raw
+// clause: SPEC-01 IM-60, IM-106 (the IM-60 example: Q16.16.raw(2147483647) + Q16.16.raw(1) faults E_OVERFLOW on the raw values)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 10:14 (the `+`), operation add.checked.q16_16, operands Q16.16 raw 2147483647 and Q16.16 raw 1, exact 2147483648, limit Q16.16 raw 2147483647; stack depth 0; fuel 1. Box 15, unit 1
+
+export Bool run() {
+    Q16.16 a = Q16.16.raw(2147483647);
+    Q16.16 b = Q16.16.raw(1);
+    return a + b != 0;
+}

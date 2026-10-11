@@ -1,0 +1,7 @@
+case fixed/convert_round_clause_c2009
+clause SPEC-01 IM-68, IM-69; SPEC-04 17.2 (an integer converted to fixed point is exact, so a round clause is C2009)
+format 5
+source compile-error
+outcome compile-error
+diagnostic.code C2009
+diagnostic.position fixed/convert_round_clause_c2009.ci:9:18

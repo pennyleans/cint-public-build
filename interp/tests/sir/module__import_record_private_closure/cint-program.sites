@@ -1,0 +1,2 @@
+module 0 module/lib/import_hidden_record.ci
+module 1 module/import_record_private_closure.ci

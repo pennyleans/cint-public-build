@@ -1,0 +1,15 @@
+// case: fixed/qmul_formats
+// clause: SPEC-01 IM-63 (BX15-05 A: the IM-63 example gives raw 49152; a product into enough fraction bits is exact)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 49152; prints `0.75 2.25 0.75`; fuel 1. Box 15, unit 1
+
+export I64 run() {
+    Q16.16 a = 1.5;
+    Q1.15 b = 0.5;
+    Q16.16 c = qmul(Q16.16, a, b);
+    Q32.32 d = qmul(Q32.32, a, a);
+    Q16.16 e = qmul(Q16.16, a, b, ceil);
+    "{c} {d} {e}\n";
+    return c.raw as I64;
+}

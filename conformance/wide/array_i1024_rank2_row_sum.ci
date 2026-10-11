@@ -1,0 +1,17 @@
+// case: wide/array_i1024_rank2_row_sum
+// clause: SPEC-01 IM-77, IM-80; SPEC-04 LS-62, LS-160 (a rank-2 I1024 array, a partial index for one row, and sum over it)
+// subset: cint-core-1 (wide integers, built-in sum)
+// entry: run; args: none
+// spec outcome: value I64 12, its low 64 bits (as%); prints the I1024 value 12 (row 1 holds 3, 4 and 5 times 2^1000; their sum shifted back down) and a line feed; fuel 10 (entry, 2 outer and 6 inner iterations, one reduction charge). Box 15, unit 1
+
+export I64 run() {
+    I1024[2, 3] g;
+    for i in 0..2 {
+        for j in 0..3 {
+            g[i, j] = ((i * 3 + j) as I1024) << 1000;
+        }
+    }
+    I1024 observed = sum(g[1]) >> 1000;
+    "{observed}\n";
+    return observed as% I64;
+}

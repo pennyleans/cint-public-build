@@ -1,0 +1,76 @@
+{
+  "bars": [
+    {
+      "against": {
+        "variants": [
+          "c-double"
+        ]
+      },
+      "cint": [
+        "cint-builtin"
+      ],
+      "id": "B-1",
+      "relation": "at_most",
+      "statistic": "median",
+      "status": "Ruled, OQ-224",
+      "times": [
+        8,
+        1
+      ]
+    }
+  ],
+  "benchmark": "B-1",
+  "cint": {
+    "expected_stdout_sha256": {
+      "100000000": "68d2475161b0946c69e0373f6dbd50768ac17848e30c848ed6aa16df96608a7a",
+      "5554": "d2b4d07efa7dda4019e55138d3da0d41c0155233af360da18aeceafa3d0c76b1"
+    },
+    "lines": {
+      "steps": "const I64 STEPS = {};"
+    },
+    "source": "bench/workloads/orbit_1e8/orbit.ci"
+  },
+  "elements": "steps",
+  "form": "program",
+  "method": {
+    "rounds": 11,
+    "samples": 1,
+    "warmup": 1
+  },
+  "name": "orbit_1e8",
+  "parameters": {
+    "steps": {
+      "agreement": 5554,
+      "value": 100000000
+    }
+  },
+  "summary": "The orbit paper's two-body program at 10^8 steps (one isqrt and three muldiv a step), against the same integrator in double C. The expected stdout digests are those of the paper's 5,554-step run (the agreement size) and of the four recorded legs at 10^8 steps (pennyleans/cint-demo figures/legs/results, state digest 15231276719831660197).",
+  "variants": [
+    {
+      "helpers": "portable",
+      "name": "cint-portable",
+      "role": "cint"
+    },
+    {
+      "helpers": "builtin",
+      "name": "cint-builtin",
+      "role": "cint"
+    },
+    {
+      "gnu_flags": [
+        "-ffp-contract=off"
+      ],
+      "gnu_libs": [
+        "-lm"
+      ],
+      "language": "C17",
+      "lines": {
+        "steps": "const long STEPS = {}L;"
+      },
+      "name": "c-double",
+      "number_format": "binary64",
+      "role": "baseline",
+      "source": "bench/baselines/orbit_1e8/orbit_double.c"
+    }
+  ]
+}

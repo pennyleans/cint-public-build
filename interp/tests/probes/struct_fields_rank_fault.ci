@@ -1,0 +1,19 @@
+// case: probes/struct_fields_rank_fault
+// clause: BX22-06 probe: an index out of bounds in dimension 2 of a rank-3 struct field, through an element of a struct array
+// entry: run; args: none
+
+struct Cube { U8[2, 3, 4] cells; I64 tag; }
+
+I64 at(in Cube[_] cubes, I64 k) {
+    return cubes[1].cells[1, 2, k] as I64;
+}
+
+export I64 run() {
+    Cube[2] cubes;
+    I64 s = 0;
+    for k in 0..5 {
+        cubes[1].cells[1, 2, k % 4] = k as U8;
+        s += at(cubes, k);
+    }
+    return s;
+}

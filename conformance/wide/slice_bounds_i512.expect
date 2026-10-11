@@ -1,0 +1,18 @@
+case wide/slice_bounds_i512
+clause SPEC-04 LS-161 (hi above the extent of an I512 array faults when the slice is formed)
+format 2
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_BOUNDS
+fault.operation slice.checked.i512
+fault.operand I64 1
+fault.operand I64 7
+fault.exact none
+fault.limit I64 6
+fault.position wide/slice_bounds_i512.ci:10:17
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

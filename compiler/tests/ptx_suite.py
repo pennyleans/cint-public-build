@@ -128,8 +128,9 @@ def run(tc, tools, work: pathlib.Path, emitted: dict, prepared, cc) -> tuple:
     if emitted.setdefault("tests/ptx.ci", digest) != digest:
         return 0, total, ["emitted C differs from the first configuration's"]
     try:
-        assert table_capacity_suite.RECORDS == RECORDS
-        ids = table_capacity_suite.records(text.decode("ascii"))
+        # table_capacity also names the wide value stack's record, which ptx.ci keeps local.
+        assert table_capacity_suite.RECORDS[:len(RECORDS)] == RECORDS
+        ids = table_capacity_suite.records(text.decode("ascii"))[:len(RECORDS)]
         objs = tc.compile([c_file, TESTS / "ptx_host.c"], work, "ptx")
         exe = tc.link_exe(objs + [tools["rt_obj"]], work / "ptx-host", "ptx")
     except (cc.BuildError, ValueError) as e:

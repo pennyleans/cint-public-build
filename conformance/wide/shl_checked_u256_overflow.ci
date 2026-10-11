@@ -1,0 +1,11 @@
+// case: wide/shl_checked_u256_overflow
+// clause: SPEC-01 IM-6, IM-45, IM-106; SPEC-09 CONF-11 rule 14 (3 << 255 leaves U256; the count is an I64 operand)
+// subset: cint-core-1 (unsigned wide integers)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 10:14 (the `<<`), operation shl.checked.u256, operands U256 3 and I64 255, exact 3 * 2^255, limit U256 2^256 - 1; stack depth 0; fuel 1. Box 15, unit 1
+
+export Bool run() {
+    U256 a = 3;
+    I64 k = 255;
+    return a << k != 0;
+}

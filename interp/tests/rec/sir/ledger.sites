@@ -1,0 +1,56 @@
+module ledger
+sites ledger.ci 1:8:12:fuel.charge 2:9:11:add.checked.i64 3:10:5:print 4:11:15:call.enter 5:15:12:fuel.charge 6:17:5:fuel.charge 7:18:11:add.checked.i64 8:23:6:fuel.charge 9:24:5:print 10:25:9:call.enter
+global @total: I64 = 100
+export func @ledger.deposit(%n: I64) -> I64 {
+  fuel.charge 1                                  #1 @ledger.ci:8:12
+  %t0 = load.global @total
+  %t1 = add.checked.i64 %t0, %n                  #2 @ledger.ci:9:11
+  store.global @total, %t1
+  print.begin                                    #3 @ledger.ci:10:5
+  print.bytes "deposit "
+  print.value I64 %n
+  print.bytes "\n"
+  print.end
+  %t2 = call @lib.audit.note(%n)                 #4 @ledger.ci:11:15
+  discard %t2
+  %t3 = load.global @total
+  return %t3
+}
+export func @ledger.burn(%n: I64) -> I64 {
+  fuel.charge 1                                  #5 @ledger.ci:15:12
+  %t0 = const I64 0
+  local $s.0: I64
+  store.local $s.0, %t0
+  %t1 = const I64 0
+  local $i.1: I64
+  store.local $i.1, %t1
+  loop L7 {
+    %t2 = load.local $i.1
+    %t3 = cmp.lt.i64 %t2, %n
+    while %t3
+    fuel.charge 1                                #6 @ledger.ci:17:5
+    %t4 = load.local $s.0
+    %t5 = const I64 1
+    %t6 = add.checked.i64 %t4, %t5               #7 @ledger.ci:18:11
+    store.local $s.0, %t6
+    next
+    %t7 = load.local $i.1
+    %t8 = const I64 1
+    %t9 = add.wrap.i64 %t7, %t8
+    store.local $i.1, %t9
+  }
+  %t10 = load.local $s.0
+  return %t10
+}
+func @ledger.main() {
+  fuel.charge 1                                  #8 @ledger.ci:23:6
+  %t0 = load.global @total
+  print.begin                                    #9 @ledger.ci:24:5
+  print.bytes "ledger "
+  print.value I64 %t0
+  print.bytes "\n"
+  print.end
+  %t1 = const I64 1
+  %t2 = call @ledger.deposit(%t1)                #10 @ledger.ci:25:9
+  discard %t2
+}

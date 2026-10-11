@@ -384,6 +384,49 @@ class Modules(unittest.TestCase):
         self.assertIn("return I64 10\n", out)
 
 
+class ModuleInitializers(unittest.TestCase):
+    """SPEC-04 LS-113 (decision on OQ-233): an array literal or struct constructor whose items
+    are all constant is a constant initializer of a module-level variable."""
+
+    def test_values(self):
+        cases = [
+            ("I64[3] cents = [1, 2, 3];\nexport I64 run() { cents[1] += 5; "
+             "return cents[0] * 100 + cents[1] * 10 + cents[2]; }\n", 173),
+            ("I64[3] cents;\nexport I64 run() { cents[1] = 5; return cents[0] + cents[1] * 10; }\n", 50),
+            ("const I64 K = 4;\nI64[2, 2] m = [[K, 2], [3, K + 1]];\n"
+             "export I64 run() { return m[0, 0] * 1000 + m[1, 1]; }\n", 4005),
+            ("struct P { I64 x; I64 y; }\nP p = P(1, 2);\nexport I64 run() { p.x += 3; return p.x * 10 + p.y; }\n",
+             42),
+            ("struct S { I64[2] a; I64 b; }\nS s = S([1, 2], 3);\nstruct P { I64 x; I64 y; }\n"
+             "P[2] ps = [P(1, 2), P(3, 4)];\n"
+             "export I64 run() { return s.a[1] * 1000 + s.b * 100 + ps[1].x * 10 + ps[1].y; }\n", 2334),
+            ("U8[3] bytes = [1, 255, 0];\nBool[2] f = [true, 1 < 2];\n"
+             "export I64 run() { if (f[1]) { return bytes[1] as I64; } return 0; }\n", 255),
+        ]
+        for src, want in cases:
+            with self.subTest(src=src):
+                self.assertEqual(value(src), want)
+
+    def test_diagnostics(self):
+        cases = [
+            ("I64 f() { return 3; }\nI64[2] bad = [f(), 2];\nexport I64 run() { return bad[0]; }\n", ("C6004", 2, 14)),
+            ("I64 x = 3;\nI64[2] g = [x, 2];\nexport I64 run() { return g[0]; }\n", ("C6004", 2, 12)),
+            ("struct P { I64 x; I64 y; }\nI64 x = 3;\nP p = P(x, 2);\nexport I64 run() { return p.y; }\n",
+             ("C6004", 3, 7)),
+            ("I64[2] g = [I64.max + 1, 0];\nexport I64 run() { return g[0]; }\n", ("C6001", 1, 21)),
+            ("U8[2] b = [256, 0];\nexport I64 run() { return b[0] as I64; }\n", ("C2003", 1, 12)),
+            ("I64[3] c = [1, 2];\nexport I64 run() { return c[0]; }\n", ("C2011", 1, 12)),
+        ]
+        for src, want in cases:
+            with self.subTest(src=src):
+                self.assertEqual(diag(src), want)
+
+    def test_state_lines(self):
+        """An array or struct variable has no `state.global` line until OQ-156 (CONF-11 rule 10)."""
+        o = run("I64[2] g = [1, 2];\nI64 seen = 5;\nexport I64 run() { seen += g[1]; return 0; }\n")
+        self.assertEqual([(n, v.value) for _, n, v in o.state], [("seen", 7)])
+
+
 class Surface(unittest.TestCase):
     def test_profile_line(self):
         self.assertEqual(value('profile "cint-core-1";\nexport I64 run() { return 1; }\n'), 1)

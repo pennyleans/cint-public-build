@@ -1,0 +1,13 @@
+// case: wide/state_after_fault_u128
+// clause: SPEC-01 IM-106; SPEC-04 LS-213; SPEC-09 CONF-11 rules 10 and 14 (the store before a U128 fault stands in the module state)
+// subset: cint-core-1 (unsigned wide integers)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 11:11 (the `+`), operation add.checked.u128, operands U128 2^128 - 1 and U128 1, exact 2^128, limit U128 2^128 - 1; stack depth 0; fuel 1; state.global wide.state_after_fault_u128 s U128 2^128 - 1. Box 15, unit 1
+
+U128 s = 1;
+
+export I64 run() {
+    s = U128.max;
+    s = s + 1;
+    return 0;
+}

@@ -1,0 +1,18 @@
+// case: probes/rank2_param_shape_fault
+// clause: box 13 unit 7 probe: two rank-2 views bound to one shape, then a mismatch (bind.shape with its dimension, extent d)
+// entry: run; args: none
+
+I64 both[r, c](in I64[r, c] a, in I64[r, c] b) {
+    return a[0, 0] + b[r - 1, c - 1];
+}
+
+I64 go(I64 k) {
+    I64[3, 4] m;
+    m[2, 1] = 9;
+    m[0, 2] = 4;
+    return both(m[.., k..], m[.., ..2]);
+}
+
+export I64 run() {
+    return go(2) * 100 + go(1);
+}

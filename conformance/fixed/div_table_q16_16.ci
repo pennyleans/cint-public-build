@@ -1,0 +1,13 @@
+// case: fixed/div_table_q16_16
+// clause: SPEC-01 IM-65, IM-66 (the rows of the 5.4 table, as raw values)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 0; prints `21845 43691 -21845 -21846 43690` (the 5.4 table, then 2/3 with trunc); fuel 1. Box 15, unit 1
+
+export I64 run() {
+    Q16.16 one = 1.0;
+    Q16.16 two = 2.0;
+    Q16.16 three = 3.0;
+    "{(one / three)!raw} {(two / three)!raw} {(-one / three)!raw} {div(-one, three, floor)!raw} {div(two, three, trunc)!raw}\n";
+    return 0;
+}

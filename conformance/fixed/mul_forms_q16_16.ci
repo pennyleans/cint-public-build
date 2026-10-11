@@ -1,0 +1,13 @@
+// case: fixed/mul_forms_q16_16
+// clause: SPEC-01 IM-61, IM-62 (`*|`, `mul_sat` and `mul_wrap` apply the form rule to the rounded raw product)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 0; prints `2147483647 2147483647 -2147483648 -2147483648 -2147483648` (raw 2^31 saturates, wraps, and -256.0 * 128.0 is -2^31 exactly); fuel 1. Box 15, unit 1
+
+export I64 run() {
+    Q16.16 a = 256.0;
+    Q16.16 b = 128.0;
+    Q16.16 n = -256.0;
+    "{(a *| b)!raw} {mul_sat(a, b, floor)!raw} {mul_wrap(a, b, half_even)!raw} {(a *% b)!raw} {(n * b)!raw}\n";
+    return 0;
+}

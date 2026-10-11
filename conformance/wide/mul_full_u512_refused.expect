@@ -1,0 +1,7 @@
+case wide/mul_full_u512_refused
+clause SPEC-01 IM-6, IM-16 (U512 has no mul_full)
+format 5
+source compile-error
+outcome compile-error
+diagnostic.code C2103
+diagnostic.position wide/mul_full_u512_refused.ci:9:9

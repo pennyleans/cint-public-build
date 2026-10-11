@@ -1,0 +1,17 @@
+fault[E_NARROW]: the value does not fit the destination type
+  --> narrow.ci:3:20
+   |
+ 3 |     I8 small = big as I8;
+   |                    ^ as.checked.i64.i8
+   |
+   = operation: as.checked.i64.i8
+   = operand-count: 1
+   = operand: I64 300
+   = exact:   300
+   = limit:   I8 127
+   = revision: 1a4f3ab93f03777b6c6606ca686ff9934b9509e78ed9ba4026e1099321b97ee4
+   = source-map: none
+   = address: none
+   = stack-depth: 0
+   = fuel-consumed: 1 (not part of the fault record)
+   = state: the program stopped; stdout holds what it wrote before the fault

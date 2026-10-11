@@ -1,0 +1,53 @@
+program    kernel/heat_e2_narrowing.ci   evaluator cpu-sir-interp, under a recording
+target     boundary 1 of 1, run(): the first fault, reproduced by replay
+bracket    the initial state; then boundary 1
+fault[E_NARROW]: the value does not fit the destination type
+  --> kernel/heat_e2_narrowing.ci:20:24
+   |
+20 |         r = (c + flux) as I32;
+   |                        ^ as.checked.i64.i32
+   |
+   = operation: as.checked.i64.i32
+   = operand-count: 1
+   = operand: I64 -6442450941
+   = exact:   -6442450941
+   = limit:   I32 -2147483648
+   = revision: 432970defff9cc942bb3a1f518308e2f502f35878600b21f943ab1e31fcdcfa9
+   = source-map: none
+   = address: kernel.heat_e2_narrowing.diffuse, dispatch 0, phase 1, work-item 28, step 25
+   = stack-depth: 1
+   = called from: kernel/heat_e2_narrowing.ci:31:5
+   = fuel-consumed: 65 (not part of the fault record)
+   = state: the post-fault state of SPEC-01 IM-121, reached by replay
+   = noncanonical: not part of the fault record
+   = stack-source: kernel/heat_e2_narrowing.ci:31:5
+   |
+31 |     diffuse(a, 1, 1, b, total);
+   |     ^
+   |
+   = work-item-tuple: [3, 4]
+   = workbench-position: boundary 1
+   = site: diffuse#33
+   = backend: cpu-sir-interp, by replay; the dispatch ran in F-3 order and stopped at its first fault (SPEC-02 B-5)
+the last 20 counted operations of boundary 1, of 519 trace events (:trace shows them all)
+  ord  position           operation              operands                 value
+  499  kernel/heat_e2_narrowing.ci:17:21 index.checked.i32      2
+  500  kernel/heat_e2_narrowing.ci:17:32 as.checked.i32.i64     0                        0
+  501  kernel/heat_e2_narrowing.ci:17:47 add.checked.i64        3, 1                     4
+  502  kernel/heat_e2_narrowing.ci:17:44 index.checked.i32      4
+  503  kernel/heat_e2_narrowing.ci:17:55 as.checked.i32.i64     0                        0
+  504  kernel/heat_e2_narrowing.ci:17:40 add.checked.i64        0, 0                     0
+  505  kernel/heat_e2_narrowing.ci:18:27 sub.checked.i64        4, 1                     3
+  506  kernel/heat_e2_narrowing.ci:18:21 index.checked.i32      3
+  507  kernel/heat_e2_narrowing.ci:18:32 as.checked.i32.i64     0                        0
+  508  kernel/heat_e2_narrowing.ci:18:17 add.checked.i64        0, 0                     0
+  509  kernel/heat_e2_narrowing.ci:18:50 add.checked.i64        4, 1                     5
+  510  kernel/heat_e2_narrowing.ci:18:44 index.checked.i32      3
+  511  kernel/heat_e2_narrowing.ci:18:55 as.checked.i32.i64     0                        0
+  512  kernel/heat_e2_narrowing.ci:18:40 add.checked.i64        0, 0                     0
+  513  kernel/heat_e2_narrowing.ci:18:67 mul.checked.i64        4, 2147483647            8589934588
+  514  kernel/heat_e2_narrowing.ci:18:63 sub.checked.i64        0, 8589934588            -8589934588
+  515  kernel/heat_e2_narrowing.ci:19:33 mul.checked.i64        1, -8589934588           -8589934588
+  516  kernel/heat_e2_narrowing.ci:19:20 div_round.checked.i64.half_even -8589934588, 1           -8589934588
+  517  kernel/heat_e2_narrowing.ci:20:16 add.checked.i64        2147483647, -8589934588  -6442450941
+  518  kernel/heat_e2_narrowing.ci:20:24 as.checked.i64.i32     -6442450941              E_NARROW

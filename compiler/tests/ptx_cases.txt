@@ -10,6 +10,7 @@ conformance/kernel/body_print_c5020.ci stopped
 conformance/kernel/bounds_in_block.ci ptx
 conformance/kernel/coverage_c5031.ci stopped
 conformance/kernel/dispatch_number_second.ci ptx
+conformance/kernel/fuel_before_overflow.ci ptx
 conformance/kernel/fuel_entry_charge.ci ptx
 conformance/kernel/fuel_in_body_located.ci ptx golden
 conformance/kernel/heat_e1_overflow.ci ptx

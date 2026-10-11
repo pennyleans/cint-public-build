@@ -1,0 +1,9 @@
+case wide/copy_reverse_reshape_i256
+clause SPEC-04 LS-145, LS-161 (`copy` from a reversed slice, `fill`, `reshape` and `transpose` of I256 views)
+format 2
+source reference
+outcome value
+stdout-bytes 2
+stdout-sha256 4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865
+return I64 1
+fuel-consumed 1

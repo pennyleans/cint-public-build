@@ -1,0 +1,22 @@
+module module.struct_field_imported_struct
+sites module/struct_field_imported_struct.ci 1:14:12:fuel.charge 2:16:23:call.enter 3:16:41:add.checked.i64
+struct Box(inner: module.lib.plain_math.Pair, k: I64)
+export func @module.struct_field_imported_struct.run() -> I64 {
+  fuel.charge 1                                  #1 @module/struct_field_imported_struct.ci:14:12
+  local $sc.0: Box
+  local $sc.1: module.lib.plain_math.Pair
+  %t0 = const I64 3
+  %t1 = const I64 4
+  field.store $sc.1, a, %t0
+  field.store $sc.1, b, %t1
+  %t2 = const I64 30
+  field.copy $sc.0, inner, $sc.1
+  field.store $sc.0, k, %t2
+  local $b.2: Box
+  struct.copy $b.2, $sc.0
+  field.address $sc.3, $b.2, inner
+  %t3 = call @module.lib.plain_math.sum_pair($sc.3) #2 @module/struct_field_imported_struct.ci:16:23
+  %t4 = field.load $b.2, k
+  %t5 = add.checked.i64 %t3, %t4                 #3 @module/struct_field_imported_struct.ci:16:41
+  return %t5
+}

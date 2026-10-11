@@ -1,0 +1,9 @@
+case fixed/round_modes_mul
+clause SPEC-01 4.5, IM-61, IM-62 (each rounding mode on products of exact raw value -1.5, -0.5, 0.5 and 1.5)
+format 5
+source reference
+outcome value
+stdout-bytes 67
+stdout-sha256 e83bc04b14a68cf18fb91fdf066bc5cfa6bd86e886d5069182fb0d4d1f257419
+return I64 0
+fuel-consumed 1

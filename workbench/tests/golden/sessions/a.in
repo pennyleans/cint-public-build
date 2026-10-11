@@ -1,0 +1,30 @@
+"hello, world\n";
+I64 answer = 6 * 7;
+"answer={answer}\n";
+I64[3] cents = [1999, 425, 10];
+I64 subtotal = sum(cents);
+:inspect subtotal /scale 100
+I64 tax = div_round(subtotal * 825, 10000, half_even);   // 8.25 percent
+div_round(200 * 825, 10000, half_even)
+div_round(200 * 825, 10000, half_up)
+I64 big = 9223372036854775800;
+big + 12
+big +| 12
+big +% 12
+I64 total_with_tax[n](in I64[n] c, I64 rate_bp) {
+    I64 s = sum(c);
+    return s + div_round(s * rate_bp, 10000, half_even);
+}
+total_with_tax(cents, 825)
+:checkpoint priced
+I64 total_with_tax[n](in I64[n] c, I64 rate_bp) {
+    I64 s = sum(c);
+    return s + div_round(s * rate_bp, 10000, half_up);
+}
+total_with_tax([200], 825)
+:restore priced
+total_with_tax([200], 825)
+:history total_with_tax
+:save-case priced.cicase
+:save session-a
+:quit

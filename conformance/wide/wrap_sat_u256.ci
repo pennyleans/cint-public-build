@@ -1,0 +1,12 @@
+// case: wide/wrap_sat_u256
+// clause: SPEC-01 IM-6, IM-28, IM-31, IM-32 (the wrapping and saturating forms of +, - and * on U256)
+// subset: cint-core-1 (unsigned wide integers, print statements)
+// entry: run; args: none
+// spec outcome: value I64 0; output `2 M 4 0 M-2 M` and a line feed, M = 2^256 - 1 (max +% 3 is 2, max +| 3 is M, 3 -% max is 4, 3 -| max is 0, max *% 3 is 2^256 - 3, max *| 3 is M); fuel 1. Box 15, unit 1
+
+export I64 run() {
+    U256 a = U256.max;
+    U256 b = 3;
+    "{a +% b} {a +| b} {b -% a} {b -| a} {a *% b} {a *| b}\n";
+    return 0;
+}

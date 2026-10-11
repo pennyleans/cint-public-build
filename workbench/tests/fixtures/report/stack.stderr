@@ -1,0 +1,21 @@
+fault[E_DIV_ZERO]: division by zero
+  --> stack.ci:3:16
+   |
+ 3 |     return 100 / d;
+   |                ^ div.checked.i64
+   |
+   = operation: div.checked.i64
+   = operand-count: 2
+   = operand: I64 100
+   = operand: I64 0
+   = exact:   none
+   = limit:   none
+   = revision: 79cf7e8caeb3447d727cb09a269f26c80d5df40d94edd198e72cbc3d835817f2
+   = source-map: none
+   = address: none
+   = stack-depth: 3
+   = called from: stack.ci:15:13
+   = called from: stack.ci:11:12
+   = called from: stack.ci:7:12
+   = fuel-consumed: 4 (not part of the fault record)
+   = state: the program stopped; stdout holds what it wrote before the fault

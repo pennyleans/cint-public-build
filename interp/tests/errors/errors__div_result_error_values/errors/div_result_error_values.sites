@@ -1,0 +1,50 @@
+module errors.div_result_error_values
+sites errors/div_result_error_values.ci 1:17:12:fuel.charge 2:18:12:call.enter 3:18:24:mul.checked.i64 4:18:32:call.enter 5:18:43:mul.checked.i64 6:18:30:add.checked.i64 7:18:50:call.enter 8:18:48:add.checked.i64
+func @errors.div_result_error_values.code(%a: I64, %b: I64) -> I64 {
+  %t0 = div.result.i64 %a, %b
+  %t1 = error.tag
+  %t2 = const U16 0
+  %t3 = cmp.ne.u16 %t1, %t2
+  if {
+    arm {
+    } then %t3 {
+      local $e.0: U16
+      store.local $e.0, %t1
+      if {
+        arm {
+          %t4 = load.local $e.0
+          %t5 = const U16 2
+          %t6 = cmp.eq.u16 %t4, %t5
+        } then %t6 {
+          %t7 = const I64 -2
+          return %t7
+        }
+      }
+      %t8 = const I64 -1
+      return %t8
+    }
+  }
+  local $q.1: I64
+  store.local $q.1, %t0
+  %t9 = load.local $q.1
+  return %t9
+}
+export func @errors.div_result_error_values.run() -> I64 {
+  fuel.charge 1                                  #1 @errors/div_result_error_values.ci:17:12
+  %t0 = const I64 10
+  %t1 = const I64 2
+  %t2 = call @errors.div_result_error_values.code(%t0, %t1) #2 @errors/div_result_error_values.ci:18:12
+  %t3 = const I64 100
+  %t4 = mul.checked.i64 %t2, %t3                 #3 @errors/div_result_error_values.ci:18:24
+  %t5 = const I64 7
+  %t6 = const I64 0
+  %t7 = call @errors.div_result_error_values.code(%t5, %t6) #4 @errors/div_result_error_values.ci:18:32
+  %t8 = const I64 10
+  %t9 = mul.checked.i64 %t7, %t8                 #5 @errors/div_result_error_values.ci:18:43
+  %t10 = add.checked.i64 %t4, %t9                #6 @errors/div_result_error_values.ci:18:30
+  %t11 = const I64 -9223372036854775808
+  %t12 = const I64 -1
+  %t13 = call @errors.div_result_error_values.code(%t11, %t12) #7 @errors/div_result_error_values.ci:18:50
+  %t14 = add.checked.i64 %t10, %t13              #8 @errors/div_result_error_values.ci:18:48
+  return %t14
+}

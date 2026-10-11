@@ -1,0 +1,305 @@
+module kernel/heat_e2_narrowing.ci   revision 432970defff9cc942bb3a1f518308e2f502f35878600b21f943ab1e31fcdcfa9
+program   1 module, 2 functions, 226 nodes
+compile fuel   per phase: k x input bytes + c, k = 21524, c = 19876 (rt/cint_bridge.h; SPEC-09 CINTC-09)
+  plan                          1109 bytes in all modules   23889992 units
+  kernel/heat_e2_narrowing.ci   1109 bytes   23889992 units for each of compile, measure, and emit
+memory   K x source bytes + 1 MiB + 80 B x program declarations per module (SPEC-09 CINTC-02); K is measured by tools/cint_measure.py
+
+kernel diffuse   kernel/heat_e2_narrowing.sites:3   pure
+  signature  (in u: I32[_, _], in kn: I64, in kd: I64, out v: I32[_, _], out total: I64)
+  domain     over [y: h, x: w]   row-major work-items, one fuel unit each, charged by the dispatch before any runs (SPEC-02 K-8, K-9, X-8)
+  shapes     h = extent 0 of u; w = extent 1 of u; v extent 0 = h; v extent 1 = w   else E_SHAPE at entry (SPEC-02 F-5)
+  aliasing   v must not overlap u   checked at entry, E_ALIAS (SPEC-02 A-8, F-5)
+  reads      u: 6 element loads
+  writes     v: 1 element store, in each work-item's own block (SPEC-02 K-10), every element of the block on every path that completes (K-10a, checked by cintc)
+  publish    v; total, only when every work-item completes; a fault publishes nothing
+  fault sites (36): 36 possible, 0 statically excluded
+    diffuse#1   kernel/heat_e2_narrowing.ci:7:15   dispatch.entry                   E_SHAPE E_ALIAS E_FUEL possible
+    diffuse#2   kernel/heat_e2_narrowing.ci:14:14  index.checked.i32                E_BOUNDS possible
+    diffuse#3   kernel/heat_e2_narrowing.ci:14:14  index.checked.i32                E_BOUNDS possible
+    diffuse#4   kernel/heat_e2_narrowing.ci:14:21  as.checked.i32.i64               E_NARROW possible
+    diffuse#5   kernel/heat_e2_narrowing.ci:15:14  index.checked.i32                E_BOUNDS possible
+    diffuse#6   kernel/heat_e2_narrowing.ci:15:14  index.checked.i32                E_BOUNDS possible
+    diffuse#7   kernel/heat_e2_narrowing.ci:16:24  sub.checked.i64                  E_OVERFLOW possible
+    diffuse#8   kernel/heat_e2_narrowing.ci:16:46  sub.checked.i64                  E_OVERFLOW possible
+    diffuse#9   kernel/heat_e2_narrowing.ci:17:24  sub.checked.i64                  E_OVERFLOW possible
+    diffuse#10  kernel/heat_e2_narrowing.ci:17:21  index.checked.i32                E_BOUNDS possible
+    diffuse#11  kernel/heat_e2_narrowing.ci:17:21  index.checked.i32                E_BOUNDS possible
+    diffuse#12  kernel/heat_e2_narrowing.ci:17:32  as.checked.i32.i64               E_NARROW possible
+    diffuse#13  kernel/heat_e2_narrowing.ci:17:47  add.checked.i64                  E_OVERFLOW possible
+    diffuse#14  kernel/heat_e2_narrowing.ci:17:44  index.checked.i32                E_BOUNDS possible
+    diffuse#15  kernel/heat_e2_narrowing.ci:17:44  index.checked.i32                E_BOUNDS possible
+    diffuse#16  kernel/heat_e2_narrowing.ci:17:55  as.checked.i32.i64               E_NARROW possible
+    diffuse#17  kernel/heat_e2_narrowing.ci:17:40  add.checked.i64                  E_OVERFLOW possible
+    diffuse#18  kernel/heat_e2_narrowing.ci:18:27  sub.checked.i64                  E_OVERFLOW possible
+    diffuse#19  kernel/heat_e2_narrowing.ci:18:21  index.checked.i32                E_BOUNDS possible
+    diffuse#20  kernel/heat_e2_narrowing.ci:18:21  index.checked.i32                E_BOUNDS possible
+    diffuse#21  kernel/heat_e2_narrowing.ci:18:32  as.checked.i32.i64               E_NARROW possible
+    diffuse#22  kernel/heat_e2_narrowing.ci:18:17  add.checked.i64                  E_OVERFLOW possible
+    diffuse#23  kernel/heat_e2_narrowing.ci:18:50  add.checked.i64                  E_OVERFLOW possible
+    diffuse#24  kernel/heat_e2_narrowing.ci:18:44  index.checked.i32                E_BOUNDS possible
+    diffuse#25  kernel/heat_e2_narrowing.ci:18:44  index.checked.i32                E_BOUNDS possible
+    diffuse#26  kernel/heat_e2_narrowing.ci:18:55  as.checked.i32.i64               E_NARROW possible
+    diffuse#27  kernel/heat_e2_narrowing.ci:18:40  add.checked.i64                  E_OVERFLOW possible
+    diffuse#28  kernel/heat_e2_narrowing.ci:18:67  mul.checked.i64                  E_OVERFLOW possible
+    diffuse#29  kernel/heat_e2_narrowing.ci:18:63  sub.checked.i64                  E_OVERFLOW possible
+    diffuse#30  kernel/heat_e2_narrowing.ci:19:33  mul.checked.i64                  E_OVERFLOW possible
+    diffuse#31  kernel/heat_e2_narrowing.ci:19:20  div_round.checked.i64.half_even  E_OVERFLOW E_DIV_ZERO possible
+    diffuse#32  kernel/heat_e2_narrowing.ci:20:16  add.checked.i64                  E_OVERFLOW possible
+    diffuse#33  kernel/heat_e2_narrowing.ci:20:24  as.checked.i64.i32               E_NARROW possible
+    diffuse#34  kernel/heat_e2_narrowing.ci:22:6   index.checked.i32                E_BOUNDS possible
+    diffuse#35  kernel/heat_e2_narrowing.ci:22:6   index.checked.i32                E_BOUNDS possible
+    diffuse#36  kernel/heat_e2_narrowing.ci:23:20  sum.checked.i32.i64              E_OVERFLOW possible
+  hint       not analyzed: excluding a possible site needs range analysis, which no component performs yet
+  reductions
+    total diffuse#36  sum.checked.i32.i64  result I64; accumulator 32 + ceil(log2 n) bits for n terms (SPEC-01 IM-80); exact; one checked narrowing to I64 at the end
+  fuel       fuel-v1 charge points (SPEC-01 IM-139, SPEC-09 SIR-07)
+    diffuse#1   dispatch.entry  1 per work-item, when the host dispatches this kernel (SPEC-02 X-8)
+  lowering
+    cpu-sir-interp    supported   the workbench evaluator runs this text (SPEC-09 BACK-01a)
+    cpu-c17 (ref-c)   supported   cintc emits C17 from the same SIR (SPEC-09 BACK-03)
+  sir
+export kernel @kernel.heat_e2_narrowing.diffuse(%u: I32[_, _], %kn: I64, %kd: I64, %v: I32[_, _], %total: out I64) {
+  dispatch.entry                                 #1 @kernel/heat_e2_narrowing.ci:7:15
+  local $h.0: I64
+  local $w.1: I64
+  %t0 = view.extent %u, 0
+  store.local $h.0, %t0
+  %t1 = view.extent %u, 1
+  store.local $w.1, %t1
+  %t2 = load.local $h.0
+  bind.shape %v, 3, 0, %t2
+  %t3 = load.local $w.1
+  bind.shape %v, 3, 1, %t3
+  %t4 = load.local $h.0
+  store.local $sc.2, %t4
+  %t5 = load.local $w.1
+  store.local $sc.3, %t5
+  bind.alias %v, %u
+  dispatch.charge $sc.4, 2, $sc.2, $sc.3
+  dispatch.stage $sc.5, %v, 1
+  dispatch.push
+  %t6 = const I64 0
+  store.local $sc.6, %t6
+  loop L21 {
+    %t7 = load.local $sc.6
+    %t8 = load.local $sc.4
+    %t9 = cmp.lt.i64 %t7, %t8
+    while %t9
+    %t10 = load.local $sc.6
+    dispatch.item %t10, 2, $y.7, $x.8, $sc.2, $sc.3
+    %t11 = load.local $y.7
+    %t12 = load.local $x.8
+    index.checked.i32 %u, %t11, 0                #2 @kernel/heat_e2_narrowing.ci:14:14
+    index.checked.i32 %u, %t12, 1                #3 @kernel/heat_e2_narrowing.ci:14:14
+    %t13 = view.offset %u, %t11, 0
+    %t14 = view.offset %u, %t12, %t13, 1
+    dispatch.step
+    %t15 = index.load %u, %t14
+    %t16 = as.checked.i32.i64 %t15               #4 @kernel/heat_e2_narrowing.ci:14:21
+    dispatch.step
+    local $c.9: I64
+    store.local $c.9, %t16
+    %t17 = load.local $y.7
+    %t18 = load.local $x.8
+    index.checked.i32 %u, %t17, 0                #5 @kernel/heat_e2_narrowing.ci:15:14
+    index.checked.i32 %u, %t18, 1                #6 @kernel/heat_e2_narrowing.ci:15:14
+    %t19 = view.offset %u, %t17, 0
+    %t20 = view.offset %u, %t18, %t19, 1
+    dispatch.step
+    %t21 = index.load %u, %t20
+    local $r.10: I32
+    store.local $r.10, %t21
+    if {
+      arm {
+        %t22 = load.local $y.7
+        %t23 = const I64 0
+        %t24 = cmp.gt.i64 %t22, %t23
+        local $sc.11: Bool
+        store.local $sc.11, %t24
+        if {
+          arm {
+          } then %t24 {
+            %t25 = load.local $y.7
+            %t26 = load.local $h.0
+            %t27 = const I64 1
+            %t28 = sub.checked.i64 %t26, %t27    #7 @kernel/heat_e2_narrowing.ci:16:24
+            dispatch.step
+            %t29 = cmp.lt.i64 %t25, %t28
+            store.local $sc.11, %t29
+          }
+        }
+        %t30 = load.local $sc.11
+        local $sc.12: Bool
+        store.local $sc.12, %t30
+        if {
+          arm {
+          } then %t30 {
+            %t31 = load.local $x.8
+            %t32 = const I64 0
+            %t33 = cmp.gt.i64 %t31, %t32
+            store.local $sc.12, %t33
+          }
+        }
+        %t34 = load.local $sc.12
+        local $sc.13: Bool
+        store.local $sc.13, %t34
+        if {
+          arm {
+          } then %t34 {
+            %t35 = load.local $x.8
+            %t36 = load.local $w.1
+            %t37 = const I64 1
+            %t38 = sub.checked.i64 %t36, %t37    #8 @kernel/heat_e2_narrowing.ci:16:46
+            dispatch.step
+            %t39 = cmp.lt.i64 %t35, %t38
+            store.local $sc.13, %t39
+          }
+        }
+        %t40 = load.local $sc.13
+      } then %t40 {
+        %t41 = load.local $y.7
+        %t42 = const I64 1
+        %t43 = sub.checked.i64 %t41, %t42        #9 @kernel/heat_e2_narrowing.ci:17:24
+        dispatch.step
+        %t44 = load.local $x.8
+        index.checked.i32 %u, %t43, 0            #10 @kernel/heat_e2_narrowing.ci:17:21
+        index.checked.i32 %u, %t44, 1            #11 @kernel/heat_e2_narrowing.ci:17:21
+        %t45 = view.offset %u, %t43, 0
+        %t46 = view.offset %u, %t44, %t45, 1
+        dispatch.step
+        %t47 = index.load %u, %t46
+        %t48 = as.checked.i32.i64 %t47           #12 @kernel/heat_e2_narrowing.ci:17:32
+        dispatch.step
+        %t49 = load.local $y.7
+        %t50 = const I64 1
+        %t51 = add.checked.i64 %t49, %t50        #13 @kernel/heat_e2_narrowing.ci:17:47
+        dispatch.step
+        %t52 = load.local $x.8
+        index.checked.i32 %u, %t51, 0            #14 @kernel/heat_e2_narrowing.ci:17:44
+        index.checked.i32 %u, %t52, 1            #15 @kernel/heat_e2_narrowing.ci:17:44
+        %t53 = view.offset %u, %t51, 0
+        %t54 = view.offset %u, %t52, %t53, 1
+        dispatch.step
+        %t55 = index.load %u, %t54
+        %t56 = as.checked.i32.i64 %t55           #16 @kernel/heat_e2_narrowing.ci:17:55
+        dispatch.step
+        %t57 = add.checked.i64 %t48, %t56        #17 @kernel/heat_e2_narrowing.ci:17:40
+        dispatch.step
+        %t58 = load.local $y.7
+        %t59 = load.local $x.8
+        %t60 = const I64 1
+        %t61 = sub.checked.i64 %t59, %t60        #18 @kernel/heat_e2_narrowing.ci:18:27
+        dispatch.step
+        index.checked.i32 %u, %t58, 0            #19 @kernel/heat_e2_narrowing.ci:18:21
+        index.checked.i32 %u, %t61, 1            #20 @kernel/heat_e2_narrowing.ci:18:21
+        %t62 = view.offset %u, %t58, 0
+        %t63 = view.offset %u, %t61, %t62, 1
+        dispatch.step
+        %t64 = index.load %u, %t63
+        %t65 = as.checked.i32.i64 %t64           #21 @kernel/heat_e2_narrowing.ci:18:32
+        dispatch.step
+        %t66 = add.checked.i64 %t57, %t65        #22 @kernel/heat_e2_narrowing.ci:18:17
+        dispatch.step
+        %t67 = load.local $y.7
+        %t68 = load.local $x.8
+        %t69 = const I64 1
+        %t70 = add.checked.i64 %t68, %t69        #23 @kernel/heat_e2_narrowing.ci:18:50
+        dispatch.step
+        index.checked.i32 %u, %t67, 0            #24 @kernel/heat_e2_narrowing.ci:18:44
+        index.checked.i32 %u, %t70, 1            #25 @kernel/heat_e2_narrowing.ci:18:44
+        %t71 = view.offset %u, %t67, 0
+        %t72 = view.offset %u, %t70, %t71, 1
+        dispatch.step
+        %t73 = index.load %u, %t72
+        %t74 = as.checked.i32.i64 %t73           #26 @kernel/heat_e2_narrowing.ci:18:55
+        dispatch.step
+        %t75 = add.checked.i64 %t66, %t74        #27 @kernel/heat_e2_narrowing.ci:18:40
+        dispatch.step
+        %t76 = const I64 4
+        %t77 = load.local $c.9
+        %t78 = mul.checked.i64 %t76, %t77        #28 @kernel/heat_e2_narrowing.ci:18:67
+        dispatch.step
+        %t79 = sub.checked.i64 %t75, %t78        #29 @kernel/heat_e2_narrowing.ci:18:63
+        dispatch.step
+        local $lap.14: I64
+        store.local $lap.14, %t79
+        %t80 = load.local $lap.14
+        %t81 = mul.checked.i64 %kn, %t80         #30 @kernel/heat_e2_narrowing.ci:19:33
+        dispatch.step
+        %t82 = div_round.checked.i64.half_even %t81, %kd #31 @kernel/heat_e2_narrowing.ci:19:20
+        dispatch.step
+        local $flux.15: I64
+        store.local $flux.15, %t82
+        %t83 = load.local $c.9
+        %t84 = load.local $flux.15
+        %t85 = add.checked.i64 %t83, %t84        #32 @kernel/heat_e2_narrowing.ci:20:16
+        dispatch.step
+        %t86 = as.checked.i64.i32 %t85           #33 @kernel/heat_e2_narrowing.ci:20:24
+        dispatch.step
+        store.local $r.10, %t86
+      }
+    }
+    %t87 = load.local $y.7
+    %t88 = load.local $x.8
+    index.checked.i32 $sc.5, %t87, 0             #34 @kernel/heat_e2_narrowing.ci:22:6
+    index.checked.i32 $sc.5, %t88, 1             #35 @kernel/heat_e2_narrowing.ci:22:6
+    %t89 = view.offset $sc.5, %t87, 0
+    %t90 = view.offset $sc.5, %t88, %t89, 1
+    dispatch.step
+    %t91 = load.local $r.10
+    index.store $sc.5, %t90, %t91
+    %t92 = load.local $r.10
+    reduce.add sum.checked.i32.i64 %total, %t92
+    dispatch.step
+    next
+    %t93 = load.local $sc.6
+    %t94 = const I64 1
+    %t95 = add.wrap.i64 %t93, %t94
+    store.local $sc.6, %t95
+  }
+  dispatch.phase 2
+  reduce.final sum.checked.i32.i64 %total        #36 @kernel/heat_e2_narrowing.ci:23:20
+  dispatch.pop
+  dispatch.publish %v, $sc.5
+  dispatch.publish %total
+}
+
+function run   kernel/heat_e2_narrowing.sites:208   pure
+  signature  () -> I64
+  fault sites (4): 4 possible, 0 statically excluded
+    run#37  kernel/heat_e2_narrowing.ci:26:12  fuel.charge        E_FUEL possible
+    run#38  kernel/heat_e2_narrowing.ci:29:6   index.checked.i32  E_BOUNDS possible
+    run#39  kernel/heat_e2_narrowing.ci:29:6   index.checked.i32  E_BOUNDS possible
+    run#40  kernel/heat_e2_narrowing.ci:31:5   dispatch           E_SHAPE E_ALIAS E_FUEL possible
+  hint       not analyzed: excluding a possible site needs range analysis, which no component performs yet
+  fuel       fuel-v1 charge points (SPEC-01 IM-139, SPEC-09 SIR-07)
+    run#37  fuel.charge 1   at the start of the body
+    run#40  dispatch        1 per work-item of kernel.heat_e2_narrowing.diffuse, before any runs (SPEC-02 X-8)
+  lowering
+    cpu-sir-interp    supported   the workbench evaluator runs this text (SPEC-09 BACK-01a)
+    cpu-c17 (ref-c)   supported   cintc emits C17 from the same SIR (SPEC-09 BACK-03)
+  sir
+export func @kernel.heat_e2_narrowing.run() -> I64 {
+  fuel.charge 1                                  #37 @kernel/heat_e2_narrowing.ci:26:12
+  local $sc.0: I32[64]
+  view.begin $a.1: I32[_, _], $sc.0, 0, 32776
+  local $sc.2: I32[64]
+  view.begin $b.3: I32[_, _], $sc.2, 0, 32776
+  %t0 = const I64 3
+  %t1 = const I64 4
+  index.checked.i32 $a.1, %t0, 0                 #38 @kernel/heat_e2_narrowing.ci:29:6
+  index.checked.i32 $a.1, %t1, 1                 #39 @kernel/heat_e2_narrowing.ci:29:6
+  %t2 = view.offset $a.1, %t0, 0
+  %t3 = view.offset $a.1, %t1, %t2, 1
+  %t4 = const I32 2147483647
+  index.store $a.1, %t3, %t4
+  %t5 = const I64 0
+  local $total.4: I64
+  store.local $total.4, %t5
+  %t6 = const I64 1
+  %t7 = const I64 1
+  dispatch @kernel.heat_e2_narrowing.diffuse($a.1, %t6, %t7, $b.3, out $total.4), 9 #40 @kernel/heat_e2_narrowing.ci:31:5
+  %t8 = load.local $total.4
+  return %t8
+}

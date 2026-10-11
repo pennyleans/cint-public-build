@@ -1,0 +1,43 @@
+// The T3 stencil as kernels (SPEC-09 section 14; box 11 unit 6b): SPEC-00 section 4's
+// double-buffered heat field, 240 steps on 64 by 64 cells from a hot spot of 65,536 at
+// the center, called from Python with host and device arrays (python/tests/test_device.py).
+// The tour swaps the two buffers after each step; here the steps alternate between them,
+// so after an even number of steps the field is in `a` again.
+
+export kernel diffuse[h, w](in I32[h, w] u, in I64 kn, in I64 kd,
+                            out I32[h, w] v, out I64 total) over [y: h, x: w] {
+    I64 c = u[y, x] as I64;
+    I32 r = u[y, x];
+    if (y > 0 && y < h - 1 && x > 0 && x < w - 1) {
+        I64 lap = (u[y - 1, x] as I64) + (u[y + 1, x] as I64)
+                + (u[y, x - 1] as I64) + (u[y, x + 1] as I64) - 4 * c;
+        r = (c + div_round(kn * lap, kd, half_even)) as I32;
+    }
+    v[y, x] = r;
+    reduce total = sum(r);
+}
+
+// The tour as written: the total heat after 240 steps times 1,000,000, plus the center.
+export I64 tour() {
+    I32[64, 64] a;
+    I32[64, 64] b;
+    a[32, 32] = 65536;
+    I64 heat = 0;
+    for t in 0..120 {
+        diffuse(a, 1, 8, b, heat);
+        diffuse(b, 1, 8, a, heat);
+    }
+    return heat * 1000000 + (a[32, 32] as I64);
+}
+
+// The same steps over the caller's two fields, which it only passes to the dispatches,
+// so they may be device arrays (OQ-217): twice `steps` steps, returning the total heat
+// after the last.
+export I64 field[h, w](inout I32[h, w] a, inout I32[h, w] b, I64 steps) {
+    I64 heat = 0;
+    for t in 0..steps {
+        diffuse(a, 1, 8, b, heat);
+        diffuse(b, 1, 8, a, heat);
+    }
+    return heat;
+}

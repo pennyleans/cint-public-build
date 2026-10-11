@@ -1,0 +1,10 @@
+// case: fixed/sqrt_negative_domain
+// clause: SPEC-01 IM-67, IM-52 (a negative operand faults E_DOMAIN; no exact, no limit)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: fault E_DOMAIN at 9:12 (the callee `sqrt`), operation sqrt.checked.q16_16.half_even, operand Q16.16 raw -65536, no exact, no limit; stack depth 0; fuel 1. Box 15, unit 1
+
+export Bool run() {
+    Q16.16 a = -1.0;
+    return sqrt(a) != 0;
+}

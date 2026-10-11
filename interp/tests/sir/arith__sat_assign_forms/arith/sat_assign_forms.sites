@@ -1,0 +1,61 @@
+module arith.sat_assign_forms
+sites arith/sat_assign_forms.ci 1:7:12:fuel.charge 2:20:15:as.checked.i8.i64 3:20:28:as.checked.i8.i64 4:20:23:add.checked.i64 5:20:41:as.checked.u8.i64 6:20:36:add.checked.i64 7:20:56:sub.checked.i64 8:20:49:add.checked.i64
+export func @arith.sat_assign_forms.run(%x: I64) -> I64 {
+  fuel.charge 1                                  #1 @arith/sat_assign_forms.ci:7:12
+  %t0 = const I8 5
+  local $s.0: I8
+  store.local $s.0, %t0
+  %t1 = load.local $s.0
+  %t2 = const I8 125
+  %t3 = add.sat.i8 %t1, %t2
+  store.local $s.0, %t3
+  %t4 = load.local $s.0
+  %t5 = const I8 -100
+  %t6 = sub.sat.i8 %t4, %t5
+  store.local $s.0, %t6
+  %t7 = const I8 -100
+  local $t.1: I8
+  store.local $t.1, %t7
+  %t8 = load.local $t.1
+  %t9 = const I8 100
+  %t10 = sub.sat.i8 %t8, %t9
+  store.local $t.1, %t10
+  %t11 = load.local $t.1
+  %t12 = const I8 2
+  %t13 = mul.sat.i8 %t11, %t12
+  store.local $t.1, %t13
+  %t14 = const U8 10
+  local $u.2: U8
+  store.local $u.2, %t14
+  %t15 = load.local $u.2
+  %t16 = const U8 20
+  %t17 = sub.sat.u8 %t15, %t16
+  store.local $u.2, %t17
+  %t18 = load.local $u.2
+  %t19 = const U8 250
+  %t20 = add.sat.u8 %t18, %t19
+  store.local $u.2, %t20
+  %t21 = load.local $u.2
+  %t22 = const U8 2
+  %t23 = mul.sat.u8 %t21, %t22
+  store.local $u.2, %t23
+  %t24 = const I64 9223372036854775807
+  local $big.3: I64
+  store.local $big.3, %t24
+  %t25 = load.local $big.3
+  %t26 = add.sat.i64 %t25, %x
+  store.local $big.3, %t26
+  %t27 = load.local $s.0
+  %t28 = as.checked.i8.i64 %t27                  #2 @arith/sat_assign_forms.ci:20:15
+  %t29 = load.local $t.1
+  %t30 = as.checked.i8.i64 %t29                  #3 @arith/sat_assign_forms.ci:20:28
+  %t31 = add.checked.i64 %t28, %t30              #4 @arith/sat_assign_forms.ci:20:23
+  %t32 = load.local $u.2
+  %t33 = as.checked.u8.i64 %t32                  #5 @arith/sat_assign_forms.ci:20:41
+  %t34 = add.checked.i64 %t31, %t33              #6 @arith/sat_assign_forms.ci:20:36
+  %t35 = load.local $big.3
+  %t36 = const I64 9223372036854775000
+  %t37 = sub.checked.i64 %t35, %t36              #7 @arith/sat_assign_forms.ci:20:56
+  %t38 = add.checked.i64 %t34, %t37              #8 @arith/sat_assign_forms.ci:20:49
+  return %t38
+}

@@ -1,50 +1,45 @@
-# cli checks
+# Checks of the `cint` command
 
-build each executable with `tools/cint_bootstrap.py` before running these checks. `<build>` below is the build directory, `$CINT_BUILD`, and `<checkout>` is this repository's path inside wsl.
+Build `cint` with `tools/cint_bootstrap.py` first. `<build>` below is the build directory, `$CINT_BUILD`, which defaults to `cint-build` in the system temporary directory. `--leg` is `gcc`, `clang` or `msvc`.
 
 ```text
 python -m unittest discover -s cli/tests -p test_compare_bytes.py -v
-python cli/tests/compare_bytes.py --expect examples/hello.stdout -- <build>\boot\msvc\cint.exe run examples/hello.ci
-python cli/tests/run.py --leg msvc
+python cli/tests/compare_bytes.py --expect examples/hello.stdout -- <build>/boot/gcc/cint run examples/hello.ci
+python cli/tests/run.py --leg gcc
 ```
 
-for gcc and clang, run the runner with linux python inside wsl:
+`--exe` names an existing executable, `--out` the evidence directory (by default `<build>/cli`), and `--case` one test method. `--suite` is `all` (the default), `cli`, `compiler` or `parity`.
 
-```text
-wsl.exe -d Ubuntu-24.04 --cd <checkout> -- python3 cli/tests/run.py --leg gcc
-wsl.exe -d Ubuntu-24.04 --cd <checkout> -- python3 cli/tests/run.py --leg clang
-```
+## Suites
 
-`--exe` selects an existing executable. `--out` selects the evidence directory; its default is `<build>/cli`, where `CINT_BUILD` defaults to `cint-build` in the system temporary directory. `--case` selects one test method.
+- `cli` checks the command's boundary: stdout bytes, the human and JSON channels, the exit statuses 0, 1, 2 and 4 to 7, receipts and their canonical serialization, hashes computed independently, the compiler source manifest, source and runtime snapshots, generated files, cache isolation under concurrent runs, toolchain binding, and process failures. Status 3 is outside the run path. Status 6, an error result of `main` (`rt/OPEN.md` RT-OQ-33), is checked with error records that a stand-in host injects: the stderr line, the `CINT-ERROR-1` object, the receipt, malformed records (status 7), and `cint test` naming an error that leaves a test. Frozen fault comparisons check every canonical field, the revision against the SIR-17 manifest assembled independently, and the fuel consumed against the frozen `fuel-consumed` line; the hello and overflow examples compare their fuel with `cint_ref`. The program's fuel record (`compiler/OPEN.md` CINTC-OQ-46) is required after statuses 0, 1 and 6.
+- `compiler` checks contracts of the compiler that the command relies on: a narrowing literal gives `C2003`, a type mismatch after an `I8` declaration gives `C2001`, and a runtime fault carries the revision that SPEC-09 CONF-01 requires, equal to the SIR-17 manifest assembled from the generated SIR text and unchanged by blank lines.
+- `parity` runs three programs of the seed's subset and eighteen boundary outcomes from fifteen sources, with entries, values, fuel and diagnostics from their frozen headers and expectations. Add `--case test_parity_control_else_if_126_middle` to run one outcome.
 
-the default suite includes the cli and compiler contract checks. `--suite cli` checks the cli boundary. `--suite compiler` checks inherited compiler blockers: a narrowing literal must produce `C2003`, a type mismatch after an `I8` declaration must produce `C2001`, and a runtime fault must carry the revision required by `CONF-01`, equal to the SIR-17 manifest these tests assemble from the generated SIR text and unchanged by blank lines. failures remain failures.
+Each run writes a new directory, `<out>/<leg>/<suite>-<unique>` (`cases-<unique>` for a `--case` run), with raw outputs, fixtures, commands, receipts and `test-summary.json`, and leaves earlier runs in place. The latest summary is also copied to `<out>/<leg>/test-summary-<suite>.json`. A summary records the selected cases, the methods that passed, skips, where the run stopped, and the executable's hash before and after; a change of executable fails the run.
 
-each invocation creates a unique directory under `<out>/<leg>/<suite>-<unique>` containing raw outputs, fixtures, commands, receipts, and `test-summary.json`. targeted `--case` runs use the prefix `cases`. earlier runs remain intact. a latest summary is also copied to `<out>/<leg>/test-summary-<suite>.json`. summaries record the selected cases, successful methods, skips, failure boundary, and executable hashes before and after; an executable change fails the run.
+## How the checks work
 
-the cli suite checks stdout bytes, human and json channels, reachable statuses 0, 1, 2, 4, 5, 6, and 7, explicit receipts, canonical serialization, independent hashes, compiler source manifest entries, source and runtime snapshots, generated files, concurrent cache isolation, toolchain binding, and process failures. status 3 is outside the run path. status 6 (an error result of `main`, rt/OPEN.md RT-OQ-33) is checked with error records the fake host injects: the stderr line, the `CINT-ERROR-1` object, the receipt, malformed records (status 7), and `cint test` naming an error that leaves a test. frozen fault comparisons check every canonical field, the revision against the independently assembled SIR-17 manifest, and fuel consumed against the frozen `fuel-consumed` line; hello and the overflow example compare fuel consumed with `cint_ref`. the program's fuel record (compiler/OPEN.md CINTC-OQ-46) is required after statuses 0, 1, and 6.
+Source metadata checks create a local git repository and compare its head, and its clean, modified and untracked state, with the receipt. A source outside git, or a run without git, continues with null repository metadata. A receipt marks each identity it cannot give (meaning, source map, build, execution and revision) as null, and carries the fuel consumed as an exact decimal string; source file hashes are still checked.
 
-source metadata checks create a local git repository and independently compare its head and clean, dirty, and untracked status with the receipt. sources outside git and runs with git unavailable must continue with null repository metadata. receipts explicitly mark unavailable meaning, source-map, build, execution, and revision identities as null and carry fuel consumed as an exact decimal string; source file hashes remain checked independently.
+The runner builds a small stand-in compiler with the configured C compiler, and uses it to check captured compiler output, warnings, rejected sources, null stdin, an unknown process status, program stderr and malformed runtime records. The injected records cover `Bool`, minimal `Z`, zero, the runtime's byte bound, trailing bytes, UTF-8 fields, and the required `Z` field `exact`.
 
-the runner builds a small fake compiler executable with the configured host compiler. it uses that fixture to check captured compiler output, warnings, rejected source, null stdin, unknown process status, program stderr, and malformed runtime records. injected record checks cover `Bool`, minimal `Z`, zero, the runtime byte bound, trailing bytes, utf8 fields, and the required `Z` exact field.
+A test-only unit includes the command's source and links the bootstrap's compiler and runtime objects. It checks the compile-time `Z` bounds of 513 operand bytes and 520 exact bytes, then raises a real runtime fault to check that the compiler's fault is kept, its canonical bytes, and the input and compiler identities. It adds no option to the command itself.
 
-a private fixture includes the cli source and links the bootstrap's compiler and runtime objects. it directly checks the compile-time `Z` bounds of 513 operand bytes and 520 exact bytes, then creates a real runtime fault to verify internal compiler fault retention, canonical bytes, and input and compiler identities. it adds no production injection option.
+`compare_bytes.py` captures stdout as bytes. It expects exit status 0 unless given `--exit-status`, such as `--exit-status 1` for output written before a fault, and on success ends with `identical: <n> bytes`.
 
-the comparator captures stdout directly as bytes. it defaults to expected exit status 0; use `--exit-status 1` for partial output before a fault. success ends with `identical: <n> bytes`.
-
-## scoped boot and boundary parity
+## Parity
 
 ```text
 python -m unittest discover -s cli/tests -p test_parity.py -v
-python tools/cint_bootstrap.py --leg msvc
-python cli/tests/run.py --leg msvc --suite parity --out <build>/review/parity
+python tools/cint_bootstrap.py --leg gcc
+python cli/tests/run.py --leg gcc --suite parity --out <build>/review/parity
 ```
 
-`--suite parity` selects three admitted boot programs and eighteen boundary outcomes from fifteen sources. combine it with `--case test_parity_control_else_if_126_middle` to select one outcome. entries, values, fuel, and diagnostics come from the frozen headers and expectations. the existing `all`, `cli`, and `compiler` selections keep their scope.
+Each runtime case stages its exact source as a byte prefix under the same module-relative path, then appends a `main` that calls the entry and prints one result line. The reference checks the original export against its frozen expectation and runs the staged program on its own. The command must match the staged program's stdout bytes, exit status and fuel. The fuel of the original export and of the staged program are recorded separately. The compile-error case runs the source unchanged.
 
-each runtime case stages its exact source as a byte prefix under the same module-relative path, then appends a `main` that calls the entry and prints a unique result line. the reference checks the original export against its frozen expectation and independently runs the staged wrapper. the cli must match the wrapper's stdout bytes, exit status, and measured fuel. original export and wrapper fuel are recorded separately. the compile error runs the unmodified source.
+`parity.json` records the source and expectation hashes, the staged hashes, the reference commands and channels, the command's receipts and their identity digests, and the hashes of each module's generated C and canonical SIR text (`.sites`), read through this run's manifest and receipt. The long-branch and nested-block cases also check that the generated C nests braces at most two deep, outside comments and quoted tokens.
 
-`parity.json` records source and expectation hashes, staged hashes, reference commands and channels, cli receipts and their identity digests, and generated module C and canonical SIR (`.sites`) hashes. generated files are read through this invocation's manifest and receipt. the designated long-branch and nested-block cases also assert generated C brace depth at most two, ignoring comments and quoted tokens.
+The bootstrap receipt, the compiler source archive and the executable's identity are checked before the suite runs, and the executable's hash again after it. This suite builds no stand-in host and no test-only unit.
 
-the bootstrap receipt, compiler source archive, and executable identities are checked before parity runs. the executable hash is checked again after the suite. this suite builds no fake host or private cli unit fixture.
-
-`boot/string_literal_view` and `module/import_plain` remain named waiting cases for task 2.14. the sixteen seed-only refusal cases are recorded as excluded from this B1 run. these inventory records are outside the test count. scoped parity does not establish CONF-13 conformance or full T2 acceptance.
+`boot/string_literal_view` and `module/import_plain` are listed as waiting cases, and the sixteen cases that only the seed refuses are listed as excluded; neither list counts as a test. Parity alone does not establish conformance.

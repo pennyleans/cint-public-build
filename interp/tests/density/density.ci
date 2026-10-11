@@ -1,0 +1,23 @@
+// Test program of interp/tests/test_interp.py (box 13 unit 7c), not a conformance case: the
+// host interp/tests/rec_host.c records its program entry at `dispatch` density on both CPU
+// backends, from B1's SIR text and C of it.
+
+I64 total = 0;
+I64 peak = 0;
+
+kernel sum_of[n](in I64[n] x, out I64 s) over [i: n] {
+    reduce s = sum(x[i]);
+}
+
+kernel scale[n](in I64[n] x, in I64 k, out I64[n] y) over [i: n] {
+    y[i] = x[i] * k;
+}
+
+void main() {
+    I64[4] x = [1, 2, 3, 4];
+    I64[4] y;
+    sum_of(x, total);
+    "total {total}\n";
+    scale(x, 3, y);
+    sum_of(y, peak);
+}

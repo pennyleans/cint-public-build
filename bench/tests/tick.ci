@@ -1,0 +1,10 @@
+// A stand-in for a per-tick workload (SPEC-06 11, per iteration), for the tests of
+// tools/cint_bench.py only: tick t folds 1,000 steps that depend on t into one value,
+// so the results of ticks 0, 1, 2, ... form a digest stream.
+export I64 tick(I64 t, I64 steps) {
+    I64 d = t;
+    for (I64 i = 0; i < steps; i++) {
+        d = (d * 31 + i + t) % 1_000_003;
+    }
+    return d;
+}

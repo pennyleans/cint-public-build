@@ -1,0 +1,10 @@
+// case: fixed/convert_integer_narrow
+// clause: SPEC-01 IM-68, IM-106 (decision 2026-10-03 on OQ-147: operand I64 40000, exact the raw value 40000 * 2^16, limit the Q16.16 bound as a fixed-point value)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: fault E_NARROW at 9:14 (the `as`), operation as.checked.i64.q16_16, operand I64 40000, exact 2621440000, limit Q16.16 raw 2147483647; stack depth 0; fuel 1. Box 15, unit 1
+
+export Bool run() {
+    I64 n = 40000;
+    return n as Q16.16 != 0;
+}

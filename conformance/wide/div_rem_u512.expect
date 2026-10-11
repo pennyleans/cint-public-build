@@ -1,0 +1,9 @@
+case wide/div_rem_u512
+clause SPEC-01 IM-6, IM-35 (floor division and remainder of U512.max by 10)
+format 5
+source reference
+outcome value
+stdout-bytes 157
+stdout-sha256 209ca7c99350c85311ca8029ed9e62c93349b28f9796387f119b44ece239c0d8
+return I64 0
+fuel-consumed 1

@@ -1,0 +1,99 @@
+kernel ksum_narrow[n](in I512[n] a, out I64 t) over [i: n] { reduce t = sum(a[i] >> 400); }
+kernel ksum_wide[n](in I64[n] a, out I256 t) over [i: n] { reduce t = sum(a[i]); }
+kernel kwrap[n](in I256[n] a, out I256 t) over [i: n] { reduce t = sum_wrap(a[i]); }
+kernel ksat[n](in I256[n] a, out I256 t) over [i: n] { reduce t = sum_sat(a[i]); }
+kernel kfold[n](in I128[n] a, in I128 base, out I128 t) over [i: n] { reduce t = fold_checked(add, base, a[i]); }
+kernel kmin[n](in I1024[n] a, out I1024 t) over [i: n] { reduce t = min(a[i]); }
+kernel kmax[n](in I1024[n] a, out I1024 t) over [i: n] { reduce t = max(a[i] / 2); }
+
+export I64 mixed(I64 k) {
+    I64[4] a = [I64.max, I64.max, k, I64.min];
+    I256 s = sum(I256, a);
+    I512 d = dot(I512, a, a);
+    I128 c = sum(I128, a[0..2]);
+    return (s + (d >> 120) as I256 + c as I256) as% I64;
+}
+
+export I64 narrow_result(I64 k) {
+    I1024[3] a = [I1024.max, I1024.min, k as I1024];
+    return sum(I64, a);
+}
+
+export I64 bounds(I64 lo, I64 hi) {
+    I512[2, 3] g = [[4, -9, 2], [I512.max, 0, -1]];
+    I512 m = min(7, g[1, lo..hi]);
+    I512 x = max(-8, g[0, lo..hi]);
+    I512 y = max(g);
+    return (m + x) as I64 + (y >> 500) as I64;
+}
+
+export I64 wrap_sat() {
+    I256[2, 2, 2] h;
+    h[0, 0, 0] = I256.max;
+    h[0, 1, 1] = I256.max;
+    h[1, 0, 1] = -9;
+    I256 w = sum_wrap(h);
+    I256 s = sum_sat(h);
+    return w as I64 * 1000 + (s - I256.max) as I64;
+}
+
+export I64 fold_at(I64 k) {
+    I128[4] a = [1, 2, 3, 4];
+    a[k] = I128.max - 3;
+    return fold_checked(add, -5 as I128, a) as% I64;
+}
+
+export I64 dot_shape(I64 k) {
+    I256[3] a = [I256.max, 2, 3];
+    I256[3] b = [-1, 5, 7];
+    return dot(I512, a, b[0..k]) as% I64;
+}
+
+export I64 kernels(I64 k) {
+    I512[3] a = [3, -1, 5];
+    for i in 0..3 { a[i] = a[i] << 400; }
+    I64 s = 0;
+    ksum_narrow(a, s);
+    I64[4] b = [I64.max, I64.max, k, I64.min];
+    I256 w = 0;
+    ksum_wide(b, w);
+    I256[3] c = [I256.max, I256.max, -5];
+    I256 x = 0;
+    I256 y = 0;
+    kwrap(c, x);
+    ksat(c, y);
+    I128[3] d = [1, -2, 3];
+    I128 f = 0;
+    kfold(d, k as I128, f);
+    I1024[3] e = [7, I1024.min, I1024.max];
+    I1024 lo = 0;
+    I1024 hi = 0;
+    kmin(e, lo);
+    kmax(e, hi);
+    return s +% w as% I64 +% x as% I64 +% (I256.max - y) as% I64 +% f as% I64 +% (lo >> 1000) as% I64 +%
+        (hi >> 1000) as% I64;
+}
+
+export I64 kernel_empty(I64 n) {
+    I1024[3] e = [1, 2, 3];
+    I1024 lo = 5;
+    kmin(e[0..n], lo);
+    I64[3] b = [1, 2, 3];
+    I256 w = 9;
+    ksum_wide(b[0..n], w);
+    return lo as I64 * 100 + w as I64;
+}
+
+export I64 kernel_faults(I64 which) {
+    I512[2] a = [I512.max, I512.max];
+    I64 s = 0;
+    I128[2] d = [1, 2];
+    I128 f = 0;
+    if (which == 0) {
+        ksum_narrow(a, s);
+    }
+    if (which == 1) {
+        kfold(d, I128.max - 1, f);
+    }
+    return s + f as% I64;
+}

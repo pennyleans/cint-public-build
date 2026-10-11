@@ -19,6 +19,12 @@
 #endif
 
 #include "cint_rt_internal.h"
+#if defined(CINT_GPU_CUDA)
+#include "cint_cuda.h"  /* placement device(1): CUDA memory (SPEC-03 A-16a, M-28a) */
+#define DEVICES 1u
+#else
+#define DEVICES 0u
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,24 +57,28 @@ static bool is_scalar_tag(uint32_t tag)
     return (tag >= CINT_TAG_I8 && tag <= CINT_TAG_I64) || (tag >= CINT_TAG_U8 && tag <= CINT_TAG_U64);
 }
 
+/* The name of I8 to U64, or of I128 to I1024 and U128 to U512 (tags 15 to 18 and 25 to 27,
+ * rt/cint_wide.h); NULL otherwise. */
+static const char *type_name(const char *const names[15], uint32_t tag)
+{
+    if ((tag >= 0x15u && tag <= 0x18u) || (tag >= 0x25u && tag <= 0x27u)) {
+        return names[(tag & 0x0fu) + (tag < 0x20u ? 3u : 7u)];
+    }
+    return is_scalar_tag(tag) ? names[(tag & 0x0fu) - 1u + (cint_rt_tag_signed(tag) ? 0u : 4u)] : NULL;
+}
+
 const char *cint_rt_type_ident(uint32_t tag)
 {
-    static const char *const signed_names[4] = {"i8", "i16", "i32", "i64"};
-    static const char *const unsigned_names[4] = {"u8", "u16", "u32", "u64"};
-    if (!is_scalar_tag(tag)) {
-        return NULL;
-    }
-    return cint_rt_tag_signed(tag) ? signed_names[(tag & 0x0fu) - 1u] : unsigned_names[(tag & 0x0fu) - 1u];
+    static const char *const names[15] = {"i8",   "i16",  "i32",  "i64",   "u8",   "u16",  "u32", "u64",
+                                          "i128", "i256", "i512", "i1024", "u128", "u256", "u512"};
+    return type_name(names, tag);
 }
 
 const char *cint_rt_type_name(uint32_t tag)
 {
-    static const char *const signed_names[4] = {"I8", "I16", "I32", "I64"};
-    static const char *const unsigned_names[4] = {"U8", "U16", "U32", "U64"};
-    if (!is_scalar_tag(tag)) {
-        return NULL;
-    }
-    return cint_rt_tag_signed(tag) ? signed_names[(tag & 0x0fu) - 1u] : unsigned_names[(tag & 0x0fu) - 1u];
+    static const char *const names[15] = {"I8",   "I16",  "I32",  "I64",   "U8",   "U16",  "U32", "U64",
+                                          "I128", "I256", "I512", "I1024", "U128", "U256", "U512"};
+    return type_name(names, tag);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -85,9 +95,7 @@ static cint_rt_z128 z_make(bool negative, uint64_t hi, uint64_t lo)
 
 cint_rt_z128 cint_rt_z_from_bits(uint32_t tag, uint64_t bits)
 {
-    if (cint_rt_tag_signed(tag) && (bits >> 63) != 0u) {
-        return z_make(true, 0u, (uint64_t)0 - bits);
-    }
+    if (cint_rt_tag_signed(tag) && (bits >> 63) != 0u) return z_make(true, 0u, (uint64_t)0 - bits);
     return z_make(false, 0u, bits);
 }
 
@@ -99,12 +107,8 @@ cint_rt_z128 cint_rt_z_neg(cint_rt_z128 x)
 /* Compares magnitudes. */
 static int mag_cmp(cint_rt_z128 x, cint_rt_z128 y)
 {
-    if (x.hi != y.hi) {
-        return x.hi < y.hi ? -1 : 1;
-    }
-    if (x.lo != y.lo) {
-        return x.lo < y.lo ? -1 : 1;
-    }
+    if (x.hi != y.hi) return x.hi < y.hi ? -1 : 1;
+    if (x.lo != y.lo) return x.lo < y.lo ? -1 : 1;
     return 0;
 }
 
@@ -147,28 +151,20 @@ cint_rt_z128 cint_rt_z_shl(cint_rt_z128 x, unsigned k)
 
 int cint_rt_z_cmp(cint_rt_z128 x, cint_rt_z128 y)
 {
-    if (x.negative != y.negative) {
-        return x.negative ? -1 : 1;
-    }
+    if (x.negative != y.negative) return x.negative ? -1 : 1;
     return x.negative ? -mag_cmp(x, y) : mag_cmp(x, y);
 }
 
 cint_rt_z128 cint_rt_z_min(uint32_t tag)
 {
     unsigned w = cint_rt_tag_width(tag);
-    if (!cint_rt_tag_signed(tag)) {
-        return z_make(false, 0u, 0u);
-    }
-    return z_make(true, 0u, (uint64_t)1 << (w - 1u));
+    return cint_rt_tag_signed(tag) ? z_make(true, 0u, (uint64_t)1 << (w - 1u)) : z_make(false, 0u, 0u);
 }
 
 cint_rt_z128 cint_rt_z_max(uint32_t tag)
 {
     unsigned w = cint_rt_tag_width(tag);
-    if (!cint_rt_tag_signed(tag)) {
-        return z_make(false, 0u, cint_rt_mask(w));
-    }
-    return z_make(false, 0u, ((uint64_t)1 << (w - 1u)) - 1u);
+    return z_make(false, 0u, cint_rt_tag_signed(tag) ? ((uint64_t)1 << (w - 1u)) - 1u : cint_rt_mask(w));
 }
 
 /* The 64-bit pattern of a value known to lie in the range of `tag`. */
@@ -186,9 +182,7 @@ void cint_rt_tvalue_scalar(cint_tvalue *v, uint32_t tag, uint64_t bits)
     unsigned i;
     memset(v, 0, sizeof *v);
     v->bytes[0] = (uint8_t)tag;
-    for (i = 0; i < n; i++) {
-        v->bytes[1u + i] = (uint8_t)(bits >> (8u * i));
-    }
+    for (i = 0; i < n; i++) v->bytes[1u + i] = (uint8_t)(bits >> (8u * i));
     v->len = (uint16_t)(1u + n);
 }
 
@@ -239,9 +233,7 @@ static void tvalue_z256(cint_tvalue *v, const cint_zacc *a)
 {
     uint8_t b[32];
     unsigned i;
-    for (i = 0; i < 32u; i++) {
-        b[i] = (uint8_t)(a->limb[i / 8u] >> (8u * (i % 8u)));
-    }
+    for (i = 0; i < 32u; i++) b[i] = (uint8_t)(a->limb[i / 8u] >> (8u * (i % 8u)));
     tvalue_zbytes(v, b, 32u);
 }
 
@@ -251,9 +243,7 @@ static void tvalue_z256(cint_tvalue *v, const cint_zacc *a)
 cint_fault_record *cint_rt_record_begin(cint_ctx *ctx, cint_site site, uint16_t code)
 {
     cint_fault_record *rec = &ctx->fault;
-    if (ctx->head.faulted != 0u) {
-        return NULL;
-    }
+    if (ctx->head.faulted != 0u) return NULL;
     ctx->desc_count = 0u;  /* descriptors belong to the record that set them */
     memset(rec, 0, sizeof *rec);
     rec->program = ctx->program;
@@ -263,8 +253,8 @@ cint_fault_record *cint_rt_record_begin(cint_ctx *ctx, cint_site site, uint16_t 
         rec->has_revision = 1u;
         memcpy(rec->revision, ctx->program->revision, sizeof rec->revision);
     }
-    rec->stack_count = ctx->stack_count;
-    memcpy(rec->stack, ctx->stack, (size_t)ctx->stack_count * sizeof ctx->stack[0]);
+    rec->stack_count = ctx->head.stack_count;
+    memcpy(rec->stack, ctx->stack, (size_t)ctx->head.stack_count * sizeof ctx->stack[0]);
     ctx->head.faulted = 1u;
     return rec;
 }
@@ -278,9 +268,7 @@ void cint_rt_record_op(cint_fault_record *rec, const char *part)
         rec->operation_len = 0u;  /* never a partial identifier; encode refuses it */
         return;
     }
-    if (dot != 0u) {
-        rec->operation[used++] = '.';
-    }
+    if (dot != 0u) rec->operation[used++] = '.';
     memcpy(rec->operation + used, part, n);
     rec->operation_len = (uint8_t)(used + n);
 }
@@ -309,6 +297,18 @@ static void record_limit_i64(cint_fault_record *rec, int64_t limit)
     cint_rt_tvalue_scalar(&rec->limit, CINT_TAG_I64, (uint64_t)limit);
 }
 
+/* cint_rt_record_begin, then the operation identifier name.checked.<t>. */
+static cint_fault_record *record_checked(cint_ctx *ctx, cint_site site, uint16_t code, const char *name, uint32_t tag)
+{
+    cint_fault_record *rec = cint_rt_record_begin(ctx, site, code);
+    if (rec != NULL) {
+        cint_rt_record_op(rec, name);
+        cint_rt_record_op(rec, "checked");
+        cint_rt_record_op(rec, cint_rt_type_ident(tag));
+    }
+    return rec;
+}
+
 /* A boundary fault (SPEC-03 A-6, Proposed encoding): E_UNSUPPORTED with
  * operation `op`, and the host status as an I64 operand when has_status. */
 static bool fault_host(cint_ctx *ctx, cint_site site, const char *op, bool has_status, cint_status status)
@@ -316,9 +316,7 @@ static bool fault_host(cint_ctx *ctx, cint_site site, const char *op, bool has_s
     cint_fault_record *rec = cint_rt_record_begin(ctx, site, (uint16_t)CINT_E_UNSUPPORTED);
     if (rec != NULL) {
         cint_rt_record_op(rec, op);
-        if (has_status) {
-            cint_rt_record_operand(rec, CINT_TAG_I64, (uint64_t)(int64_t)status);
-        }
+        if (has_status) cint_rt_record_operand(rec, CINT_TAG_I64, (uint64_t)(int64_t)status);
     }
     return false;
 }
@@ -333,26 +331,36 @@ static bool fault_refused(cint_ctx *ctx, cint_site site)
     return fault_host(ctx, site, "dispatch.admit", false, CINT_OK);
 }
 
+/* A record whose operands are I64 values: `operation` (refused when NULL,
+ * empty or longer than CINT_FAULT_MAX_OPERATION), n operands, no exact, and
+ * the limit I64 `limit` when has_limit. Returns false. */
+static bool fault_i64s(cint_ctx *ctx, cint_site site, uint32_t code, const char *operation, const int64_t *ops,
+                       unsigned n, bool has_limit, int64_t limit)
+{
+    cint_fault_record *rec;
+    unsigned i;
+    if (operation == NULL || operation[0] == '\0' || strlen(operation) > CINT_FAULT_MAX_OPERATION)
+        return fault_refused(ctx, site);
+    rec = cint_rt_record_begin(ctx, site, (uint16_t)code);
+    if (rec != NULL) {
+        cint_rt_record_op(rec, operation);
+        for (i = 0; i < n; i++) cint_rt_record_operand(rec, CINT_TAG_I64, (uint64_t)ops[i]);
+        if (has_limit) record_limit_i64(rec, limit);
+    }
+    return false;
+}
+
 bool cint_rt_fault_arith(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t tag, uint64_t a, uint64_t b)
 {
     static const char *const names[7] = {"", "add", "sub", "mul", "neg", "div", "rem"};
     cint_fault_record *rec;
     cint_rt_z128 za, zb, exact;
     bool divides = op == CINT_RT_OP_DIV || op == CINT_RT_OP_REM;
-    if (op < CINT_RT_OP_ADD || op > CINT_RT_OP_REM || !is_scalar_tag(tag)) {
-        return fault_refused(ctx, site);
-    }
-    rec = cint_rt_record_begin(ctx, site, (uint16_t)(divides && b == 0u ? CINT_E_DIV_ZERO : CINT_E_OVERFLOW));
-    if (rec == NULL) {
-        return false;
-    }
-    cint_rt_record_op(rec, names[op]);
-    cint_rt_record_op(rec, "checked");
-    cint_rt_record_op(rec, cint_rt_type_ident(tag));
+    if (op < CINT_RT_OP_ADD || op > CINT_RT_OP_REM || !is_scalar_tag(tag)) return fault_refused(ctx, site);
+    rec = record_checked(ctx, site, (uint16_t)(divides && b == 0u ? CINT_E_DIV_ZERO : CINT_E_OVERFLOW), names[op], tag);
+    if (rec == NULL) return false;
     cint_rt_record_operand(rec, tag, a);
-    if (op != CINT_RT_OP_NEG) {
-        cint_rt_record_operand(rec, tag, b);
-    }
+    if (op != CINT_RT_OP_NEG) cint_rt_record_operand(rec, tag, b);
     if (rec->code == CINT_E_DIV_ZERO) {
         return false;  /* no exact and no limit (SPEC-01 9.2) */
     }
@@ -377,25 +385,27 @@ bool cint_rt_fault_arith(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t ta
     return false;
 }
 
+/* Whether a count's tag is I8 to U64, or a wide one with its limbs (RT-OQ-52),
+ * and its operand; in cint_wide.c, included below. */
+static bool count_ok(cint_count k);
+static void count_operand(cint_fault_record *rec, cint_count k);
+
 bool cint_rt_fault_shift(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t tag, uint64_t a, cint_count k)
 {
     cint_fault_record *rec;
     unsigned w;
     bool bad_count;
-    if (op < CINT_RT_OP_SHL || op > CINT_RT_OP_SHR || !is_scalar_tag(tag) || !is_scalar_tag(k.tag)) {
+    if (op < CINT_RT_OP_SHL || op > CINT_RT_OP_SHR || !is_scalar_tag(tag) || !count_ok(k))
         return fault_refused(ctx, site);
-    }
     w = cint_rt_tag_width(tag);
     bad_count = k.bits > (uint64_t)(w - 1u);
     rec = cint_rt_record_begin(ctx, site, (uint16_t)(bad_count ? CINT_E_SHIFT : CINT_E_OVERFLOW));
-    if (rec == NULL) {
-        return false;
-    }
+    if (rec == NULL) return false;
     cint_rt_record_op(rec, op == CINT_RT_OP_SHR ? "shr" : "shl");
     cint_rt_record_op(rec, op == CINT_RT_OP_SHL_WRAP ? "wrap" : "checked");
     cint_rt_record_op(rec, cint_rt_type_ident(tag));
     cint_rt_record_operand(rec, tag, a);
-    cint_rt_record_operand(rec, k.tag, k.bits);
+    count_operand(rec, k);
     if (bad_count) {
         /* limit: the largest permitted count, typed I64 (REF-OQ-04, RT-OQ-01). */
         record_limit_i64(rec, (int64_t)(w - 1u));
@@ -408,16 +418,9 @@ bool cint_rt_fault_shift(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t ta
 bool cint_rt_fault_narrow(cint_ctx *ctx, cint_site site, uint32_t from_tag, uint32_t to_tag, uint64_t x)
 {
     cint_fault_record *rec;
-    if (!is_scalar_tag(from_tag) || !is_scalar_tag(to_tag)) {
-        return fault_refused(ctx, site);
-    }
-    rec = cint_rt_record_begin(ctx, site, (uint16_t)CINT_E_NARROW);
-    if (rec == NULL) {
-        return false;
-    }
-    cint_rt_record_op(rec, "as");
-    cint_rt_record_op(rec, "checked");
-    cint_rt_record_op(rec, cint_rt_type_ident(from_tag));
+    if (!is_scalar_tag(from_tag) || !is_scalar_tag(to_tag)) return fault_refused(ctx, site);
+    rec = record_checked(ctx, site, (uint16_t)CINT_E_NARROW, "as", from_tag);
+    if (rec == NULL) return false;
     cint_rt_record_op(rec, cint_rt_type_ident(to_tag));
     cint_rt_record_operand(rec, from_tag, x);
     cint_rt_record_range(rec, cint_rt_z_from_bits(from_tag, x), to_tag);
@@ -426,18 +429,7 @@ bool cint_rt_fault_narrow(cint_ctx *ctx, cint_site site, uint32_t from_tag, uint
 
 bool cint_rt_fault_index(cint_ctx *ctx, cint_site site, const char *operation, int64_t index, int64_t extent)
 {
-    cint_fault_record *rec;
-    if (operation == NULL || operation[0] == '\0' || strlen(operation) > CINT_FAULT_MAX_OPERATION) {
-        return fault_refused(ctx, site);
-    }
-    rec = cint_rt_record_begin(ctx, site, (uint16_t)CINT_E_BOUNDS);
-    if (rec == NULL) {
-        return false;
-    }
-    cint_rt_record_op(rec, operation);
-    cint_rt_record_operand(rec, CINT_TAG_I64, (uint64_t)index);
-    record_limit_i64(rec, extent);
-    return false;
+    return fault_i64s(ctx, site, CINT_E_BOUNDS, operation, &index, 1u, true, extent);
 }
 
 bool cint_rt_fault_fuel(cint_ctx *ctx, cint_site site, uint64_t units)
@@ -445,9 +437,7 @@ bool cint_rt_fault_fuel(cint_ctx *ctx, cint_site site, uint64_t units)
     cint_fault_record *rec;
     (void)units;
     rec = cint_rt_record_begin(ctx, site, (uint16_t)CINT_E_FUEL);
-    if (rec == NULL) {
-        return false;
-    }
+    if (rec == NULL) return false;
     cint_rt_record_op(rec, "fuel.charge");
     /* limit: the allowance (SPEC-01 10.2); with no allowance, the largest
      * count an I64 can hold (RT-OQ-04). */
@@ -458,16 +448,10 @@ bool cint_rt_fault_fuel(cint_ctx *ctx, cint_site site, uint64_t units)
 bool cint_rt_fault_assert(cint_ctx *ctx, cint_site site, uint32_t tag, uint64_t a, uint64_t b)
 {
     cint_fault_record *rec;
-    if (tag != 0u && tag != CINT_TAG_BOOL && !is_scalar_tag(tag)) {
-        return fault_refused(ctx, site);
-    }
+    if (tag != 0u && tag != CINT_TAG_BOOL && !is_scalar_tag(tag)) return fault_refused(ctx, site);
     rec = cint_rt_record_begin(ctx, site, (uint16_t)CINT_E_ASSERT);
-    if (rec == NULL) {
-        return false;
-    }
-    cint_rt_record_op(rec, "assert");
-    cint_rt_record_op(rec, "checked");
-    cint_rt_record_op(rec, "bool");
+    if (rec == NULL) return false;
+    cint_rt_record_op(rec, "assert.checked.bool");
     if (tag != 0u) {
         cint_rt_record_operand(rec, tag, a);
         cint_rt_record_operand(rec, tag, b);
@@ -495,27 +479,69 @@ bool cint_rt_fault_assert(cint_ctx *ctx, cint_site site, uint32_t tag, uint64_t 
 #define BI_ROTL 15u
 #define BI_ROTR 16u
 
-/* The magnitude hi:lo divided by d != 0: the quotient in *q, the remainder
- * returned. */
+/* cint_rt_isqrt64's seed (cint_rt.h section 13): entry t - 256 is ceil(sqrt((t + 1) * 2^10))
+ * for t from 256 to 1023. */
+const uint16_t cint_rt_isqrt_seed[768] = {
+    513u, 514u, 515u, 516u, 517u, 518u, 519u, 520u, 521u, 522u, 523u, 524u, 525u, 526u, 527u, 528u,
+    529u, 530u, 531u, 532u, 533u, 534u, 535u, 536u, 537u, 538u, 539u, 540u, 541u, 542u, 543u, 544u,
+    544u, 545u, 546u, 547u, 548u, 549u, 550u, 551u, 552u, 553u, 554u, 555u, 556u, 557u, 558u, 558u,
+    559u, 560u, 561u, 562u, 563u, 564u, 565u, 566u, 567u, 568u, 568u, 569u, 570u, 571u, 572u, 573u,
+    574u, 575u, 576u, 576u, 577u, 578u, 579u, 580u, 581u, 582u, 583u, 584u, 584u, 585u, 586u, 587u,
+    588u, 589u, 590u, 591u, 591u, 592u, 593u, 594u, 595u, 596u, 597u, 597u, 598u, 599u, 600u, 601u,
+    602u, 603u, 603u, 604u, 605u, 606u, 607u, 608u, 608u, 609u, 610u, 611u, 612u, 613u, 614u, 614u,
+    615u, 616u, 617u, 618u, 619u, 619u, 620u, 621u, 622u, 623u, 623u, 624u, 625u, 626u, 627u, 628u,
+    628u, 629u, 630u, 631u, 632u, 632u, 633u, 634u, 635u, 636u, 636u, 637u, 638u, 639u, 640u, 640u,
+    641u, 642u, 643u, 644u, 644u, 645u, 646u, 647u, 648u, 648u, 649u, 650u, 651u, 652u, 652u, 653u,
+    654u, 655u, 656u, 656u, 657u, 658u, 659u, 659u, 660u, 661u, 662u, 663u, 663u, 664u, 665u, 666u,
+    666u, 667u, 668u, 669u, 669u, 670u, 671u, 672u, 672u, 673u, 674u, 675u, 676u, 676u, 677u, 678u,
+    679u, 679u, 680u, 681u, 682u, 682u, 683u, 684u, 685u, 685u, 686u, 687u, 688u, 688u, 689u, 690u,
+    691u, 691u, 692u, 693u, 694u, 694u, 695u, 696u, 696u, 697u, 698u, 699u, 699u, 700u, 701u, 702u,
+    702u, 703u, 704u, 704u, 705u, 706u, 707u, 707u, 708u, 709u, 710u, 710u, 711u, 712u, 712u, 713u,
+    714u, 715u, 715u, 716u, 717u, 717u, 718u, 719u, 720u, 720u, 721u, 722u, 722u, 723u, 724u, 725u,
+    725u, 726u, 727u, 727u, 728u, 729u, 730u, 730u, 731u, 732u, 732u, 733u, 734u, 734u, 735u, 736u,
+    736u, 737u, 738u, 739u, 739u, 740u, 741u, 741u, 742u, 743u, 743u, 744u, 745u, 745u, 746u, 747u,
+    748u, 748u, 749u, 750u, 750u, 751u, 752u, 752u, 753u, 754u, 754u, 755u, 756u, 756u, 757u, 758u,
+    758u, 759u, 760u, 760u, 761u, 762u, 762u, 763u, 764u, 764u, 765u, 766u, 766u, 767u, 768u, 768u,
+    769u, 770u, 770u, 771u, 772u, 772u, 773u, 774u, 774u, 775u, 776u, 776u, 777u, 778u, 778u, 779u,
+    780u, 780u, 781u, 782u, 782u, 783u, 784u, 784u, 785u, 786u, 786u, 787u, 788u, 788u, 789u, 790u,
+    790u, 791u, 791u, 792u, 793u, 793u, 794u, 795u, 795u, 796u, 797u, 797u, 798u, 799u, 799u, 800u,
+    800u, 801u, 802u, 802u, 803u, 804u, 804u, 805u, 806u, 806u, 807u, 808u, 808u, 809u, 809u, 810u,
+    811u, 811u, 812u, 813u, 813u, 814u, 814u, 815u, 816u, 816u, 817u, 818u, 818u, 819u, 819u, 820u,
+    821u, 821u, 822u, 823u, 823u, 824u, 824u, 825u, 826u, 826u, 827u, 828u, 828u, 829u, 829u, 830u,
+    831u, 831u, 832u, 832u, 833u, 834u, 834u, 835u, 836u, 836u, 837u, 837u, 838u, 839u, 839u, 840u,
+    840u, 841u, 842u, 842u, 843u, 844u, 844u, 845u, 845u, 846u, 847u, 847u, 848u, 848u, 849u, 850u,
+    850u, 851u, 851u, 852u, 853u, 853u, 854u, 854u, 855u, 856u, 856u, 857u, 857u, 858u, 859u, 859u,
+    860u, 860u, 861u, 862u, 862u, 863u, 863u, 864u, 864u, 865u, 866u, 866u, 867u, 867u, 868u, 869u,
+    869u, 870u, 870u, 871u, 872u, 872u, 873u, 873u, 874u, 875u, 875u, 876u, 876u, 877u, 877u, 878u,
+    879u, 879u, 880u, 880u, 881u, 882u, 882u, 883u, 883u, 884u, 884u, 885u, 886u, 886u, 887u, 887u,
+    888u, 888u, 889u, 890u, 890u, 891u, 891u, 892u, 892u, 893u, 894u, 894u, 895u, 895u, 896u, 896u,
+    897u, 898u, 898u, 899u, 899u, 900u, 900u, 901u, 902u, 902u, 903u, 903u, 904u, 904u, 905u, 906u,
+    906u, 907u, 907u, 908u, 908u, 909u, 910u, 910u, 911u, 911u, 912u, 912u, 913u, 913u, 914u, 915u,
+    915u, 916u, 916u, 917u, 917u, 918u, 919u, 919u, 920u, 920u, 921u, 921u, 922u, 922u, 923u, 924u,
+    924u, 925u, 925u, 926u, 926u, 927u, 927u, 928u, 928u, 929u, 930u, 930u, 931u, 931u, 932u, 932u,
+    933u, 933u, 934u, 935u, 935u, 936u, 936u, 937u, 937u, 938u, 938u, 939u, 939u, 940u, 941u, 941u,
+    942u, 942u, 943u, 943u, 944u, 944u, 945u, 945u, 946u, 947u, 947u, 948u, 948u, 949u, 949u, 950u,
+    950u, 951u, 951u, 952u, 952u, 953u, 954u, 954u, 955u, 955u, 956u, 956u, 957u, 957u, 958u, 958u,
+    959u, 959u, 960u, 960u, 961u, 962u, 962u, 963u, 963u, 964u, 964u, 965u, 965u, 966u, 966u, 967u,
+    967u, 968u, 968u, 969u, 970u, 970u, 971u, 971u, 972u, 972u, 973u, 973u, 974u, 974u, 975u, 975u,
+    976u, 976u, 977u, 977u, 978u, 978u, 979u, 980u, 980u, 981u, 981u, 982u, 982u, 983u, 983u, 984u,
+    984u, 985u, 985u, 986u, 986u, 987u, 987u, 988u, 988u, 989u, 989u, 990u, 990u, 991u, 991u, 992u,
+    992u, 993u, 994u, 994u, 995u, 995u, 996u, 996u, 997u, 997u, 998u, 998u, 999u, 999u, 1000u, 1000u,
+    1001u, 1001u, 1002u, 1002u, 1003u, 1003u, 1004u, 1004u, 1005u, 1005u, 1006u, 1006u, 1007u, 1007u, 1008u, 1008u,
+    1009u, 1009u, 1010u, 1010u, 1011u, 1011u, 1012u, 1012u, 1013u, 1013u, 1014u, 1014u, 1015u, 1015u, 1016u, 1016u,
+    1017u, 1017u, 1018u, 1018u, 1019u, 1019u, 1020u, 1020u, 1021u, 1021u, 1022u, 1022u, 1023u, 1023u, 1024u, 1024u
+};
+
+/* The magnitude hi:lo divided by d != 0 (cint_rt_div_wide below the high
+ * word): the quotient in *q, the remainder returned. */
 static uint64_t div128(uint64_t hi, uint64_t lo, uint64_t d, cint_rt_z128 *q)
 {
-    uint64_t qh = 0u, ql = 0u, rem = 0u;
-    int i;
-    if (hi == 0u) {
-        *q = z_make(false, 0u, lo / d);
-        return lo % d;
+    uint64_t qh = 0u, ql, rem;
+    if (hi >= d) {
+        qh = hi / d;
+        hi %= d;
     }
-    for (i = 127; i >= 0; i--) {
-        uint64_t bit = i >= 64 ? (hi >> (i - 64)) & 1u : (lo >> i) & 1u;
-        bool carry = (rem >> 63) != 0u;
-        rem = (rem << 1) | bit;
-        qh = (qh << 1) | (ql >> 63);
-        ql <<= 1;
-        if (carry || rem >= d) {
-            rem -= d;
-            ql |= 1u;
-        }
-    }
+    ql = cint_rt_div_wide(hi, lo, d, &rem);
     *q = z_make(false, qh, ql);
     return rem;
 }
@@ -525,55 +551,11 @@ static uint64_t div128(uint64_t hi, uint64_t lo, uint64_t d, cint_rt_z128 *q)
  * the divisor magnitude d. */
 static cint_rt_z128 round_quotient(cint_rt_z128 q, uint64_t rem, bool negative, uint64_t d, uint32_t mode)
 {
-    bool up;
-    switch (mode) {
-    case 1u:
-        up = negative;  /* floor */
-        break;
-    case 2u:
-        up = !negative;  /* ceil */
-        break;
-    case 3u:
-        up = false;  /* trunc */
-        break;
-    case 4u:
-        up = true;  /* away */
-        break;
-    default:
-        if (rem != d - rem) {
-            up = rem > d - rem;
-        } else if (mode == 5u) {
-            up = (q.lo & 1u) != 0u;  /* half_even */
-        } else {
-            /* half_away, half_trunc, half_up, half_down */
-            up = mode == 6u ? true : mode == 7u ? false : mode == 8u ? !negative : negative;
-        }
-        break;
-    }
-    if (rem != 0u && up) {
+    if (rem != 0u && cint_rt_round_up(q.lo, rem, negative, d, mode)) {
         q.lo++;
         q.hi += q.lo == 0u ? 1u : 0u;
     }
     return z_make(negative, q.hi, q.lo);
-}
-
-/* The largest r with r * r <= n. */
-static uint64_t isqrt64(uint64_t n)
-{
-    uint64_t r = 0u, bit = (uint64_t)1 << 62;
-    while (bit > n) {
-        bit >>= 2;
-    }
-    while (bit != 0u) {
-        if (n >= r + bit) {
-            n -= r + bit;
-            r = (r >> 1) + bit;
-        } else {
-            r >>= 1;
-        }
-        bit >>= 2;
-    }
-    return r;
 }
 
 /* An operand pattern brought to its canonical 64-bit form under tag. */
@@ -583,20 +565,20 @@ static uint64_t canon(uint32_t tag, uint64_t bits)
     return cint_rt_tag_signed(tag) ? (uint64_t)cint_rt_sext(bits, w) : bits & cint_rt_mask(w);
 }
 
+/* The rounding modes of SPEC-01 4.5 by number, as operation identifiers name them. */
+static const char *const round_modes[10] = {"",          "floor",     "ceil",       "trunc",   "away",
+                                            "half_even", "half_away", "half_trunc", "half_up", "half_down"};
+
 bool cint_rt_builtin(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t tag, uint32_t mode, uint32_t aux,
                      uint64_t a, uint64_t b, uint64_t c, uint64_t *out)
 {
-    static const char *const names[17] = {"",        "abs",       "uabs",       "min",        "max",
-                                          "clamp",   "div_trunc", "rem_trunc",  "div_euclid", "rem_euclid",
-                                          "div_round", "muldiv",  "mul_full",   "isqrt",      "isqrt_round",
-                                          "rotl",    "rotr"};
-    static const char *const modes[10] = {"",          "floor",     "ceil",       "trunc",   "away",
-                                          "half_even", "half_away", "half_trunc", "half_up", "half_down"};
+    static const char *const names[17] = {"", "abs", "uabs", "min", "max", "clamp", "div_trunc", "rem_trunc",
+                                          "div_euclid", "rem_euclid", "div_round", "muldiv", "mul_full", "isqrt",
+                                          "isqrt_round", "rotl", "rotr"};
     bool rotates = op == BI_ROTL || op == BI_ROTR;
     bool rounds = op == BI_DIV_ROUND || op == BI_MULDIV || op == BI_ISQRT_ROUND;
     unsigned values = op == BI_ABS || op == BI_ISQRT || op == BI_ISQRT_ROUND ? 1u
-                      : op == BI_CLAMP || op == BI_MULDIV                    ? 3u
-                                                                             : 2u;
+                      : op == BI_CLAMP || op == BI_MULDIV ? 3u : 2u;
     uint32_t rtag = op == BI_MULDIV ? aux : tag;
     uint32_t btag = rotates ? aux : tag;
     cint_fault_record *rec;
@@ -604,8 +586,18 @@ bool cint_rt_builtin(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t tag, u
     uint64_t rem, root;
     unsigned w;
     uint16_t code = 0u;
-    if (cint_rt_faulted(ctx)) {
-        return false;
+    if (cint_rt_faulted(ctx)) return false;
+    if (op == BI_MULDIV && tag == CINT_TAG_I64 && aux == CINT_TAG_I64 && mode >= 1u && mode <= 9u && c != 0u) {
+        /* I64 muldiv without the generic checks: a result in range is returned;
+         * any other input takes the generic path below, which writes the record. */
+        zc = cint_rt_z_from_bits(tag, c);
+        exact = cint_rt_z_mul(cint_rt_z_from_bits(tag, a), cint_rt_z_from_bits(tag, b));
+        rem = div128(exact.hi, exact.lo, zc.lo, &q);
+        exact = round_quotient(q, rem, exact.negative != zc.negative, zc.lo, mode);
+        if (exact.hi == 0u && exact.lo <= (exact.negative ? (uint64_t)1 << 63 : (uint64_t)INT64_MAX)) {
+            *out = z_bits(exact);
+            return true;
+        }
     }
     if (op < BI_ABS || op > BI_ROTR || op == BI_UABS || op == BI_MIN || op == BI_MAX || op == BI_MUL_FULL ||
         !is_scalar_tag(tag) || !is_scalar_tag(rtag) || !is_scalar_tag(btag) || (rounds ? mode < 1u || mode > 9u : mode != 0u) ||
@@ -672,7 +664,7 @@ bool cint_rt_builtin(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t tag, u
             code = (uint16_t)CINT_E_DOMAIN;
             break;
         }
-        root = isqrt64(za.lo);
+        root = cint_rt_isqrt64(za.lo);
         /* No half-way ties: round up exactly when a > root^2 + root. */
         if (op == BI_ISQRT_ROUND && root * root != za.lo &&
             (mode == 2u || mode == 4u || (mode > 4u && za.lo > root * root + root))) {
@@ -698,26 +690,13 @@ bool cint_rt_builtin(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t tag, u
         }
         code = (uint16_t)CINT_E_OVERFLOW;
     }
-    rec = cint_rt_record_begin(ctx, site, code);
-    if (rec == NULL) {
-        return false;
-    }
-    cint_rt_record_op(rec, names[op]);
-    cint_rt_record_op(rec, "checked");
-    cint_rt_record_op(rec, cint_rt_type_ident(tag));
-    if (op == BI_MULDIV) {
-        cint_rt_record_op(rec, cint_rt_type_ident(rtag));
-    }
-    if (mode != 0u) {
-        cint_rt_record_op(rec, modes[mode]);
-    }
+    rec = record_checked(ctx, site, code, names[op], tag);
+    if (rec == NULL) return false;
+    if (op == BI_MULDIV) cint_rt_record_op(rec, cint_rt_type_ident(rtag));
+    if (mode != 0u) cint_rt_record_op(rec, round_modes[mode]);
     cint_rt_record_operand(rec, tag, a);
-    if (values > 1u) {
-        cint_rt_record_operand(rec, btag, b);
-    }
-    if (values > 2u) {
-        cint_rt_record_operand(rec, tag, c);
-    }
+    if (values > 1u) cint_rt_record_operand(rec, btag, b);
+    if (values > 2u) cint_rt_record_operand(rec, tag, c);
     if (code == CINT_E_OVERFLOW) {
         cint_rt_record_range(rec, exact, rtag);
     } else if (code == CINT_E_SHIFT) {
@@ -726,15 +705,34 @@ bool cint_rt_builtin(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t tag, u
     return false;
 }
 
+/* Row-major iteration over a nonempty view, the last index fastest. The
+ * element offset is kept modulo 2^64, so no step overflows; for a valid view
+ * every offset it reaches lies in the buffer. The functions are with the views
+ * below; the wide reductions of rt/cint_wide.c use them too. */
+typedef struct view_walk {
+    const cint_vdesc *v;
+    int64_t idx[CINT_MAX_RANK];
+    uint64_t off;
+} view_walk;
+static uint64_t view_count(const cint_vdesc *v);
+static void walk_start(view_walk *w, const cint_vdesc *v);
+static unsigned char *walk_at(const view_walk *w, size_t size);
+static bool walk_next(view_walk *w);
+static uint64_t load_elem(const unsigned char *p, uint32_t tag);
+
+/* SPEC-01 IM-139: a reduction over n elements charges ceil(n / 64) units. */
+#define REDUCE_FUEL_BLOCK 64u
+
+#include "cint_wide.c"  /* I128 to I1024 and U128 to U512 (roadmap box 15, unit 3), counted in their own 4.2 row */
+#include "cint_fixed.c" /* Q<i>.<f> fault records (roadmap box 15), counted in the row of rt/cint_fixed.h */
+
 /* Entry-phase faults (SPEC-03 A-12, H-12): no fuel is charged, so the entry's
  * own unit, charged by cint_rt_entry_begin, is returned. */
 bool cint_fault_shape(cint_ctx *ctx, cint_site site, uint32_t param, uint32_t dim, int64_t expected,
                       int64_t actual)
 {
     cint_fault_record *rec = cint_rt_record_begin(ctx, site, (uint16_t)CINT_E_SHAPE);
-    if (rec == NULL) {
-        return false;
-    }
+    if (rec == NULL) return false;
     cint_rt_record_op(rec, "bind.shape");
     cint_rt_record_operand(rec, CINT_TAG_I64, (uint64_t)param);
     cint_rt_record_operand(rec, CINT_TAG_I64, (uint64_t)dim);
@@ -747,9 +745,7 @@ bool cint_fault_shape(cint_ctx *ctx, cint_site site, uint32_t param, uint32_t di
 bool cint_shape_check(cint_ctx *ctx, cint_site site, uint32_t param, int64_t expected, int64_t actual)
 {
     int64_t used = ctx->head.fuel_used;
-    if (actual == expected) {
-        return true;
-    }
+    if (actual == expected) return true;
     (void)cint_fault_shape(ctx, site, param, 0u, expected, actual);
     ctx->head.fuel_used = used;
     return false;
@@ -758,30 +754,16 @@ bool cint_shape_check(cint_ctx *ctx, cint_site site, uint32_t param, int64_t exp
 bool cint_copy_shape_check(cint_ctx *ctx, cint_site site, int64_t dimension,
                            int64_t destination_extent, int64_t source_extent)
 {
-    cint_fault_record *rec;
-    if (cint_rt_faulted(ctx)) {
-        return false;
-    }
-    if (source_extent == destination_extent) {
-        return true;
-    }
-    rec = cint_rt_record_begin(ctx, site, (uint16_t)CINT_E_SHAPE);
-    if (rec == NULL) {
-        return false;
-    }
-    cint_rt_record_op(rec, "copy.shape");
-    cint_rt_record_operand(rec, CINT_TAG_I64, (uint64_t)dimension);
-    cint_rt_record_operand(rec, CINT_TAG_I64, (uint64_t)source_extent);
-    record_limit_i64(rec, destination_extent);
-    return false;
+    int64_t ops[2] = {dimension, source_extent};
+    if (cint_rt_faulted(ctx)) return false;
+    if (source_extent == destination_extent) return true;
+    return fault_i64s(ctx, site, CINT_E_SHAPE, "copy.shape", ops, 2u, true, destination_extent);
 }
 
 bool cint_fault_alias(cint_ctx *ctx, cint_site site, uint32_t param, uint32_t other)
 {
     cint_fault_record *rec = cint_rt_record_begin(ctx, site, (uint16_t)CINT_E_ALIAS);
-    if (rec == NULL) {
-        return false;
-    }
+    if (rec == NULL) return false;
     cint_rt_record_op(rec, "bind.alias");
     cint_rt_record_operand(rec, CINT_TAG_I64, (uint64_t)param);
     cint_rt_record_operand(rec, CINT_TAG_I64, (uint64_t)other);
@@ -810,9 +792,7 @@ static void default_release(void *user, void *ptr, size_t bytes, size_t align)
 static bool program_valid(const cint_program *p)
 {
     uint32_t i;
-    if (p->module_count > 0u && p->modules == NULL) {
-        return false;
-    }
+    if (p->module_count > 0u && p->modules == NULL) return false;
     for (i = 0; i < p->module_count; i++) {
         const cint_module *m = p->modules[i];
         if (m == NULL || m->path == NULL || m->path_len > CINT_FAULT_MAX_PATH ||
@@ -847,6 +827,8 @@ cint_status cint_ctx_create(const cint_ctx_config *config, cint_ctx **out)
     uint32_t cap;
     if (config == NULL || out == NULL || config->size != (uint32_t)sizeof *config || config->program == NULL ||
         !program_valid(config->program) || config->depth_limit < 0 || config->frame_arena_bytes < 0 ||
+        config->reserved != 0u || config->device_count > DEVICES ||
+        (config->device_count != 0u && (config->devices == NULL || config->devices[0] == NULL)) ||
         (config->module != NULL &&
          (config->module->abi != CINT_ABI_VERSION || config->module->program != config->program ||
           (config->module->record_count > 0u && config->module->records == NULL)))) {
@@ -862,9 +844,7 @@ cint_status cint_ctx_create(const cint_ctx_config *config, cint_ctx **out)
         return CINT_REFUSED;
     }
     ctx = (cint_ctx *)a.alloc(a.user, sizeof *ctx, _Alignof(struct cint_ctx));
-    if (ctx == NULL) {
-        return CINT_RESOURCE;
-    }
+    if (ctx == NULL) return CINT_RESOURCE;
     memset(ctx, 0, sizeof *ctx);
 #if !defined(_MSC_VER)
     atomic_init(&ctx->busy, 0);
@@ -873,9 +853,7 @@ cint_status cint_ctx_create(const cint_ctx_config *config, cint_ctx **out)
     ctx->leases = ctx->buffers == NULL ? NULL : (lease_slot *)a.alloc(a.user, cap * sizeof(lease_slot),
                                                                       _Alignof(lease_slot));
     if (ctx->leases == NULL) {
-        if (ctx->buffers != NULL) {
-            a.release(a.user, ctx->buffers, cap * sizeof(buffer_slot), _Alignof(buffer_slot));
-        }
+        if (ctx->buffers != NULL) a.release(a.user, ctx->buffers, cap * sizeof(buffer_slot), _Alignof(buffer_slot));
         a.release(a.user, ctx, sizeof *ctx, _Alignof(struct cint_ctx));
         return CINT_RESOURCE;
     }
@@ -883,6 +861,7 @@ cint_status cint_ctx_create(const cint_ctx_config *config, cint_ctx **out)
     memset(ctx->leases, 0, cap * sizeof(lease_slot));
     ctx->buffer_cap = cap;
     ctx->module = config->module;
+    ctx->device_record = config->device_count != 0u ? config->devices[0] : NULL;
     ctx->program = config->program;
     ctx->allocator = a;
     ctx->config_depth = config->depth_limit != 0 ? config->depth_limit : CINT_DEFAULT_DEPTH;
@@ -891,6 +870,7 @@ cint_status cint_ctx_create(const cint_ctx_config *config, cint_ctx **out)
     ctx->output = config->output;
     ctx->output_user = config->output_user;
     ctx->head.fuel_limit = CINT_FUEL_UNBOUNDED;
+    ctx->head.stack = ctx->stack;
     *out = ctx;
     return CINT_OK;
 }
@@ -899,32 +879,26 @@ cint_status cint_ctx_create(const cint_ctx_config *config, cint_ctx **out)
 void cint_ctx_destroy(cint_ctx *ctx)
 {
     cint_allocator a;
-    if (ctx == NULL) {
-        return;
-    }
+    if (ctx == NULL) return;
     a = ctx->allocator;
     if (ctx->device != NULL) {  /* its first member is its release function */
         (*(void (**)(void *))ctx->device)(ctx->device);
     }
     scratch_free(ctx, 0);
     mem_destroy(ctx);
-    if (ctx->print_buf != NULL) {
-        a.release(a.user, ctx->print_buf, ctx->print_cap, 1u);
-    }
+    if (ctx->print_buf != NULL) a.release(a.user, ctx->print_buf, ctx->print_cap, 1u);
     for (uint32_t i = 0u; i < ctx->buffer_used; i++) {
         const buffer_slot *s = &ctx->buffers[i];
-        if (s->live != 0u && s->storage == STORAGE_CREATED && s->base != NULL) {
+        if (s->live != 0u && s->storage == STORAGE_CREATED && s->base != NULL)
             a.release(a.user, s->base, (size_t)s->bytes, 8u);
-        }
     }
     a.release(a.user, ctx->buffers, ctx->buffer_cap * sizeof(buffer_slot), _Alignof(buffer_slot));
     a.release(a.user, ctx->leases, ctx->buffer_cap * sizeof(lease_slot), _Alignof(lease_slot));
     if (ctx->state != NULL) {
         uint32_t n = ctx->program->module_count;
         for (uint32_t m = 0u; m < n; m++) {
-            if (ctx->state[m] != NULL) {
+            if (ctx->state[m] != NULL)
                 a.release(a.user, ctx->state[m], ((const cint_state *)ctx->state[n + m])->bytes, 8u);
-            }
         }
         a.release(a.user, (void *)ctx->state, 2u * n * sizeof(void *), _Alignof(void *));
     }
@@ -947,9 +921,7 @@ void *cint_rt_state(cint_ctx *ctx, const cint_state *s)
             (void)fault_host(ctx, none, "host.resource", false, CINT_OK);
             return NULL;
         }
-        for (uint32_t k = 0u; k < 2u * n; k++) {
-            ctx->state[k] = NULL;
-        }
+        for (uint32_t k = 0u; k < 2u * n; k++) ctx->state[k] = NULL;
     }
     if (ctx->state[m] == NULL) {
         void *b = ctx->allocator.alloc(ctx->allocator.user, s->bytes, 8u);
@@ -977,9 +949,11 @@ size_t cint_state_render(const cint_ctx *ctx, const cint_state_table *t, char *o
             const cint_state_var *v = &s->vars[j];
             size_t w = v->tag == CINT_TAG_BOOL ? 1u : cint_rt_tag_width(v->tag) / 8u, n;
             cint_tvalue tv;
-            if (mod->path_len < 4u || v->offset + w > s->bytes || cap - at < 16u + mod->path_len + v->name_len) {
-                return SIZE_MAX;
+            if (v->rank != 0u || v->tag == CINT_TAG_HANDLE || v->tag == CINT_TAG_RECORD) {
+                continue;  /* an array or a struct has no line until OQ-156 (RT-OQ-49, RT-OQ-51), a handle none (M-20a) */
             }
+            if (mod->path_len < 4u || v->offset + w > s->bytes || cap - at < 16u + mod->path_len + v->name_len)
+                return SIZE_MAX;
             memcpy(out + at, "state.global ", 13u);
             at += 13u;
             for (size_t k = 0u; k + 3u < mod->path_len; k++) {
@@ -993,15 +967,11 @@ size_t cint_state_render(const cint_ctx *ctx, const cint_state_table *t, char *o
             tv.bytes[0] = (uint8_t)v->tag;
             memcpy(tv.bytes + 1, b + v->offset, w);  /* little-endian hosts (SPEC-01 IM-146) */
             n = cint_tvalue_render(&tv, out + at, cap - at);
-            if (n == 0u || n >= cap - at) {
-                return SIZE_MAX;
-            }
+            if (n == 0u || n >= cap - at) return SIZE_MAX;
             at += n;
             out[at++] = '\n';
         }
-        if (mod == NULL) {
-            return SIZE_MAX;
-        }
+        if (mod == NULL) return SIZE_MAX;
     }
     return at;
 }
@@ -1011,9 +981,7 @@ cint_status cint_ctx_fault(const cint_ctx *cctx, cint_fault_record *out)
     /* The context object is never defined const; reading the record takes the
      * busy flag, so the qualifier is removed for that write only. */
     cint_ctx *ctx = (cint_ctx *)(uintptr_t)cctx;
-    if (!cint_rt_busy_take(ctx)) {
-        return CINT_BUSY;
-    }
+    if (!cint_rt_busy_take(ctx)) return CINT_BUSY;
     if (ctx->head.faulted != 0u) {
         memcpy(out, &ctx->fault, sizeof *out);
     } else {
@@ -1026,17 +994,10 @@ cint_status cint_ctx_fault(const cint_ctx *cctx, cint_fault_record *out)
 cint_status cint_fault_get(const cint_ctx *cctx, uint8_t *buf, size_t cap, size_t *len)
 {
     cint_ctx *ctx = (cint_ctx *)(uintptr_t)cctx;
-    cint_status st = CINT_OK;
     size_t n = 0u;
-    if (ctx == NULL || len == NULL || (buf == NULL && cap > 0u)) {
-        return CINT_REFUSED;
-    }
-    if (!cint_rt_busy_take(ctx)) {
-        return CINT_BUSY;
-    }
-    if (ctx->head.faulted != 0u) {
-        n = cint_fault_encode(&ctx->fault, NULL, 0u);
-    }
+    cint_status st = cint_rt_host_take(ctx, len == NULL || (buf == NULL && cap > 0u));
+    if (st != CINT_OK) return st;
+    if (ctx->head.faulted != 0u) n = cint_fault_encode(&ctx->fault, NULL, 0u);
     if (n > 0u && cap >= n) {
         (void)cint_fault_encode(&ctx->fault, buf, cap);
     } else if (n > 0u && cap > 0u) {
@@ -1049,21 +1010,15 @@ cint_status cint_fault_get(const cint_ctx *cctx, uint8_t *buf, size_t cap, size_
             ctx->allocator.release(ctx->allocator.user, tmp, n, 1u);
         }
     }
-    if (st == CINT_OK) {
-        *len = n;
-    }
+    if (st == CINT_OK) *len = n;
     cint_rt_busy_give(ctx);
     return st;
 }
 
 cint_status cint_ctx_clear_fault(cint_ctx *ctx)
 {
-    if (ctx == NULL) {
-        return CINT_REFUSED;
-    }
-    if (!cint_rt_busy_take(ctx)) {
-        return CINT_BUSY;
-    }
+    cint_status st = cint_rt_host_take(ctx, false);
+    if (st != CINT_OK) return st;
     ctx->head.faulted = 0u;
     memset(&ctx->fault, 0, sizeof ctx->fault);
     ctx->desc_count = 0u;
@@ -1074,12 +1029,8 @@ cint_status cint_ctx_clear_fault(cint_ctx *ctx)
 cint_status cint_ctx_refusal(const cint_ctx *cctx, uint32_t *reason)
 {
     cint_ctx *ctx = (cint_ctx *)(uintptr_t)cctx;
-    if (ctx == NULL || reason == NULL) {
-        return CINT_REFUSED;
-    }
-    if (!cint_rt_busy_take(ctx)) {
-        return CINT_BUSY;
-    }
+    cint_status st = cint_rt_host_take(ctx, reason == NULL);
+    if (st != CINT_OK) return st;
     *reason = ctx->refusal;
     cint_rt_busy_give(ctx);
     return CINT_OK;
@@ -1088,9 +1039,7 @@ cint_status cint_ctx_refusal(const cint_ctx *cctx, uint32_t *reason)
 cint_status cint_fuel_consumed(const cint_ctx *cctx, int64_t *out)
 {
     cint_ctx *ctx = (cint_ctx *)(uintptr_t)cctx;
-    if (!cint_rt_busy_take(ctx)) {
-        return CINT_BUSY;
-    }
+    if (!cint_rt_busy_take(ctx)) return CINT_BUSY;
     *out = ctx->head.fuel_used;
     cint_rt_busy_give(ctx);
     return CINT_OK;
@@ -1109,17 +1058,13 @@ cint_status cint_rt_entry_begin(cint_ctx *ctx, cint_site site, int64_t fuel, int
 
 cint_status cint_rt_entry_open(cint_ctx *ctx, cint_site site, int64_t fuel, int64_t depth)
 {
-    if (!cint_rt_busy_take(ctx)) {
-        return CINT_BUSY;
-    }
+    if (!cint_rt_busy_take(ctx)) return CINT_BUSY;
     if (ctx->head.faulted != 0u) {
         cint_rt_busy_give(ctx);
         return CINT_FAULTED;
     }
     ctx->refusal = CINT_REFUSAL_NONE;
-    if (depth == CINT_DEPTH_FROM_CONFIG) {
-        depth = ctx->config_depth;
-    }
+    if (depth == CINT_DEPTH_FROM_CONFIG) depth = ctx->config_depth;
     if (fuel < CINT_FUEL_UNBOUNDED || depth < 1) {
         cint_rt_busy_give(ctx);
         return CINT_REFUSED;
@@ -1142,9 +1087,9 @@ cint_status cint_rt_entry_open(cint_ctx *ctx, cint_site site, int64_t fuel, int6
     ctx->head.in_entry = 1u;
     ctx->head.fuel_limit = fuel;
     ctx->head.fuel_used = 0;
-    ctx->depth_limit = depth;
-    ctx->depth = 1;  /* the entry function has depth 1 (SPEC-01 9.4) */
-    ctx->stack_count = 0u;
+    ctx->head.depth_limit = depth;
+    ctx->head.depth = 1;  /* the entry function has depth 1 (SPEC-01 9.4) */
+    ctx->head.stack_count = 0u;
     if (depth > (int64_t)CINT_RT_MAX_DEPTH) {
         /* Native resources for D frames are not provided: refuse the entry with
          * E_UNSUPPORTED before execution (SPEC-01 9.4; RT-OQ-03). */
@@ -1204,47 +1149,32 @@ void cint_rt_error_result(cint_ctx *ctx, const cint_error_set *set, uint64_t tag
 cint_status cint_ctx_error(const cint_ctx *cctx, const cint_error_set **set, uint64_t *tag)
 {
     cint_ctx *ctx = (cint_ctx *)(uintptr_t)cctx;
-    if (ctx == NULL || set == NULL || tag == NULL) {
-        return CINT_REFUSED;
-    }
-    if (!cint_rt_busy_take(ctx)) {
-        return CINT_BUSY;
-    }
+    cint_status st = cint_rt_host_take(ctx, set == NULL || tag == NULL);
+    if (st != CINT_OK) return st;
     *set = ctx->head.faulted != 0u ? NULL : ctx->error_set;
     *tag = *set != NULL ? ctx->error_tag : 0u;
     cint_rt_busy_give(ctx);
     return CINT_OK;
 }
 
-bool cint_rt_call_enter(cint_ctx *ctx, cint_site site)
+/* The slow path of cint_rt_call_enter (cint_rt.h 6e). */
+bool cint_rt_call_enter_slow(cint_ctx *ctx, cint_site site)
 {
-    if (ctx->head.faulted != 0u) {
-        return false;
-    }
-    if (ctx->depth >= ctx->depth_limit) {
+    if (ctx->head.faulted != 0u) return false;
+    if (ctx->head.depth >= ctx->head.depth_limit) {
         /* E_DEPTH before the callee's fuel charge, so the call consumes no fuel. */
         cint_fault_record *rec = cint_rt_record_begin(ctx, site, (uint16_t)CINT_E_DEPTH);
         if (rec != NULL) {
             cint_rt_record_op(rec, "call.enter");
-            record_limit_i64(rec, ctx->depth_limit);
+            record_limit_i64(rec, ctx->head.depth_limit);
         }
         return false;
     }
-    if (!cint_fuel_charge(ctx, site, 1u)) {
-        return false;
-    }
-    ctx->stack[ctx->stack_count] = site;  /* stack_count = depth - 1 < D <= CINT_RT_MAX_DEPTH */
-    ctx->stack_count++;
-    ctx->depth++;
+    if (!cint_fuel_charge(ctx, site, 1u)) return false;
+    ctx->stack[ctx->head.stack_count] = site;  /* stack_count + D - depth < CINT_RT_MAX_DEPTH */
+    ctx->head.stack_count++;
+    ctx->head.depth++;
     return true;
-}
-
-void cint_rt_call_leave(cint_ctx *ctx)
-{
-    if (ctx->stack_count > 0u) {
-        ctx->stack_count--;
-        ctx->depth--;
-    }
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1262,9 +1192,7 @@ static bool element_type_valid(const cint_type *type, int64_t bytes)
         type->reserved2 != 0u || type->storage != 0u || type->frac_bits != 0u) {
         return false;
     }
-    if (type->code == CINT_TAG_RECORD) {
-        return true;
-    }
+    if (type->code == CINT_TAG_RECORD) return true;
     return type->record_id == 0u && ((type->code == CINT_TAG_BOOL && bytes == 1) ||
            (is_scalar_tag(type->code) && bytes == (int64_t)(cint_rt_tag_width(type->code) / 8u)));
 }
@@ -1273,17 +1201,10 @@ static bool element_type_valid(const cint_type *type, int64_t bytes)
  * lease; deterministic (M-11). NULL when the registry is full or ids ran out. */
 static buffer_slot *slot_take(cint_ctx *ctx)
 {
-    if (ctx->last_id == UINT64_MAX) {
-        return NULL;
-    }
-    if (ctx->buffer_used < ctx->buffer_cap) {
-        return &ctx->buffers[ctx->buffer_used++];
-    }
-    for (uint32_t i = 0u; i < ctx->buffer_cap; i++) {
-        if (ctx->buffers[i].live == 0u && ctx->buffers[i].leases == 0u) {
-            return &ctx->buffers[i];
-        }
-    }
+    if (ctx->last_id == UINT64_MAX) return NULL;
+    if (ctx->buffer_used < ctx->buffer_cap) return &ctx->buffers[ctx->buffer_used++];
+    for (uint32_t i = 0u; i < ctx->buffer_cap; i++)
+        if (ctx->buffers[i].live == 0u && ctx->buffers[i].leases == 0u) return &ctx->buffers[i];
     return NULL;
 }
 
@@ -1296,9 +1217,7 @@ static void slot_fill(cint_ctx *ctx, buffer_slot *s, void *base, int64_t bytes, 
     s->generation = CINT_BUFFER_GENERATION_FIRST;
     s->base = (unsigned char *)base;
     s->bytes = bytes;
-    if (type != NULL) {
-        s->type = *type;
-    }
+    if (type != NULL) s->type = *type;
     s->elem_bytes = elem_bytes;
     s->extent = extent;
     s->perm = perm;
@@ -1310,13 +1229,9 @@ static cint_status register_buffer(cint_ctx *ctx, void *base, int64_t bytes, uin
                                    const cint_type *type, int64_t elem_bytes, int64_t extent, cint_buffer_id *out)
 {
     buffer_slot *s;
-    if (ctx == NULL || out == NULL || bytes < 0 || (base == NULL && bytes != 0) || perm > CINT_VIEW_WRITE ||
-        (uint64_t)bytes > UINTPTR_MAX - (uintptr_t)base) {
-        return CINT_REFUSED;
-    }
-    if (!cint_rt_busy_take(ctx)) {
-        return CINT_BUSY;
-    }
+    cint_status st = cint_rt_host_take(ctx, out == NULL || bytes < 0 || (base == NULL && bytes != 0) ||
+                                       perm > CINT_VIEW_WRITE || (uint64_t)bytes > UINTPTR_MAX - (uintptr_t)base);
+    if (st != CINT_OK) return st;
     s = slot_take(ctx);
     if (s == NULL) {
         cint_rt_busy_give(ctx);
@@ -1346,11 +1261,8 @@ cint_status cint_buffer_register_elements(cint_ctx *ctx, void *base, const cint_
 
 static buffer_slot *find_buffer(cint_ctx *ctx, cint_buffer_id id)
 {
-    for (uint32_t i = 0u; i < ctx->buffer_used && id != 0u; i++) {
-        if (ctx->buffers[i].id == id) {
-            return &ctx->buffers[i];
-        }
-    }
+    for (uint32_t i = 0u; i < ctx->buffer_used && id != 0u; i++)
+        if (ctx->buffers[i].id == id) return &ctx->buffers[i];
     return NULL;
 }
 
@@ -1365,16 +1277,11 @@ static cint_status registry_refused(cint_ctx *ctx, uint32_t reason)
 cint_status cint_buffer_release(cint_ctx *ctx, cint_buffer_id id)
 {
     buffer_slot *s;
-    if (ctx == NULL) {
-        return CINT_REFUSED;
-    }
-    if (!cint_rt_busy_take(ctx)) {
-        return CINT_BUSY;
-    }
+    cint_status st = cint_rt_host_take(ctx, false);
+    if (st != CINT_OK) return st;
     s = find_buffer(ctx, id);
-    if (s == NULL || s->live == 0u) {
+    if (s == NULL || s->live == 0u)
         return registry_refused(ctx, s == NULL ? CINT_REFUSAL_BUFFER : CINT_REFUSAL_GENERATION);
-    }
     if (s->leases > 0u) {
         cint_rt_busy_give(ctx);
         return CINT_BUSY;  /* a leased address stays valid until cint_lease_end (A-9) */
@@ -1399,9 +1306,7 @@ static bool bind_refused(cint_ctx *ctx, uint32_t reason)
 static int64_t elem_align(int64_t es)
 {
     int64_t align = 1;
-    while (es > 0 && align < 8 && es % (align * 2) == 0) {
-        align *= 2;
-    }
+    while (es > 0 && align < 8 && es % (align * 2) == 0) align *= 2;
     return align;
 }
 
@@ -1411,54 +1316,38 @@ bool cint_view_bind(cint_ctx *ctx, const cint_view *v, const cint_type *want, ui
     static const uint8_t zero[6] = {0};
     const buffer_slot *s;
     int64_t origin, extent;
-    if (ctx == NULL || ctx->head.in_entry == 0u || ctx->head.faulted != 0u || ctx->refusal != CINT_REFUSAL_NONE) {
+    if (ctx == NULL || ctx->head.in_entry == 0u || ctx->head.faulted != 0u || ctx->refusal != CINT_REFUSAL_NONE)
         return false;
-    }
     if (v == NULL || want == NULL || ptr == NULL || n == NULL || mode > CINT_MODE_INOUT || elem_bytes < 0 ||
         (elem_bytes == 0 && !element_type_valid(want, 0))) {
         return bind_refused(ctx, CINT_REFUSAL_CALL);
     }
     s = find_buffer(ctx, v->buffer);
-    if (s == NULL || s->live == 0u || s->generation != v->generation) {
+    if (s == NULL || s->live == 0u || s->generation != v->generation)
         return bind_refused(ctx, s == NULL ? CINT_REFUSAL_BUFFER : CINT_REFUSAL_GENERATION);
-    }
     if (!type_equal(&v->type, want) || memcmp(v->reserved, zero, sizeof zero) != 0 ||
         (s->typed != 0u && (!type_equal(&v->type, &s->type) || elem_bytes != s->elem_bytes)) ||
         (s->typed == 0u && elem_bytes == 0)) {
         return bind_refused(ctx, CINT_REFUSAL_TYPE);
     }
-    if (v->rank != 1u) {
-        return bind_refused(ctx, CINT_REFUSAL_RANK);
-    }
-    if (v->stride[0] != 1) {
-        return bind_refused(ctx, CINT_REFUSAL_STRIDE);
-    }
+    if (v->rank != 1u) return bind_refused(ctx, CINT_REFUSAL_RANK);
+    if (v->stride[0] != 1) return bind_refused(ctx, CINT_REFUSAL_STRIDE);
     origin = v->origin;
     extent = v->shape[0];
-    if (origin < 0 || extent < 0) {
-        return bind_refused(ctx, CINT_REFUSAL_EXTENT);
-    }
+    if (origin < 0 || extent < 0) return bind_refused(ctx, CINT_REFUSAL_EXTENT);
     if (elem_bytes == 0) {
-        if (origin > s->extent || extent > s->extent - origin) {
-            return bind_refused(ctx, CINT_REFUSAL_EXTENT);
-        }
+        if (origin > s->extent || extent > s->extent - origin) return bind_refused(ctx, CINT_REFUSAL_EXTENT);
     } else {
-        if (origin > INT64_MAX - extent || origin + extent > INT64_MAX / elem_bytes) {
+        if (origin > INT64_MAX - extent || origin + extent > INT64_MAX / elem_bytes)
             return bind_refused(ctx, CINT_REFUSAL_SIZE);
-        }
-        if ((origin + extent) * elem_bytes > s->bytes) {
-            return bind_refused(ctx, CINT_REFUSAL_EXTENT);
-        }
-        if (((uintptr_t)s->base + (uintptr_t)(origin * elem_bytes)) % (uintptr_t)elem_align(elem_bytes) != 0u) {
+        if ((origin + extent) * elem_bytes > s->bytes) return bind_refused(ctx, CINT_REFUSAL_EXTENT);
+        if (((uintptr_t)s->base + (uintptr_t)(origin * elem_bytes)) % (uintptr_t)elem_align(elem_bytes) != 0u)
             return bind_refused(ctx, CINT_REFUSAL_ALIGN);
-        }
     }
-    if (v->perm > s->perm || (mode != CINT_MODE_IN && v->perm != CINT_VIEW_WRITE)) {
+    if (v->perm > s->perm || (mode != CINT_MODE_IN && v->perm != CINT_VIEW_WRITE))
         return bind_refused(ctx, CINT_REFUSAL_PERMISSION);
-    }
-    if (mode != CINT_MODE_IN && s->leases > 0u) {
-        return bind_refused(ctx, CINT_REFUSAL_LEASED);
-    }
+    if (s->device != 0u || (mode != CINT_MODE_IN && s->leases > 0u))
+        return bind_refused(ctx, s->device != 0u ? CINT_REFUSAL_UNSUPPORTED : CINT_REFUSAL_LEASED);
     *ptr = elem_bytes == 0 || s->base == NULL ? NULL : (void *)(s->base + origin * elem_bytes);
     *n = extent;
     return true;
@@ -1468,15 +1357,11 @@ bool cint_view_check_bools(cint_ctx *ctx, const void *p, int64_t n, int64_t elem
                            const uint32_t *offsets, uint32_t count)
 {
     const uint8_t *b = p;
-    if (ctx == NULL || ctx->head.in_entry == 0u || ctx->head.faulted != 0u || ctx->refusal != CINT_REFUSAL_NONE) {
+    if (ctx == NULL || ctx->head.in_entry == 0u || ctx->head.faulted != 0u || ctx->refusal != CINT_REFUSAL_NONE)
         return false;
-    }
     for (int64_t i = 0; b != NULL && i < n; i++) {
-        for (uint32_t k = 0u; k < count; k++) {
-            if (b[i * elem_bytes + (int64_t)offsets[k]] > 1u) {
-                return bind_refused(ctx, CINT_REFUSAL_BOOL);
-            }
-        }
+        for (uint32_t k = 0u; k < count; k++)
+            if (b[i * elem_bytes + (int64_t)offsets[k]] > 1u) return bind_refused(ctx, CINT_REFUSAL_BOOL);
     }
     return true;
 }
@@ -1488,10 +1373,8 @@ bool cint_view_check_bools(cint_ctx *ctx, const void *p, int64_t n, int64_t elem
  * given when count is not 0 (else the entry is refused, CALL). */
 static bool bind_ready(cint_ctx *ctx, const cint_bind *b, uint32_t count)
 {
-    if (ctx == NULL || ctx->head.in_entry == 0u || ctx->head.faulted != 0u || ctx->refusal != CINT_REFUSAL_NONE) {
-        return false;
-    }
-    return count == 0u || b != NULL || bind_refused(ctx, CINT_REFUSAL_CALL);
+    return ctx != NULL && ctx->head.in_entry != 0u && ctx->head.faulted == 0u && ctx->refusal == CINT_REFUSAL_NONE &&
+           (count == 0u || b != NULL || bind_refused(ctx, CINT_REFUSAL_CALL));
 }
 
 bool cint_rt_refuse(cint_ctx *ctx, uint32_t reason)
@@ -1502,9 +1385,8 @@ bool cint_rt_refuse(cint_ctx *ctx, uint32_t reason)
 /* A type this runtime knows: Bool, I8..U64, or a record, reserved fields 0. */
 static bool type_known(const cint_type *t)
 {
-    if (t->reserved0 != 0u || t->reserved1 != 0u || t->reserved2 != 0u || t->storage != 0u || t->frac_bits != 0u) {
+    if (t->reserved0 != 0u || t->reserved1 != 0u || t->reserved2 != 0u || t->storage != 0u || t->frac_bits != 0u)
         return false;
-    }
     return t->code == CINT_TAG_RECORD || (t->record_id == 0u && (t->code == CINT_TAG_BOOL || is_scalar_tag(t->code)));
 }
 
@@ -1514,25 +1396,16 @@ static bool type_known(const cint_type *t)
 static int64_t view_elem_bytes(const cint_bind *b, const buffer_slot *s)
 {
     const cint_type *t = &b->view->type;
-    if (s->typed != 0u) {
-        return s->elem_bytes;
-    }
-    if (type_equal(t, b->want)) {
-        return b->elem_bytes;
-    }
-    if (t->code == CINT_TAG_RECORD) {
-        return -1;
-    }
+    if (s->typed != 0u) return s->elem_bytes;
+    if (type_equal(t, b->want)) return b->elem_bytes;
+    if (t->code == CINT_TAG_RECORD) return -1;
     return t->code == CINT_TAG_BOOL ? 1 : (int64_t)(cint_rt_tag_width(t->code) / 8u);
 }
 
 static bool view_empty(const cint_view *v)
 {
-    for (uint32_t d = 0u; d < v->rank; d++) {
-        if (v->shape[d] == 0) {
-            return true;
-        }
-    }
+    for (uint32_t d = 0u; d < v->rank; d++)
+        if (v->shape[d] == 0) return true;
     return false;
 }
 
@@ -1543,21 +1416,13 @@ static bool view_span(const cint_view *v, int64_t *lo, int64_t *hi)
     int64_t a = v->origin, z = v->origin;
     for (uint32_t d = 0u; d < v->rank; d++) {
         int64_t k = v->shape[d] - 1, st = v->stride[d];
-        if (k == 0 || st == 0) {
-            continue;
-        }
-        if (st == INT64_MIN || k > INT64_MAX / (st > 0 ? st : -st)) {
-            return false;
-        }
+        if (k == 0 || st == 0) continue;
+        if (st == INT64_MIN || k > INT64_MAX / (st > 0 ? st : -st)) return false;
         if (st > 0) {
-            if (z > INT64_MAX - k * st) {
-                return false;
-            }
+            if (z > INT64_MAX - k * st) return false;
             z += k * st;
         } else {
-            if (a < INT64_MIN - k * st) {
-                return false;
-            }
+            if (a < INT64_MIN - k * st) return false;
             a += k * st;
         }
     }
@@ -1570,12 +1435,8 @@ static bool view_span(const cint_view *v, int64_t *lo, int64_t *hi)
 static uint32_t view_within(const cint_view *v, int64_t cap)
 {
     int64_t lo, hi;
-    if (view_empty(v)) {
-        return v->origin > cap ? CINT_REFUSAL_EXTENT : CINT_REFUSAL_NONE;
-    }
-    if (!view_span(v, &lo, &hi)) {
-        return CINT_REFUSAL_SIZE;
-    }
+    if (view_empty(v)) return v->origin > cap ? CINT_REFUSAL_EXTENT : CINT_REFUSAL_NONE;
+    if (!view_span(v, &lo, &hi)) return CINT_REFUSAL_SIZE;
     return lo < 0 || hi >= cap ? CINT_REFUSAL_EXTENT : CINT_REFUSAL_NONE;
 }
 
@@ -1586,23 +1447,14 @@ static bool view_bools(const unsigned char *base, const cint_view *v, int64_t es
     uint32_t d;
     for (;;) {
         int64_t e = v->origin;
-        for (d = 0u; d < v->rank; d++) {
-            e += idx[d] * v->stride[d];
-        }
-        for (uint32_t k = 0u; k < n; k++) {
-            if (base[e * es + (int64_t)off[k]] > 1u) {
-                return false;
-            }
-        }
+        for (d = 0u; d < v->rank; d++) e += idx[d] * v->stride[d];
+        for (uint32_t k = 0u; k < n; k++)
+            if (base[e * es + (int64_t)off[k]] > 1u) return false;
         for (d = v->rank; d > 0u; d--) {
-            if (++idx[d - 1u] < v->shape[d - 1u]) {
-                break;
-            }
+            if (++idx[d - 1u] < v->shape[d - 1u]) break;
             idx[d - 1u] = 0;
         }
-        if (d == 0u) {
-            return true;
-        }
+        if (d == 0u) return true;
     }
 }
 
@@ -1614,16 +1466,10 @@ static uint32_t view_dims(const cint_view *v)
 {
     int64_t count = 1;
     bool wide = false;
-    if (v->origin < 0) {
-        return CINT_REFUSAL_EXTENT;
-    }
+    if (v->origin < 0) return CINT_REFUSAL_EXTENT;
     for (uint32_t d = 0u; d < v->rank; d++) {
-        if (v->shape[d] < 0) {
-            return CINT_REFUSAL_EXTENT;
-        }
-        if (v->shape[d] > 0 && v->lower[d] > INT64_MAX - (v->shape[d] - 1)) {
-            return CINT_REFUSAL_SIZE;
-        }
+        if (v->shape[d] < 0) return CINT_REFUSAL_EXTENT;
+        if (v->shape[d] > 0 && v->lower[d] > INT64_MAX - (v->shape[d] - 1)) return CINT_REFUSAL_SIZE;
         if (v->shape[d] == 0) {
             count = 0;
         } else if (count != 0 && (wide || count > INT64_MAX / v->shape[d])) {
@@ -1648,22 +1494,12 @@ static uint32_t bind_form(cint_ctx *ctx, cint_bind *b)
         (b->bool_count > 0u && b->bools == NULL) || !element_type_valid(b->want, b->elem_bytes)) {
         return CINT_REFUSAL_CALL;
     }
-    if (!type_known(&v->type) || memcmp(v->reserved, zero, sizeof zero) != 0) {
-        return CINT_REFUSAL_TYPE;
-    }
-    if (v->rank < 1u || v->rank > CINT_MAX_RANK) {
-        return CINT_REFUSAL_RANK;
-    }
+    if (!type_known(&v->type) || memcmp(v->reserved, zero, sizeof zero) != 0) return CINT_REFUSAL_TYPE;
+    if (v->rank < 1u || v->rank > CINT_MAX_RANK) return CINT_REFUSAL_RANK;
     s = find_buffer(ctx, v->buffer);
-    if (s == NULL || s->live == 0u) {
-        return s == NULL ? CINT_REFUSAL_BUFFER : CINT_REFUSAL_GENERATION;
-    }
-    if (v->perm > s->perm) {
-        return CINT_REFUSAL_PERMISSION;
-    }
-    if (b->mode != CINT_MODE_IN && s->leases > 0u) {
-        return CINT_REFUSAL_LEASED;
-    }
+    if (s == NULL || s->live == 0u) return s == NULL ? CINT_REFUSAL_BUFFER : CINT_REFUSAL_GENERATION;
+    if (v->perm > s->perm) return CINT_REFUSAL_PERMISSION;
+    if (b->mode != CINT_MODE_IN && s->leases > 0u) return CINT_REFUSAL_LEASED;
     if (s->typed != 0u && (!type_equal(&v->type, &s->type) ||
                            (type_equal(&v->type, b->want) && s->elem_bytes != b->elem_bytes))) {
         return CINT_REFUSAL_TYPE;
@@ -1673,21 +1509,16 @@ static uint32_t bind_form(cint_ctx *ctx, cint_bind *b)
         return CINT_REFUSAL_TYPE;  /* no storage: a typed registration only */
     }
     reason = view_dims(v);
-    if (reason != CINT_REFUSAL_NONE) {
-        return reason;
-    }
+    if (reason != CINT_REFUSAL_NONE) return reason;
     b->ptr = NULL;
     if (es < 0) {
         return CINT_REFUSAL_NONE;  /* check 3 faults it */
     }
     reason = view_within(v, s->typed != 0u || es == 0 ? s->extent : s->bytes / es);
-    if (reason != CINT_REFUSAL_NONE) {
-        return reason;
-    }
+    if (reason != CINT_REFUSAL_NONE) return reason;
     if (es > 0) {
-        if (((uintptr_t)s->base + (uintptr_t)(v->origin * es)) % (uintptr_t)elem_align(es) != 0u) {
+        if (((uintptr_t)s->base + (uintptr_t)(v->origin * es)) % (uintptr_t)elem_align(es) != 0u)
             return CINT_REFUSAL_ALIGN;
-        }
         if (!view_empty(v) && b->bool_count > 0u && type_equal(&v->type, b->want) &&
             !view_bools(s->base, v, es, b->bools, b->bool_count)) {
             return CINT_REFUSAL_BOOL;
@@ -1711,14 +1542,11 @@ bool cint_rt_bind_views(cint_ctx *ctx, cint_site site, cint_bind *b, uint32_t co
 {
     cint_fault_record *rec;
     uint32_t i, reason;
-    if (!bind_ready(ctx, b, count)) {
-        return false;
-    }
+    if (!bind_ready(ctx, b, count)) return false;
+    ctx->bind_site = site;
     for (i = 0u; i < count; i++) {
         reason = bind_form(ctx, &b[i]);
-        if (reason != CINT_REFUSAL_NONE) {
-            return bind_refused(ctx, reason);
-        }
+        if (reason != CINT_REFUSAL_NONE) return bind_refused(ctx, reason);
     }
     for (i = 0u; i < count; i++) {  /* F-5 check 1 */
         const buffer_slot *s = find_buffer(ctx, b[i].view->buffer);
@@ -1765,22 +1593,17 @@ static bool view_injective(const cint_view *v)
 {
     uint32_t dims[CINT_MAX_RANK], n = 0u, k, j;
     int64_t reach = 0;
-    if (view_empty(v)) {
-        return true;
-    }
+    if (view_empty(v)) return true;
     for (k = 0u; k < v->rank; k++) {
         if (v->shape[k] > 1) {
-            for (j = n; j > 0u && magnitude(v->stride[dims[j - 1u]]) > magnitude(v->stride[k]); j--) {
+            for (j = n; j > 0u && magnitude(v->stride[dims[j - 1u]]) > magnitude(v->stride[k]); j--)
                 dims[j] = dims[j - 1u];
-            }
             dims[j] = k;
             n++;
         }
     }
     for (k = 0u; k < n; k++) {
-        if (magnitude(v->stride[dims[k]]) < 1 + reach) {
-            return false;
-        }
+        if (magnitude(v->stride[dims[k]]) < 1 + reach) return false;
         reach += magnitude(v->stride[dims[k]]) * (v->shape[dims[k]] - 1);
     }
     return true;
@@ -1810,28 +1633,18 @@ static bool bind_disjoint(cint_ctx *ctx, const cint_bind *p, const cint_bind *q)
     (void)view_span(b, &blo, &bhi);
     if (ea > 0 && eb > 0) {  /* T1 over bytes, across registrations (H-13) */
         uintptr_t x = (uintptr_t)sa->base + (uintptr_t)(alo * ea), y = (uintptr_t)sb->base + (uintptr_t)(blo * eb);
-        if (x + (uintptr_t)((ahi - alo + 1) * ea) <= y || y + (uintptr_t)((bhi - blo + 1) * eb) <= x) {
-            return true;
-        }
+        if (x + (uintptr_t)((ahi - alo + 1) * ea) <= y || y + (uintptr_t)((bhi - blo + 1) * eb) <= x) return true;
     } else if (ea == 0 && eb == 0) {
         /* No storage: element offsets within one registration; distinct
          * registrations are distinct allocations. */
-        if (a->buffer != b->buffer || ahi < blo || bhi < alo) {
-            return true;
-        }
+        if (a->buffer != b->buffer || ahi < blo || bhi < alo) return true;
     } else {
         return true;  /* a record with no storage shares no bytes */
     }
     if (a->buffer == b->buffer && ea == eb) {  /* T2 */
-        for (uint32_t d = 0u; d < a->rank; d++) {
-            g = a->shape[d] > 1 ? gcd_u64(g, (uint64_t)magnitude(a->stride[d])) : g;
-        }
-        for (uint32_t d = 0u; d < b->rank; d++) {
-            g = b->shape[d] > 1 ? gcd_u64(g, (uint64_t)magnitude(b->stride[d])) : g;
-        }
-        if (g >= 2u && (uint64_t)a->origin % g != (uint64_t)b->origin % g) {
-            return true;
-        }
+        for (uint32_t d = 0u; d < a->rank; d++) g = a->shape[d] > 1 ? gcd_u64(g, (uint64_t)magnitude(a->stride[d])) : g;
+        for (uint32_t d = 0u; d < b->rank; d++) g = b->shape[d] > 1 ? gcd_u64(g, (uint64_t)magnitude(b->stride[d])) : g;
+        if (g >= 2u && (uint64_t)a->origin % g != (uint64_t)b->origin % g) return true;
     }
     return false;
 }
@@ -1878,10 +1691,25 @@ static bool bind_disjoint_all(cint_ctx *ctx, cint_site site, const cint_bind *b,
     return true;
 }
 
+/* Placement (M-28, M-28a): every view of `b` in device(1) memory when `device`, else in host
+ * memory or at a parameter of bind_marks (OQ-217); otherwise E_UNSUPPORTED bind.placement (I64 param). */
+static bool bind_placed(cint_ctx *ctx, cint_site site, const cint_bind *b, uint32_t count, bool device)
+{
+    for (uint32_t i = 0u; i < count; i++) {
+        bool marked = b[i].param < 64u && ((ctx->bind_marks >> b[i].param) & 1u) != 0u;
+        if ((find_buffer(ctx, b[i].view->buffer)->device != 0u) != device && !marked) {
+            (void)bind_fault(ctx, site, (uint16_t)CINT_E_UNSUPPORTED, "bind.placement", b[i].param);
+            return false;
+        }
+    }
+    return true;
+}
+
 bool cint_rt_bind_finish(cint_ctx *ctx, cint_site site, const cint_bind *b, uint32_t count)
 {
     /* Check 8 refuses nothing: a body takes a view of any rank and stride (RT-OQ-38). */
-    return bind_ready(ctx, b, count) && bind_disjoint_all(ctx, site, b, count, false);
+    return bind_ready(ctx, b, count) && bind_placed(ctx, site, b, count, false) &&
+           bind_disjoint_all(ctx, site, b, count, false);
 }
 
 void cint_rt_dispatch_host(cint_ctx *ctx, const cint_bind *b, uint32_t count)
@@ -1889,6 +1717,7 @@ void cint_rt_dispatch_host(cint_ctx *ctx, const cint_bind *b, uint32_t count)
     if (ctx != NULL && ctx->head.in_entry != 0u && (count == 0u || b != NULL)) {
         ctx->host_binds = b;
         ctx->host_count = count;
+        (void)bind_placed(ctx, ctx->bind_site, b, count, ctx->device_record != NULL);  /* F-5 check 4 */
     }
 }
 
@@ -1896,13 +1725,9 @@ bool cint_rt_dispatch_bound(cint_ctx *ctx, cint_site site)
 {
     const cint_bind *b = ctx->host_binds;
     uint32_t i, n = ctx->host_count;
-    if (cint_rt_faulted(ctx)) {
-        return false;
-    }
+    if (cint_rt_faulted(ctx)) return false;
     ctx->host_count = 0u;  /* once per entry */
-    if (!bind_disjoint_all(ctx, site, b, n, true)) {
-        return false;
-    }
+    if (!bind_disjoint_all(ctx, site, b, n, true)) return false;
     for (i = 0u; i < n; i++) {  /* check 8: M-30a */
         const buffer_slot *s = find_buffer(ctx, b[i].view->buffer);
         if (b[i].mode != CINT_MODE_IN && s != NULL && s->storage == STORAGE_BORROWED &&
@@ -1922,13 +1747,9 @@ bool cint_rt_dispatch_bound(cint_ctx *ctx, cint_site site)
  * does not have or a record it has no layout for. */
 int64_t cint_rt_type_elem_bytes(const cint_ctx *ctx, const cint_type *t)
 {
-    if (!type_known(t)) {
-        return -1;
-    }
+    if (!type_known(t)) return -1;
     if (t->code == CINT_TAG_RECORD) {
-        if (ctx->module == NULL || t->record_id >= ctx->module->record_count) {
-            return -1;
-        }
+        if (ctx->module == NULL || t->record_id >= ctx->module->record_count) return -1;
         return (int64_t)ctx->module->records[t->record_id].bytes;
     }
     return t->code == CINT_TAG_BOOL ? 1 : (int64_t)(cint_rt_tag_width(t->code) / 8u);
@@ -1941,35 +1762,29 @@ cint_status cint_buffer_register(cint_ctx *ctx, const cint_buffer_desc *desc, ci
     buffer_slot *s;
     int64_t es;
     void *base;
-    if (ctx == NULL || out_id == NULL || out_generation == NULL) {
-        return CINT_REFUSED;
-    }
-    if (!cint_rt_busy_take(ctx)) {
-        return CINT_BUSY;
-    }
+    bool placed;
+    cint_status st = cint_rt_host_take(ctx, out_id == NULL || out_generation == NULL);
+    if (st != CINT_OK) return st;
     if (desc == NULL || desc->size != (uint32_t)sizeof *desc || desc->writable > 1u || desc->mem.reserved != 0u ||
         desc->sync.reserved != 0u || desc->publish > CINT_PUBLISH_COPY ||
         (desc->publish != CINT_PUBLISH_NONE && desc->writable == 0u)) {
         return registry_refused(ctx, CINT_REFUSAL_CALL);
     }
-    if (desc->mem.kind != CINT_MEM_HOST || desc->device != 0u || memcmp(&desc->sync, zero, sizeof zero) != 0) {
+    placed = desc->mem.kind == CINT_MEM_CUDA && desc->device == 1u && ctx->device_record != NULL &&
+             is_scalar_tag(desc->type.code);  /* device(1): CUDA memory of I8 to U64 (M-28a) */
+    if ((!placed && (desc->mem.kind != CINT_MEM_HOST || desc->device != 0u)) ||
+        memcmp(&desc->sync, zero, sizeof zero) != 0) {
         return registry_refused(ctx, CINT_REFUSAL_UNSUPPORTED);
     }
     es = cint_rt_type_elem_bytes(ctx, &desc->type);
-    if (es < 0) {
-        return registry_refused(ctx, CINT_REFUSAL_TYPE);
-    }
-    if (desc->extent < 0) {
-        return registry_refused(ctx, CINT_REFUSAL_EXTENT);
-    }
-    base = es == 0 ? NULL : desc->mem.u.host.ptr;
+    if (es < 0 || desc->extent < 0) return registry_refused(ctx, es < 0 ? CINT_REFUSAL_TYPE : CINT_REFUSAL_EXTENT);
+    base = es == 0 ? NULL : placed ? (void *)(uintptr_t)desc->mem.u.cuda.device_ptr : desc->mem.u.host.ptr;
     if (es != 0 && (desc->extent > INT64_MAX / es ||
                     (uint64_t)(desc->extent * es) > UINTPTR_MAX - (uintptr_t)base)) {
         return registry_refused(ctx, CINT_REFUSAL_SIZE);
     }
-    if ((base == NULL && es * desc->extent != 0) || (uintptr_t)base % (uintptr_t)elem_align(es) != 0u) {
+    if ((base == NULL && es * desc->extent != 0) || (uintptr_t)base % (uintptr_t)elem_align(es) != 0u)
         return registry_refused(ctx, CINT_REFUSAL_ALIGN);
-    }
     s = slot_take(ctx);
     if (s == NULL) {
         cint_rt_busy_give(ctx);
@@ -1977,6 +1792,7 @@ cint_status cint_buffer_register(cint_ctx *ctx, const cint_buffer_desc *desc, ci
     }
     slot_fill(ctx, s, base, es * desc->extent, (uint8_t)desc->writable, &desc->type, es, desc->extent);
     s->publish = (uint8_t)desc->publish;
+    s->device = (uint8_t)placed;
     *out_id = s->id;
     *out_generation = s->generation;
     cint_rt_busy_give(ctx);
@@ -1989,25 +1805,12 @@ cint_status cint_buffer_create(cint_ctx *ctx, cint_type type, int64_t extent, ui
     buffer_slot *s;
     int64_t es;
     void *base = NULL;
-    if (ctx == NULL || out_id == NULL || out_generation == NULL) {
-        return CINT_REFUSED;
-    }
-    if (!cint_rt_busy_take(ctx)) {
-        return CINT_BUSY;
-    }
-    if (device != 0u) {
-        return registry_refused(ctx, CINT_REFUSAL_UNSUPPORTED);
-    }
+    cint_status st = cint_rt_host_take(ctx, out_id == NULL || out_generation == NULL);
+    if (st != CINT_OK) return st;
+    if (device != 0u) return registry_refused(ctx, CINT_REFUSAL_UNSUPPORTED);
     es = cint_rt_type_elem_bytes(ctx, &type);
-    if (es < 0) {
-        return registry_refused(ctx, CINT_REFUSAL_TYPE);
-    }
-    if (extent < 0) {
-        return registry_refused(ctx, CINT_REFUSAL_EXTENT);
-    }
-    if (es != 0 && extent > INT64_MAX / es) {
-        return registry_refused(ctx, CINT_REFUSAL_SIZE);
-    }
+    if (es < 0 || extent < 0) return registry_refused(ctx, es < 0 ? CINT_REFUSAL_TYPE : CINT_REFUSAL_EXTENT);
+    if (es != 0 && extent > INT64_MAX / es) return registry_refused(ctx, CINT_REFUSAL_SIZE);
     if (ctx->last_id == UINT64_MAX || (ctx->buffer_used == ctx->buffer_cap && slot_take(ctx) == NULL)) {
         cint_rt_busy_give(ctx);
         return CINT_RESOURCE;
@@ -2037,30 +1840,21 @@ cint_status cint_buffer_read(cint_ctx *ctx, cint_view view, void *dst, size_t ds
     int64_t idx[CINT_MAX_RANK] = {0}, es, cap, count;
     uint32_t reason, d;
     unsigned char *out = dst;
-    if (ctx == NULL) {
-        return CINT_REFUSED;
-    }
-    if (!cint_rt_busy_take(ctx)) {
-        return CINT_BUSY;
-    }
+    cint_status st = cint_rt_host_take(ctx, false);
+    if (st != CINT_OK) return st;
     s = find_buffer(ctx, v->buffer);
-    if (s == NULL || s->live == 0u || s->generation != v->generation) {
+    if (s == NULL || s->live == 0u || s->generation != v->generation)
         return registry_refused(ctx, s == NULL ? CINT_REFUSAL_BUFFER : CINT_REFUSAL_GENERATION);
-    }
     if (!type_known(&v->type) || memcmp(v->reserved, zero, sizeof zero) != 0 ||
         (s->typed != 0u && !type_equal(&v->type, &s->type)) || (s->typed == 0u && v->type.code == CINT_TAG_RECORD)) {
         return registry_refused(ctx, CINT_REFUSAL_TYPE);
     }
-    if (v->rank < 1u || v->rank > CINT_MAX_RANK) {
-        return registry_refused(ctx, CINT_REFUSAL_RANK);
-    }
-    if (v->perm > s->perm) {
-        return registry_refused(ctx, CINT_REFUSAL_PERMISSION);
+    if (v->rank < 1u || v->rank > CINT_MAX_RANK) return registry_refused(ctx, CINT_REFUSAL_RANK);
+    if (v->perm > s->perm || s->device != 0u) {  /* the host reads host memory (M-28) */
+        return registry_refused(ctx, s->device != 0u ? CINT_REFUSAL_UNSUPPORTED : CINT_REFUSAL_PERMISSION);
     }
     reason = view_dims(v);
-    if (reason != CINT_REFUSAL_NONE) {
-        return registry_refused(ctx, reason);
-    }
+    if (reason != CINT_REFUSAL_NONE) return registry_refused(ctx, reason);
     es = s->typed != 0u ? s->elem_bytes : (v->type.code == CINT_TAG_BOOL ? 1 : (int64_t)(cint_rt_tag_width(v->type.code) / 8u));
     cap = s->typed != 0u || es == 0 ? s->extent : s->bytes / es;
     for (d = 0u, count = view_empty(v) ? 0 : 1; d < v->rank && count != 0; d++) {
@@ -2071,25 +1865,17 @@ cint_status cint_buffer_read(cint_ctx *ctx, cint_view view, void *dst, size_t ds
         return registry_refused(ctx, CINT_REFUSAL_SIZE);
     }
     reason = view_within(v, cap);
-    if (reason != CINT_REFUSAL_NONE) {
-        return registry_refused(ctx, reason);
-    }
+    if (reason != CINT_REFUSAL_NONE) return registry_refused(ctx, reason);
     for (int64_t at = 0; es > 0 && count > 0;) {
         int64_t e = v->origin;
-        for (d = 0u; d < v->rank; d++) {
-            e += idx[d] * v->stride[d];
-        }
+        for (d = 0u; d < v->rank; d++) e += idx[d] * v->stride[d];
         memcpy(out + at, s->base + e * es, (size_t)es);
         at += es;
         for (d = v->rank; d > 0u; d--) {
-            if (++idx[d - 1u] < v->shape[d - 1u]) {
-                break;
-            }
+            if (++idx[d - 1u] < v->shape[d - 1u]) break;
             idx[d - 1u] = 0;
         }
-        if (d == 0u) {
-            break;
-        }
+        if (d == 0u) break;
     }
     cint_rt_busy_give(ctx);
     return CINT_OK;
@@ -2098,16 +1884,10 @@ cint_status cint_buffer_read(cint_ctx *ctx, cint_view view, void *dst, size_t ds
 cint_status cint_buffer_lease(cint_ctx *ctx, cint_buffer_id id, const void **out_ptr, uint64_t *out_lease)
 {
     buffer_slot *s;
-    if (ctx == NULL || out_ptr == NULL || out_lease == NULL) {
-        return CINT_REFUSED;
-    }
-    if (!cint_rt_busy_take(ctx)) {
-        return CINT_BUSY;
-    }
+    cint_status st = cint_rt_host_take(ctx, out_ptr == NULL || out_lease == NULL);
+    if (st != CINT_OK) return st;
     s = find_buffer(ctx, id);
-    if (s == NULL || s->live == 0u || s->storage != STORAGE_CREATED) {
-        return registry_refused(ctx, CINT_REFUSAL_LEASE);
-    }
+    if (s == NULL || s->live == 0u || s->storage != STORAGE_CREATED) return registry_refused(ctx, CINT_REFUSAL_LEASE);
     for (uint32_t i = 0u; i < ctx->buffer_cap; i++) {
         if (ctx->leases[i].lease == 0u && ctx->last_lease < UINT64_MAX && s->leases < UINT32_MAX) {
             ctx->leases[i].lease = ++ctx->last_lease;
@@ -2125,12 +1905,8 @@ cint_status cint_buffer_lease(cint_ctx *ctx, cint_buffer_id id, const void **out
 
 cint_status cint_lease_end(cint_ctx *ctx, uint64_t lease)
 {
-    if (ctx == NULL) {
-        return CINT_REFUSED;
-    }
-    if (!cint_rt_busy_take(ctx)) {
-        return CINT_BUSY;
-    }
+    cint_status st = cint_rt_host_take(ctx, false);
+    if (st != CINT_OK) return st;
     for (uint32_t i = 0u; i < ctx->buffer_cap && lease != 0u; i++) {
         if (ctx->leases[i].lease == lease) {
             ctx->buffers[ctx->leases[i].slot].leases--;
@@ -2152,15 +1928,11 @@ size_t cint_format_value(uint32_t tag, uint64_t bits, char out[CINT_FORMAT_MAX])
     uint64_t mag;
     bool negative = false;
     if (tag == CINT_TAG_BOOL) {
-        if (bits > 1u) {
-            return 0u;
-        }
+        if (bits > 1u) return 0u;
         memcpy(out, bits != 0u ? "true" : "false", bits != 0u ? 4u : 5u);
         return bits != 0u ? 4u : 5u;
     }
-    if (!is_scalar_tag(tag)) {
-        return 0u;
-    }
+    if (!is_scalar_tag(tag)) return 0u;
     mag = canon(tag, bits);
     negative = cint_rt_tag_signed(tag) && (mag >> 63) != 0u;
     mag = negative ? (uint64_t)0 - mag : mag;
@@ -2168,23 +1940,15 @@ size_t cint_format_value(uint32_t tag, uint64_t bits, char out[CINT_FORMAT_MAX])
         digits[nd++] = (char)('0' + (int)(mag % 10u));
         mag /= 10u;
     } while (mag != 0u);
-    if (negative) {
-        out[len++] = '-';
-    }
-    while (nd > 0u) {
-        out[len++] = digits[--nd];
-    }
+    if (negative) out[len++] = '-';
+    while (nd > 0u) out[len++] = digits[--nd];
     return len;
 }
 
 bool cint_rt_print_begin(cint_ctx *ctx, cint_site site)
 {
-    if (ctx->head.faulted != 0u) {
-        return false;
-    }
-    if (ctx->head.in_entry == 0u) {
-        return fault_refused(ctx, site);
-    }
+    if (ctx->head.faulted != 0u) return false;
+    if (ctx->head.in_entry == 0u) return fault_refused(ctx, site);
     ctx->print_site = site;
     ctx->print_len = 0u;
     ctx->print_open = 1u;
@@ -2193,25 +1957,15 @@ bool cint_rt_print_begin(cint_ctx *ctx, cint_site site)
 
 bool cint_rt_print_bytes(cint_ctx *ctx, const void *bytes, size_t len)
 {
-    if (ctx->head.faulted != 0u) {
-        return false;
-    }
-    if (ctx->print_open == 0u || (bytes == NULL && len != 0u)) {
-        return fault_refused(ctx, ctx->print_site);
-    }
-    if (len > PRINT_MAX - ctx->print_len) {
-        return fault_host(ctx, ctx->print_site, "host.resource", false, CINT_OK);
-    }
+    if (ctx->head.faulted != 0u) return false;
+    if (ctx->print_open == 0u || (bytes == NULL && len != 0u)) return fault_refused(ctx, ctx->print_site);
+    if (len > PRINT_MAX - ctx->print_len) return fault_host(ctx, ctx->print_site, "host.resource", false, CINT_OK);
     if (ctx->print_len + len > ctx->print_cap) {
         size_t cap = ctx->print_cap > 0u ? ctx->print_cap : 256u;
         uint8_t *p;
-        while (cap < ctx->print_len + len) {
-            cap = cap <= PRINT_MAX / 2u ? cap * 2u : PRINT_MAX;
-        }
+        while (cap < ctx->print_len + len) cap = cap <= PRINT_MAX / 2u ? cap * 2u : PRINT_MAX;
         p = (uint8_t *)ctx->allocator.alloc(ctx->allocator.user, cap, 1u);
-        if (p == NULL) {
-            return fault_host(ctx, ctx->print_site, "host.resource", false, CINT_OK);
-        }
+        if (p == NULL) return fault_host(ctx, ctx->print_site, "host.resource", false, CINT_OK);
         if (ctx->print_buf != NULL) {
             memcpy(p, ctx->print_buf, ctx->print_len);
             ctx->allocator.release(ctx->allocator.user, ctx->print_buf, ctx->print_cap, 1u);
@@ -2230,41 +1984,41 @@ bool cint_rt_print_value(cint_ctx *ctx, uint32_t tag, uint64_t bits)
 {
     char text[CINT_FORMAT_MAX];
     size_t len;
-    if (ctx->head.faulted != 0u) {
-        return false;
-    }
+    if (ctx->head.faulted != 0u) return false;
     len = cint_format_value(tag, bits, text);
-    if (len == 0u) {
-        return fault_refused(ctx, ctx->print_site);
-    }
+    if (len == 0u) return fault_refused(ctx, ctx->print_site);
     return cint_rt_print_bytes(ctx, text, len);
 }
 
-/* Whether a form passes the static rules of SPEC-04 LS-213 (cint_rt.h section 6c). */
+/* Whether a form passes the static rules of SPEC-04 LS-213 (cint_rt.h section 6c), for Bool, I8 to U64,
+ * a wide type of rt/cint_wide.h, or a fixed-point type word of rt/cint_fixed.h, which takes no kind, `#`,
+ * group or `!bits` (ref/OPEN.md REF-OQ-47) and the precision in place of a scale. */
 static bool format_admits(uint32_t tag, uint32_t form, uint32_t fill, uint64_t width, uint64_t scale)
 {
+    bool integer = is_scalar_tag(tag) || cint_wide_limbs(tag) != 0u;
     uint32_t kind = form & CINT_FORMAT_KIND;
     uint32_t align = form & CINT_FORMAT_CENTER;
     uint32_t sign = form & (CINT_FORMAT_PLUS | CINT_FORMAT_SPACE);
     uint32_t group = form & (CINT_FORMAT_UNDERSCORE | CINT_FORMAT_COMMA);
     bool alt = (form & CINT_FORMAT_ALT) != 0u;
     bool zero = (form & CINT_FORMAT_ZERO) != 0u;
-    if (form > 4095u || kind < 1u || kind > 6u || sign == (CINT_FORMAT_PLUS | CINT_FORMAT_SPACE) ||
+    bool bits = (form & CINT_FORMAT_BITS) != 0u;
+    if (form > 16383u || kind > 6u || sign == (CINT_FORMAT_PLUS | CINT_FORMAT_SPACE) ||
         group == (CINT_FORMAT_UNDERSCORE | CINT_FORMAT_COMMA) || fill > 0x10ffffu ||
         (fill >= 0xd800u && fill <= 0xdfffu) || (zero && align != 0u) || (width != 0u && align == 0u && !zero) ||
         (zero && group != 0u)) {
         return false;
     }
+    if (cint_q_is(tag)) {
+        return kind == 0u && !alt && group == 0u && !bits && ((form & CINT_FORMAT_PRECISION) != 0u || scale == 0u);
+    }
+    if (kind < 1u || (form & CINT_FORMAT_PRECISION) != 0u) return false;
     if (tag == CINT_TAG_BOOL || kind == 6u) {
-        return (tag == CINT_TAG_BOOL ? kind == 1u : is_scalar_tag(tag)) && sign == 0u && !alt && !zero &&
-               group == 0u && scale == 0u;
+        return (tag == CINT_TAG_BOOL ? kind == 1u : integer) && sign == 0u && !alt && !zero && group == 0u &&
+               scale == 0u && !bits;
     }
-    if (!is_scalar_tag(tag)) {
-        return false;
-    }
-    if (kind == 1u) {
-        return !alt && (scale == 0u || group == 0u);
-    }
+    if (!integer) return false;
+    if (kind == 1u) return !alt && (scale == 0u || (group == 0u && !bits));
     return group != CINT_FORMAT_COMMA && scale == 0u;
 }
 
@@ -2299,73 +2053,95 @@ static bool print_repeat(cint_ctx *ctx, const uint8_t *unit, size_t len, uint64_
 {
     uint8_t block[256];
     size_t per = sizeof block / len, i;
-    if (count < (uint64_t)per) {
-        per = (size_t)count;
-    }
-    for (i = 0u; i < per; ++i) {
-        memcpy(block + i * len, unit, len);
-    }
+    if (count < (uint64_t)per) per = (size_t)count;
+    for (i = 0u; i < per; ++i) memcpy(block + i * len, unit, len);
     while (count > 0u) {
         size_t n = count < (uint64_t)per ? (size_t)count : per;
-        if (!cint_rt_print_bytes(ctx, block, n * len)) {
-            return false;
-        }
+        if (!cint_rt_print_bytes(ctx, block, n * len)) return false;
         count -= (uint64_t)n;
     }
     return true;
 }
 
+/* The magnitude m[0 .. *len) divided by d (2 to 16) in place, by 32-bit halves so that no
+ * step needs a 128-bit quotient; the remainder returned and *len trimmed. */
+static unsigned mag_divmod_small(uint64_t *m, unsigned *len, unsigned d)
+{
+    uint64_t r = 0u;
+    unsigned i = *len;
+    while (i > 0u) {
+        uint64_t hi, lo;
+        i--;
+        hi = (r << 32) | (m[i] >> 32);
+        lo = ((hi % d) << 32) | (m[i] & 0xFFFFFFFFu);
+        m[i] = ((hi / d) << 32) | (lo / d);
+        r = lo % d;
+    }
+    while (*len > 0u && m[*len - 1u] == 0u) (*len)--;
+    return (unsigned)r;
+}
+
 /* A hole with a format specification (SPEC-04 LS-202 to LS-212), as cint_ref's fmt.render:
  * the fill on the left, the sign and the prefix of `#`, the zeros of `0`, the digits (with
- * their groups, or with the point and the fractional digits of a scale), the fill on the
- * right. The length is known before a byte is staged, so an oversized hole stages nothing. */
-bool cint_rt_print_format(cint_ctx *ctx, uint32_t tag, uint64_t bits, uint32_t form, uint32_t fill,
-                          uint64_t width, uint64_t scale)
+ * their groups, or with the point and the fractional digits of a scale or a fixed-point
+ * value), the fill on the right. The length is known before a byte is staged, so an oversized
+ * hole stages nothing. The value is limb[0], the bits of Bool or the pattern of I8 to U64 or
+ * of a fixed-point storage, or the limbs of a wide type; the caller has checked that tag is
+ * one of these. Under CINT_FORMAT_BITS the pattern is read as unsigned (LS-201). */
+static bool print_format_limbs(cint_ctx *ctx, uint32_t tag, const uint64_t *limb, uint32_t form, uint32_t fill,
+                               uint64_t width, uint64_t scale)
 {
     static const char digit_chars[] = "0123456789abcdef0123456789ABCDEF";
     static const uint8_t zero_unit[1] = {'0'};
     uint32_t kind = form & CINT_FORMAT_KIND;
     uint32_t align = form & CINT_FORMAT_CENTER;
-    char head[3];   /* the sign, then the `0x`, `0o` or `0b` of `#` */
-    char text[80];  /* at most 64 binary digits and 15 separators */
-    char frac[20];  /* the fractional digits of a scale, after its run of zeros */
-    char rev[64];   /* digits, least significant first */
+    bool bits = (form & CINT_FORMAT_BITS) != 0u;
+    char head[3];     /* the sign, then the `0x`, `0o` or `0b` of `#` */
+    char text[1280];  /* at most 1,024 binary digits and 255 separators */
+    char frac[310];   /* the fractional digits of a scale, after its run of zeros: at most 309 */
+    char rev[1024];   /* digits, least significant first: at most 1,024 binary or 647 ternary */
     uint8_t unit[4];
+    uint64_t mag[16];
+    unsigned n = cint_wide_limbs(tag) != 0u ? cint_wide_limbs(tag) : 1u, len = 0u;
     size_t nhead = 0u, ntext = 0u, nfrac = 0u, nd = 0u, nunit;
-    uint64_t mag = 0u, room, length, zeros = 0u, zpad = 0u, left = 0u, right = 0u;
+    uint64_t room, length, zeros = 0u, zpad = 0u, left = 0u, right = 0u;
     bool negative = false;
-    if (ctx->head.faulted != 0u) {
-        return false;
-    }
-    if (!format_admits(tag, form, fill, width, scale) || (tag == CINT_TAG_BOOL && bits > 1u) || ctx->print_open == 0u) {
+    if (ctx->head.faulted != 0u) return false;
+    if (!format_admits(tag, form, fill, width, scale) || (tag == CINT_TAG_BOOL && limb[0] > 1u) ||
+        ctx->print_open == 0u) {
         return fault_refused(ctx, ctx->print_site);
     }
-    if (tag == CINT_TAG_BOOL) {
-        memcpy(text, bits != 0u ? "true" : "false", bits != 0u ? 4u : 5u);
-        ntext = bits != 0u ? 4u : 5u;
+    if (cint_q_is(tag)) {
+        fq_print_text(tag, limb[0], form, scale, head, &nhead, text, &ntext, &zeros);
+    } else if (tag == CINT_TAG_BOOL) {
+        memcpy(text, limb[0] != 0u ? "true" : "false", limb[0] != 0u ? 4u : 5u);
+        ntext = limb[0] != 0u ? 4u : 5u;
+    } else if (n == 1u) {
+        mag[0] = canon(tag, limb[0]);
+        if (bits) mag[0] &= cint_rt_mask(cint_rt_tag_width(tag));
+        negative = !bits && cint_rt_tag_signed(tag) && (mag[0] >> 63) != 0u;
+        mag[0] = negative ? (uint64_t)0 - mag[0] : mag[0];
+        len = mag[0] != 0u ? 1u : 0u;
     } else {
-        mag = canon(tag, bits);
-        negative = cint_rt_tag_signed(tag) && (mag >> 63) != 0u;
-        mag = negative ? (uint64_t)0 - mag : mag;
+        len = cint_w_mag(mag, limb, n, cint_rt_tag_signed(tag) && !bits, &negative);
     }
     if (kind == 6u && tag != CINT_TAG_BOOL) {
         /* The minimal balanced-ternary literal (SPEC-04 9.3 rule 3); a negative value
          * has the digits of its magnitude with N and P exchanged. */
         text[ntext++] = '0';
         text[ntext++] = 't';
-        if (mag == 0u) {
-            text[ntext++] = '0';
-        }
-        while (mag != 0u) {
-            uint64_t r = mag % 3u;
+        if (len == 0u) text[ntext++] = '0';
+        while (len != 0u) {
+            unsigned r = mag_divmod_small(mag, &len, 3u), i = 0u;
             rev[nd++] = r == 0u ? '0' : (r == 1u) != negative ? 'P' : 'N';
-            mag = r == 2u ? mag / 3u + 1u : mag / 3u;
+            if (r == 2u) {  /* the next digit carries one */
+                while (i < len && ++mag[i] == 0u) i++;
+                if (i == len) mag[len++] = 1u;
+            }
         }
-        while (nd > 0u) {
-            text[ntext++] = rev[--nd];
-        }
-    } else if (tag != CINT_TAG_BOOL) {
-        uint64_t base = kind == 1u ? 10u : kind <= 3u ? 16u : kind == 4u ? 8u : 2u;
+        while (nd > 0u) text[ntext++] = rev[--nd];
+    } else if (tag != CINT_TAG_BOOL && !cint_q_is(tag)) {
+        unsigned base = kind == 1u ? 10u : kind <= 3u ? 16u : kind == 4u ? 8u : 2u;
         const char *chars = kind == 3u ? digit_chars + 16 : digit_chars;
         size_t every = kind == 1u ? 3u : 4u;
         char sep = (form & CINT_FORMAT_COMMA) != 0u ? ',' : '_';
@@ -2381,36 +2157,32 @@ bool cint_rt_print_format(cint_ctx *ctx, uint32_t tag, uint64_t bits, uint32_t f
             head[nhead++] = base == 16u ? 'x' : base == 8u ? 'o' : 'b';
         }
         do {
-            rev[nd++] = chars[mag % base];
-            mag /= base;
-        } while (mag != 0u);
+            rev[nd++] = chars[mag_divmod_small(mag, &len, base)];
+        } while (len != 0u);
+        if (bits && base != 10u) {  /* every digit of the width (LS-201) */
+            unsigned w = cint_rt_tag_width(tag);
+            size_t full = base == 16u ? (w + 3u) / 4u : base == 8u ? (w + 2u) / 3u : w;
+            while (nd < full) rev[nd++] = '0';
+        }
         if (scale != 0u && (uint64_t)nd > scale) {
-            while ((uint64_t)nd > scale) {
-                text[ntext++] = rev[--nd];
-            }
+            while ((uint64_t)nd > scale) text[ntext++] = rev[--nd];
             text[ntext++] = '.';
         } else if (scale != 0u) {
             text[ntext++] = '0';
             text[ntext++] = '.';
             zeros = scale - (uint64_t)nd;
         }
-        if (scale != 0u) {
-            while (nd > 0u) {
-                frac[nfrac++] = rev[--nd];
-            }
-        }
+        if (scale != 0u)
+            while (nd > 0u) frac[nfrac++] = rev[--nd];
         while (nd > 0u) {
             text[ntext++] = rev[--nd];
-            if ((form & (CINT_FORMAT_UNDERSCORE | CINT_FORMAT_COMMA)) != 0u && nd > 0u && nd % every == 0u) {
+            if ((form & (CINT_FORMAT_UNDERSCORE | CINT_FORMAT_COMMA)) != 0u && nd > 0u && nd % every == 0u)
                 text[ntext++] = sep;
-            }
         }
     }
     /* Every byte so far is ASCII, so the length in bytes is the length in scalar values. */
     room = (uint64_t)(PRINT_MAX - ctx->print_len);
-    if (zeros > room) {
-        return fault_host(ctx, ctx->print_site, "host.resource", false, CINT_OK);
-    }
+    if (zeros > room) return fault_host(ctx, ctx->print_site, "host.resource", false, CINT_OK);
     length = (uint64_t)(nhead + ntext + nfrac) + zeros;
     if (width > length && (form & CINT_FORMAT_ZERO) != 0u) {
         zpad = width - length;
@@ -2423,33 +2195,32 @@ bool cint_rt_print_format(cint_ctx *ctx, uint32_t tag, uint64_t bits, uint32_t f
         right = width - length - left;
     }
     nunit = utf8_encode(fill, unit);
-    if (length > room || zpad > room - length || left + right > (room - length - zpad) / nunit) {
+    if (length > room || zpad > room - length || left + right > (room - length - zpad) / nunit)
         return fault_host(ctx, ctx->print_site, "host.resource", false, CINT_OK);
-    }
     return print_repeat(ctx, unit, nunit, left) && cint_rt_print_bytes(ctx, head, nhead) &&
            print_repeat(ctx, zero_unit, 1u, zpad) && cint_rt_print_bytes(ctx, text, ntext) &&
            print_repeat(ctx, zero_unit, 1u, zeros) && cint_rt_print_bytes(ctx, frac, nfrac) &&
            print_repeat(ctx, unit, nunit, right);
 }
 
+bool cint_rt_print_format(cint_ctx *ctx, uint32_t tag, uint64_t bits, uint32_t form, uint32_t fill,
+                          uint64_t width, uint64_t scale)
+{
+    if (tag != CINT_TAG_BOOL && !is_scalar_tag(tag)) return fault_refused(ctx, ctx->print_site);
+    return print_format_limbs(ctx, tag, &bits, form, fill, width, scale);
+}
+
 bool cint_rt_print_end(cint_ctx *ctx)
 {
     static const uint8_t none[1] = {0};
     cint_status st = CINT_OK;
-    if (ctx->head.faulted != 0u) {
-        return false;
-    }
-    if (ctx->print_open == 0u) {
-        return fault_refused(ctx, ctx->print_site);
-    }
+    if (ctx->head.faulted != 0u) return false;
+    if (ctx->print_open == 0u) return fault_refused(ctx, ctx->print_site);
     ctx->print_open = 0u;
-    if (ctx->output != NULL) {
+    if (ctx->output != NULL)
         st = ctx->output(ctx->output_user, ctx->print_buf != NULL ? ctx->print_buf : none, ctx->print_len);
-    }
     ctx->print_len = 0u;
-    if (st != CINT_OK) {
-        return fault_host(ctx, ctx->print_site, "host.error.print", true, st);
-    }
+    if (st != CINT_OK) return fault_host(ctx, ctx->print_site, "host.error.print", true, st);
     ctx->effects++;
     return true;
 }
@@ -2478,20 +2249,12 @@ static int fault_dest_kind(const char *dest, uint64_t *handle)
 #else
     const uint64_t max = (uint64_t)INT_MAX;
 #endif
-    if (dest == NULL) {
-        return 0;
-    }
-    if (strncmp(dest, prefix, sizeof prefix - 1u) != 0) {
-        return dest[0] != '\0' ? 2 : -1;
-    }
+    if (dest == NULL) return 0;
+    if (strncmp(dest, prefix, sizeof prefix - 1u) != 0) return dest[0] != '\0' ? 2 : -1;
     p = dest + (sizeof prefix - 1u);
-    if (*p == '\0') {
-        return -1;
-    }
+    if (*p == '\0') return -1;
     for (; *p != '\0'; p++) {
-        if (*p < '0' || *p > '9' || v > (max - (uint64_t)(*p - '0')) / 10u) {
-            return -1;
-        }
+        if (*p < '0' || *p > '9' || v > (max - (uint64_t)(*p - '0')) / 10u) return -1;
         v = v * 10u + (uint64_t)(*p - '0');
     }
     *handle = v;
@@ -2503,9 +2266,7 @@ static bool write_handle(HANDLE h, const uint8_t *p, size_t n)
 {
     while (n > 0u) {
         DWORD chunk = n > 0x40000000u ? 0x40000000u : (DWORD)n, done = 0;
-        if (!WriteFile(h, p, chunk, &done, NULL) || done == 0u) {
-            return false;
-        }
+        if (!WriteFile(h, p, chunk, &done, NULL) || done == 0u) return false;
         p += done;
         n -= done;
     }
@@ -2518,26 +2279,18 @@ static bool write_record(int kind, const char *path, uint64_t handle, const uint
     wchar_t *wide;
     int wn;
     bool ok;
-    if (kind == 1) {
-        return write_handle((HANDLE)(uintptr_t)handle, bytes, len);
-    }
+    if (kind == 1) return write_handle((HANDLE)(uintptr_t)handle, bytes, len);
     wn = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, NULL, 0);
-    if (wn <= 0) {
-        return false;
-    }
+    if (wn <= 0) return false;
     wide = (wchar_t *)malloc((size_t)wn * sizeof *wide);
-    if (wide == NULL) {
-        return false;
-    }
+    if (wide == NULL) return false;
     if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide, wn) != wn) {
         free(wide);
         return false;
     }
     h = CreateFileW(wide, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     free(wide);
-    if (h == INVALID_HANDLE_VALUE) {
-        return false;
-    }
+    if (h == INVALID_HANDLE_VALUE) return false;
     ok = write_handle(h, bytes, len);
     return CloseHandle(h) != 0 && ok;
 }
@@ -2546,12 +2299,8 @@ static bool write_fd(int fd, const uint8_t *p, size_t n)
 {
     while (n > 0u) {
         ssize_t done = write(fd, p, n);
-        if (done < 0 && errno == EINTR) {
-            continue;
-        }
-        if (done <= 0) {
-            return false;
-        }
+        if (done < 0 && errno == EINTR) continue;
+        if (done <= 0) return false;
         p += done;
         n -= (size_t)done;
     }
@@ -2562,13 +2311,9 @@ static bool write_record(int kind, const char *path, uint64_t handle, const uint
 {
     int fd;
     bool ok;
-    if (kind == 1) {
-        return write_fd((int)handle, bytes, len);
-    }
+    if (kind == 1) return write_fd((int)handle, bytes, len);
     fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0666);
-    if (fd < 0) {
-        return false;
-    }
+    if (fd < 0) return false;
     ok = write_fd(fd, bytes, len);
     return close(fd) == 0 && ok;
 }
@@ -2579,16 +2324,10 @@ static int report_fault(const cint_ctx *ctx, int kind, const char *dest, uint64_
     size_t len = cint_fault_encode(&ctx->fault, NULL, 0u);
     uint8_t *bytes;
     bool ok;
-    if (len == 0u) {
-        return CINT_EXIT_INTERNAL;
-    }
-    if (kind == 0) {
-        return CINT_EXIT_FAULT;
-    }
+    if (len == 0u) return CINT_EXIT_INTERNAL;
+    if (kind == 0) return CINT_EXIT_FAULT;
     bytes = (uint8_t *)malloc(len);
-    if (bytes == NULL) {
-        return CINT_EXIT_ENVIRONMENT;
-    }
+    if (bytes == NULL) return CINT_EXIT_ENVIRONMENT;
     (void)cint_fault_encode(&ctx->fault, bytes, len);
     ok = write_record(kind, dest, handle, bytes, len);
     free(bytes);
@@ -2605,13 +2344,9 @@ static bool report_fuel(const cint_ctx *ctx, int kind, const char *dest, uint64_
     size_t i;
     /* Shift the value itself: MSVC /O2 vectorized `x >> (8u * i)` with pooled
      * __xmm@ constants, which the EMIT-31 audit of the runtime object rejects. */
-    for (i = 0; i < 4u; i++, n >>= 8u) {
-        bytes[i] = (uint8_t)n;
-    }
+    for (i = 0; i < 4u; i++, n >>= 8u) bytes[i] = (uint8_t)n;
     memcpy(bytes + 4, domain, sizeof domain - 1u);
-    for (i = 0; i < 8u; i++, used >>= 8u) {
-        bytes[4u + (sizeof domain - 1u) + i] = (uint8_t)used;
-    }
+    for (i = 0; i < 8u; i++, used >>= 8u) bytes[4u + (sizeof domain - 1u) + i] = (uint8_t)used;
     return write_record(kind, dest, handle, bytes, sizeof bytes);
 }
 
@@ -2620,9 +2355,7 @@ static bool report_fuel(const cint_ctx *ctx, int kind, const char *dest, uint64_
 static uint8_t *put_u(uint8_t *p, uint64_t v, unsigned n)
 {
     unsigned i;
-    for (i = 0; i < n; i++, v >>= 8u) {
-        p[i] = (uint8_t)v;
-    }
+    for (i = 0; i < n; i++, v >>= 8u) p[i] = (uint8_t)v;
     return p + n;
 }
 
@@ -2639,14 +2372,10 @@ static int report_error(const cint_ctx *ctx, int kind, const char *dest, uint64_
         s->tag > CINT_TAG_U64 || ctx->error_tag > cint_rt_mask(cint_rt_tag_width(s->tag))) {
         return CINT_EXIT_INTERNAL;
     }
-    if (kind == 0) {
-        return CINT_EXIT_ERROR_VALUE;
-    }
+    if (kind == 0) return CINT_EXIT_ERROR_VALUE;
     len = 4u + (sizeof domain - 1u) + 4u + nlen + 4u + vlen + 4u + 8u;
     bytes = (uint8_t *)malloc(len);
-    if (bytes == NULL) {
-        return CINT_EXIT_ENVIRONMENT;
-    }
+    if (bytes == NULL) return CINT_EXIT_ENVIRONMENT;
     p = put_u(bytes, sizeof domain - 1u, 4u);
     memcpy(p, domain, sizeof domain - 1u);
     p = put_u(p + (sizeof domain - 1u), nlen, 4u);
@@ -2672,21 +2401,15 @@ static int report_state(const cint_ctx *ctx, const cint_state_table *t, int kind
     bool ok;
     for (uint32_t i = 0u; i < t->count; i++) {
         const cint_state *s = t->states != NULL ? t->states[i] : NULL;
-        if (s == NULL || (s->var_count > 0u && s->vars == NULL)) {
-            return CINT_EXIT_INTERNAL;
-        }
+        if (s == NULL || (s->var_count > 0u && s->vars == NULL)) return CINT_EXIT_INTERNAL;
         for (uint32_t j = 0u; j < s->var_count; j++) {
             /* A line is at most 48 bytes besides its module path and name. */
             cap += 48u + CINT_FAULT_MAX_PATH + s->vars[j].name_len;
-            if (cap > PRINT_MAX) {
-                return CINT_EXIT_INTERNAL;
-            }
+            if (cap > PRINT_MAX) return CINT_EXIT_INTERNAL;
         }
     }
     text = (char *)malloc((size_t)cap);
-    if (text == NULL) {
-        return CINT_EXIT_ENVIRONMENT;
-    }
+    if (text == NULL) return CINT_EXIT_ENVIRONMENT;
     n = cint_state_render(ctx, t, text, (size_t)cap);
     ok = n != SIZE_MAX && write_record(kind, dest, handle, (const uint8_t *)text, n);
     free(text);
@@ -2714,16 +2437,10 @@ int cint_program_run_state(const cint_program *program, cint_main_fn main_fn, in
     bool out_failed = false, ran;
     int kind = fault_dest_kind(fault_dest, &handle), fuel_kind = fault_dest_kind(fuel_dest, &fuel_handle);
     int state_kind = fault_dest_kind(state_dest, &state_handle), status = CINT_EXIT_OK;
-    if (kind < 0 || fuel_kind < 0 || state_kind < 0) {
-        return CINT_EXIT_USAGE;
-    }
-    if (program == NULL || main_fn == NULL) {
-        return CINT_EXIT_INTERNAL;
-    }
+    if (kind < 0 || fuel_kind < 0 || state_kind < 0) return CINT_EXIT_USAGE;
+    if (program == NULL || main_fn == NULL) return CINT_EXIT_INTERNAL;
 #if defined(_WIN32)
-    if (_setmode(_fileno(stdout), _O_BINARY) == -1) {
-        return CINT_EXIT_ENVIRONMENT;
-    }
+    if (_setmode(_fileno(stdout), _O_BINARY) == -1) return CINT_EXIT_ENVIRONMENT;
 #endif
     memset(&cfg, 0, sizeof cfg);
     cfg.size = (uint32_t)sizeof cfg;
@@ -2731,14 +2448,10 @@ int cint_program_run_state(const cint_program *program, cint_main_fn main_fn, in
     cfg.output = write_stdout;
     cfg.output_user = &out_failed;
     st = cint_ctx_create(&cfg, &ctx);
-    if (st != CINT_OK) {
-        return st == CINT_RESOURCE ? CINT_EXIT_ENVIRONMENT : CINT_EXIT_INTERNAL;
-    }
+    if (st != CINT_OK) return st == CINT_RESOURCE ? CINT_EXIT_ENVIRONMENT : CINT_EXIT_INTERNAL;
     st = main_fn(ctx, fuel);
     /* stdout is flushed before a fault is reported and before exit (3.4a). */
-    if (fflush(stdout) != 0 || ferror(stdout) != 0) {
-        out_failed = true;
-    }
+    if (fflush(stdout) != 0 || ferror(stdout) != 0) out_failed = true;
     ran = st == CINT_OK || (st == CINT_FAULT && ctx->head.faulted != 0u);
     if (!out_failed && ran && fuel_kind != 0 && !report_fuel(ctx, fuel_kind, fuel_dest, fuel_handle)) {
         out_failed = true;  /* the fuel record could not be written: an environment failure */
@@ -2784,9 +2497,8 @@ static void sha_block(uint32_t *h, const uint8_t *p)
 {
     uint32_t w[64], s[8], t1, t2;
     unsigned i;
-    for (i = 0; i < 16u; i++) {
+    for (i = 0; i < 16u; i++)
         w[i] = (uint32_t)p[4u * i] << 24 | (uint32_t)p[4u * i + 1u] << 16 | (uint32_t)p[4u * i + 2u] << 8 | p[4u * i + 3u];
-    }
     for (i = 16; i < 64u; i++) {
         w[i] = w[i - 16u] + (sha_ror(w[i - 15u], 7) ^ sha_ror(w[i - 15u], 18) ^ (w[i - 15u] >> 3)) + w[i - 7u] +
                (sha_ror(w[i - 2u], 17) ^ sha_ror(w[i - 2u], 19) ^ (w[i - 2u] >> 10));
@@ -2800,9 +2512,7 @@ static void sha_block(uint32_t *h, const uint8_t *p)
         s[4] += t1;
         s[0] = t1 + t2;
     }
-    for (i = 0; i < 8u; i++) {
-        h[i] += s[i];
-    }
+    for (i = 0; i < 8u; i++) h[i] += s[i];
 }
 
 void cint_sha256(const uint8_t *p, size_t n, uint8_t digest[32])
@@ -2811,24 +2521,14 @@ void cint_sha256(const uint8_t *p, size_t n, uint8_t digest[32])
     uint8_t tail[128];
     size_t full = n / 64u * 64u, rest = n - full, k = rest < 56u ? 64u : 128u, i;
     uint64_t bits = (uint64_t)n * 8u;
-    for (i = 0; i < full; i += 64u) {
-        sha_block(h, p + i);
-    }
+    for (i = 0; i < full; i += 64u) sha_block(h, p + i);
     memset(tail, 0, sizeof tail);
-    if (rest > 0u) {
-        memcpy(tail, p + full, rest);
-    }
+    if (rest > 0u) memcpy(tail, p + full, rest);
     tail[rest] = 0x80u;
-    for (i = 0; i < 8u; i++) {
-        tail[k - 1u - i] = (uint8_t)(bits >> (8u * i));
-    }
+    for (i = 0; i < 8u; i++) tail[k - 1u - i] = (uint8_t)(bits >> (8u * i));
     sha_block(h, tail);
-    if (k == 128u) {
-        sha_block(h, tail + 64);
-    }
-    for (i = 0; i < 32u; i++) {
-        digest[i] = (uint8_t)(h[i / 4u] >> (24u - 8u * (i % 4u)));
-    }
+    if (k == 128u) sha_block(h, tail + 64);
+    for (i = 0; i < 32u; i++) digest[i] = (uint8_t)(h[i / 4u] >> (24u - 8u * (i % 4u)));
 }
 
 /* ------------------------------------------------------------------------- */
@@ -2838,13 +2538,9 @@ bool cint_site_resolve(const cint_program *program, cint_site site, cint_positio
 {
     const cint_module *m;
     const cint_site_info *s;
-    if (program == NULL || program->modules == NULL || site.module >= program->module_count) {
-        return false;
-    }
+    if (program == NULL || program->modules == NULL || site.module >= program->module_count) return false;
     m = program->modules[site.module];
-    if (m == NULL || m->sites == NULL || site.index == 0u || site.index >= m->site_count) {
-        return false;
-    }
+    if (m == NULL || m->sites == NULL || site.index == 0u || site.index >= m->site_count) return false;
     s = &m->sites[site.index];
     out->path = m->path;
     out->path_len = m->path_len;
@@ -2865,9 +2561,7 @@ typedef struct writer {
 
 static void put_bytes(writer *w, const void *p, size_t n)
 {
-    if (w->buf != NULL && n > 0u) {
-        memcpy(w->buf + w->len, p, n);
-    }
+    if (w->buf != NULL && n > 0u) memcpy(w->buf + w->len, p, n);
     w->len += n;
 }
 
@@ -2875,23 +2569,22 @@ static void put_le(writer *w, uint64_t v, unsigned n)
 {
     uint8_t b[8];
     unsigned i;
-    for (i = 0; i < n; i++) {
-        b[i] = (uint8_t)(v >> (8u * i));
-    }
+    for (i = 0; i < n; i++) b[i] = (uint8_t)(v >> (8u * i));
     put_bytes(w, b, n);
 }
 
-static bool tvalue_valid(const cint_tvalue *v)
+/* A tagged value within its record's bound: a Z of at most 257 bytes in
+ * version 2 and 264 in version 3 (SPEC-01 IM-108). */
+static bool tvalue_valid(const cint_tvalue *v, unsigned version)
 {
-    return v->len >= 1u && v->len <= CINT_TVALUE_MAX;
+    uint32_t zmax = version == 3u ? CINT_Z_MAX_BYTES : CINT_Z_V2_MAX_BYTES;
+    return v->len >= 1u && v->len <= CINT_TVALUE_MAX && (v->bytes[0] != CINT_TAG_Z || v->len <= 5u + zmax);
 }
 
 static bool put_position(writer *w, const cint_program *program, cint_site site)
 {
     cint_position pos;
-    if (!cint_site_resolve(program, site, &pos) || pos.path_len > CINT_FAULT_MAX_PATH) {
-        return false;
-    }
+    if (!cint_site_resolve(program, site, &pos) || pos.path_len > CINT_FAULT_MAX_PATH) return false;
     put_le(w, pos.path_len, 4u);
     put_bytes(w, pos.path, pos.path_len);
     put_le(w, pos.line, 4u);
@@ -2901,7 +2594,9 @@ static bool put_position(writer *w, const cint_program *program, cint_site site)
 
 static bool encode(const cint_fault_record *r, writer *w)
 {
-    static const char domain[] = "cint-core-1/fault/v2";
+    /* The version is fixed by the operation (IM-149, BX15-07 C). */
+    static const char v2[] = "cint-core-1/fault/v2", v3[] = "cint-core-1/fault/v3";
+    unsigned version;
     uint32_t i;
     if (r->code == 0u || r->operation_len == 0u || r->operation_len > CINT_FAULT_MAX_OPERATION ||
         r->operand_count > CINT_FAULT_MAX_OPERANDS || r->stack_count > CINT_RT_MAX_DEPTH ||
@@ -2912,49 +2607,36 @@ static bool encode(const cint_fault_record *r, writer *w)
      * phase above 2, and a work item outside phase 1 (IM-106). */
     for (i = 0; i < r->operation_len; i++) {
         char c = r->operation[i];
-        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '_')) {
-            return false;
-        }
+        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '_')) return false;
     }
-    if (r->has_address && (r->address.phase > 2u || (r->address.has_work_item && r->address.phase != 1u))) {
-        return false;
-    }
-    put_le(w, sizeof domain - 1u, 4u);
-    put_bytes(w, domain, sizeof domain - 1u);
+    if (r->has_address && (r->address.phase > 2u || (r->address.has_work_item && r->address.phase != 1u))) return false;
+    version = cint_fault_version(r->operation, r->operation_len);
+    put_le(w, sizeof v2 - 1u, 4u);
+    put_bytes(w, version == 3u ? v3 : v2, sizeof v2 - 1u);
     put_le(w, r->code, 2u);
     put_le(w, r->operation_len, 4u);
     put_bytes(w, r->operation, r->operation_len);
     put_le(w, r->operand_count, 4u);
     for (i = 0; i < r->operand_count; i++) {
-        if (!tvalue_valid(&r->operands[i])) {
-            return false;
-        }
+        if (!tvalue_valid(&r->operands[i], version)) return false;
         put_bytes(w, r->operands[i].bytes, r->operands[i].len);
     }
     put_le(w, r->has_exact ? 1u : 0u, 1u);
     if (r->has_exact) {
-        if (!tvalue_valid(&r->exact) || r->exact.bytes[0] != CINT_TAG_Z) {
-            return false;
-        }
+        if (!tvalue_valid(&r->exact, version) || r->exact.bytes[0] != CINT_TAG_Z) return false;
         put_bytes(w, r->exact.bytes, r->exact.len);
     }
     put_le(w, r->has_limit ? 1u : 0u, 1u);
     if (r->has_limit) {
-        if (!tvalue_valid(&r->limit)) {
-            return false;
-        }
+        if (!tvalue_valid(&r->limit, version)) return false;
         put_bytes(w, r->limit.bytes, r->limit.len);
     }
-    if (!put_position(w, r->program, r->position)) {
-        return false;
-    }
-    /* Version 2 (SPEC-01 IM-149, D-10): a presence byte, then the 32-byte
+    if (!put_position(w, r->program, r->position)) return false;
+    /* Versions 2 and 3 (SPEC-01 IM-149, D-10): a presence byte, then the 32-byte
      * revision; then a presence byte for the source-map digest, which
      * cint-rt-3 has no carrier for and always writes absent (RT-OQ-28). */
     put_le(w, r->has_revision ? 1u : 0u, 1u);
-    if (r->has_revision) {
-        put_bytes(w, r->revision, 32u);
-    }
+    if (r->has_revision) put_bytes(w, r->revision, 32u);
     put_le(w, 0u, 1u);
     put_le(w, r->has_address ? 1u : 0u, 1u);
     if (r->has_address) {
@@ -2969,11 +2651,8 @@ static bool encode(const cint_fault_record *r, writer *w)
         }
     }
     put_le(w, r->stack_count, 4u);
-    for (i = 0; i < r->stack_count; i++) {
-        if (!put_position(w, r->program, r->stack[i])) {
-            return false;
-        }
-    }
+    for (i = 0; i < r->stack_count; i++)
+        if (!put_position(w, r->program, r->stack[i])) return false;
     return true;
 }
 
@@ -2982,9 +2661,7 @@ size_t cint_fault_encode(const cint_fault_record *record, uint8_t *buf, size_t c
     writer w;
     w.buf = NULL;
     w.len = 0u;
-    if (record == NULL || !encode(record, &w)) {
-        return 0u;
-    }
+    if (record == NULL || !encode(record, &w)) return 0u;
     if (buf != NULL && cap >= w.len) {
         writer out;
         out.buf = buf;
@@ -2999,7 +2676,7 @@ size_t cint_fault_encode(const cint_fault_record *record, uint8_t *buf, size_t c
 
 /* Writes the decimal of the n-byte little-endian integer `le` (two's
  * complement when is_signed) into out, which has room for 640 bytes; returns
- * the length. n <= 257. */
+ * the length. n <= 264 (CINT_Z_MAX_BYTES). */
 static size_t decimal(const uint8_t *le, size_t n, bool is_signed, char *out)
 {
     uint8_t mag[CINT_Z_MAX_BYTES];
@@ -3027,12 +2704,8 @@ static size_t decimal(const uint8_t *le, size_t n, bool is_signed, char *out)
         }
         digits[nd++] = (char)('0' + rem);
     }
-    if (negative) {
-        out[len++] = '-';
-    }
-    while (nd > 0u) {
-        out[len++] = digits[--nd];
-    }
+    if (negative) out[len++] = '-';
+    while (nd > 0u) out[len++] = digits[--nd];
     return len;
 }
 
@@ -3041,15 +2714,11 @@ static size_t render(const cint_tvalue *v, bool with_type, char *text)
 {
     size_t len = 0u;
     uint32_t tag;
-    if (v == NULL || !tvalue_valid(v)) {
-        return 0u;
-    }
+    if (v == NULL || !tvalue_valid(v, 3u)) return 0u;
     tag = v->bytes[0];
     if (tag == CINT_TAG_BOOL) {
         const char *s = v->len != 2u ? NULL : v->bytes[1] == 0u ? "false" : v->bytes[1] == 1u ? "true" : NULL;
-        if (s == NULL) {
-            return 0u;
-        }
+        if (s == NULL) return 0u;
         if (with_type) {
             memcpy(text, "Bool ", 5u);
             len = 5u;
@@ -3059,23 +2728,33 @@ static size_t render(const cint_tvalue *v, bool with_type, char *text)
     }
     if (tag == CINT_TAG_Z) {
         size_t n;
-        if (v->len < 5u) {
-            return 0u;
-        }
+        if (v->len < 5u) return 0u;
         n = (size_t)v->bytes[1] | ((size_t)v->bytes[2] << 8) | ((size_t)v->bytes[3] << 16) |
             ((size_t)v->bytes[4] << 24);
-        if (n > CINT_Z_MAX_BYTES || v->len != 5u + n) {
-            return 0u;
-        }
+        if (n > CINT_Z_MAX_BYTES || v->len != 5u + n) return 0u;
         if (with_type) {
             memcpy(text, "Z ", 2u);
             len = 2u;
         }
         return len + decimal(v->bytes + 5, n, true, text + len);
     }
-    if (!is_scalar_tag(tag) || v->len != 1u + cint_rt_tag_width(tag) / 8u) {
-        return 0u;
+    if (tag == CINT_TAG_Q) {  /* the storage tag, f as U16, the raw integer: "Q16.16 raw 98304" (BX15-03 A) */
+        unsigned st = v->len > 4u ? v->bytes[1] : 0u, f = v->len > 4u ? v->bytes[2] | (unsigned)v->bytes[3] << 8 : 0u;
+        if (st < CINT_TAG_I8 || st > CINT_TAG_I64 || f >= cint_rt_tag_width(st) || v->len != 4u + cint_rt_tag_width(st) / 8u)
+            return 0u;
+        if (with_type) {
+            uint8_t i_bits = (uint8_t)(cint_rt_tag_width(st) - f), f_bits = (uint8_t)f;
+            text[len++] = 'Q';
+            len += decimal(&i_bits, 1u, false, text + len);
+            text[len++] = '.';
+            len += decimal(&f_bits, 1u, false, text + len);
+            text[len++] = ' ';
+        }
+        memcpy(text + len, "raw ", 4u);
+        len += 4u;
+        return len + decimal(v->bytes + 4, v->len - 4u, true, text + len);
     }
+    if (!any_int_tag(tag) || v->len != 1u + cint_rt_tag_width(tag) / 8u) return 0u;
     if (with_type) {
         const char *name = cint_rt_type_name(tag);
         len = strlen(name);
@@ -3090,9 +2769,7 @@ static size_t render_to(const cint_tvalue *v, bool with_type, char *buf, size_t 
     char text[704];
     size_t len = render(v, with_type, text);
     if (len == 0u) {
-        if (buf != NULL && cap > 0u) {
-            buf[0] = '\0';
-        }
+        if (buf != NULL && cap > 0u) buf[0] = '\0';
         return 0u;
     }
     if (buf != NULL && cap > 0u) {
@@ -3117,30 +2794,6 @@ size_t cint_tvalue_render_decimal(const cint_tvalue *value, char *buf, size_t ca
 /* Views, slices, copies, reductions, kernels and scratch storage (cint_rt.h  */
 /* section 14; roadmap box 09).                                               */
 
-/* A record whose operands are I64 values: `operation` (refused when NULL,
- * empty or longer than CINT_FAULT_MAX_OPERATION), n operands, no exact, and
- * the limit I64 `limit` when has_limit. Returns false. */
-static bool fault_i64s(cint_ctx *ctx, cint_site site, uint32_t code, const char *operation, const int64_t *ops,
-                       unsigned n, bool has_limit, int64_t limit)
-{
-    cint_fault_record *rec;
-    unsigned i;
-    if (operation == NULL || operation[0] == '\0' || strlen(operation) > CINT_FAULT_MAX_OPERATION) {
-        return fault_refused(ctx, site);
-    }
-    rec = cint_rt_record_begin(ctx, site, (uint16_t)code);
-    if (rec != NULL) {
-        cint_rt_record_op(rec, operation);
-        for (i = 0; i < n; i++) {
-            cint_rt_record_operand(rec, CINT_TAG_I64, (uint64_t)ops[i]);
-        }
-        if (has_limit) {
-            record_limit_i64(rec, limit);
-        }
-    }
-    return false;
-}
-
 bool cint_rt_fault_index_dim(cint_ctx *ctx, cint_site site, const char *operation, int64_t dim, int64_t index,
                              int64_t extent)
 {
@@ -3158,12 +2811,8 @@ bool cint_shape_check_dim(cint_ctx *ctx, cint_site site, uint32_t param, uint32_
                           int64_t actual)
 {
     int64_t used = ctx->head.fuel_used;
-    if (cint_rt_faulted(ctx)) {
-        return false;
-    }
-    if (actual == expected) {
-        return true;
-    }
+    if (cint_rt_faulted(ctx)) return false;
+    if (actual == expected) return true;
     (void)cint_fault_shape(ctx, site, param, dim, expected, actual);
     ctx->head.fuel_used = used;
     return false;
@@ -3176,12 +2825,9 @@ bool cint_rt_slice(cint_ctx *ctx, cint_site site, const char *operation, int64_t
     bool inclusive = (flags & CINT_SLICE_INCLUSIVE) != 0u, valid;
     int64_t first, last, at, s;
     uint64_t k, d;
-    if (cint_rt_faulted(ctx)) {
-        return false;
-    }
-    if (extent < 0 || step == 0 || flags > 7u || origin == NULL || length == NULL || stride_out == NULL) {
+    if (cint_rt_faulted(ctx)) return false;
+    if (extent < 0 || step == 0 || flags > 7u || origin == NULL || length == NULL || stride_out == NULL)
         return fault_refused(ctx, site);
-    }
     if (step > 0) {
         /* 0 <= lo <= end <= extent, with end = hi + 1 for `..=` never formed. */
         k = (uint64_t)step;
@@ -3207,12 +2853,8 @@ bool cint_rt_slice(cint_ctx *ctx, cint_site site, const char *operation, int64_t
         return fault_i64s(ctx, site, CINT_E_BOUNDS, operation, dim >= 0 ? ops : ops + 1, dim >= 0 ? 3u : 2u, true,
                           extent);
     }
-    if (!cint_rt_mul_ovf_i64_p(first, stride, &at) && !cint_rt_add_ovf_i64_p(*origin, at, &at)) {
-        *origin = at;
-    }
-    if (cint_rt_mul_ovf_i64_p(stride, step, &s)) {
-        s = (stride < 0) != (step < 0) ? INT64_MIN : INT64_MAX;
-    }
+    if (!cint_rt_mul_ovf_i64_p(first, stride, &at) && !cint_rt_add_ovf_i64_p(*origin, at, &at)) *origin = at;
+    if (cint_rt_mul_ovf_i64_p(stride, step, &s)) s = (stride < 0) != (step < 0) ? INT64_MIN : INT64_MAX;
     *length = (int64_t)(d / k + (d % k != 0u ? 1u : 0u));  /* d <= INT64_MAX */
     *stride_out = s;
     return true;
@@ -3232,22 +2874,11 @@ static uint64_t view_count(const cint_vdesc *v)
     unsigned k;
     for (k = 0; k < view_rank(v); k++) {
         uint64_t e = v->shape[k] > 0 ? (uint64_t)v->shape[k] : 0u;
-        if (e == 0u) {
-            return 0u;
-        }
+        if (e == 0u) return 0u;
         n = n > UINT64_MAX / e ? UINT64_MAX : n * e;
     }
     return n;
 }
-
-/* Row-major iteration over a nonempty view, the last index fastest. The
- * element offset is kept modulo 2^64, so no step overflows; for a valid view
- * every offset it reaches lies in the buffer. */
-typedef struct view_walk {
-    const cint_vdesc *v;
-    int64_t idx[CINT_MAX_RANK];
-    uint64_t off;
-} view_walk;
 
 static void walk_start(view_walk *w, const cint_vdesc *v)
 {
@@ -3268,9 +2899,7 @@ static bool walk_next(view_walk *w)
     while (k > 0u) {
         k--;
         w->off += (uint64_t)w->v->stride[k];
-        if (++w->idx[k] < w->v->shape[k]) {
-            return true;
-        }
+        if (++w->idx[k] < w->v->shape[k]) return true;
         w->off -= (uint64_t)w->v->stride[k] * (uint64_t)w->v->shape[k];
         w->idx[k] = 0;
     }
@@ -3307,15 +2936,11 @@ int cint_rt_view_relation(const cint_vdesc *p, const cint_vdesc *q)
     int64_t plo, phi, qlo, qhi;
     uint64_t g = 0u;
     unsigned i, k;
-    if (p == NULL || q == NULL) {
-        return 2;
-    }
+    if (p == NULL || q == NULL) return 2;
     if (view_count(p) == 0u || view_count(q) == 0u || p->base != q->base) {
         return 0;  /* T0, and different buffers */
     }
-    if (!view_bounds(p, &plo, &phi) || !view_bounds(q, &qlo, &qhi)) {
-        return 2;
-    }
+    if (!view_bounds(p, &plo, &phi) || !view_bounds(q, &qlo, &qhi)) return 2;
     if (phi < qlo || qhi < plo) {
         return 0;  /* T1 */
     }
@@ -3335,9 +2960,7 @@ int cint_rt_view_relation(const cint_vdesc *p, const cint_vdesc *q)
     if (g >= 2u && residue(p->origin, g) != residue(q->origin, g)) {
         return 0;  /* T2 */
     }
-    if (p->origin != q->origin || p->rank != q->rank) {
-        return 2;
-    }
+    if (p->origin != q->origin || p->rank != q->rank) return 2;
     for (k = 0; k < view_rank(p); k++) {
         if (p->shape[k] != q->shape[k] || p->stride[k] != q->stride[k]) {
             return 2;  /* T4 and the uncertain rest */
@@ -3349,30 +2972,39 @@ int cint_rt_view_relation(const cint_vdesc *p, const cint_vdesc *q)
 bool cint_rt_copy_view(cint_ctx *ctx, cint_site site, const cint_vdesc *dst, const cint_vdesc *src, size_t size)
 {
     view_walk to, from;
+    cint_vdesc outer_to, outer_from;
     unsigned k;
+    int64_t run = 1;
     int relation;
-    if (cint_rt_faulted(ctx)) {
-        return false;
-    }
-    if (dst == NULL || src == NULL || dst->rank < 1 || dst->rank > CINT_MAX_RANK || src->rank != dst->rank) {
+    if (cint_rt_faulted(ctx)) return false;
+    if (dst == NULL || src == NULL || dst->rank < 1 || dst->rank > CINT_MAX_RANK || src->rank != dst->rank)
         return fault_refused(ctx, site);
-    }
     for (k = 0; k < view_rank(dst); k++) {
-        if (dst->shape[k] != src->shape[k]) {
+        if (dst->shape[k] != src->shape[k])
             return cint_copy_shape_check(ctx, site, (int64_t)k, dst->shape[k], src->shape[k]);
-        }
     }
     relation = cint_rt_view_relation(dst, src);
-    if (relation == 2) {
-        return fault_i64s(ctx, site, CINT_E_ALIAS, "copy.alias", NULL, 0u, false, 0);
+    if (relation == 2) return fault_i64s(ctx, site, CINT_E_ALIAS, "copy.alias", NULL, 0u, false, 0);
+    if (relation == 1 || size == 0u || view_count(src) == 0u) return true;
+#if defined(CINT_GPU_CUDA)
+    if (cint_cuda_placed(ctx, dst) || cint_cuda_placed(ctx, src)) {
+        return cint_cuda_copy_view(ctx, site, dst, src, size);  /* through host copies (M-28) */
     }
-    if (relation == 1 || size == 0u || view_count(src) == 0u) {
-        return true;
+#endif
+    /* The innermost dimensions in which both views are dense hold blocks of `run`
+     * elements, each copied whole (the views are disjoint); the walk covers the rest. */
+    outer_to = *dst;
+    outer_from = *src;
+    for (k = view_rank(dst); k > 0u && dst->stride[k - 1u] == run && src->stride[k - 1u] == run &&
+                             run <= INT64_MAX / dst->shape[k - 1u]; k--) {
+        run *= dst->shape[k - 1u];
     }
-    walk_start(&to, dst);
-    walk_start(&from, src);
+    outer_to.rank = (int64_t)k;
+    outer_from.rank = (int64_t)k;
+    walk_start(&to, &outer_to);
+    walk_start(&from, &outer_from);
     do {
-        memcpy(walk_at(&to, size), walk_at(&from, size), size);
+        memcpy(walk_at(&to, size), walk_at(&from, size), (size_t)run * size);
     } while (walk_next(&to) && walk_next(&from));
     return true;
 }
@@ -3384,16 +3016,12 @@ static int alias_check(cint_ctx *ctx, cint_site site, uint32_t a, uint32_t b, co
                        const cint_vdesc *q)
 {
     int64_t ops[2] = {(int64_t)a, (int64_t)b};
-    if (cint_rt_faulted(ctx)) {
-        return 2;
-    }
+    if (cint_rt_faulted(ctx)) return 2;
     if (p == NULL || q == NULL) {
         (void)fault_refused(ctx, site);
         return 2;
     }
-    if (cint_rt_view_relation(p, q) == 0) {
-        return 0;
-    }
+    if (cint_rt_view_relation(p, q) == 0) return 0;
     (void)fault_i64s(ctx, site, CINT_E_ALIAS, "bind.alias", ops, 2u, false, 0);
     return 1;
 }
@@ -3425,25 +3053,27 @@ bool cint_rt_fault_where(cint_ctx *ctx, cint_site site, int64_t index, int64_t l
     return fault_i64s(ctx, site, CINT_E_SHAPE, "bind.where", ops, 3u, false, 0);
 }
 
+static bool scratch_take(cint_ctx *ctx, cint_site site, int64_t count, size_t size, void **out, bool charged);
+
 bool cint_rt_dispatch_stage(cint_ctx *ctx, cint_site site, cint_vdesc *stage, const cint_vdesc *arg, size_t size,
                             bool copy_in)
 {
     void *p = NULL;
     int64_t count = 1, step = 1, k;
-    if (cint_rt_faulted(ctx)) {
-        return false;
-    }
-    if (stage == NULL || arg == NULL || arg->rank < 1 || arg->rank > 4) {
-        return fault_refused(ctx, site);
-    }
+    if (cint_rt_faulted(ctx)) return false;
+    if (stage == NULL || arg == NULL || arg->rank < 1 || arg->rank > 4) return fault_refused(ctx, site);
     for (k = 0; k < arg->rank; k++) {
         /* A valid view's extents are not negative, and their product counts its elements. */
-        if (arg->shape[k] < 0 || (arg->shape[k] > 0 && count > INT64_MAX / arg->shape[k])) {
+        if (arg->shape[k] < 0 || (arg->shape[k] > 0 && count > INT64_MAX / arg->shape[k]))
             return fault_refused(ctx, site);
-        }
         count *= arg->shape[k];
     }
-    if (!cint_rt_scratch(ctx, site, count, size, &p)) {
+#if defined(CINT_GPU_CUDA)
+    if (cint_cuda_placed(ctx, arg) ? !cint_cuda_stage(ctx, site, count, size, &p)  /* in device memory (B-16d) */
+                                   : !scratch_take(ctx, site, count, size, &p, false)) {
+#else
+    if (!scratch_take(ctx, site, count, size, &p, false)) {
+#endif
         return false;
     }
     memset(stage, 0, sizeof *stage);
@@ -3460,12 +3090,8 @@ bool cint_rt_dispatch_stage(cint_ctx *ctx, cint_site site, cint_vdesc *stage, co
 cint_status cint_ctx_fault_descriptors(const cint_ctx *cctx, cint_fault_descriptor out[2], uint32_t *count)
 {
     cint_ctx *ctx = (cint_ctx *)(uintptr_t)cctx;
-    if (ctx == NULL || out == NULL || count == NULL) {
-        return CINT_REFUSED;
-    }
-    if (!cint_rt_busy_take(ctx)) {
-        return CINT_BUSY;
-    }
+    cint_status st = cint_rt_host_take(ctx, out == NULL || count == NULL);
+    if (st != CINT_OK) return st;
     *count = ctx->head.faulted != 0u ? ctx->desc_count : 0u;
     memcpy(out, ctx->desc, (size_t)*count * sizeof out[0]);
     cint_rt_busy_give(ctx);
@@ -3500,17 +3126,40 @@ void cint_zacc_add_product(cint_zacc *a, uint32_t tag, uint64_t x, uint64_t y)
                                 cint_rt_z_from_bits(tag, cint_rt_zcanon(tag, y))));
 }
 
-bool cint_rt_zacc_fit(cint_ctx *ctx, cint_site site, const char *name, uint32_t elem, uint32_t result, int64_t n,
-                      const cint_zacc *a, uint64_t *out)
+/* The record of a reduction over elements of type e, I8 to U64, fixed point (rt/cint_fixed.h) or, for an
+ * empty min or max, wide: name.form.<e>, then <r> unless r is 0, then the rounding mode unless it is 0. */
+static cint_fault_record *record_reduce(cint_ctx *ctx, cint_site site, uint16_t code, const char *name,
+                                        const char *form, uint32_t e, uint32_t r, uint32_t mode)
+{
+    char be[12], br[12];
+    cint_fault_record *rec = cint_rt_record_begin(ctx, site, code);
+    if (rec != NULL) {
+        cint_rt_record_op(rec, name);
+        cint_rt_record_op(rec, form);
+        cint_rt_record_op(rec, fq_ident(e, be));
+        if (r != 0u) cint_rt_record_op(rec, fq_ident(r, br));
+        if (mode != 0u) cint_rt_record_op(rec, round_modes[mode]);
+    }
+    return rec;
+}
+
+/* Whether dot over elements of type e into r rounds: fixed point with 2f > g (BX15-04). */
+static bool dot_rounds(uint32_t e, uint32_t r)
+{
+    return cint_q_is(e) && 2u * cint_q_frac(e) > cint_q_frac(r);
+}
+
+/* cint_rt_zacc_fit, with dot's rounding mode (0 when it does not round). */
+static bool zacc_fit(cint_ctx *ctx, cint_site site, bool dot, uint32_t elem, uint32_t result, uint32_t mode,
+                     int64_t n, const cint_zacc *a, uint64_t *out)
 {
     cint_fault_record *rec;
     bool negative, fits;
     uint64_t ext;
-    if (cint_rt_faulted(ctx)) {
-        return false;
-    }
-    if (name == NULL || (strcmp(name, "sum") != 0 && strcmp(name, "dot") != 0) || !is_scalar_tag(elem) ||
-        !is_scalar_tag(result) || a == NULL || out == NULL) {
+    if (cint_rt_faulted(ctx)) return false;
+    if (!fq_type_ok(elem) || !fq_type_ok(result) || cint_q_is(elem) != cint_q_is(result) ||
+        (cint_q_is(elem) && !dot && result != elem) ||
+        ((dot && dot_rounds(elem, result)) ? mode < 1u || mode > 9u : mode != 0u) || a == NULL || out == NULL) {
         return fault_refused(ctx, site);
     }
     negative = (a->limb[3] >> 63) != 0u;
@@ -3522,33 +3171,34 @@ bool cint_rt_zacc_fit(cint_ctx *ctx, cint_site site, const char *name, uint32_t 
         *out = a->limb[0];
         return true;
     }
-    rec = cint_rt_record_begin(ctx, site, (uint16_t)CINT_E_OVERFLOW);
+    rec = record_reduce(ctx, site, (uint16_t)CINT_E_OVERFLOW, dot ? "dot" : "sum", "checked", elem, result, mode);
     if (rec != NULL) {
-        cint_rt_record_op(rec, name);
-        cint_rt_record_op(rec, "checked");
-        cint_rt_record_op(rec, cint_rt_type_ident(elem));
-        cint_rt_record_op(rec, cint_rt_type_ident(result));
         cint_rt_record_operand(rec, CINT_TAG_I64, (uint64_t)n);
         rec->has_exact = 1u;
         tvalue_z256(&rec->exact, a);
         rec->has_limit = 1u;
-        cint_rt_tvalue_scalar(&rec->limit, result, z_bits(negative ? cint_rt_z_min(result) : cint_rt_z_max(result)));
+        fq_tvalue(&rec->limit, result, z_bits(negative ? cint_rt_z_min(result) : cint_rt_z_max(result)));
     }
     return false;
+}
+
+bool cint_rt_zacc_fit(cint_ctx *ctx, cint_site site, const char *name, uint32_t elem, uint32_t result, int64_t n,
+                      const cint_zacc *a, uint64_t *out)
+{
+    if (cint_rt_faulted(ctx)) return false;
+    if (name == NULL || (strcmp(name, "sum") != 0 && strcmp(name, "dot") != 0)) return fault_refused(ctx, site);
+    return zacc_fit(ctx, site, strcmp(name, "dot") == 0, elem, result, 0u, n, a, out);
 }
 
 bool cint_rt_fold_step(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t tag, int64_t j, uint64_t *acc,
                        uint64_t x)
 {
     cint_fault_record *rec;
-    cint_rt_z128 exact;
+    cint_rt_z128 exact, bound;
     uint64_t a;
-    if (cint_rt_faulted(ctx)) {
-        return false;
-    }
-    if ((op != CINT_RT_OP_ADD && op != CINT_RT_OP_MUL) || !is_scalar_tag(tag) || acc == NULL) {
+    if (cint_rt_faulted(ctx)) return false;
+    if ((op != CINT_RT_OP_ADD && (op != CINT_RT_OP_MUL || cint_q_is(tag))) || !fq_type_ok(tag) || acc == NULL)
         return fault_refused(ctx, site);
-    }
     a = canon(tag, *acc);
     x = canon(tag, x);
     exact = op == CINT_RT_OP_ADD ? cint_rt_z_add(cint_rt_z_from_bits(tag, a), cint_rt_z_from_bits(tag, x))
@@ -3557,15 +3207,17 @@ bool cint_rt_fold_step(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t tag,
         *acc = z_bits(exact);
         return true;
     }
-    rec = cint_rt_record_begin(ctx, site, (uint16_t)CINT_E_OVERFLOW);
+    rec = record_reduce(ctx, site, (uint16_t)CINT_E_OVERFLOW, "fold_checked", op == CINT_RT_OP_ADD ? "add" : "mul",
+                        tag, 0u, 0u);
     if (rec != NULL) {
-        cint_rt_record_op(rec, "fold_checked");
-        cint_rt_record_op(rec, op == CINT_RT_OP_ADD ? "add" : "mul");
-        cint_rt_record_op(rec, cint_rt_type_ident(tag));
         cint_rt_record_operand(rec, CINT_TAG_I64, (uint64_t)j);
-        cint_rt_record_operand(rec, tag, a);
-        cint_rt_record_operand(rec, tag, x);
-        cint_rt_record_range(rec, exact, tag);
+        fq_tvalue(&rec->operands[rec->operand_count++], tag, a);
+        fq_tvalue(&rec->operands[rec->operand_count++], tag, x);
+        bound = cint_rt_z_cmp(exact, cint_rt_z_max(tag)) > 0 ? cint_rt_z_max(tag) : cint_rt_z_min(tag);
+        rec->has_exact = 1u;
+        cint_rt_tvalue_z(&rec->exact, exact);
+        rec->has_limit = 1u;
+        fq_tvalue(&rec->limit, tag, z_bits(bound));
     }
     return false;
 }
@@ -3573,53 +3225,25 @@ bool cint_rt_fold_step(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t tag,
 bool cint_rt_fault_reduce_empty(cint_ctx *ctx, cint_site site, bool max, uint32_t tag)
 {
     cint_fault_record *rec;
-    if (!is_scalar_tag(tag)) {
-        return fault_refused(ctx, site);
-    }
-    rec = cint_rt_record_begin(ctx, site, (uint16_t)CINT_E_SHAPE);
-    if (rec != NULL) {
-        cint_rt_record_op(rec, max ? "reduce_max" : "reduce_min");
-        cint_rt_record_op(rec, "checked");
-        cint_rt_record_op(rec, cint_rt_type_ident(tag));
-        cint_rt_record_operand(rec, CINT_TAG_I64, 0u);
-    }
+    if (!fq_type_ok(tag) && cint_wide_limbs(tag) == 0u) return fault_refused(ctx, site);
+    rec = record_reduce(ctx, site, (uint16_t)CINT_E_SHAPE, max ? "reduce_max" : "reduce_min", "checked", tag, 0u, 0u);
+    if (rec != NULL) cint_rt_record_operand(rec, CINT_TAG_I64, 0u);
     return false;
 }
 
-/* The canonical pattern of the element of scalar type tag at p. */
+/* The canonical pattern of the element of scalar type tag at p (little-endian hosts, IM-146). */
 static uint64_t load_elem(const unsigned char *p, uint32_t tag)
 {
-    uint8_t b8;
-    uint16_t b16;
-    uint32_t b32;
-    uint64_t b64;
-    switch (cint_rt_tag_width(tag)) {
-    case 8u:
-        memcpy(&b8, p, 1u);
-        b64 = b8;
-        break;
-    case 16u:
-        memcpy(&b16, p, 2u);
-        b64 = b16;
-        break;
-    case 32u:
-        memcpy(&b32, p, 4u);
-        b64 = b32;
-        break;
-    default:
-        memcpy(&b64, p, 8u);
-        break;
-    }
-    return canon(tag, b64);
+    uint64_t b = 0u;
+    memcpy(&b, p, cint_rt_tag_width(tag) / 8u);
+    return canon(tag, b);
 }
 
-/* SPEC-01 IM-139: a reduction over n elements charges ceil(n / 64) units. */
-#define REDUCE_FUEL_BLOCK 64u
-
-bool cint_rt_reduce(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t elem, uint32_t result,
-                    const cint_vdesc *xs, const cint_vdesc *ys, bool has_init, uint64_t init, uint64_t *out)
+/* cint_rt_reduce, with dot's rounding mode (0 when it does not round). */
+static bool reduce_mode(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t elem, uint32_t result, uint32_t mode,
+                        const cint_vdesc *xs, const cint_vdesc *ys, bool has_init, uint64_t init, uint64_t *out)
 {
-    bool fold = op == CINT_REDUCE_FOLD_ADD || op == CINT_REDUCE_FOLD_MUL;
+    bool fold = op == CINT_REDUCE_FOLD_ADD || op == CINT_REDUCE_FOLD_MUL, q = cint_q_is(elem);
     bool minmax = op == CINT_REDUCE_MIN || op == CINT_REDUCE_MAX, any = minmax && has_init;
     cint_rt_z128 sat = z_make(false, 0u, 0u);
     cint_fault_record *rec;
@@ -3627,25 +3251,21 @@ bool cint_rt_reduce(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t elem, u
     view_walk wx, wy;
     uint64_t n, x, j = 0u, bits = 0u, count = 0u;
     size_t size;
-    if (cint_rt_faulted(ctx)) {
-        return false;
-    }
+    if (cint_rt_faulted(ctx)) return false;
     if (op < CINT_REDUCE_SUM || op > CINT_REDUCE_DOT || xs == NULL || out == NULL || xs->rank < 1 ||
         xs->rank > CINT_MAX_RANK || (fold && !has_init) ||
         (op == CINT_REDUCE_COUNT ? elem != CINT_TAG_BOOL || result != CINT_TAG_I64
-                                 : !is_scalar_tag(elem) || !is_scalar_tag(result)) ||
-        (op != CINT_REDUCE_SUM && op != CINT_REDUCE_DOT && op != CINT_REDUCE_COUNT && result != elem) ||
+                                 : !fq_type_ok(elem) || !fq_type_ok(result) || q != cint_q_is(result)) ||
+        (op != CINT_REDUCE_DOT && op != CINT_REDUCE_COUNT && (q || op != CINT_REDUCE_SUM) && result != elem) ||
+        (q && op == CINT_REDUCE_FOLD_MUL) ||
+        ((op == CINT_REDUCE_DOT && dot_rounds(elem, result)) ? mode < 1u || mode > 9u : mode != 0u) ||
         (op == CINT_REDUCE_DOT && (ys == NULL || xs->rank != 1 || ys->rank != 1))) {
         return fault_refused(ctx, site);
     }
     if (op == CINT_REDUCE_DOT && xs->shape[0] != ys->shape[0]) {
         /* dot's shape check, before the fuel charge (ruling R6) */
-        rec = cint_rt_record_begin(ctx, site, (uint16_t)CINT_E_SHAPE);
+        rec = record_reduce(ctx, site, (uint16_t)CINT_E_SHAPE, "dot", "checked", elem, result, mode);
         if (rec != NULL) {
-            cint_rt_record_op(rec, "dot");
-            cint_rt_record_op(rec, "checked");
-            cint_rt_record_op(rec, cint_rt_type_ident(elem));
-            cint_rt_record_op(rec, cint_rt_type_ident(result));
             cint_rt_record_operand(rec, CINT_TAG_I64, 0u);
             cint_rt_record_operand(rec, CINT_TAG_I64, (uint64_t)ys->shape[0]);
             record_limit_i64(rec, xs->shape[0]);
@@ -3653,9 +3273,8 @@ bool cint_rt_reduce(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t elem, u
         return false;
     }
     n = view_count(xs);
-    if (n > 0u && !cint_fuel_charge(ctx, site, n / REDUCE_FUEL_BLOCK + (n % REDUCE_FUEL_BLOCK != 0u ? 1u : 0u))) {
+    if (n > 0u && !cint_fuel_charge(ctx, site, n / REDUCE_FUEL_BLOCK + (n % REDUCE_FUEL_BLOCK != 0u ? 1u : 0u)))
         return false;
-    }
     memset(&acc, 0, sizeof acc);
     size = op == CINT_REDUCE_COUNT ? sizeof(bool) : cint_rt_tag_width(elem) / 8u;
     bits = fold || any ? canon(elem, init) : 0u;
@@ -3686,9 +3305,7 @@ bool cint_rt_reduce(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t elem, u
             case CINT_REDUCE_MIN:
             case CINT_REDUCE_MAX: {
                 bool below = cint_rt_tag_signed(elem) ? cint_rt_sext(x, 64u) < cint_rt_sext(bits, 64u) : x < bits;
-                if (!any || (op == CINT_REDUCE_MIN ? below : !below && x != bits)) {
-                    bits = x;
-                }
+                if (!any || (op == CINT_REDUCE_MIN ? below : !below && x != bits)) bits = x;
                 any = true;
                 break;
             }
@@ -3705,9 +3322,15 @@ bool cint_rt_reduce(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t elem, u
     }
     switch (op) {
     case CINT_REDUCE_SUM:
+        return zacc_fit(ctx, site, false, elem, result, 0u, cint_rt_sext(n, 64u), &acc, out);
     case CINT_REDUCE_DOT:
-        return cint_rt_zacc_fit(ctx, site, op == CINT_REDUCE_SUM ? "sum" : "dot", elem, result, cint_rt_sext(n, 64u),
-                                &acc, out);
+        /* fixed point: the exact sum at scale 2^(2f), rounded once to R's 2^g (SPEC-01 IM-87, BX15-04) */
+        if (dot_rounds(elem, result)) {
+            fq_shr(acc.limb, acc.limb, 2u * cint_q_frac(elem) - cint_q_frac(result), mode);
+        } else if (q) {
+            cint_w_shl_raw(acc.limb, acc.limb, cint_q_frac(result) - 2u * cint_q_frac(elem), FQ_LIMBS);
+        }
+        return zacc_fit(ctx, site, true, elem, result, mode, cint_rt_sext(n, 64u), &acc, out);
     case CINT_REDUCE_SUM_WRAP:
         *out = canon(elem, acc.limb[0]);
         return true;
@@ -3718,12 +3341,22 @@ bool cint_rt_reduce(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t elem, u
         *out = count;
         return true;
     default:
-        if (minmax && !any) {
-            return cint_rt_fault_reduce_empty(ctx, site, op == CINT_REDUCE_MAX, elem);
-        }
+        if (minmax && !any) return cint_rt_fault_reduce_empty(ctx, site, op == CINT_REDUCE_MAX, elem);
         *out = bits;
         return true;
     }
+}
+
+bool cint_rt_reduce(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t elem, uint32_t result,
+                    const cint_vdesc *xs, const cint_vdesc *ys, bool has_init, uint64_t init, uint64_t *out)
+{
+    return reduce_mode(ctx, site, op, elem, result, 0u, xs, ys, has_init, init, out);
+}
+
+bool cint_rt_dot_fixed(cint_ctx *ctx, cint_site site, uint32_t elem, uint32_t result, uint32_t mode,
+                       const cint_vdesc *xs, const cint_vdesc *ys, uint64_t *out)
+{
+    return reduce_mode(ctx, site, CINT_REDUCE_DOT, elem, result, mode, xs, ys, false, 0u, out);
 }
 
 int64_t cint_rt_dispatch_number(cint_ctx *ctx)
@@ -3738,19 +3371,24 @@ void cint_rt_dispatch_push(cint_ctx *ctx, cint_site site)
     /* After the push, calls may still fill the stack up to index stack_count +
      * depth_limit - depth, which must stay below CINT_RT_MAX_DEPTH; a first
      * push (stack_count = depth - 1) always passes. */
-    if (ctx->depth_limit > (int64_t)CINT_RT_MAX_DEPTH + ctx->depth - 1 - (int64_t)ctx->stack_count) {
+    if (ctx->head.depth_limit > (int64_t)CINT_RT_MAX_DEPTH + ctx->head.depth - 1 - (int64_t)ctx->head.stack_count) {
         (void)fault_refused(ctx, site);
         return;
     }
-    ctx->stack[ctx->stack_count] = site;
-    ctx->stack_count++;
+    ctx->stack[ctx->head.stack_count] = site;
+    ctx->head.stack_count++;
 }
 
 void cint_rt_dispatch_pop(cint_ctx *ctx)
 {
-    if (ctx->stack_count > 0u && (int64_t)ctx->stack_count >= ctx->depth) {  /* a pushed position */
-        ctx->stack_count--;
+    if (ctx->head.stack_count > 0u && (int64_t)ctx->head.stack_count >= ctx->head.depth) {  /* a pushed position */
+        ctx->head.stack_count--;
     }
+}
+
+void cint_rt_dispatch_end(cint_ctx *ctx, int64_t number)
+{
+    if (ctx->boundary != NULL && ctx->head.faulted == 0u) ctx->boundary(ctx, number);
 }
 
 void cint_rt_dispatch_fault(cint_ctx *ctx, const char *kernel, int64_t number, uint32_t phase, int64_t work_item,
@@ -3775,45 +3413,44 @@ void cint_rt_dispatch_fault(cint_ctx *ctx, const char *kernel, int64_t number, u
     memcpy(a->name, kernel, n);
 }
 
-bool cint_rt_scratch(cint_ctx *ctx, cint_site site, int64_t count, size_t size, void **out)
+/* cint_rt_scratch, or with charged false a dispatch's staging, which the arena does not count
+ * (decision 2026-10-08 on OQ-237; rt/OPEN.md RT-OQ-34). */
+static bool scratch_take(cint_ctx *ctx, cint_site site, int64_t count, size_t size, void **out, bool charged)
 {
     static uint64_t none;  /* the storage of every request for 0 elements: never read */
     int64_t ops[3];
     scratch_block *b;
     size_t bytes;
-    if (cint_rt_faulted(ctx)) {
-        return false;
-    }
-    if (count < 0 || out == NULL) {
-        return fault_refused(ctx, site);
-    }
+    if (cint_rt_faulted(ctx)) return false;
+    if (count < 0 || out == NULL) return fault_refused(ctx, site);
     ops[0] = count;
     ops[1] = ctx->scratch_used + ctx->frame_charged;
     ops[2] = ctx->frame_arena_bytes / 8;  /* the capacity in elements (rt/OPEN.md RT-OQ-34) */
-    if (count > ops[2] - ops[1]) {
+    if (charged && count > ops[2] - ops[1])
         return fault_i64s(ctx, site, CINT_E_BOUNDS, "arena.alloc", ops, 3u, false, 0);
-    }
     if (count == 0) {
         *out = &none;
         return true;
     }
-    if (size != 0u && (uint64_t)count > (SIZE_MAX - sizeof *b) / size) {
+    if (size != 0u && (uint64_t)count > (SIZE_MAX - sizeof *b) / size)
         return fault_i64s(ctx, site, CINT_E_UNSUPPORTED, "arena.alloc", ops, 3u, false, 0);
-    }
     bytes = sizeof *b + (size_t)count * size;
     b = (scratch_block *)ctx->allocator.alloc(ctx->allocator.user, bytes, 16u);
-    if (b == NULL) {
-        return fault_i64s(ctx, site, CINT_E_UNSUPPORTED, "arena.alloc", ops, 3u, false, 0);
-    }
+    if (b == NULL) return fault_i64s(ctx, site, CINT_E_UNSUPPORTED, "arena.alloc", ops, 3u, false, 0);
     memset(b, 0, bytes);
     b->prev = ctx->scratch;
     b->bytes = bytes;
-    b->elements = count;
+    b->elements = charged ? count : 0;
     ctx->scratch = b;
     ctx->scratch_count++;
-    ctx->scratch_used += count;
+    ctx->scratch_used += b->elements;
     *out = (unsigned char *)b + sizeof *b;
     return true;
+}
+
+bool cint_rt_scratch(cint_ctx *ctx, cint_site site, int64_t count, size_t size, void **out)
+{
+    return scratch_take(ctx, site, count, size, out, true);
 }
 
 int64_t cint_rt_scratch_mark(const cint_ctx *ctx)

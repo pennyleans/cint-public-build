@@ -1,0 +1,10 @@
+// case: fixed/literal_off_grid_c2006
+// clause: SPEC-04 LS-37, 17.2 (0.1 is not a multiple of 2^-16 and has no round clause)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: compile-error C2006 at 8:16 (the literal 0.1). Box 15, unit 1
+
+export I64 run() {
+    Q16.16 x = 0.1;
+    return x.raw as I64;
+}

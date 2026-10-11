@@ -1,11 +1,15 @@
-"""DLPack on the CPU, as a consumer (SPEC-03 P-10 to P-14).
+"""DLPack, as a consumer (SPEC-03 P-10 to P-14) and as the producer of a
+`Buffer`'s read-only exports (P-18).
 
 The structures follow `dlpack.h` version 1 (`DLManagedTensorVersioned`) and
 the earlier unversioned `DLManagedTensor`; the capsule protocol follows the
 DLPack Python specification. The bridge consumes every capsule it receives,
 accepted or refused: it renames the capsule to `used_dltensor_versioned` (or
 `used_dltensor`) and calls the deleter itself, at once for a refused tensor
-and otherwise when it no longer needs the tensor (P-14).
+and otherwise when it no longer needs the tensor (P-14). Each capsule it
+produces is versioned and marked read-only; its deleter, called by the
+consumer, or by the capsule's destructor when no consumer took it, ends the
+export.
 """
 from __future__ import annotations
 
@@ -14,6 +18,7 @@ import ctypes
 from ._memory import _api
 
 kDLCPU = 1
+kDLCUDA = 2
 DEVICE_NAMES = {1: "kDLCPU", 2: "kDLCUDA", 3: "kDLCUDAHost", 4: "kDLOpenCL", 7: "kDLVulkan", 8: "kDLMetal",
                 9: "kDLVPI", 10: "kDLROCM", 11: "kDLROCMHost", 12: "kDLExtDev", 13: "kDLCUDAManaged",
                 14: "kDLOneAPI", 15: "kDLWebGPU", 16: "kDLHexagon", 17: "kDLMAIA"}
@@ -61,6 +66,11 @@ NAME_USED_LEGACY = ctypes.c_char_p(b"used_dltensor")
 _capsule_get_name = _api("PyCapsule_GetName", ctypes.c_char_p, ctypes.py_object)
 _capsule_get_pointer = _api("PyCapsule_GetPointer", ctypes.c_void_p, ctypes.py_object, ctypes.c_char_p)
 _capsule_set_name = _api("PyCapsule_SetName", ctypes.c_int, ctypes.py_object, ctypes.c_char_p)
+_capsule_new = _api("PyCapsule_New", ctypes.py_object, ctypes.c_void_p, ctypes.c_char_p, ctypes.c_void_p)
+_capsule_valid = ctypes.PYFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_char_p)(
+    ("PyCapsule_IsValid", ctypes.pythonapi))
+_capsule_raw_pointer = ctypes.PYFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p)(
+    ("PyCapsule_GetPointer", ctypes.pythonapi))
 _DELETER = ctypes.PYFUNCTYPE(None, ctypes.c_void_p)
 
 
@@ -106,3 +116,62 @@ class Tensor:
         managed, self.managed = self.managed, None
         if managed is not None and managed.deleter:
             _DELETER(managed.deleter)(self.address)
+
+
+# The producer (SPEC-03 P-18).
+
+_exports = {}               # managed tensor address -> (tensor, shape, strides, storage, on_end)
+
+
+def _export_deleted(address):
+    entry = _exports.pop(address, None)
+    if entry is not None:
+        entry[-1]()
+
+
+def _capsule_destroyed(capsule):
+    """A capsule that no consumer took still owns its tensor: end the export."""
+    if _capsule_valid(capsule, NAME_VERSIONED):
+        _export_deleted(_capsule_raw_pointer(capsule, NAME_VERSIONED))
+
+
+_EXPORT_DELETER = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(_export_deleted)
+_CAPSULE_DESTRUCTOR = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(_capsule_destroyed)
+
+
+def data_type(elem) -> tuple:
+    """The DLPack data type of an element's storage: (code, bits, lanes)."""
+    if elem.kind == "bool":
+        return (kDLBool, 8, 1)
+    return (kDLInt if elem.signed else kDLUInt, 8 * elem.size, 1)
+
+
+def export(storage, address: int, device: tuple, elem, shape: tuple, on_end) -> object:
+    """A versioned capsule of a read-only tensor of `elem` (row-major, of
+    `shape`) at `address` on `device`, a (device type, ordinal) pair. The
+    export holds `storage` until its deleter runs, and then calls `on_end`."""
+    managed = DLManagedTensorVersioned()
+    n = len(shape)
+    dims = (ctypes.c_int64 * max(1, n))(*shape)
+    steps, step = [], 1
+    for extent in reversed(shape):
+        steps.append(step)
+        step *= extent
+    strides = (ctypes.c_int64 * max(1, n))(*reversed(steps))
+    managed.version = DLPackVersion(MAJOR_VERSION, 0)
+    managed.flags = FLAG_READ_ONLY
+    managed.deleter = ctypes.cast(_EXPORT_DELETER, ctypes.c_void_p).value
+    t = managed.dl_tensor
+    t.data = address
+    t.device = DLDevice(*device)
+    t.ndim = n
+    t.dtype = DLDataType(*data_type(elem))
+    t.shape = ctypes.cast(dims, ctypes.POINTER(ctypes.c_int64))
+    t.strides = ctypes.cast(strides, ctypes.POINTER(ctypes.c_int64))
+    key = ctypes.addressof(managed)
+    _exports[key] = (managed, dims, strides, storage, on_end)
+    try:
+        return _capsule_new(key, NAME_VERSIONED, ctypes.cast(_CAPSULE_DESTRUCTOR, ctypes.c_void_p))
+    except BaseException:
+        _exports.pop(key, None)
+        raise

@@ -1,0 +1,10 @@
+// case: wide/min_empty_i512
+// clause: SPEC-01 IM-77, IM-82 (min of an empty I512 view with no initial value faults E_SHAPE)
+// subset: cint-core-1 (wide integers, array slices, built-in min)
+// entry: run; args: none
+// spec outcome: fault E_SHAPE at 9:12 (callee `min`), operation reduce_min.checked.i512, operands I64 0 (n), no exact, no limit; stack depth 0; fuel 1 (the entry). Record: box 09 ruling R5. Box 15, unit 1
+
+export Bool run() {
+    I512[4] a = [3, -1, 2, 0];
+    return min(a[2..2]) != 0;
+}

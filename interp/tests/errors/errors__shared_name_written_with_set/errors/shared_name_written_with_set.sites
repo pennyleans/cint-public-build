@@ -1,0 +1,8 @@
+module errors.shared_name_written_with_set
+sites errors/shared_name_written_with_set.ci 1:11:22:fuel.charge
+error E0: errors.shared_name_written_with_set.IoOrQueue U16 closed, IoError.full, QueueError.full, stalled
+export func @errors.shared_name_written_with_set.run() -> U16!I64 error E0 {
+  fuel.charge 1                                  #1 @errors/shared_name_written_with_set.ci:11:22
+  %t0 = const U16 3
+  return.error %t0
+}

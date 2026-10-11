@@ -1,0 +1,9 @@
+case fixed/dot_one_rounding
+clause SPEC-01 IM-87 (BX15-04 A: the IM-87 example gives raw 1; a dot into Q32.32 is exact)
+format 5
+source reference
+outcome value
+stdout-bytes 8
+stdout-sha256 02f5d447d6bb18f22197552aae198283c546bd75ed84f23839172f985c0d7541
+return I64 1
+fuel-consumed 4

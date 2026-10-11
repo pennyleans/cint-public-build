@@ -16,6 +16,11 @@ values (SPEC-01 13.1, the mapping between the two layers):
 It also checks that every case line names the record's arguments, and it
 reports the fuel consumed and the fault positions seen, for review.
 
+A wide table program (box 15 note section 5.4) holds the operands in its
+module-level arrays `a` and `b` and prints the result of record k from
+`row(I64 k)`; there the arrays must hold the records' arguments in record order,
+a `value` record's result must be the printed line, and the entry returns 0.
+
 Usage (from the repository root):
     python conformance/tools/ref_tables.py [conformance/tables/<name>.ci ...]
 
@@ -76,6 +81,26 @@ def compare(rec, outcome):
     return problems
 
 
+def wide_operands(text: str, name: str) -> list:
+    """The decimal values of the module-level array `name` of a wide table program."""
+    start = text.index("] %s = [\n" % name) + len("] %s = [\n" % name)
+    return [int(v) for v in text[start:text.index("\n];\n", start)].replace(",", " ").split()]
+
+
+def compare_wide(rec, outcome):
+    """compare() for `row(k)` of a wide table program, whose result is printed."""
+    kind, payload = next(iter(rec.expect.items()))
+    if kind != "value" or outcome.kind != "value":
+        return compare(rec, outcome)
+    want = cif1._value(payload)
+    problems = []
+    if outcome.stdout != b"%d\n" % want.value:
+        problems.append("printed %r, expected %d" % (outcome.stdout, want.value))
+    if outcome.value != Value("I64", 0):
+        problems.append("returned %s, expected I64 0" % outcome.value.render())
+    return problems
+
+
 def run_table(ci_path: str, report) -> tuple:
     with open(ci_path, "rb") as fh:
         data = fh.read()
@@ -93,21 +118,31 @@ def run_table(ci_path: str, report) -> tuple:
         raise ValueError("%s: %d cases for %d records" % (rel, len(case_lines), len(records)))
 
     prog = check_module(P.parse_module(decode_source(data, rel), rel))
+    wide = "export I64 row(I64 k) {\n" in text
+    if wide:
+        ops = list(zip(wide_operands(text, "a"), wide_operands(text, "b")))
+        if ops != [tuple(cif1._value(x).value for x in r.args) for r in records]:
+            raise ValueError("%s: the operand arrays differ from the records" % rel)
     agree = 0
     fuel = collections.Counter()
     positions = collections.Counter()
     for n, (line, rec) in enumerate(zip(case_lines, records), start=1):
         parts = line.split(" ")
-        if len(parts) != 6:
-            raise ValueError("%s line %d: expected `<module> <function> <T> <a> <T> <b>`" % (cases_path, n))
-        module, fname, ta, a, tb, b = parts
-        args = [Value(ta, int(a)), Value(tb, int(b))]
-        if args != [cif1._value(x) for x in rec.args]:
-            report("%s line %d: case arguments differ from record %s" % (rel, n, rec.id))
-            continue
+        if wide:
+            if parts[1:] != ["row", "I64", str(n - 1)]:
+                raise ValueError("%s line %d: expected `<module> row I64 %d`" % (cases_path, n, n - 1))
+            args, fname = [Value("I64", n - 1)], "row"
+        else:
+            if len(parts) != 6:
+                raise ValueError("%s line %d: expected `<module> <function> <T> <a> <T> <b>`" % (cases_path, n))
+            module, fname, ta, a, tb, b = parts
+            args = [Value(ta, int(a)), Value(tb, int(b))]
+            if args != [cif1._value(x) for x in rec.args]:
+                report("%s line %d: case arguments differ from record %s" % (rel, n, rec.id))
+                continue
         f = prog.functions[fname]
         outcome = _run(prog, "function", f, _check_args(f, args), None, DEFAULT_DEPTH)
-        problems = compare(rec, outcome)
+        problems = (compare_wide if wide else compare)(rec, outcome)
         fuel[outcome.fuel] += 1
         if outcome.record is not None:
             positions[str(outcome.record.position)] += 1

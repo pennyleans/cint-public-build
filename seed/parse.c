@@ -159,7 +159,7 @@ bool tok_reserved(const seed_module *m, uint32_t t)
 static bool non_boot_type(const seed_module *m, uint32_t t)
 {
     static const char *const names[] = {"Str", "T1", "T27", "PT5", "PT4", "Arena", "Pool", "Handle",
-                                        "I128", "I256", "I512", "I1024", "Round"};
+                                        "I128", "I256", "I512", "I1024", "U128", "U256", "U512", "Round"};
     size_t i;
     for (i = 0; i < sizeof names / sizeof names[0]; i++) {
         if (tok_is(m, t, names[i])) {

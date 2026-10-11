@@ -1,0 +1,10 @@
+// case: wide/convert_u512_to_u128_narrow
+// clause: SPEC-01 IM-6, IM-50, IM-106; SPEC-09 CONF-11 rule 14 (a checked conversion of 2^128 from U512 to U128)
+// subset: cint-core-1 (unsigned wide integers)
+// entry: run; args: none
+// spec outcome: fault E_NARROW at 9:14 (the `as`), operation as.checked.u512.u128, operand U512 2^128, exact 2^128, limit U128 2^128 - 1; stack depth 0; fuel 1. Box 15, unit 1
+
+export Bool run() {
+    U512 a = (U128.max as U512) + 1;
+    return a as U128 != 0;
+}

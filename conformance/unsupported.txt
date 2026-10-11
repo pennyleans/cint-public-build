@@ -18,6 +18,54 @@
 # under EMIT-30. B1 refused them under its rank-1 extent limit until its frame arena work
 # (OQ-213, compiler/OPEN.md CINTC-OQ-64 item 13), which compiles them, and its three
 # lines left this list.
+# Box 11 unit 6 (SPEC-09 CONF-17): a kernel that back_ptx refuses fails a gpu-cuda build
+# with E_UNSUPPORTED (BACK-05). Its line, for cintc/gpu-cuda, gives the capability first,
+# and a run on that backend fails unless the refusal names the same capability. The
+# cintc rows of the same cases, on cpu-c17, compare them.
+# Box 15 unit 1 (2026-10-09, OQ-252): the 23 conformance/wide/ cases, frozen from
+# cint_ref, have wide integer elements (I128 to I1024). B1 refuses each at its first
+# wide type with C9102 until box 15 unit 4 gives it the wide types; the same line
+# covers B1 on gpu-cuda and on cpu-sir-interp, whose front end is the same.
+# Box 15 unit 1 (2026-10-09, OQ-257): the 56 table programs of the wide boundary matrices
+# (tables/*_i128 to tables/*_i1024) are refused the same way, at 11:1, their first module
+# array.
+# Box 15 unit 1 (2026-10-09, OQ-262): 27 of the 28 unsigned wide cases (U128, U256 and U512;
+# ruling BX15-02) and the 42 unsigned table programs are refused the same way, at the
+# first wide type; wide/u1024_refused is an expected compile error (C3006) and is not
+# listed.
+# Box 15 unit 1 (2026-10-09, OQ-264): the 46 fixed-point cases of conformance/fixed/ are
+# refused the same way, at the first fixed-point type or fraction literal.
+# Box 15 unit 1 (2026-10-10, OQ-266): fixed/literal_round_negative is refused the same
+# way, at 8:5; B1's parser takes its round clause after a negative fraction literal
+# (SPEC-04I.12, section 17), so the refusal is check.ci's.
+# Box 15 unit 4a (2026-10-09): B1 compiles I128 to I1024 (compiler/OPEN.md CINTC-OQ-15), so
+# the 44 signed table programs of add, sub and mul (checked, wrap and sat) and of div and
+# rem left this list (their required rows wait for the interpreter, OQ-268 A), and so did
+# wide/uabs_i1024_refused, whose C2103 B1 now reports, and the six signed cases whose
+# entries OQ-267 rewrote to return I64 or Bool. Each wide line that stays names the limit
+# B1 reaches first and the unit that lifts it: wide constant folding (unit 4b); reductions,
+# dot, array built-ins, kernels and arenas or pools of wide elements (4c); the unsigned wide
+# types (4d); and a wide shift count, which the signed shift tables use.
+# Box 15 unit 4b (2026-10-10): B1 folds constant expressions of I128 to I1024, so no line
+# names unit 4b; wide/fold_checked_i1024_overflow now stops at its fold_checked on wide
+# elements (4c).
+# Box 15 unit 4c (2026-10-10): B1 takes a wide shift count (rt/OPEN.md RT-OQ-52), so the 12
+# signed shift tables (shl and shr, checked and wrap) left this list; and wide kernels,
+# arenas and pools on cpu-c17, so wide/kernel_alias_descriptors_i256 and
+# wide/kernel_mul_overflow_i128 compare there, and their cintc/gpu-cuda lines give the
+# BACK-05 capability `wide` (ruling BX15-01). The signed lines that stay name reductions of
+# wide values (4c2, after the runtime's wide accumulators, RT-OQ-54) or fill and reshape,
+# which B1 refuses for every element type.
+# Box 15 unit 4c, part 2 (2026-10-10): B1 reduces wide values (rt/OPEN.md RT-OQ-54), so the
+# 14 reduction lines left this list, and wide/kernel_reduce_sum_i512's cintc/gpu-cuda line
+# gives the BACK-05 capability `wide`.
+# Box 15 fill and reshape (2026-10-10): B1 takes `fill` at every element type but a struct
+# and each `reshape` that cannot fault, so wide/copy_reverse_reshape_i256 left this list.
+# Box 15 unit 4d (2026-10-10): B1 takes U128 to U512, so the 42 unsigned table programs and
+# the 26 unsigned wide cases that B1 refused left this list; the cintc/gpu-cuda lines of
+# wide/kernel_add_overflow_u256 and wide/kernel_alias_descriptors_u128 give the BACK-05
+# capability `wide`. cpu-sir-interp runs the unsigned wide types (PR #388), and the 66
+# programs agree there too.
 arith/const_narrow_literal_2p3000 cint-seed C9102 SEED-16 the seed holds a literal in 64 bits and refuses a checked as of a literal of 2^64 or more
 arith/const_narrow_literal_max cint-seed C9102 SEED-16 the seed holds a literal in 64 bits and refuses a checked as of a literal of 2^64 or more
 arith/literal_conversion_skipped_operand cint-seed C9102 SEED-16 the seed holds a literal in 64 bits and refuses a checked as of a literal of 2^64 or more
@@ -27,6 +75,53 @@ control/nest_blocks_257 cint-seed C9004 SEED-15 the seed compiles at most 199 ne
 control/nest_for_256 cint-seed C9004 SEED-15 the seed compiles at most 49 nested for loops
 control/nest_whiles_256 cint-seed C9004 SEED-15 the seed compiles at most 66 nested while loops
 control/nest_whiles_67 cint-seed C9004 SEED-15 the seed compiles at most 66 nested while loops
+fixed/add_checked_overflow_raw cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/array_index_bounds_q16_16 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/constant_fold_overflow cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/convert_integer_narrow cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/convert_literal_c6001 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/convert_narrow_q32_32 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/convert_round_clause_c2009 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/convert_table cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/convert_wrap_and_result cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/div_overflow_q16_16 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/div_table_q16_16 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/div_zero_q16_16 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/dot_one_rounding cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/dot_overflow_q8_8 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/fraction_integer_context_c2004 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/kernel_mul_overflow cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/kernel_scale_reduce cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/literal_grid_q16_16 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/literal_off_grid_c2006 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/literal_out_of_range_c2003 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/literal_round_clause cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/literal_round_negative cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/module_state_q16_16 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/mul_forms_q16_16 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/mul_int_overflow cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/mul_overflow_q16_16 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/mul_table_q16_16 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/print_kind_c1037 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/print_layout_raw_bits cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/print_ls215 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/qmul_formats cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/qmul_overflow cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/raw_and_constructor cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/raw_forms_q8_8 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/raw_not_assignable_c2058 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/reductions_q16_16 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/rem_c2103 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/round_modes_convert cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/round_modes_div cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/round_modes_mul cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/sqrt_negative_domain cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/sqrt_q1_15_ceil_overflow cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/sqrt_table cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/struct_field_q cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/sum_overflow_q8_8 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/type_name_c2005 cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
+fixed/type_properties cintc C9102 CINTC-OQ-15 B1 has no fixed-point type until box 15 unit 4 (check.ci refuses Q types and fraction literals)
 memory/frame_arena_counts_elements cint-seed C9003 EMIT-30 the seed admits a local array of at most 4,096 bytes
 memory/frame_arena_recursion_exhausts cint-seed C9003 EMIT-30 the seed admits a local array of at most 4,096 bytes
 memory/frame_arena_released_at_block_exit cint-seed C9003 EMIT-30 the seed admits a local array of at most 4,096 bytes
@@ -34,7 +129,20 @@ struct/constructor_shape_later_fault cint-seed C9102 SEED-OQ-06 the seed does no
 struct/constructor_shape_order cint-seed C9102 SEED-OQ-06 the seed does not support an array-field constructor argument
 struct/constructor_shape_runtime cint-seed C9102 SEED-OQ-06 the seed does not support an array-field constructor argument
 struct/constructor_shape_zero_elements cint-seed C9102 SEED-OQ-06 the seed does not support an array-field constructor argument
+tables/kernel_add_sat_i64 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability sat the cuda profile refuses saturating arithmetic until its kernel cases pass (box 11 note 4.4)
+tables/kernel_div_checked_i64 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability div the cuda profile refuses division and remainder until their kernel cases pass (box 11 note 4.4)
+tables/kernel_mul_sat_i64 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability sat the cuda profile refuses saturating arithmetic until its kernel cases pass (box 11 note 4.4)
+tables/kernel_rem_checked_i64 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability div the cuda profile refuses division and remainder until their kernel cases pass (box 11 note 4.4)
+tables/kernel_shl_checked_i64 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability shift the cuda profile refuses shifts until their kernel cases pass (box 11 note 4.4)
+tables/kernel_shl_wrap_i64 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability shift the cuda profile refuses shifts until their kernel cases pass (box 11 note 4.4)
+tables/kernel_shr_checked_i64 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability shift the cuda profile refuses shifts until their kernel cases pass (box 11 note 4.4)
+tables/kernel_sub_sat_i64 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability sat the cuda profile refuses saturating arithmetic until its kernel cases pass (box 11 note 4.4)
 view/copy_shape_assignment cint-seed C9102 SEED-OQ-06 the seed refuses whole-array assignment
 view/copy_shape_empty_source cint-seed C9102 SEED-OQ-06 the seed refuses whole-array assignment
 view/copy_shape_zero_elements cint-seed C9102 SEED-OQ-06 the seed refuses whole-array assignment
 view/shape_mismatch_runtime cint-seed C9102 SEED-OQ-05 the seed checks the shapes of views passed between CINT functions at compile time only
+wide/kernel_add_overflow_u256 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability wide the cuda profile refuses U128 to U512 (box 15 ruling BX15-01)
+wide/kernel_alias_descriptors_i256 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability wide the cuda profile refuses I128 to I1024 (box 15 ruling BX15-01)
+wide/kernel_alias_descriptors_u128 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability wide the cuda profile refuses U128 to U512 (box 15 ruling BX15-01)
+wide/kernel_mul_overflow_i128 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability wide the cuda profile refuses I128 to I1024 (box 15 ruling BX15-01)
+wide/kernel_reduce_sum_i512 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability wide the cuda profile refuses I128 to I1024 (box 15 ruling BX15-01)

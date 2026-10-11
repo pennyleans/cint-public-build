@@ -1,0 +1,17 @@
+case wide/convert_i256_to_u256_negative
+clause SPEC-01 IM-6, IM-50, IM-106; SPEC-09 CONF-11 rule 14 (a checked conversion of -1 from I256 to U256)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_NARROW
+fault.operation as.checked.i256.u256
+fault.operand I256 -1
+fault.exact -1
+fault.limit U256 0
+fault.position wide/convert_i256_to_u256_negative.ci:9:14
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

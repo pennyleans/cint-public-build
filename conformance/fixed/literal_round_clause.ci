@@ -1,0 +1,14 @@
+// case: fixed/literal_round_clause
+// clause: SPEC-04 LS-37; SPEC-01 4.5, IM-27 (an inexact literal with a round clause is rounded once to the grid)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 6554; prints `6554 6553 6554 -6553` (0.1 is raw 6553.6: half_even 6554, floor 6553, ceil 6554; the negation of 0.1 with trunc is -6553); fuel 1. Box 15, unit 1
+
+export I64 run() {
+    Q16.16 a = 0.1 round half_even;
+    Q16.16 b = 0.1 round floor;
+    Q16.16 c = 0.1 round ceil;
+    Q16.16 d = -(0.1 round trunc);
+    "{a!raw} {b!raw} {c!raw} {d!raw}\n";
+    return a.raw as I64;
+}

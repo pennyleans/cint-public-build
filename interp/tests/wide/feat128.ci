@@ -1,0 +1,321 @@
+struct Acc {
+    I128 lo;
+    I256 hi;
+    I64 n;
+    I128[2] pair;
+}
+
+I128 g;
+I256[2, 2] gb = [[1, -2], [3, -4]];
+
+I128 twice(I128 x) {
+    return x + x;
+}
+
+I256 grow(I128 x) {
+    I256 y = x as I256;
+    return y * y;
+}
+
+void put(inout Acc a, I128 v) {
+    a.lo = v;
+    a.hi = v as I256;
+    a.pair[0] = v;
+    a.pair[1] = -v;
+    a.n = 2;
+}
+
+Acc make(I128 v) {
+    Acc a;
+    put(a, v);
+    return a;
+}
+
+I256 total[n](in I256[n] xs) {
+    I256 s = 0;
+    for i in 0..n {
+        s = s + xs[i];
+    }
+    return s;
+}
+
+void scale(inout I256[_] v, I256 k) {
+    for i in 0..extent(v, 0) {
+        v[i] = v[i] * k;
+    }
+}
+
+I128 big(I64 k, I64 s) {
+    I128 x = k as I128;
+    return x << s;
+}
+
+export I64 values(I64 k, I64 s) {
+    I128 x = big(k, s);
+    I128 y = big(3, s / 2) + 5;
+    I128 q = 0;
+    "{x} {y}\n";
+    q = x + y;
+    "{q}\n";
+    q = x - y;
+    "{q}\n";
+    q = y * 7;
+    "{q}\n";
+    q = x / y;
+    "{q}\n";
+    q = x % y;
+    "{q}\n";
+    q = -x;
+    "{q}\n";
+    q = x +% x;
+    "{q}\n";
+    q = x -% y;
+    "{q}\n";
+    q = x *% y;
+    "{q}\n";
+    q = x +| x;
+    "{q}\n";
+    q = x -| (-x);
+    "{q}\n";
+    q = x *| y;
+    "{q}\n";
+    q = x & y;
+    "{q}\n";
+    q = x | y;
+    "{q}\n";
+    q = x ^ y;
+    "{q}\n";
+    q = ~x;
+    "{q}\n";
+    q = x >> 3;
+    "{q}\n";
+    q = y << 2;
+    "{q}\n";
+    q = x <<% s;
+    "{q}\n";
+    Bool b = x < y;
+    "{b}\n";
+    b = x == y;
+    "{b}\n";
+    b = x >= -y;
+    "{b}\n";
+    b = x != y;
+    "{b}\n";
+    b = y <= y;
+    "{b}\n";
+    b = x > y;
+    "{b}\n";
+    q = abs(-y);
+    "{q}\n";
+    q = min(x, -y);
+    "{q}\n";
+    q = max(x, -y);
+    "{q}\n";
+    q = clamp(x, -y, y);
+    "{q}\n";
+    q = div_trunc(-x, y);
+    "{q}\n";
+    q = rem_trunc(-x, y);
+    "{q}\n";
+    q = div_euclid(-x, y);
+    "{q}\n";
+    q = rem_euclid(-x, y);
+    "{q}\n";
+    q = div_round(-x, y, half_even);
+    "{q}\n";
+    q = div_round(x, y, ceil);
+    "{q}\n";
+    q = isqrt(x);
+    "{q}\n";
+    q = isqrt_round(x, ceil);
+    "{q}\n";
+    q = isqrt_round(y, half_up);
+    "{q}\n";
+    I64 m = muldiv(I64, y, 3, 7, half_even);
+    "{m}\n";
+    q = muldiv(I128, x, y, y, floor);
+    "{q}\n";
+    I256 w = muldiv(I256, x, y, 3, trunc);
+    "{w}\n";
+    I64 n = x as% I64;
+    "{n}\n";
+    I8 n8 = y as% I8;
+    "{n8}\n";
+    U8 u8 = y as% U8;
+    "{u8}\n";
+    n = (y >> (s / 2)) as I64;
+    "{n}\n";
+    w = x as I256;
+    "{w}\n";
+    w = grow(x);
+    "{w}\n";
+    q = w as% I128;
+    "{q}\n";
+    q = (u8 as I128) + (n8 as I128);
+    "{q}\n";
+    return 0;
+}
+
+export I64 aggregates(I64 k, I64 s) {
+    I128 x = big(k, s);
+    I128[3] a = [1, -2, 3];
+    a[1] = x;
+    "{a[0]} {a[1]} {a[2]}\n";
+    I256[4] v = [1, 2, 3, 4];
+    scale(v, x as I256);
+    "{v[3]} {total(v)}\n";
+    Acc c = make(x);
+    "{c.lo} {c.hi} {c.n} {c.pair[0]} {c.pair[1]}\n";
+    Acc[2] cs;
+    cs[1] = c;
+    cs[0].hi = 9;
+    "{cs[1].pair[1]} {cs[0].hi}\n";
+    g = g + twice(x);
+    gb[1, 1] = gb[1, 0] * (x as I256);
+    "{g} {gb[1, 1]} {gb[0, 1]}\n";
+    I256[6] r;
+    for i in 0..6 {
+        r[i] = (i as I256) << s;
+    }
+    I256[3] h;
+    copy(h, r[5..0 by -2]);
+    "{h[0]} {h[1]} {h[2]}\n";
+    return 0;
+}
+
+export I64 f_add(I64 k, I64 s) {
+    I128 x = big(k, s);
+    I128 q = 0;
+    q = x + x;
+    return 0;
+}
+
+export I64 f_mul(I64 k, I64 s) {
+    I128 x = big(k, s);
+    I128 q = 0;
+    q = x * x;
+    return 0;
+}
+
+export I64 f_div(I64 k, I64 s) {
+    I128 x = big(k, s);
+    I128 z = x - x;
+    I128 q = 0;
+    q = x / z;
+    return 0;
+}
+
+export I64 f_neg(I64 k, I64 s) {
+    I128 x = big(k, s);
+    I128 q = 0;
+    q = -(x - x - x - x);
+    return 0;
+}
+
+export I64 f_shl(I64 k, I64 s) {
+    I128 x = big(k, s);
+    I128 q = 0;
+    q = x << s;
+    return 0;
+}
+
+export I64 f_shr(I64 k, I64 s) {
+    I128 x = big(k, s);
+    I128 q = 0;
+    q = x >> (s * 100);
+    return 0;
+}
+
+export I64 f_as(I64 k, I64 s) {
+    I128 x = big(k, s);
+    I64 n = 0;
+    n = x as I64;
+    return n;
+}
+
+export I64 f_as_wide(I64 k, I64 s) {
+    I256 w = (big(k, s) as I256) * (big(k, s) as I256);
+    I128 q = 0;
+    q = w as I128;
+    return 0;
+}
+
+export I64 f_abs(I64 k, I64 s) {
+    I128 x = big(k, s);
+    I128 q = 0;
+    q = abs(x - x - x - x);
+    return 0;
+}
+
+export I64 f_div_trunc(I64 k, I64 s) {
+    I128 x = big(k, s);
+    I128 q = 0;
+    q = div_trunc(x, x - x);
+    return 0;
+}
+
+export I64 f_div_round(I64 k, I64 s) {
+    I128 x = big(k, s);
+    I128 q = 0;
+    q = div_round(x, x - x, half_even);
+    return 0;
+}
+
+export I64 f_isqrt(I64 k, I64 s) {
+    I128 x = big(k, s);
+    I128 q = 0;
+    q = isqrt(-x);
+    return 0;
+}
+
+export I64 f_muldiv(I64 k, I64 s) {
+    I128 x = big(k, s);
+    I64 m = 0;
+    m = muldiv(I64, x, x, 3, floor);
+    return m;
+}
+
+export I64 f_index(I64 k, I64 s) {
+    I128[3] a = [1, 2, 3];
+    I128 q = 0;
+    q = a[k];
+    return 0;
+}
+
+export I64 f_call(I64 k, I64 s) {
+    I128 x = big(k, s);
+    I128 q = 0;
+    q = twice(x);
+    return 0;
+}
+
+export I64 f_struct(I64 k, I64 s) {
+    Acc c = make(big(k, s));
+    I128 q = 0;
+    q = c.pair[1] * c.lo;
+    return 0;
+}
+
+export I64 f_slice(I64 k, I64 s) {
+    I256[6] a;
+    I256[3] h;
+    copy(h, a[1..k]);
+    return 0;
+}
+
+export I64 f_view(I64 k, I64 s) {
+    I256[4] v = [1, 2, 3, 4];
+    scale(v, big(k, s) as I256);
+    I256 t = 0;
+    t = total(v);
+    return 0;
+}
+
+export I64 products(I64 k, I64 s) {
+    I128 x = (k as I128) << s;
+    I128 y = -x - 3;
+    "{mul_full(x, y)}\n";
+    "{mul_full(x, x)}\n";
+    "{mul_full(k << 40, -s)}\n";
+    return 0;
+}

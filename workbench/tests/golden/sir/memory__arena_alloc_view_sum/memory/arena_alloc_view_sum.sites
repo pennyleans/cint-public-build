@@ -1,0 +1,57 @@
+module memory.arena_alloc_view_sum
+sites memory/arena_alloc_view_sum.ci 1:9:12:fuel.charge 2:10:31:arena.alloc 3:11:31:arena.alloc 4:12:5:fuel.charge 5:12:28:handle.check 6:12:31:handle.check 7:12:31:index.checked.i64 8:12:39:add.checked.i64 9:13:12:handle.check 10:13:15:handle.check 11:13:15:index.checked.i64 12:14:23:handle.check 13:14:12:handle.check 14:14:12:sum.checked.i64.i64 15:14:41:handle.check 16:14:30:handle.check 17:14:30:sum.checked.i64.i64 18:14:28:add.checked.i64
+arena @scratch: I64, 16
+export func @memory.arena_alloc_view_sum.run() -> I64 {
+  fuel.charge 1                                  #1 @memory/arena_alloc_view_sum.ci:9:12
+  %t0 = const I64 4
+  %t1 = arena.alloc @scratch, %t0                #2 @memory/arena_alloc_view_sum.ci:10:31
+  local $a.0: Handle
+  store.local $a.0, %t1
+  %t2 = const I64 3
+  %t3 = arena.alloc @scratch, %t2                #3 @memory/arena_alloc_view_sum.ci:11:31
+  local $b.1: Handle
+  store.local $b.1, %t3
+  %t4 = const I64 0
+  %t5 = const I64 4
+  local $i.2: I64
+  store.local $i.2, %t4
+  loop L13 {
+    %t6 = load.local $i.2
+    %t7 = cmp.lt.i64 %t6, %t5
+    while %t7
+    fuel.charge 1                                #4 @memory/arena_alloc_view_sum.ci:12:5
+    %t8 = load.local $a.0
+    handle.view $sc.3, @scratch, %t8             #5 @memory/arena_alloc_view_sum.ci:12:28
+    %t9 = load.local $i.2
+    handle.lease $sc.4                           #6 @memory/arena_alloc_view_sum.ci:12:31
+    index.checked.i64 $sc.3, %t9                 #7 @memory/arena_alloc_view_sum.ci:12:31
+    %t10 = view.offset $sc.3, %t9, 0
+    %t11 = load.local $i.2
+    %t12 = const I64 1
+    %t13 = add.checked.i64 %t11, %t12            #8 @memory/arena_alloc_view_sum.ci:12:39
+    index.store $sc.3, %t10, %t13
+    next
+    %t14 = load.local $i.2
+    %t15 = const I64 1
+    %t16 = add.wrap.i64 %t14, %t15
+    store.local $i.2, %t16
+  }
+  %t17 = load.local $b.1
+  handle.view $sc.5, @scratch, %t17              #9 @memory/arena_alloc_view_sum.ci:13:12
+  %t18 = const I64 2
+  handle.lease $sc.6                             #10 @memory/arena_alloc_view_sum.ci:13:15
+  index.checked.i64 $sc.5, %t18                  #11 @memory/arena_alloc_view_sum.ci:13:15
+  %t19 = view.offset $sc.5, %t18, 0
+  %t20 = const I64 100
+  index.store $sc.5, %t19, %t20
+  %t21 = load.local $a.0
+  handle.view $sc.7, @scratch, %t21              #12 @memory/arena_alloc_view_sum.ci:14:23
+  handle.lease $sc.8                             #13 @memory/arena_alloc_view_sum.ci:14:12
+  %t22 = sum.checked.i64.i64 $sc.7               #14 @memory/arena_alloc_view_sum.ci:14:12
+  %t23 = load.local $b.1
+  handle.view $sc.9, @scratch, %t23              #15 @memory/arena_alloc_view_sum.ci:14:41
+  handle.lease $sc.10                            #16 @memory/arena_alloc_view_sum.ci:14:30
+  %t24 = sum.checked.i64.i64 $sc.9               #17 @memory/arena_alloc_view_sum.ci:14:30
+  %t25 = add.checked.i64 %t22, %t24              #18 @memory/arena_alloc_view_sum.ci:14:28
+  return %t25
+}

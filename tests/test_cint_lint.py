@@ -19,6 +19,7 @@ class CintLint(unittest.TestCase):
         self.root = Path(self.tmp.name)
         for rel, text in {
             "rt/cint_rt.h": "#include <stdint.h>\nint64_t a(void);\n",
+            "rt/cint_rt_host.h": "\n",
             "rt/cint_rt.c": "/* a " + DBL + " in a comment is fine */\nint x = 0x1e5;\n",
             "rt/cint_rt_internal.h": "\n",
             "rt/cint_bridge.c": 'const char *s = "' + FLT + ' 1.5";\n',
@@ -26,8 +27,14 @@ class CintLint(unittest.TestCase):
             "rt/cint_cuda.c": "\n",
             "rt/cint_cuda_dispatch.c": "\n",
             "rt/cint_state.c": "\n",
+            "rt/cint_rec.c": "\n",
+            "rt/cint_state_internal.h": "\n",
             "rt/cint_mem.c": "\n",
             "rt/cint_mem.h": "\n",
+            "rt/cint_wide.c": "\n",
+            "rt/cint_wide.h": "\n",
+            "rt/cint_fixed.c": "\n",
+            "rt/cint_fixed.h": "\n",
             "seed/scan.c": "int v = 10ULL;\n",
             "harness/cint_harness.c": "char c = '.';\n",
             "cli/cint_main.c": "int main(void) { return 0; }\n",
@@ -143,6 +150,71 @@ class CintLint(unittest.TestCase):
         self.assertIn("PASS size cint_rt library (cint_rt.c, cint_rt_internal.h): 3 lines", out)
         self.assertRefused("rt/cint_mem.c", "\n" * 801, "FAIL size cint_mem")
 
+    def test_wide_runtime_has_its_own_row(self):
+        # Box 15 default BX15-15: rt/cint_wide.c and rt/cint_wide.h, outside the cint_rt rows.
+        self.write("rt/cint_wide.c", "\n" * 1500)
+        self.write("rt/cint_wide.h", "\n" * 500)
+        code, out = self.run_lint()
+        self.assertEqual(code, 0, out)
+        self.assertIn("PASS size cint_wide (rt/cint_wide.c, rt/cint_wide.h): 2,000 lines (target 2,000, "
+                      "ceiling 3,000)", out)
+        self.assertRefused("rt/cint_wide.c", "\n" * 2501, "FAIL size cint_wide")
+
+    def test_fixed_runtime_has_its_own_row(self):
+        # Box 15 default BX15-15: rt/cint_fixed.h with its record writer rt/cint_fixed.c.
+        self.write("rt/cint_fixed.c", "\n" * 200)
+        self.write("rt/cint_fixed.h", "\n" * 400)
+        code, out = self.run_lint()
+        self.assertEqual(code, 0, out)
+        self.assertIn("PASS size cint_fixed (rt/cint_fixed.c, rt/cint_fixed.h): 600 lines (target 600, "
+                      "ceiling 1,000)", out)
+        self.assertRefused("rt/cint_fixed.h", "\n" * 801, "FAIL size cint_fixed")
+
+    def test_host_header_has_its_own_row(self):
+        # Decision 2026-10-08 on OQ-229: rt/cint_rt_host.h, outside the cint_rt.h row.
+        self.write("rt/cint_rt_host.h", "\n" * 450)
+        code, out = self.run_lint()
+        self.assertEqual(code, 0, out)
+        self.assertIn("PASS size cint_rt_host.h: 450 lines (target 450, ceiling 600)", out)
+        self.assertIn("PASS size cint_rt.h: 2 lines", out)
+        self.write("rt/cint_rt_host.h", "\n" * 451)
+        code, out = self.run_lint()
+        self.assertEqual(code, 0, out)
+        self.assertIn("WARN size cint_rt_host.h", out)
+        self.assertRefused("rt/cint_rt_host.h", "\n" * 601, "FAIL size cint_rt_host.h")
+
+    def test_interpreter_and_state_rows(self):
+        # cint-interp 8,000 and 10,000 (OQ-279); rt/cint_state.c 2,500 and 4,000 (OQ-218, OQ-235).
+        self.write("interp/sir_read.c", "\n" * 7000)
+        self.write("interp/sir.h", "\n" * 1000)
+        self.write("rt/cint_state.c", "\n" * 2500)
+        code, out = self.run_lint()
+        self.assertEqual(code, 0, out)
+        self.assertIn("PASS size cint-interp (interp/*.c, interp/*.h): 8,000 lines (target 8,000, ceiling 10,000)", out)
+        self.assertIn("PASS size cint_state.c: 2,500 lines (target 2,500, ceiling 4,000)", out)
+        self.write("interp/sir_exec.c", "\n")
+        self.write("rt/cint_state.c", "\n" * 3500)
+        code, out = self.run_lint()
+        self.assertEqual(code, 0, out)
+        self.assertIn("WARN size cint-interp", out)
+        self.assertIn("WARN size cint_state.c", out)
+        self.assertRefused("rt/cint_state.c", "\n" * 4001, "FAIL size cint_state.c")
+        self.write("rt/cint_state.c", "\n")
+        self.assertRefused("interp/sir_exec.c", "\n" * 2001, "FAIL size cint-interp")
+
+    def test_recording_row(self):
+        # Decision 2026-10-08 on OQ-240: rt/cint_rec.c with rt/cint_state_internal.h, 1,500 and 2,000.
+        self.write("rt/cint_rec.c", "\n" * 1400)
+        self.write("rt/cint_state_internal.h", "\n" * 100)
+        code, out = self.run_lint()
+        self.assertEqual(code, 0, out)
+        self.assertIn("PASS size cint_rec.c: 1,500 lines (target 1,500, ceiling 2,000)", out)
+        self.write("rt/cint_state_internal.h", "\n" * 101)
+        code, out = self.run_lint()
+        self.assertEqual(code, 0, out)
+        self.assertIn("WARN size cint_rec.c", out)
+        self.assertRefused("rt/cint_rec.c", "\n" * 1900, "FAIL size cint_rec.c")
+
     def test_missing_cli_component_fails(self):
         (self.root / "cli/cint_main.c").unlink()
         code, out = self.run_lint()
@@ -162,19 +234,20 @@ class CintLint(unittest.TestCase):
                 self.write(rel, "line\n")
 
     def test_workbench_row_counts_top_level_c_and_h(self):
-        # Box 14 ruling BX14-03 A: target 8,000, ceiling 12,000; workbench/tests/ is not counted.
+        # Decision 2026-10-08 on OQ-231 (BX14-S1): target 12,000, ceiling 15,000; workbench/tests/ is
+        # not counted.
         self.write("workbench/wb.h", "\n" * 1000)
-        self.write("workbench/wb_fault.c", "\n" * 7000)
+        self.write("workbench/wb_fault.c", "\n" * 11000)
         self.write("workbench/tests/test_wb.c", "\n" * 9000)
         code, out = self.run_lint()
         self.assertEqual(code, 0, out)
-        self.assertIn("PASS size cint workbench (workbench/*.c, workbench/*.h): 8,000 lines "
-                      "(target 8,000, ceiling 12,000)", out)
+        self.assertIn("PASS size cint workbench (workbench/*.c, workbench/*.h): 12,000 lines "
+                      "(target 12,000, ceiling 15,000)", out)
         self.write("workbench/wb_cmd.c", "\n")
         code, out = self.run_lint()
         self.assertEqual(code, 0, out)
         self.assertIn("WARN size cint workbench", out)
-        self.assertRefused("workbench/wb_cmd.c", "\n" * 4001, "FAIL size cint workbench")
+        self.assertRefused("workbench/wb_cmd.c", "\n" * 3001, "FAIL size cint workbench")
 
     def test_python_float_forms(self):
         cases = {

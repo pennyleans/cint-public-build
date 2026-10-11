@@ -4,13 +4,16 @@
 of SPEC-04 9.3 rule 11 (C1037), including the combinations that SPEC-04
 LS-213 names as not defined (OQ-131, also C1037), and `render`
 produces the exact text. Integers are rendered by mathematical value; the
-storage bits only with `!bits`.
+storage bits only with `!bits`. A fixed-point value prints as the shortest
+exact decimal, or rounded half to even to `.precision` digits (LS-207,
+LS-208); `!raw` and `!bits` print its storage integer with the integer rules.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 from .faults import Refused
+from .fixed import exact_text, is_q_type, q_type, rounded_text
 from .types import BOOL, int_type, is_int_type
 
 # The bytes of one print statement that B1's runtime stages; past them it faults
@@ -104,6 +107,9 @@ def _undefined(what):
 
 def check(spec: Spec | None, ty, conv: str | None, lanes: str | None):
     """Static checks for a hole of type `ty`."""
+    if is_q_type(ty):
+        _check_fixed(spec, ty, conv)
+        return
     if conv in ("raw", "ratio"):
         raise SpecError("C1037", "`!%s` applies to fixed point only" % conv)
     if ty == BOOL:
@@ -147,6 +153,37 @@ def check(spec: Spec | None, ty, conv: str | None, lanes: str | None):
         _undefined("zero padding combined with a group")
     if conv == "bits" and k in "tc":
         _undefined("`!bits` with `t` or `c`")
+    _check_layout(spec)
+
+
+def _check_fixed(spec: Spec | None, ty, conv: str | None):
+    """A hole of a fixed-point type (SPEC-04 LS-201, LS-207, LS-208, LS-213). `!raw` and
+    `!bits` print the storage integer, so the integer rules apply to their spec."""
+    storage = q_type(ty).storage.name
+    if conv == "raw":
+        check(spec, storage, None, None)
+        return
+    if conv == "bits":
+        check(spec, storage, "bits", None)
+        return
+    if conv == "ratio":
+        raise Refused("`!ratio` is Proposed (SPEC-04 LS-201)")
+    if conv == "lanes":
+        raise SpecError("C1037", "`!lanes(T)` applies to integers, not to fixed point (SPEC-04 LS-201)")
+    if spec is None:
+        return
+    if spec.precision is not None and spec.scale is not None:
+        raise SpecError("C1036", "precision is not permitted with a scale")
+    if spec.kind == "d":
+        raise Refused("the kind `d` on a fixed-point value: no clause says whether it applies (SPEC-04 LS-202)")
+    if spec.kind is not None:
+        raise SpecError("C1037", "`%s` does not apply to fixed point" % spec.kind)
+    if spec.scale is not None:
+        raise SpecError("C1037", "a scale applies to an integer, not to fixed point (SPEC-04 LS-206)")
+    if spec.alt:
+        _undefined("`#` with decimal")
+    if spec.group:
+        raise Refused("a group on a fixed-point value: no clause says how its digits group (SPEC-04 LS-202)")
     _check_layout(spec)
 
 
@@ -211,6 +248,8 @@ def render(value, ty, conv: str | None, lanes: str | None, spec: Spec | None, us
     """The text of `value`; `used` is the bytes of the print statement before it."""
     if ty == BOOL:
         return _pad("true" if value else "false", spec, used)
+    if is_q_type(ty):
+        return _render_fixed(value, q_type(ty), conv, spec, used)
     t = int_type(ty)
     if conv == "lanes":
         lt = int_type(lanes)
@@ -258,3 +297,25 @@ def render(value, ty, conv: str | None, lanes: str | None, spec: Spec | None, us
             digits = "0" * (s.width - body) + digits
         return sign + prefix + digits
     return _pad(sign + prefix + digits, spec, used)
+
+
+def _render_fixed(raw: int, q, conv: str | None, spec: Spec | None, used: int) -> str:
+    """A fixed-point value of raw storage `raw` (SPEC-04 LS-207, LS-208; LS-201 `!raw`, `!bits`)."""
+    if conv in ("raw", "bits"):
+        return render(raw, q.storage.name, None if conv == "raw" else "bits", None, spec, used)
+    s = spec or Spec()
+    if s.precision is None:
+        text = exact_text(raw, q.f)
+    else:
+        staged(used + s.precision)
+        text = rounded_text(raw, q.f, s.precision)
+    neg = text.startswith("-")
+    digits = text[1:] if neg else text
+    sign = "-" if neg else ("+" if s.sign == "+" else " " if s.sign == " " else "")
+    if s.zero and s.width is not None:
+        body = len(sign) + len(digits)
+        if body < s.width:
+            staged(used + s.width)
+            digits = "0" * (s.width - body) + digits
+        return sign + digits
+    return _pad(sign + digits, spec, used)

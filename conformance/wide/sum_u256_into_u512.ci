@@ -1,0 +1,15 @@
+// case: wide/sum_u256_into_u512
+// clause: SPEC-01 IM-6, IM-77, IM-81, IM-84; SPEC-04 LS-145 (sum into U512, sum_wrap and max over U256 elements)
+// subset: cint-core-1 (unsigned wide integers, print statements, built-in sum, sum_wrap and max)
+// entry: run; args: none
+// spec outcome: value I64 -1, its low 64 bits (as%); output `M M` and a line feed, then the U512 value 2^257 - 1 and a line feed, M = 2^256 - 1 (sum_wrap: 2^257 - 1 modulo 2^256; max); fuel 4 (entry, three reduction charges). Box 15, unit 1
+
+export I64 run() {
+    U256[3] a = [U256.max, U256.max, 1];
+    U256 w = sum_wrap(a);
+    U256 m = max(a);
+    "{w} {m}\n";
+    U512 observed = sum(U512, a);
+    "{observed}\n";
+    return observed as% I64;
+}

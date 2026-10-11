@@ -1,0 +1,14 @@
+module view.copy_shape_fixed_initializer
+sites view/copy_shape_fixed_initializer.ci 1:8:16:copy.shape 2:10:12:fuel.charge 3:12:5:call.enter
+func @view.copy_shape_fixed_initializer.move(%src: I64[_]) {
+  local $dst.0: I64[2]
+  copy.shape %src, 0, 2                          #1 @view/copy_shape_fixed_initializer.ci:8:16
+  array.copy $dst.0, %src
+}
+export func @view.copy_shape_fixed_initializer.run() -> I64 {
+  fuel.charge 1                                  #2 @view/copy_shape_fixed_initializer.ci:10:12
+  local $src.0: I64[3]
+  call @view.copy_shape_fixed_initializer.move($src.0) #3 @view/copy_shape_fixed_initializer.ci:12:5
+  %t0 = const I64 0
+  return %t0
+}

@@ -1,0 +1,5 @@
+export struct Grid { I64[2, 3] cells; I64 tick; }
+export struct Deep { Grid g; U8[2, 2, 2] bytes; }
+
+export I64 corner(in Grid g) { return g.cells[1, 2]; }
+export void bump(inout Grid g, I64 i, I64 j) { g.cells[i, j] += 1; }

@@ -1,0 +1,19 @@
+// case: fixed/kernel_scale_reduce
+// clause: SPEC-04 LS-246; SPEC-02 R-4, K-9 (fixed-point kernel parameters, a fixed-point product per work-item, and a fixed-point sum reduction)
+// subset: cint-core-1 (fixed point, kernels)
+// entry: run; args: none
+// spec outcome: value I64 212992 (3.25); prints `[3.0, -0.5, 4.0] 3.25`; fuel 4 (the entry and the dispatch charge of 3). Box 15, unit 1
+
+kernel twice[n](in Q16.16[n] a, out Q16.16[n] b, out Q16.16 s) over [i: n] {
+    b[i] = a[i] * 2.0;
+    reduce s = sum(a[i]);
+}
+
+export I64 run() {
+    Q16.16[3] a = [1.5, -0.25, 2.0];
+    Q16.16[3] b;
+    Q16.16 s = 0.0;
+    twice(a, b, s);
+    "{b} {s}\n";
+    return s.raw as I64;
+}

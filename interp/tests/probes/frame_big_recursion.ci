@@ -1,0 +1,16 @@
+// case: probes/frame_big_recursion
+// clause: box 13 unit 7 probe: a charged local array in a recursive function (frame.charge, frame.mark, frame.release)
+// entry: run; args: none
+
+I64 deep(I64 n) {
+    I64[600] big;
+    big[n] = n;
+    if (n == 0) {
+        return 0;
+    }
+    return big[n] + deep(n - 1);
+}
+
+export I64 run() {
+    return deep(20);
+}

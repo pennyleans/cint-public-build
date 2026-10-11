@@ -61,6 +61,15 @@ export I64 loops(I64 n) {
     return total;
 }
 
+// A loop that makes a call keeps its fuel count in the context (back_c.ci fuel_local).
+export I64 loop_calls(I64 n) {
+    I64 total = 0;
+    for (I64 i = 0; i < n; i++) {
+        total += square(i);
+    }
+    return total;
+}
+
 export I64 to_max(I64 lo) {
     I64 steps = 0;
     for i in lo..=I64.max {

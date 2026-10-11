@@ -72,11 +72,12 @@ import sys
 import threading
 from dataclasses import dataclass, field
 
-from . import arith, fmt, views
+from . import arith, fixed, fmt, views
+from . import check as _check
 from . import parser as P
 from . import reduce as red
 from .check import (ALLOC_ERROR, ARITH_ERROR, ARITH_VALUES, BIN_OPS, SHIFTS, Z, ArrayType, ErrorSet, ErrorUnion,
-                    HandleType, MemType, StructType, check_module, elem_ident, is_aggregate, shape_key)
+                    HandleType, MemType, StructType, check_module, elem_ident, is_aggregate, is_q, shape_key)
 from .faults import (UNASSIGNED, Address, CompileError, Descriptor, Diagnostic, Fault, FaultRecord,
                      FaultSignal, Position, Refused)
 from .lexer import decode_source
@@ -92,6 +93,20 @@ REASONS = {"null": 1, "retired": 2, "generation": 3, "extent": 4, "vacant": 5, "
 FUEL_BLOCK = 64              # SPEC-01 IM-139: a reduction over n elements charges ceil(n / 64)
 # The arithmetic operations that count as steps (SPEC-01 IM-113); `& | ^ ~` do not.
 COUNTED = frozenset({"add", "sub", "mul", "div", "rem", "shl", "shr"})
+# The scalar built-ins on fixed point and the operation and form of each (SPEC-01 IM-60 to IM-67).
+Q_CALLS = {"abs": ("abs", "checked"), "min": ("min", "checked"), "max": ("max", "checked"),
+           "mul": ("mul", "checked"), "div": ("div", "checked"), "mul_wrap": ("mul", "wrap"),
+           "mul_sat": ("mul", "sat"), "sqrt": ("sqrt", "checked")}
+
+
+def num_op(name, form, t, *operands, mode=None, target=None):
+    """An operation on type `t`: fixed point by `fixed.op`, rounding `*` and `/` half_even
+    (SPEC-01 IM-62, IM-66); integers by `arith.op`."""
+    if is_q(t):
+        if name in ("mul", "div") and mode is None:
+            mode = "half_even"
+        return fixed.op(name, form, t, *operands, mode=mode, target=target)
+    return arith.op(name, form, t, *operands, mode=mode, target=target)
 
 
 @dataclass
@@ -265,12 +280,24 @@ def _overlaps(p, q) -> bool:
 
 def _inside(outer, inner) -> bool:
     if isinstance(outer, ArrayVal):
+        if isinstance(outer.elem, str):
+            return False        # a scalar element holds no storage
         parts = [x for x in outer.values() if isinstance(x, StructVal)]
     elif isinstance(outer, StructVal):
         parts = [x for x in outer.fields.values() if isinstance(x, (StructVal, ArrayVal))]
     else:
         return False
     return any(_overlaps(x, inner) for x in parts)
+
+
+def _range(t):
+    """The integer range of a scalar type's values: a fixed-point type's is its storage's."""
+    return fixed.q_type(t).storage if is_q(t) else int_type(t)
+
+
+def _ident(t) -> str:
+    """A type's spelling in operation identifiers (SPEC-01 IM-130): Q16.16 is q16_16."""
+    return fixed.q_type(t).ident if is_q(t) else t.lower()
 
 
 def zero_value(t, shape=None):
@@ -470,6 +497,12 @@ class Machine:
         return _EVAL[type(e)](self, e)
 
     def _lit(self, e):
+        if is_q(e.ty):
+            # The raw value (SPEC-04 LS-37); in constant evaluation the checks C2006 and C2003
+            # happen when the literal is evaluated, as for an integer literal.
+            if self.const_mode:
+                return _check.literal_raw(e)
+            return fixed.literal_raw(e.value, e.ty, e.round_mode)
         if self.const_mode and e.ty != Z:
             # The range check of a literal happens when the literal is evaluated, in
             # evaluation order, so `const I8 X = 100 + 100 - 150;` meets the overflow at
@@ -484,6 +517,10 @@ class Machine:
         return e.value
 
     def _typeprop(self, e):
+        if is_q(e.type_name):
+            # SPEC-04 LS-51: `epsilon` is raw 1; `min` and `max` are the storage bounds.
+            t = fixed.q_type(e.type_name).storage
+            return 1 if e.prop == "epsilon" else t.min if e.prop == "min" else t.max
         t = int_type(e.type_name)
         return t.min if e.prop == "min" else t.max
 
@@ -504,7 +541,7 @@ class Machine:
             return not v
         t = e.ty
         if e.op == "-":
-            r = self.check(arith.op("neg", "checked", t, Value(t, v)), e.pos)
+            r = self.check(num_op("neg", "checked", t, Value(t, v)), e.pos)
         elif e.op == "-%":
             r = self.check(arith.op("sub", "wrap", t, Value(t, 0), Value(t, v)), e.pos)
         else:
@@ -518,7 +555,7 @@ class Machine:
         name, form = BIN_OPS[e.op]
         t = e.ty
         rt = e.right.ty if e.op in SHIFTS else t
-        r = self.check(arith.op(name, form, t, Value(t, a), Value(rt, b)), e.pos)
+        r = self.check(num_op(name, form, t, Value(t, a), Value(rt, b)), e.pos)
         if name in COUNTED:
             self.step()
         return r
@@ -544,20 +581,27 @@ class Machine:
         target = e.ty
         if e.src_type == Z:
             v = e.operand.value
-            t = int_type(target)
+            # To fixed point the value is the raw n * 2^f, exact (SPEC-01 IM-68), and a fault
+            # records it as `exact` with the bound as a fixed-point `limit` (IM-106, OQ-147).
+            x = v << fixed.q_type(target).f if is_q(target) else v
+            t = fixed.q_type(target).storage if is_q(target) else int_type(target)
             if form == "wrap":
-                r = t.wrap(v)
-            elif t.contains(v):
-                r = v
+                r = t.wrap(x)
+            elif t.contains(x):
+                r = x
             else:
                 # A conversion from a literal's value in Z keeps the operation `unassigned` in
                 # cint-core-1 (SPEC-01 IM-184; decision 2026-10-03, D-11 on OQ-124).
-                self.fault(Fault("E_NARROW", UNASSIGNED, (Value("Z", v),), v,
-                                 Value(target, t.max if v > t.max else t.min)), e.pos)
+                self.fault(Fault("E_NARROW", UNASSIGNED, (Value("Z", v),), x,
+                                 Value(target, t.max if x > t.max else t.min)), e.pos)
             self.step()
             return r
         v = self.eval(e.operand)
-        r = self.check(arith.op("as", form, e.src_type, Value(e.src_type, v), target=target), e.pos)
+        src = e.src_type
+        if is_q(src) or is_q(target):
+            r = self.check(fixed.convert(form, src, target, Value(src, v), mode=e.mode), e.pos)
+        else:
+            r = self.check(arith.op("as", form, src, Value(src, v), target=target), e.pos)
         self.step()
         return r
 
@@ -567,10 +611,18 @@ class Machine:
         target = e.target_type
         if e.src_type == Z:
             v = e.operand.value
-            r = v if int_type(target).contains(v) else None
+            if is_q(target):
+                v <<= fixed.q_type(target).f
+                r = v if fixed.q_type(target).storage.contains(v) else None
+            else:
+                r = v if int_type(target).contains(v) else None
         else:
             v = self.eval(e.operand)
-            r = arith.op("as", "checked", e.src_type, Value(e.src_type, v), target=target)
+            src = e.src_type
+            if is_q(src) or is_q(target):
+                r = fixed.convert("checked", src, target, Value(src, v), mode=e.mode)
+            else:
+                r = arith.op("as", "checked", src, Value(src, v), target=target)
             r = None if isinstance(r, Fault) else r.value
         self.step()
         return NARROW if r is None else r
@@ -607,6 +659,8 @@ class Machine:
             if sym.kind == "const":
                 return sym.value.value
             return self.globals[sym.key]
+        if getattr(e, "raw", False):
+            return self.eval(e.obj)               # `x.raw`: the storage integer (SPEC-01 IM-57)
         return self.eval(e.obj).fields[e.field]
 
     def subscript(self, e):
@@ -686,16 +740,27 @@ class Machine:
             return self.eval(e.arg).shape[0]
         if kind == "builtin":
             t = e.operand_type
-            vals = [Value(t, self.eval(v)) for v in e.values]
-            if e.count is not None:
-                vals.append(Value(e.count.ty, self.eval(e.count)))
-            try:
-                r = arith.op(e.callee, "checked", t, *vals, mode=e.mode, target=e.target)
-            except arith.OpenCase as x:
-                raise Refused(str(x), e.pos)
+            if e.callee in ("qmul", "mul_int"):
+                # SPEC-01 IM-63, IM-64: operands of their own types.
+                vals = [Value(vt, self.eval(v)) for vt, v in zip(e.operand_types, e.values)]
+                r = fixed.op(e.callee, "checked", t, *vals, mode=e.mode, target=e.target)
+            elif is_q(t):
+                vals = [Value(t, self.eval(v)) for v in e.values]
+                name, form = Q_CALLS[e.callee]
+                r = fixed.op(name, form, t, *vals, mode=e.mode)
+            else:
+                vals = [Value(t, self.eval(v)) for v in e.values]
+                if e.count is not None:
+                    vals.append(Value(e.count.ty, self.eval(e.count)))
+                try:
+                    r = arith.op(e.callee, "checked", t, *vals, mode=e.mode, target=e.target)
+                except arith.OpenCase as x:
+                    raise Refused(str(x), e.pos)
             r = self.check(r, e.pos)
             self.step()
             return r
+        if kind == "rawctor":
+            return self.eval(e.values[0])         # `Q.raw(n)`: exact, never faults (IM-57)
         if kind == "result":
             return self.result_builtin(e)
         if self.const_mode:
@@ -977,14 +1042,25 @@ class Machine:
                 self.check_lease(v, e.pos)
         if e.callee == "dot":
             a, b = vals
-            operation = "dot.checked.%s.%s" % (e.elem.lower(), e.target.lower())
+            q = is_q(e.elem)
+            if q:
+                qa, qr = fixed.q_type(e.elem), fixed.q_type(e.target)
+                operation = arith.op_id("dot", "checked", [qa.ident, qr.ident], e.mode)
+            else:
+                operation = "dot.checked.%s.%s" % (e.elem.lower(), e.target.lower())
             n, nb = a.shape[0], b.shape[0]
             if n != nb:
                 self.fault(Fault("E_SHAPE", operation, (Value("I64", 0), Value("I64", nb)), None, Value("I64", n)),
                            e.pos)
             self.charge_elements(n, e.pos)
             total = sum(x * y for x, y in zip(a.values(), b.values()))
-            t = int_type(e.target)
+            if q:
+                # The exact sum at scale 2^(2f), rounded once to R's grid (SPEC-01 IM-87, BX15-04).
+                shift = 2 * qa.f - qr.f
+                total = arith.round_div(total, 1 << shift, e.mode) if shift > 0 else total << -shift
+                t = qr.storage
+            else:
+                t = int_type(e.target)
             if not t.contains(total):
                 self.fault(Fault("E_OVERFLOW", operation, (Value("I64", n),), total,
                                  Value(e.target, t.max if total > t.max else t.min)), e.pos)
@@ -1100,16 +1176,16 @@ class Machine:
         results = {}
         for s in k.reductions:
             acc = d.acc[s.target]
-            t = int_type(s.rtype)
+            t = _range(s.rtype)
             if s.op == "sum":
                 if not t.contains(acc.value):
-                    self.fault(Fault("E_OVERFLOW", arith.op_id("sum", "checked", [s.elem, s.rtype]),
+                    self.fault(Fault("E_OVERFLOW", arith.op_id("sum", "checked", [_ident(s.elem), _ident(s.rtype)]),
                                      (Value("I64", acc.n),), acc.value,
                                      Value(s.rtype, t.max if acc.value > t.max else t.min)), s.call.pos)
             elif s.op == "sum_wrap":
                 acc.value = t.wrap(acc.value)
             elif s.op in ("min", "max") and acc.n == 0:
-                self.fault(Fault("E_SHAPE", arith.op_id(s.rname, "checked", [s.rtype]), (Value("I64", 0),)),
+                self.fault(Fault("E_SHAPE", arith.op_id(s.rname, "checked", [_ident(s.rtype)]), (Value("I64", 0),)),
                            s.call.pos)
             results[s.target] = acc.value
         self.stack.pop()
@@ -1131,17 +1207,17 @@ class Machine:
         acc = self.k.acc[s.target]
         op = s.op
         if op == "fold_checked":
-            t = int_type(s.rtype)
+            t = _range(s.rtype)
             v = acc.value + x
             if not t.contains(v):
-                self.fault(Fault("E_OVERFLOW", arith.op_id("fold_checked", s.fold_op, [s.rtype]),
+                self.fault(Fault("E_OVERFLOW", arith.op_id("fold_checked", s.fold_op, [_ident(s.rtype)]),
                                  (Value("I64", acc.n), Value(s.rtype, acc.value), Value(s.rtype, x)), v,
                                  Value(s.rtype, t.max if v > t.max else t.min)), s.call.pos)
             acc.value = v
         elif op in ("sum", "sum_wrap"):
             acc.value += x
         elif op == "sum_sat":
-            acc.value = int_type(s.rtype).sat(acc.value + x)
+            acc.value = _range(s.rtype).sat(acc.value + x)
         elif op == "count":
             acc.value += 1 if x else 0
         elif acc.value is None:
@@ -1283,7 +1359,7 @@ class Machine:
         name, form = BIN_OPS[s.binop]
         t = s.ty
         rt = s.value.ty if s.binop in SHIFTS else t
-        cell[key] = self.check(arith.op(name, form, t, Value(t, cur), Value(rt, v)), s.pos)
+        cell[key] = self.check(num_op(name, form, t, Value(t, cur), Value(rt, v)), s.pos)
         if name in COUNTED:
             self.step()
 
@@ -1476,6 +1552,27 @@ def const_eval(e) -> Value:
     return Value(e.ty, m.eval(e))
 
 
+def const_aggregate(e):
+    """The value of an array literal or struct constructor of constant items that
+    initializes a module-level variable, its items already folded (SPEC-04 LS-113;
+    decision on OQ-233). It is computed once; each run starts from a copy."""
+    if isinstance(e, P.ArrayLit):
+        items = []
+
+        def visit(lit):
+            for x in lit.items:
+                if isinstance(x, P.ArrayLit):
+                    visit(x)
+                else:
+                    items.append(const_aggregate(x))
+        visit(e)
+        return ArrayVal.owned(e.elem, e.extents, items)
+    if isinstance(e, P.Call) and e.kind == "struct":
+        values = {idx: const_aggregate(a) for idx, a in e.order}
+        return StructVal(e.struct, {n: values[i] for i, n in enumerate(e.struct.fields)})
+    return e.const.value
+
+
 # ---------------------------------------------------------------------------
 # Entries
 # ---------------------------------------------------------------------------
@@ -1512,7 +1609,7 @@ def _check_args(f, args):
         if t == BOOL:
             if not isinstance(a.value, bool):
                 raise Refused("argument `%s` must be true or false" % p.name)
-        elif not int_type(t).contains(a.value):
+        elif not _range(t).contains(a.value):
             raise Refused("argument `%s` is outside %s" % (p.name, t))
         out.append(a.value)
     return out
@@ -1532,7 +1629,7 @@ def _state(m, prog):
 def _run(prog, kind, target, args, fuel, depth) -> Outcome:
     m = Machine(fuel, depth)
     state = prog.state or [((prog.name, name), t, v) for name, t, v in prog.module_vars]
-    m.globals = {key: (zero_value(t) if v is None else v) for key, t, v in state}
+    m.globals = {key: (zero_value(t) if v is None else _copy(v)) for key, t, v in state}
     m.create_memories(prog.memories)
     prog.state = state
     value = None

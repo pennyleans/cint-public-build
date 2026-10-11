@@ -39,6 +39,7 @@ typedef struct buffer_slot {
     uint8_t typed;
     uint8_t storage;      /* STORAGE_* */
     uint8_t publish;      /* CINT_PUBLISH_*, for the staging of dispatch outputs (M-30a) */
+    uint8_t device;       /* placement: 0 host, 1 device(1), CUDA memory (M-28a) */
 } buffer_slot;
 
 /* A live export lease: its number (0: free) and its buffer's slot. */
@@ -52,7 +53,7 @@ typedef struct lease_slot {
 typedef struct scratch_block {
     struct scratch_block *prev;  /* the allocation made before it */
     size_t bytes;                /* the whole allocation, header included */
-    int64_t elements;
+    int64_t elements;            /* charged to the arena: 0 for a dispatch's staging (RT-OQ-34) */
     int64_t reserved;
 } scratch_block;
 _Static_assert(sizeof(scratch_block) == 32, "scratch_block");
@@ -75,9 +76,6 @@ struct cint_ctx {
     int64_t frame_charged;      /* elements charged by cint_mem_frame_charge (rt/cint_mem.c) */
     cint_output_fn output;
     void *output_user;
-    int64_t depth_limit;  /* D of the current (or last) entry */
-    int64_t depth;        /* active user-function frames, the entry included */
-    uint32_t stack_count;
     uint32_t refusal;           /* CINT_REFUSAL_* of the current or last entry */
     int64_t saved_fuel_limit;   /* the previous entry's fuel, restored on refusal */
     int64_t saved_fuel_used;
@@ -97,20 +95,30 @@ struct cint_ctx {
     size_t print_len;
     uint32_t print_open;
     cint_site print_site;
-    cint_site stack[CINT_RT_MAX_DEPTH];
+    cint_site stack[CINT_RT_MAX_DEPTH];  /* head.stack points here */
     cint_fault_record fault;
     void **state;  /* module state: 2 * module_count, the blocks, then their cint_state */
     void *device;  /* the device backend's state, or NULL (cint_rt_device) */
+    const void *device_record;  /* config.devices[0] with device_count 1, or NULL (A-16) */
+    cint_site bind_site;  /* of the last cint_rt_bind_views: check 4's site (cint_rt_dispatch_host) */
+    uint64_t bind_marks;  /* parameters a function's entry takes in device(1) memory (cint_cuda_bind_finish) */
     struct mem_state *mem;  /* arenas and pools (rt/cint_mem.c), made at first use */
     const cint_state_table *states;  /* every module's cint_state, for rt/cint_state.c */
     uint64_t entries, last_arena, last_pool;  /* entries begun; identifiers issued (M-3, M-13) */
     int64_t effects;                  /* print statements written: the effect-log position */
     volatile sig_atomic_t interrupt;  /* cint_ctx_interrupt (rt/cint_state.h) */
+    void (*boundary)(cint_ctx *ctx, int64_t number);  /* cint_rt_dispatch_end's: a recorder or replay */
+    void *boundary_user;                              /* at dispatch density (rt/cint_state.c), or NULL */
 };
 
 /* The busy flag of SPEC-03 A-11. */
 static inline bool cint_rt_busy_take(cint_ctx *ctx) { return CINT_RT_EXCHANGE(&ctx->busy, 1) == 0; }
 static inline void cint_rt_busy_give(cint_ctx *ctx) { (void)CINT_RT_EXCHANGE(&ctx->busy, 0); }
+/* A host function's start: CINT_REFUSED for no context or `bad` arguments, else the flag taken. */
+static inline cint_status cint_rt_host_take(cint_ctx *ctx, bool bad)
+{
+    return ctx == NULL || bad ? CINT_REFUSED : cint_rt_busy_take(ctx) ? CINT_OK : CINT_BUSY;
+}
 
 /* Hidden in a library build, as every declaration of cint_rt.h but its host
  * functions is (cint_rt.h, CINT_RT_LIBRARY). */
@@ -158,7 +166,7 @@ void cint_rt_record_range(cint_fault_record *rec, cint_rt_z128 exact, uint32_t t
  * is the release function cint_ctx_destroy calls on it. */
 void **cint_rt_device(cint_ctx *ctx);
 /* Lowercase type name for operation identifiers ("i64"), uppercase for
- * rendering ("I64"); NULL for a tag that is not a scalar integer tag. */
+ * rendering ("I64"), of I8 to U64, I128 to I1024 and U128 to U512; NULL for any other tag. */
 const char *cint_rt_type_ident(uint32_t tag);
 const char *cint_rt_type_name(uint32_t tag);
 /* The element size of a registry type (A-13), or -1 (cint_rt.c). */

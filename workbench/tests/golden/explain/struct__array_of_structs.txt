@@ -1,0 +1,94 @@
+module struct/array_of_structs.ci   revision ff345bc9f63ce70a4ceb1b7cb992d0e625ba5ae2ead936bf93c35267ee825f82
+program   1 module, 2 functions, 53 nodes
+compile fuel   per phase: k x input bytes + c, k = 21524, c = 19876 (rt/cint_bridge.h; SPEC-09 CINTC-09)
+  plan                         566 bytes in all modules   12202460 units
+  struct/array_of_structs.ci   566 bytes   12202460 units for each of compile, measure, and emit
+memory   K x source bytes + 1 MiB + 80 B x program declarations per module (SPEC-09 CINTC-02); K is measured by tools/cint_measure.py
+
+function total_length   struct/array_of_structs.sites:4   pure
+  signature  (in n: I64, view ts: Token[%n]) -> I32
+  fault sites (3): 3 possible, 0 statically excluded
+    total_length#1  struct/array_of_structs.ci:17:5   fuel.charge           E_FUEL possible
+    total_length#2  struct/array_of_structs.ci:18:19  index.checked.struct  E_BOUNDS possible
+    total_length#3  struct/array_of_structs.ci:18:15  add.checked.i32       E_OVERFLOW possible
+  hint       not analyzed: excluding a possible site needs range analysis, which no component performs yet
+  fuel       fuel-v1 charge points (SPEC-01 IM-139, SPEC-09 SIR-07)
+    total_length#1  fuel.charge 1   each iteration of loop L6
+  lowering
+    cpu-sir-interp    supported   the workbench evaluator runs this text (SPEC-09 BACK-01a)
+    cpu-c17 (ref-c)   supported   cintc emits C17 from the same SIR (SPEC-09 BACK-03)
+  sir
+func @struct.array_of_structs.total_length(%n: I64, %ts: Token[%n]) -> I32 {
+  %t0 = const I32 0
+  local $s.0: I32
+  store.local $s.0, %t0
+  %t1 = const I64 0
+  local $i.1: I64
+  store.local $i.1, %t1
+  loop L6 {
+    %t2 = load.local $i.1
+    %t3 = cmp.lt.i64 %t2, %n
+    while %t3
+    fuel.charge 1                                #1 @struct/array_of_structs.ci:17:5
+    %t4 = load.local $s.0
+    %t5 = load.local $i.1
+    index.checked.struct %ts, %t5                #2 @struct/array_of_structs.ci:18:19
+    %t6 = element.load %ts, %t5, length
+    %t7 = add.checked.i32 %t4, %t6               #3 @struct/array_of_structs.ci:18:15
+    store.local $s.0, %t7
+    next
+    %t8 = load.local $i.1
+    %t9 = const I64 1
+    %t10 = add.wrap.i64 %t8, %t9
+    store.local $i.1, %t10
+  }
+  %t11 = load.local $s.0
+  return %t11
+}
+
+function run   struct/array_of_structs.sites:31   pure
+  signature  () -> I32
+  fault sites (6): 6 possible, 0 statically excluded
+    run#4  struct/array_of_structs.ci:23:12  fuel.charge           E_FUEL possible
+    run#5  struct/array_of_structs.ci:25:5   fuel.charge           E_FUEL possible
+    run#6  struct/array_of_structs.ci:26:11  index.checked.struct  E_BOUNDS possible
+    run#7  struct/array_of_structs.ci:26:27  add.checked.i64       E_OVERFLOW possible
+    run#8  struct/array_of_structs.ci:26:32  as.checked.i64.i32    E_NARROW possible
+    run#9  struct/array_of_structs.ci:28:12  call.enter            E_FUEL E_DEPTH possible
+  hint       not analyzed: excluding a possible site needs range analysis, which no component performs yet
+  fuel       fuel-v1 charge points (SPEC-01 IM-139, SPEC-09 SIR-07)
+    run#4  fuel.charge 1   at the start of the body
+    run#5  fuel.charge 1   each iteration of loop L8
+    run#9  call.enter      1 per call of struct.array_of_structs.total_length
+  lowering
+    cpu-sir-interp    supported   the workbench evaluator runs this text (SPEC-09 BACK-01a)
+    cpu-c17 (ref-c)   supported   cintc emits C17 from the same SIR (SPEC-09 BACK-03)
+  sir
+export func @struct.array_of_structs.run() -> I32 {
+  fuel.charge 1                                  #4 @struct/array_of_structs.ci:23:12
+  local $ts.0: Token[4]
+  %t0 = const I64 0
+  %t1 = const I64 4
+  local $i.1: I64
+  store.local $i.1, %t0
+  loop L8 {
+    %t2 = load.local $i.1
+    %t3 = cmp.lt.i64 %t2, %t1
+    while %t3
+    fuel.charge 1                                #5 @struct/array_of_structs.ci:25:5
+    %t4 = load.local $i.1
+    index.checked.struct $ts.0, %t4              #6 @struct/array_of_structs.ci:26:11
+    %t5 = load.local $i.1
+    %t6 = const I64 1
+    %t7 = add.checked.i64 %t5, %t6               #7 @struct/array_of_structs.ci:26:27
+    %t8 = as.checked.i64.i32 %t7                 #8 @struct/array_of_structs.ci:26:32
+    element.store $ts.0, %t4, length, %t8
+    next
+    %t9 = load.local $i.1
+    %t10 = const I64 1
+    %t11 = add.wrap.i64 %t9, %t10
+    store.local $i.1, %t11
+  }
+  %t12 = call @struct.array_of_structs.total_length(extent $ts.0, $ts.0) #9 @struct/array_of_structs.ci:28:12
+  return %t12
+}

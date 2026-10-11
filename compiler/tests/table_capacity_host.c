@@ -11,20 +11,22 @@
 typedef cint_view V;
 extern const cint_module_info cm_26_tests_x2Ftable_x5Fcapacity;
 cint_status cx_26_tests_x2Ftable_x5Fcapacity_3_run(cint_ctx *, int64_t, V, V, int64_t, uint8_t, V, V, V, V, V,
-                                                   V, V, V, V, V, V, V, V, V, V, V, V, V, int64_t *);
+                                                   V, V, V, V, V, V, V, V, V, V, V, V, V, V, int64_t *);
 cint_status cx_26_tests_x2Ftable_x5Fcapacity_5_build(cint_ctx *, int64_t, V, V, V, V, V, V, V, V, V, V, V, V,
-                                                     V, V, V, V, V, V, V, int64_t *);
+                                                     V, V, V, V, V, V, V, V, int64_t *);
 
 enum { T_SRC, T_PATH, T_TEXT, T_TOKS, T_NODES, T_FRAMES, T_DIAG, T_SEM, T_SYMS, T_NAMES, T_WORK, T_LITS,
        T_FAULTS, T_DECLS, T_SIR, T_FUNCS, T_SLOTS, T_LFRAMES, T_LSTATE, T_STATS, T_PM, T_PBYTES,
-       TABLES };
+       T_WIDE, TABLES };
 
 /* Element bytes, type tag and record index (into ids) of each table; -1 for no record. The
  * parser's, checker's and lowering's frames (T_FRAMES, T_WORK, T_LFRAMES) are all Frame
- * rows, the frame region's record (KR-03); a build passes T_WORK as the region. */
+ * rows, the frame region's record (KR-03); a build passes T_WORK as the region. T_WIDE is
+ * the wide value stack, row 5 (box 15 unit 4b). */
 static const int64_t elem[TABLES] = {1, 1, 1, 32, 48, 48, 64, 56, 80, 40, 48, 1, 1, 64, 48, 48, 16, 48, 160, 8,
-                                       80, 1};
-static const int record[TABLES] = {-1, -1, -1, 0, 1, 2, 3, 4, 5, 6, 2, -1, -1, 7, 8, 9, 10, 2, 11, -1, 12, -1};
+                                       80, 1, 128};
+static const int record[TABLES] = {-1, -1, -1, 0, 1, 2, 3, 4, 5, 6, 2, -1, -1, 7, 8, 9, 10, 2, 11, -1, 12, -1,
+                                   13};
 
 typedef struct table {
     uint8_t *base;
@@ -38,7 +40,7 @@ typedef struct build {
     cint_status status;
 } build;
 
-static uint32_t ids[13];
+static uint32_t ids[14];
 
 static V view_of(int k, const table *t)
 {
@@ -64,7 +66,7 @@ static void extents(int64_t n, int64_t *count)
     const int64_t region = nn + 16 > 512 + nt / 32 ? nn + 16 : 512 + nt / 32;
     const int64_t c[TABLES] = {n, 7, 2 * n + 256, nt, nn, 512 + nt / 32, 101, nn, ns, 2 * ns + 4096 + 128,
                                region, n + 64, 237200, 64, 4 * nt + 16, nt / 4 + 2, ns + 64, nn, 1, 9,
-                               2, 1024 + 144};
+                               2, 1024 + 144, 513};
     memcpy(count, c, sizeof c);
 }
 
@@ -107,14 +109,14 @@ static int run(cint_ctx *ctx, build *b, const char *src, int64_t module, int is_
     if (whole) {
         b->status = cx_26_tests_x2Ftable_x5Fcapacity_5_build(
             ctx, CINT_FUEL_UNBOUNDED, v[T_SRC], v[T_PATH], v[T_PM], v[T_PBYTES], v[T_TEXT], v[T_TOKS], v[T_NODES],
-            v[T_SIR], v[T_FUNCS], v[T_SLOTS], v[T_LSTATE], v[T_SEM], v[T_SYMS], v[T_NAMES], v[T_WORK], v[T_LITS],
-            v[T_DECLS], v[T_DIAG], v[T_FAULTS], &b->result);
+            v[T_WIDE], v[T_SIR], v[T_FUNCS], v[T_SLOTS], v[T_LSTATE], v[T_SEM], v[T_SYMS], v[T_NAMES], v[T_WORK],
+            v[T_LITS], v[T_DECLS], v[T_DIAG], v[T_FAULTS], &b->result);
         return b->status == CINT_OK;
     }
     b->status = cx_26_tests_x2Ftable_x5Fcapacity_3_run(
         ctx, CINT_FUEL_UNBOUNDED, v[T_SRC], v[T_PATH], module, (uint8_t)is_root, v[T_TEXT], v[T_TOKS], v[T_NODES],
         v[T_FRAMES], v[T_DIAG], v[T_SEM], v[T_SYMS], v[T_NAMES], v[T_WORK], v[T_LITS], v[T_FAULTS], v[T_DECLS],
-        v[T_SIR], v[T_FUNCS], v[T_SLOTS], v[T_LFRAMES], v[T_LSTATE], v[T_STATS], &b->result);
+        v[T_SIR], v[T_FUNCS], v[T_SLOTS], v[T_LFRAMES], v[T_LSTATE], v[T_WIDE], v[T_STATS], &b->result);
     return b->status == CINT_OK;
 }
 
@@ -253,6 +255,8 @@ static const char import_src[] =
 static const char lib_nest_src[] =
     "export struct Q { I64 v; }\nexport struct P { Q q; I64 w; }\nexport P mk() { return P(Q(1), 2); }\n";
 static const char nest_call_src[] = "import lib;\nexport I64 f() {\n    lib.P p = lib.mk();\n    return p.w;\n}\n";
+static const char wide_src[] = "const I256 a = 1 + (2 + (3 + 4));\n";
+static const char wide_lit_src[] = "const I256 a = 300 + 1;\n";
 static const char test_src[] = "test \"t\" {\n    assert(1 + 1 == 2);\n}\nexport I64 run() {\n    return 2;\n}\n";
 
 typedef struct family {
@@ -297,6 +301,18 @@ static const int64_t names_extent[] = {0, 363};
 static const expect literal_want[] = {
     {3, 9001, 1, 15, 27, 0}, {3, 9001, 1, 15, 27, 1}, {3, 9001, 2, 15, 27, 2}, {3, 9001, 2, 15, 27, 3},
     {3, 9001, 2, 15, 27, 4},
+};
+/* Row 5, the wide value stack: each literal takes a value, and an operator works in place,
+ * so the four literals are live at once; C9004 LIM_STACK at the literal that needs the next
+ * value. */
+static const expect wide_want[] = {
+    {3, 9004, 1, 16, 25, 0}, {3, 9004, 1, 21, 25, 1}, {3, 9004, 1, 26, 25, 2}, {3, 9004, 1, 30, 25, 3},
+};
+/* Row 15, literal bytes, second writer: the two literals take 2 and 1 bytes, then the folded
+ * value of a wide constant, 301, takes 2 more at the declaration (check.wide_decl_value). */
+static const expect wide_lit_want[] = {
+    {3, 9001, 1, 16, 27, 0}, {3, 9001, 1, 16, 27, 1}, {3, 9001, 1, 22, 27, 2}, {3, 9001, 1, 12, 27, 3},
+    {3, 9001, 1, 12, 27, 4},
 };
 /* Lowering frames (the frame region): C9004 LIM_STACK at the node of the next frame. */
 static const expect lower_want[] = {
@@ -343,6 +359,8 @@ static const family families[] = {
     {"check-frames", NULL, nest_src, 0, T_WORK, 0, 41, check_want, check_extent, 11},
     {"names-view", NULL, nest_src, 0, T_NAMES, 0, 364, names_want, names_extent, 2},
     {"literal-bytes", NULL, literal_src, 0, T_LITS, 0, 5, literal_want, NULL, 0},
+    {"wide-values", NULL, wide_src, 0, T_WIDE, 0, 4, wide_want, NULL, 0},
+    {"wide-literal-bytes", NULL, wide_lit_src, 0, T_LITS, 0, 5, wide_lit_want, NULL, 0},
     {"lowering-frames", NULL, nest_src, 0, T_LFRAMES, 0, 7, lower_want, NULL, 0},
     {"print-text", NULL, print_src, 0, T_TEXT, 7, 10, print_want, NULL, 0},
     {"print-name", NULL, name_src, 0, T_TEXT, 19, 21, name_want, NULL, 0},
@@ -354,13 +372,13 @@ static const family families[] = {
 
 int main(int argc, char **argv)
 {
-    if (argc != 14 && argc != 15) {
+    if (argc != 15 && argc != 16) {
         return 2;
     }
-    for (int i = 0; i < 13; i++) {
+    for (int i = 0; i < 14; i++) {
         ids[i] = (uint32_t)strtoul(argv[i + 1], NULL, 10);
     }
-    const int probe = argc == 15 && strcmp(argv[14], "probe") == 0;
+    const int probe = argc == 16 && strcmp(argv[15], "probe") == 0;
     int passed = 0, total = 0;
     for (size_t f = 0; f < sizeof families / sizeof families[0]; f++) {
         const family *y = &families[f];

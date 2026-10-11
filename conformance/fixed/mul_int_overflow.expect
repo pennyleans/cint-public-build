@@ -1,0 +1,18 @@
+case fixed/mul_int_overflow
+clause SPEC-01 IM-64, IM-106 (BX15-05 A: raw A * n, exact, checked against the storage range)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_OVERFLOW
+fault.operation mul_int.checked.q16_16.i16
+fault.operand Q16.16 raw 294912
+fault.operand I16 30000
+fault.exact 8847360000
+fault.limit Q16.16 raw 2147483647
+fault.position fixed/mul_int_overflow.ci:12:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

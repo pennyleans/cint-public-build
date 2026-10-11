@@ -1,0 +1,15 @@
+// case: wide/min_max_i512
+// clause: SPEC-01 IM-77; SPEC-04 LS-145 (min and max over I512 elements, with and without an initial value)
+// subset: cint-core-1 (wide integers, print statements, built-in min and max)
+// entry: run; args: none
+// spec outcome: value I64 0; one output line: -1, I512.max and I512.min in decimal, then 5 (min of the four elements, max of them, min with init I512.min, max of the one-element view [0] with init 5); fuel 5 (entry, four reduction charges). Box 15, unit 1
+
+export I64 run() {
+    I512[4] a = [3, -1, I512.max, 0];
+    I512 lo = min(a);
+    I512 hi = max(a);
+    I512 lo2 = min(I512.min, a);
+    I512 hi2 = max(5, a[2..4 by 1][1..2]);
+    "{lo} {hi} {lo2} {hi2}\n";
+    return 0;
+}

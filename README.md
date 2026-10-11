@@ -2,25 +2,25 @@
 
 # cint
 
-A C family language for deterministic, cross-platform programs.
+cint is a compiled programming language that looks like C and checks every integer operation. When a result does not fit, the program stops and reports it instead of carrying on with a wrong number.
 
-Every number is an integer and every operator is checked. A program writes the same bytes on every machine, and an operation that cannot give the exact answer stops with a fault record instead of a wrong one. The compiler, `cintc`, is written in cint, emits C17, and compiles itself.
+> ⚠️ **Experimental and in development.** This is v0.2. Expect breaking changes before 0.3.0.
 
-> ⚠️ **Experimental and in development.** This is v0.1. Expect breaking changes before 1.0.
+## What it is, in plain terms
 
-Not to be confused with CINT, the C/C++ interpreter of CERN's ROOT, which Cling replaced in ROOT 6.
+A computer stores each whole number in a fixed amount of memory, so each number type has a largest value. In many languages, Java and C among them, a sum that passes that value can quietly become a wrong number, and the program carries on with it. In cint every operation is checked. When the exact answer does not fit, the program stops and reports which operation failed, on which numbers and on which line.
 
-## Try it
-
-In a browser, with nothing to install: <https://integerc.dev/examples/>.
-
-To build it, you need Python 3 and one C17 compiler: GCC, Clang, MSVC or Apple Clang.
+Here is a program that counts past the largest number an `I64`, a 64-bit integer, can hold:
 
 ```
-python3 tools/cint_bootstrap.py --leg gcc        # or clang, msvc, apple-clang
+"counting past the largest I64\n";
+I64 big = 9223372036854775807;
+"big={big}\n";
+I64 next = big + 1;
+"next={next}\n";
 ```
 
-The bootstrap builds the seed compiler, uses it to build `cintc`, and writes the `cint` command to `$CINT_BUILD/boot/<leg>/cint`. `CINT_BUILD` defaults to `cint-build` in the system temporary directory.
+It prints its first two lines, then stops at line 4 instead of printing a wrong `next`:
 
 ```
 $ cint run examples/hello_overflow.ci
@@ -28,12 +28,51 @@ counting past the largest I64
 big=9223372036854775807
 fault[E_OVERFLOW]: the exact result is outside the type's range
   --> hello_overflow.ci:4:16
+   |
+ 4 | I64 next = big + 1;
+   |                ^ add.checked.i64
+   |
+   = operation: add.checked.i64
+   = operand: I64 9223372036854775807
+   = operand: I64 1
+   = exact:   9223372036854775808
+   = limit:   I64 9223372036854775807
+```
 
+This report is shortened; the full one has a few more lines. The same program gives the same output, byte for byte, on Windows, Linux and macOS.
+
+## For C developers
+
+- **C syntax, integers only.** There is no `float` or `double`. The types run from `I8` to `I1024` and from `U8` to `U512`.
+- **Every operator is checked.** Where C leaves `INT64_MAX + 1` undefined, cint stops with a fault record that names the operation, its exact operands and the source position. Wrapping and saturating arithmetic are separate operators: `+%`, `-%` and `*%` wrap, and `+|`, `-|` and `*|` saturate.
+- **Self-hosted, emits C17.** The compiler, `cintc`, is written in cint, emits C17 and compiles itself. It builds with GCC, Clang, MSVC or Apple Clang.
+- **A reference that defines the language.** `cint_ref`, an interpreter in Python, runs the rules of the specification, and the conformance suite compares `cintc` with it case by case.
+- **Debugging by comparison.** `cint debug` replays a run, finds the operation that faulted and compares two builds of one program. The same build gives `cint explain`, `cint workbench` and `cint repl`.
+
+## Try it
+
+The examples at <https://integerc.dev/examples/> run in a browser, with nothing to install.
+
+To build it, you need Python 3 and one C17 compiler: GCC, Clang, MSVC or Apple Clang.
+
+```
+python3 tools/cint_bootstrap.py --leg gcc        # or clang, msvc, apple-clang
+python3 tools/cint_tools.py --leg gcc            # the debugging tools
+```
+
+The bootstrap first builds a small seed compiler written in C, uses it to build `cintc` and writes the `cint` command to `$CINT_BUILD/boot/gcc/cint`, or the directory of the leg you chose. `CINT_BUILD` defaults to `cint-build` in the system temporary directory. `tools/cint_tools.py` builds `cint debug`, `cint explain`, `cint workbench`, `cint repl` and `cint interp` beside it.
+
+```
 $ cint test examples/ledger.ci
+test ledger.ci:83 "interest ties round to even" ... ok
+test ledger.ci:89 "an overdraft is rejected" ... ok
+test ledger.ci:94 "overflow is a fault" ... ok
 3 of 3 tests passed
 ```
 
-`cint build` writes an executable and `cint emit-c` writes the C. `docs/tutorials/` walks through the examples.
+A fault ends the program with exit status 1, after the output it had already written. `cint build` writes an executable and `cint emit-c` writes the C17 source. The cint university course on [integerc.dev](https://integerc.dev) teaches the language from the first program.
+
+cint is not CINT, the C/C++ interpreter of CERN's ROOT, which Cling replaced in ROOT 6.
 
 ## What is here
 
@@ -43,19 +82,22 @@ $ cint test examples/ledger.ci
 | `seed/` | The seed compiler, in C, that builds `cintc` the first time |
 | `rt/` | The runtime that the emitted C links against, and its C ABI |
 | `cli/` | The `cint` command |
-| `ref/` | `cint_ref`, the reference interpreter in Python, which defines what a program means |
-| `conformance/` | Conformance cases and their expected outcomes, run through both `cint_ref` and `cintc` |
-| `harness/`, `tools/`, `tests/` | The conformance harness, the build and check tools, and their tests |
-| `docs/spec/` | The public specification editions |
-| `docs/tutorials/`, `examples/` | Tutorials and example programs |
+| `interp/` | `cint interp`, the interpreter, with checkpoints, recordings and replay |
+| `workbench/` | `cint debug`, `cint explain`, `cint workbench` and `cint repl` |
+| `python/` | The Python package that loads and calls cint code |
+| `ref/` | `cint_ref`, the reference interpreter in Python |
+| `conformance/` | Conformance cases and their expected outcomes |
+| `harness/`, `tools/`, `tests/` | The conformance harness and the build and check tools, with their tests |
+| `docs/spec/` | The specification editions |
+| `examples/` | Example programs |
 
 ## Specifications
 
-The language is specified in editions that do not change once released: `SPEC-00P.1` (overview), `SPEC-01P.1` (the integer machine: types, operators, faults, the fault record) and `SPEC-04P.1` (the language surface), with `GLOSSARY-P.1` and `REFERENCES-P.1`. A correction that changes no meaning is listed in `docs/spec/ERRATA.md`; a change in meaning is a new edition. Code comments and conformance cases cite clauses by their identifiers (`SPEC-04 LS-17`), which resolve in the current public edition. The index is [docs/spec/README.md](docs/spec/README.md).
+SPEC-04P.2, the cint language, holds the whole language in one document. SPEC-01P.2 states the byte encodings and identities, and the index in [docs/spec/README.md](docs/spec/README.md) lists the other editions. An edition does not change once released. A correction that changes no meaning is listed in `docs/spec/ERRATA.md`, and a change of meaning is a new edition. Code comments and conformance cases cite clauses by their identifiers, such as `SPEC-04 LS-17`.
 
 ## Status
 
-Of the 861 conformance cases, `cintc` is compared with `cint_ref` on 783, holds 11 that wait on a decision, and 67 do not apply to it. The compiler does not yet accept integers wider than 64 bits, and there is no standard library or debugger. Known limitations, with the cases they concern, are listed in each component's `OPEN.md`.
+`cintc` refuses some forms the reference runs, among them fixed point and struct array literals, with error C9102. SPEC-09P.1 lists each one. The language has no standard library yet. A program can print text but cannot store it in a variable, and it cannot read input. Known limitations, with the cases they concern, are listed in each component's `OPEN.md`.
 
 ## How the work was done
 
@@ -63,4 +105,4 @@ The author set the requirements, the specifications and the acceptance threshold
 
 ## License
 
-Apache License 2.0 with LLVM Exceptions; see [LICENSE](LICENSE) and [NOTICE](NOTICE). Contributions are under the same terms; see [CONTRIBUTING.md](CONTRIBUTING.md).
+The code, the specification text and the receipts are under the Apache License 2.0 with LLVM Exceptions (`Apache-2.0 WITH LLVM-exception`); see [LICENSE](LICENSE) and [NOTICE](NOTICE). Contributions are under the same terms; see [CONTRIBUTING.md](CONTRIBUTING.md).

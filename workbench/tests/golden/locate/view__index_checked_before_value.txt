@@ -1,0 +1,27 @@
+program    view/index_checked_before_value.ci   evaluator cpu-sir-interp, under a recording
+target     boundary 1 of 1, run(): the first fault, reproduced by replay
+bracket    the initial state; then boundary 1
+fault[E_BOUNDS]: index out of bounds
+  --> view/index_checked_before_value.ci:11:6
+   |
+11 |     a[i] = 1 / z;
+   |      ^ index.checked.i64
+   |
+   = operation: index.checked.i64
+   = operand-count: 1
+   = operand: I64 -1
+   = exact:   none
+   = limit:   I64 4
+   = revision: 928ced46971bd59a1163c95f413def7e871642505dd0f0ca76ac396de85cabd3
+   = source-map: none
+   = address: none
+   = stack-depth: 0
+   = fuel-consumed: 1 (not part of the fault record)
+   = state: the post-fault state of SPEC-01 IM-121, reached by replay
+   = noncanonical: not part of the fault record
+   = workbench-position: boundary 1
+   = site: run#2
+   = backend: cpu-sir-interp, by replay
+the last 1 counted operations of boundary 1, of 1 trace events (:trace shows them all)
+  ord  position           operation              operands                 value
+    0  view/index_checked_before_value.ci:11:6 index.checked.i64      -1                       E_BOUNDS

@@ -1,0 +1,9 @@
+case wide/arena_view_sum_i128
+clause SPEC-03 M-14, M-14a, M-19; SPEC-04 LS-145; decision 2026-10-05, BX12-06 (an arena of I128 elements: allocations, element writes and sums over the views)
+format 2
+source reference
+outcome value
+stdout-bytes 3
+stdout-sha256 7e332bcee418f7d700927c946d36341f0651d6d90997b58d3d5441dec96b2e74
+return I64 99
+fuel-consumed 6

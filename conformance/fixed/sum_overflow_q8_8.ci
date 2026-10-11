@@ -1,0 +1,10 @@
+// case: fixed/sum_overflow_q8_8
+// clause: SPEC-02 R-4; SPEC-01 IM-78, IM-81 (the exact raw sum, checked once against the element format)
+// subset: cint-core-1 (fixed point, arrays)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 9:12 (the callee `sum`), operation sum.checked.q8_8.q8_8, operand I64 2, exact 51200 (200.0), limit Q8.8 raw 32767; stack depth 0; fuel 2. Box 15, unit 1
+
+export Bool run() {
+    Q8.8[2] a = [100.0, 100.0];
+    return sum(a) != 0;
+}

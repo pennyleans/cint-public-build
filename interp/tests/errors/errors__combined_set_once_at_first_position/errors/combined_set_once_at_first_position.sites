@@ -1,0 +1,26 @@
+module errors.combined_set_once_at_first_position
+sites errors/combined_set_once_at_first_position.ci 1:16:18:fuel.charge 2:17:17:call.enter
+widen W5: 2 2, 4 -2
+error E0: errors.combined_set_once_at_first_position.Front U16 empty, deep, eof, bad_byte
+func @errors.combined_set_once_at_first_position.scan() -> U16!I64 {
+  %t0 = const U16 2
+  return.error %t0
+}
+export func @errors.combined_set_once_at_first_position.run() -> U16!I64 error E0 {
+  fuel.charge 1                                  #1 @errors/combined_set_once_at_first_position.ci:16:18
+  %t0 = call @errors.combined_set_once_at_first_position.scan() #2 @errors/combined_set_once_at_first_position.ci:17:17
+  %t1 = error.tag
+  %t2 = const U16 0
+  %t3 = cmp.ne.u16 %t1, %t2
+  if {
+    arm {
+    } then %t3 {
+      %t4 = widen.u16.u16 %t1, W5
+      return.error %t4
+    }
+  }
+  local $n.3: I64
+  store.local $n.3, %t0
+  %t5 = load.local $n.3
+  return %t5
+}

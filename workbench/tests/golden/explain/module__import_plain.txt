@@ -1,0 +1,59 @@
+module module/import_plain.ci   revision dd0749f1338e4dc65114fe4421f3b8a11b81a65b2937c3a5ceba6cc956790412
+program   2 modules, 5 functions, 61 nodes
+compile fuel   per phase: k x input bytes + c, k = 21524, c = 19876 (rt/cint_bridge.h; SPEC-09 CINTC-09)
+  plan                       1111 bytes in all modules   23933040 units
+  module/lib/plain_math.ci   592 bytes   12762084 units for each of compile, measure, and emit
+  module/import_plain.ci     519 bytes   11190832 units for each of compile, measure, and emit
+memory   K x source bytes + 1 MiB + 80 B x program declarations per module (SPEC-09 CINTC-02); K is measured by tools/cint_measure.py
+
+function run   module/import_plain.sites:3   pure
+  signature  () -> I64
+  fault sites (9): 9 possible, 0 statically excluded
+    run#1  module/import_plain.ci:9:12   fuel.charge        E_FUEL possible
+    run#9  module/import_plain.ci:11:12  arena.alloc        E_BOUNDS E_STALE_HANDLE possible
+    run#2  module/import_plain.ci:12:16  call.enter         E_FUEL E_DEPTH possible
+    run#3  module/import_plain.ci:13:23  call.enter         E_FUEL E_DEPTH possible
+    run#4  module/import_plain.ci:13:37  mul.checked.i64    E_OVERFLOW possible
+    run#5  module/import_plain.ci:13:69  call.enter         E_FUEL E_DEPTH possible
+    run#6  module/import_plain.ci:13:56  add.checked.i64    E_OVERFLOW possible
+    run#7  module/import_plain.ci:13:88  index.checked.i64  E_BOUNDS possible
+    run#8  module/import_plain.ci:13:81  add.checked.i64    E_OVERFLOW possible
+  hint       not analyzed: excluding a possible site needs range analysis, which no component performs yet
+  fuel       fuel-v1 charge points (SPEC-01 IM-139, SPEC-09 SIR-07)
+    run#1  fuel.charge 1   at the start of the body
+    run#2  call.enter      1 per call of module.lib.plain_math.set_all
+    run#3  call.enter      1 per call of module.lib.plain_math.add3
+    run#5  call.enter      1 per call of module.lib.plain_math.sum_pair
+  lowering
+    cpu-sir-interp    supported   the workbench evaluator runs this text (SPEC-09 BACK-01a)
+    cpu-c17 (ref-c)   supported   cintc emits C17 from the same SIR (SPEC-09 BACK-03)
+  sir
+export func @module.import_plain.run() -> I64 {
+  fuel.charge 1                                  #1 @module/import_plain.ci:9:12
+  frame.mark 1, 1
+  local $sc.0: module.lib.plain_math.Pair
+  %t0 = const I64 3
+  %t1 = const I64 4
+  field.store $sc.0, a, %t0
+  field.store $sc.0, b, %t1
+  local $p.1: module.lib.plain_math.Pair
+  struct.copy $p.1, $sc.0
+  frame.charge 4                                 #9 @module/import_plain.ci:11:12
+  local $cells.2: I64[4]
+  %t2 = const I64 5
+  call @module.lib.plain_math.set_all(extent $cells.2, $cells.2, %t2) #2 @module/import_plain.ci:12:16
+  %t3 = const I64 1
+  %t4 = const I64 2
+  %t5 = const I64 3
+  %t6 = call @module.lib.plain_math.add3(%t3, %t4, %t5) #3 @module/import_plain.ci:13:23
+  %t7 = const I64 10
+  %t8 = mul.checked.i64 %t6, %t7                 #4 @module/import_plain.ci:13:37
+  %t9 = call @module.lib.plain_math.sum_pair($p.1) #5 @module/import_plain.ci:13:69
+  %t10 = add.checked.i64 %t8, %t9                #6 @module/import_plain.ci:13:56
+  %t11 = const I64 3
+  index.checked.i64 $cells.2, %t11               #7 @module/import_plain.ci:13:88
+  %t12 = index.load $cells.2, %t11
+  %t13 = add.checked.i64 %t10, %t12              #8 @module/import_plain.ci:13:81
+  return %t13
+  frame.release 1, 1
+}

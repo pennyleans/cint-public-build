@@ -1,0 +1,12 @@
+// case: wide/sum_i1024_exact_accumulator
+// clause: SPEC-01 IM-77, IM-80; SPEC-02 R-5 (the partial total passes I1024.max only inside the exact accumulator, and the final total fits)
+// subset: cint-core-1 (wide integers, built-in sum)
+// entry: run; args: none
+// spec outcome: value I64 -2, its low 64 bits (as%); prints the I1024 value 2^1023 - 2 (I1024.max twice plus I1024.min) and a line feed; fuel 2 (entry, one reduction charge). Box 15, unit 1
+
+export I64 run() {
+    I1024[3] a = [I1024.max, I1024.max, I1024.min];
+    I1024 observed = sum(a);
+    "{observed}\n";
+    return observed as% I64;
+}

@@ -10,7 +10,7 @@
  * tables (SPEC-09 CINTC-02: tokens n + 1, nodes 2 * tokens + 16, the parse stack 512 +
  * tokens / 32 up to 131,072, 101 diagnostic rows, symbols tokens / 2 + 64 and twice as
  * many name rows, the check stack nodes + 16 (KR-02; Frame rows, the frame region's
- * record, KR-03), the literal table (n + 1) / 2 + 64 bytes, 100 fault slots of 2,372
+ * record, KR-03), the literal table (n + 1) / 2 + 12 * n + 64 bytes, 100 fault slots of 2,372
  * bytes), calls front_check once in a fresh context, and writes
  *
  *   file <path>
@@ -151,7 +151,7 @@ static int run_file(const char *path, const char *module_path, const uint8_t *sr
         {NULL, syms, SYM_BYTES, CINT_TAG_RECORD, g_records[5], CINT_VIEW_WRITE, 0},
         {NULL, 2 * syms, NAME_BYTES, CINT_TAG_RECORD, g_records[6], CINT_VIEW_WRITE, 0},
         {NULL, nodes + 16, FRAME_BYTES, CINT_TAG_RECORD, g_records[2], CINT_VIEW_WRITE, 0},
-        {NULL, (n + 1) / 2 + 64, 1, CINT_TAG_U8, 0, CINT_VIEW_WRITE, 0},
+        {NULL, (n + 1) / 2 + 12 * n + 64, 1, CINT_TAG_U8, 0, CINT_VIEW_WRITE, 0},
         {NULL, FAULT_BYTES, 1, CINT_TAG_U8, 0, CINT_VIEW_WRITE, 0},
         {NULL, OUT_BYTES, 1, CINT_TAG_U8, 0, CINT_VIEW_WRITE, 0},
         {NULL, STATS, 8, CINT_TAG_I64, 0, CINT_VIEW_WRITE, 0},

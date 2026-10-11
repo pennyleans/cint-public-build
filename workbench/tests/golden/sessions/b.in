@@ -1,0 +1,44 @@
+kernel diffuse[h, w](in I32[h, w] u, in I64 kn, in I64 kd,
+                     out I32[h, w] v, out I64 total) over [y: h, x: w] {
+    I64 c = u[y, x] as I64;
+    I32 r = u[y, x];
+    if (y > 0 && y < h - 1 && x > 0 && x < w - 1) {
+        I64 lap = (u[y - 1, x] as I64) + (u[y + 1, x] as I64)
+                + (u[y, x - 1] as I64) + (u[y, x + 1] as I64) - 4 * c;
+        r = (c + div_round(kn * lap, kd, half_even)) as I32;
+    }
+    v[y, x] = r;
+    reduce total = sum(r);
+}
+I32[64, 64] density;
+I32[64, 64] scratch;
+I64 rate_num = 1;
+I64 rate_den = 8;
+I64 heat = 0;
+export void init() {
+    density[32, 32] = 65_536;
+}
+export void step() {
+    diffuse(density, rate_num, rate_den, scratch, heat);
+    density = scratch;
+}
+init();
+:checkpoint baseline
+:watch density[32, 32]
+:backend cpu-c17
+:run step() 240 --check cpu-sir-interp
+:backend cpu-sir-interp
+:inspect density /grid [30..35, 30..35]
+:inspect density /stats
+heat
+:checkpoint k125-240
+:restore baseline
+:branch faster
+rate_num = 3;
+rate_den = 16;
+:run step() 240
+:diff k125-240
+density[32, 32]
+:save-case faster.cicase
+:save session-b
+:quit

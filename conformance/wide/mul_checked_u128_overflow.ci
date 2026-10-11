@@ -1,0 +1,12 @@
+// case: wide/mul_checked_u128_overflow
+// clause: SPEC-01 IM-6, IM-32, IM-106; SPEC-09 CONF-11 rule 14 ((2^64 - 1)^2 fits U128 and 2^64 squared does not)
+// subset: cint-core-1 (unsigned wide integers)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 11:14 (the first `*` of the return), operation mul.checked.u128, operands U128 2^64 twice, exact 2^128, limit U128 2^128 - 1; the product b * b, (2^64 - 1)^2, fits; stack depth 0; fuel 1. Box 15, unit 1
+
+export Bool run() {
+    U128 a = 18446744073709551616;
+    U128 b = a - 1;
+    U128 c = b * b;
+    return a * a + c != 0;
+}

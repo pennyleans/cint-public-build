@@ -1,0 +1,21 @@
+# version and date-released are the release's own.
+cff-version: 1.2.0
+message: "If you use cint, cite the version you used. https://integerc.dev/cite/ also gives citations for each specification edition and paper."
+type: software
+title: cint
+abstract: "cint is an integer-only, C-family language. Every plain operator is checked, cintc emits standard C17, and every conforming build gives the same output and fault record."
+authors:
+  - family-names: Little
+    given-names: Harriett
+    orcid: "https://orcid.org/0009-0008-9844-6452"
+repository-code: "https://github.com/pennyleans/cint-public-build"
+url: "https://integerc.dev/"
+license-url: "https://github.com/pennyleans/cint-public-build/blob/main/LICENSE"
+keywords:
+  - programming language
+  - checked arithmetic
+  - integer arithmetic
+  - deterministic computation
+  - C17
+version: 0.2.0
+date-released: "2026-10-11"

@@ -1,0 +1,9 @@
+case fixed/div_table_q16_16
+clause SPEC-01 IM-65, IM-66 (the rows of the 5.4 table, as raw values)
+format 5
+source reference
+outcome value
+stdout-bytes 32
+stdout-sha256 b4f4e25a88984bdf190b013be46bd744d544d7383dcf9958f04513e819419603
+return I64 0
+fuel-consumed 1

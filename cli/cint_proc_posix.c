@@ -2,6 +2,7 @@
  *
  * Children start through posix_spawn. Every descriptor this process opens is close-on-exec,
  * so a child inherits only its stdin (/dev/null), stdout, stderr, and the fault record file.
+ * `cint <name>` instead replaces this process through execv (cli_handoff).
  */
 #if !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L
@@ -62,9 +63,7 @@ int cli_mkdirs(const char *path)
     struct stat st;
     size_t i, n = strlen(path);
     int ok;
-    if (s == NULL) {
-        return -1;
-    }
+    if (s == NULL) return -1;
     memcpy(s, path, n + 1u);
     for (i = 1; i <= n; i++) {
         if (i == n || s[i] == '/') {
@@ -166,20 +165,11 @@ int cli_proc_run(const cli_proc *p, int *status)
     size_t n = 0;
     const char **args;
     char token[32], fuel_token[32];
-    while (p->argv[n] != NULL) {
-        n++;
-    }
-    if ((args = calloc(n + 3u, sizeof *args)) == NULL) {
-        return -1;
-    }
+    while (p->argv[n] != NULL) n++;
+    if ((args = calloc(n + 3u, sizeof *args)) == NULL) return -1;
     memcpy((void *)args, (const void *)p->argv, n * sizeof *args);
-    if (posix_spawn_file_actions_init(&fa) != 0) {
-        free((void *)args);
-        return -1;
-    }
-    if (posix_spawn_file_actions_addopen(&fa, 0, "/dev/null", O_RDONLY, 0) != 0) {
-        goto done;
-    }
+    if (posix_spawn_file_actions_init(&fa) != 0) { free((void *)args); return -1; }
+    if (posix_spawn_file_actions_addopen(&fa, 0, "/dev/null", O_RDONLY, 0) != 0) goto done;
     if (p->log_path != NULL) {
         if (posix_spawn_file_actions_addopen(&fa, 1, p->log_path, O_WRONLY | O_CREAT | O_APPEND, 0666) != 0 ||
             posix_spawn_file_actions_adddup2(&fa, 1, 2) != 0) {
@@ -193,23 +183,17 @@ int cli_proc_run(const cli_proc *p, int *status)
         }
         if (p->fault_path != NULL) {
             /* Not close-on-exec: the child writes the record through it (cint_program_run). */
-            if ((fault = open(p->fault_path, O_WRONLY | O_CREAT | O_TRUNC, 0666)) < 0) {
-                goto done;
-            }
+            if ((fault = open(p->fault_path, O_WRONLY | O_CREAT | O_TRUNC, 0666)) < 0) goto done;
             (void)snprintf(token, sizeof token, "handle:%d", fault);
             args[n++] = token;
             if (p->fuel_path != NULL) {
-                if ((fuel = open(p->fuel_path, O_WRONLY | O_CREAT | O_TRUNC, 0666)) < 0) {
-                    goto done;
-                }
+                if ((fuel = open(p->fuel_path, O_WRONLY | O_CREAT | O_TRUNC, 0666)) < 0) goto done;
                 (void)snprintf(fuel_token, sizeof fuel_token, "handle:%d", fuel);
                 args[n++] = fuel_token;
             }
         }
     }
-    if (posix_spawnp(&pid, args[0], &fa, NULL, (char *const *)args, environ) != 0) {
-        goto done;
-    }
+    if (posix_spawnp(&pid, args[0], &fa, NULL, (char *const *)args, environ) != 0) goto done;
     if (pipefd[1] >= 0) {
         uint8_t buf[65536];
         ssize_t got;
@@ -218,38 +202,35 @@ int cli_proc_run(const cli_proc *p, int *status)
         pipefd[1] = -1;
         for (;;) {
             got = read(pipefd[0], buf, sizeof buf);
-            if (got < 0 && errno == EINTR) {
-                continue;
-            }
-            if (got <= 0) {
-                break;
-            }
+            if (got < 0 && errno == EINTR) continue;
+            if (got <= 0) break;
             if (relay && p->sink != NULL && p->sink(p->user, buf, (size_t)got) != 0) {
                 relay = 0;  /* keep draining, so the child never blocks */
             }
         }
     }
     while (waitpid(pid, &w, 0) < 0) {
-        if (errno != EINTR) {
-            goto done;
-        }
+        if (errno != EINTR) goto done;
     }
     *status = WIFEXITED(w) ? WEXITSTATUS(w) : -1;
     r = 0;
 done:
     posix_spawn_file_actions_destroy(&fa);
-    if (pipefd[0] >= 0) {
-        close(pipefd[0]);
-    }
-    if (pipefd[1] >= 0) {
-        close(pipefd[1]);
-    }
-    if (fault >= 0) {
-        close(fault);
-    }
-    if (fuel >= 0) {
-        close(fuel);
+    int open_fds[4] = {pipefd[0], pipefd[1], fault, fuel};
+    for (int i = 0; i < 4; i++) {
+        if (open_fds[i] >= 0) close(open_fds[i]);
     }
     free((void *)args);
     return r;
+}
+
+int cli_handoff(const char *path, const char *const *argv, int *status)
+{
+    void (*was)(int) = signal(SIGPIPE, SIG_DFL);   /* cli_init ignored it, and exec keeps an ignored signal */
+    (void)status;
+    fflush(NULL);
+    execv(path, (char *const *)argv);
+    int missing = errno == ENOENT || errno == ENOTDIR;
+    if (was != SIG_ERR) (void)signal(SIGPIPE, was);
+    return missing ? 1 : -1;
 }

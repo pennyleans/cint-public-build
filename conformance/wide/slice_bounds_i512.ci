@@ -1,0 +1,11 @@
+// case: wide/slice_bounds_i512
+// clause: SPEC-04 LS-161 (hi above the extent of an I512 array faults when the slice is formed)
+// subset: cint-core-1 (wide integers, array slices, built-in sum)
+// entry: run; args: none
+// spec outcome: fault E_BOUNDS at 10:17 (the slice's `[`), operation slice.checked.i512, operands I64 1 (lo) and I64 7 (hi), no exact, limit I64 6 (the extent); stack depth 0; fuel 1. Record: box 09 ruling R2. Box 15, unit 1
+
+export Bool run() {
+    I512[6] a;
+    I64 k = 7;
+    return sum(a[1..k]) != 0;
+}

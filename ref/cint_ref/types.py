@@ -6,6 +6,7 @@ SPEC-01 1.2. No floating point is used anywhere in this package.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 
@@ -50,11 +51,14 @@ class IntType:
 
 _ALL = [IntType("I%d" % w, True, w) for w in (8, 16, 32, 64, 128, 256, 512, 1024)]
 _ALL += [IntType("U%d" % w, False, w) for w in (8, 16, 32, 64)]
+# SPEC-01 IM-6 (decision 2026-10-09, BX15-02): U128 to U512; U1024 stays Proposed.
+_ALL += [IntType("U%d" % w, False, w) for w in (128, 256, 512)]
 INT_TYPES = {t.name: t for t in _ALL}
 
 # Types of the scalar surface that conformance programs use (I8..I64, U8..U64).
 SCALAR_INT_NAMES = ("I8", "I16", "I32", "I64", "U8", "U16", "U32", "U64")
 WIDE_INT_NAMES = ("I128", "I256", "I512", "I1024")
+UNSIGNED_WIDE_INT_NAMES = ("U128", "U256", "U512")
 
 BOOL = "Bool"
 Z = "Z"   # mathematical integer; appears only as a fault-record value
@@ -93,7 +97,13 @@ class Value:
     value: object
 
     def render(self) -> str:
-        """`<Type> <decimal>`, the typed-value form of `.expect` files (SPEC-09 CONF-01)."""
+        """`<Type> <decimal>`, the typed-value form of `.expect` files (SPEC-09 CONF-01); a
+        fixed-point value is `Q16.16 raw 98304`, its storage integer (CONF-11 rule 14, BX15-03)."""
         if self.type == BOOL:
             return "Bool " + ("true" if self.value else "false")
+        if _Q_NAME.match(self.type):
+            return "%s raw %d" % (self.type, self.value)
         return "%s %d" % (self.type, self.value)
+
+
+_Q_NAME = re.compile(r"Q[1-9][0-9]*\.(?:0|[1-9][0-9]*)\Z")
