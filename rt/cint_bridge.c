@@ -167,7 +167,7 @@ char *cint_bridge_stage_name(const char *path, unsigned k)
 /* failure (the file is then removed). make_dir: 1 made, 0 exists, -1 error.  */
 
 #ifdef _WIN32
-struct cint_bridge_root { HANDLE h; wchar_t *path; };
+struct cint_bridge_root { HANDLE h; wchar_t *path; cint_bridge_root *next; };
 
 static wchar_t *widen(const char *s)
 {
@@ -308,23 +308,47 @@ void cint_bridge_root_close(cint_bridge_root *root)
     free(root);
 }
 
+/* The root's final path, a separator, and rel with '\\' for '/'. */
+static wchar_t *full_path(cint_bridge_root *root, const char *rel)
+{
+    wchar_t *r = widen(rel), *full = NULL;
+    size_t n = wcslen(root->path), m = r != NULL ? wcslen(r) : 0;
+    if (r != NULL && (full = malloc((n + m + 2) * sizeof *full)) != NULL) {
+        memcpy(full, root->path, n * sizeof *full);
+        if (n > 0 && full[n - 1] != L'\\') full[n++] = L'\\';
+        for (size_t i = 0; i <= m; i++) full[n + i] = r[i] == L'/' ? L'\\' : r[i];
+    }
+    free(r);
+    return full;
+}
+
+/* Absent (cint_bridge.h): no object at the path, or one whose final path differs from it only
+ * in case; a junction or substitution on the way differs otherwise and is a refusal. */
+static bool absent_here(cint_bridge_root *root, const char *rel)
+{
+    wchar_t *full = full_path(root, rel), *fp = NULL;
+    HANDLE h = full == NULL ? INVALID_HANDLE_VALUE
+                            : CreateFileW(full, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                          NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    DWORD e = h == INVALID_HANDLE_VALUE ? GetLastError() : 0;
+    bool absent = h == INVALID_HANDLE_VALUE ? full != NULL && (e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND)
+                                            : (fp = final_path(h)) != NULL && wcscmp(fp, full) != 0 && _wcsicmp(fp, full) == 0;
+    if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
+    free(fp);
+    free(full);
+    return absent;
+}
+
 static bool read_handle(cint_bridge_root *root, const char *rel, size_t limit, uint8_t **bytes, size_t *len)
 {
-    wchar_t *r = widen(rel), *full = NULL, *fp = NULL;
-    size_t n = wcslen(root->path), m = r != NULL ? wcslen(r) : 0;
-    bool ok = r != NULL && (full = malloc((n + m + 2) * sizeof *full)) != NULL;
-    HANDLE h = INVALID_HANDLE_VALUE;
+    wchar_t *full = full_path(root, rel), *fp = NULL;
+    HANDLE h = full == NULL ? INVALID_HANDLE_VALUE
+                            : CreateFileW(full, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, NULL);
     file_id id;
     DWORD attributes = 0;
     LARGE_INTEGER size = {.QuadPart = 0};
     uint8_t *buf = NULL;
-    if (ok) {
-        memcpy(full, root->path, n * sizeof *full);
-        if (n > 0 && full[n - 1] != L'\\') full[n++] = L'\\';
-        for (size_t i = 0; i <= m; i++) full[n + i] = r[i] == L'/' ? L'\\' : r[i];
-        h = CreateFileW(full, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, NULL);
-    }
-    ok = h != INVALID_HANDLE_VALUE && GetFileType(h) == FILE_TYPE_DISK && handle_id(h, &id, &attributes)
+    bool ok = h != INVALID_HANDLE_VALUE && GetFileType(h) == FILE_TYPE_DISK && handle_id(h, &id, &attributes)
          && (attributes & NOT_FILE) == 0 && (fp = final_path(h)) != NULL && wcscmp(fp, full) == 0
          && GetFileSizeEx(h, &size) && (uint64_t)size.QuadPart <= limit && remember_input(id)
          && (buf = malloc((size_t)size.QuadPart + 1)) != NULL;
@@ -337,14 +361,13 @@ static bool read_handle(cint_bridge_root *root, const char *rel, size_t limit, u
     if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
     if (got == (size_t)size.QuadPart && buf != NULL) { *bytes = buf; *len = got; }
     else { free(buf); buf = NULL; }
-    free(r);
     free(full);
     free(fp);
     return buf != NULL;
 }
 
 #else
-struct cint_bridge_root { int fd; };
+struct cint_bridge_root { int fd; cint_bridge_root *next; };
 
 static file_id identity_of(const struct stat *st)
 {
@@ -420,7 +443,7 @@ bool cint_bridge_read_file(const char *path, size_t limit, uint8_t **bytes, size
 bool cint_bridge_root_open(const char *dir, cint_bridge_root **out)
 {
     int fd = dir != NULL && out != NULL ? open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC) : -1;
-    cint_bridge_root *r = fd >= 0 ? malloc(sizeof *r) : NULL;
+    cint_bridge_root *r = fd >= 0 ? calloc(1, sizeof *r) : NULL;
     if (r != NULL) { r->fd = fd; *out = r; return true; }
     if (fd >= 0) (void)close(fd);
     return false;
@@ -450,6 +473,34 @@ static bool entry_exact(int dir, const char *name)
     return found;
 }
 
+/* Absent (cint_bridge.h): no entry of that exact spelling at some segment (ENOENT, ENOTDIR, a
+ * case difference), or a regular file on the way; a link or an unreadable directory is a refusal. */
+static bool absent_here(cint_bridge_root *root, const char *rel)
+{
+    char *p = cint_bridge_join(rel, "", ""), *s = p;
+    int dir = root->fd;
+    bool absent = false, more = p != NULL;
+    struct stat st;
+    while (more) {
+        char *slash = strchr(s, '/');
+        if (slash != NULL) *slash = '\0';
+        if (fstatat(dir, s, &st, AT_SYMLINK_NOFOLLOW) != 0) { absent = errno == ENOENT || errno == ENOTDIR; more = false; }
+        else if (!entry_exact(dir, s)) { absent = true; more = false; }
+        else if (slash == NULL || S_ISLNK(st.st_mode)) more = false;
+        else if (!S_ISDIR(st.st_mode)) { absent = true; more = false; }
+        else {
+            int fd = openat(dir, s, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_DIRECTORY);
+            if (dir != root->fd) (void)close(dir);
+            dir = fd;
+            more = fd >= 0;
+            s = slash + 1;
+        }
+    }
+    if (dir != root->fd && dir >= 0) (void)close(dir);
+    free(p);
+    return absent;
+}
+
 static bool read_handle(cint_bridge_root *root, const char *rel, size_t limit, uint8_t **bytes, size_t *len)
 {
     char *p = cint_bridge_join(rel, "", ""), *s = p;
@@ -471,8 +522,13 @@ static bool read_handle(cint_bridge_root *root, const char *rel, size_t limit, u
 bool cint_bridge_read_input(cint_bridge_root *root, const char *rel, size_t limit, uint8_t **bytes, size_t *len)
 {
     if (root == NULL || bytes == NULL || len == NULL || !cint_bridge_rel_ok(rel) || limit >= SIZE_MAX) return false;
-    return read_handle(root, rel, limit, bytes, len);
+    if (read_handle(root, rel, limit, bytes, len)) return true;
+    return root->next != NULL && absent_here(root, rel) && cint_bridge_read_input(root->next, rel, limit, bytes, len);
 }
+
+bool cint_bridge_input_absent(cint_bridge_root *root, const char *rel) { return root != NULL && cint_bridge_rel_ok(rel) && absent_here(root, rel); }
+
+void cint_bridge_root_chain(cint_bridge_root *root, cint_bridge_root *next) { if (root != NULL) root->next = next; }
 
 static bool commit(const char *path, const uint8_t *bytes, size_t len)
 {

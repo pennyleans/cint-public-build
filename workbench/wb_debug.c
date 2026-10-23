@@ -331,10 +331,11 @@ static void cost_at(void *user, uint64_t at, cint_ctx *ctx)
         while (cint_checkpoint_arena_next(&info, &j, &a) == CINT_OK) n += a.parent == 0 ? (uint64_t)a.used : 0u;
         while (cint_checkpoint_pool_next(&info, &k, &p) == CINT_OK) n += p.occupied;
         wb_f(&d->costs, "%s{\"boundary\":\"%llu\",\"elements\":\"%llu\",\"replay_ns\":\"%lld\"}",
-             d->costs.n != 0 ? "," : "", (unsigned long long)at, (unsigned long long)n, t - d->t0 - d->spent);
+             d->costs.n != 0 ? "," : "", (unsigned long long)at, (unsigned long long)n,
+             wb_elapsed_ns(d->t0 + d->spent, t));
     }
     wb_free(&ck);
-    d->spent += wb_now_ns() - t;
+    d->spent += wb_elapsed_ns(t, wb_now_ns());
 }
 
 /* `cint debug replay RECORDING [--to BOUNDARY] [--receipt PATH]` (note 7.1): exit 0 when every
@@ -360,7 +361,7 @@ static int replay(dbg *d, int json, uint64_t to, const char *receipt_path, wb_bu
         d->rp.at_user = d;
         /* 1: every boundary compared; 2: DIVERGED or UNREPLAYABLE; 0: the engine refused it */
         ran = wb_replay_run(&d->rp, to != 0 ? to : UINT64_MAX, &why) == 0 ? 1 : d->rp.rep.status != CINT_OK ? 2 : 0;
-        t0 = wb_now_ns() - t0 - d->spent;
+        t0 = wb_elapsed_ns(t0 + d->spent, wb_now_ns());
         status = ran == 1 ? CINT_EXIT_OK : CINT_EXIT_CHECK;
         if (ran != 0 && cint_ctx_state_hash(d->rp.ctx, state) != CINT_OK) {
             wb_s(err, "cannot read the state replay reached");
@@ -745,7 +746,7 @@ static int locate(dbg *d, int json, const locate_opts *o, int program, wb_buf *e
         status = CINT_EXIT_INTERNAL;
     }
     if (status == 0 && why.n == 0) (void)wb_replay_run(&d->rp, k != 0 ? k : UINT64_MAX, &why);
-    t0 = wb_now_ns() - t0;
+    t0 = wb_elapsed_ns(t0, wb_now_ns());
     if (status != 0) {
         if (status == CINT_EXIT_CHECK) fputs(why.p, stderr);
         else wb_put(err, why.p, why.n != 0 ? why.n - 1u : 0);

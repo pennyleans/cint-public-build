@@ -21,12 +21,18 @@ is equal byte for byte:
   - fuel local: in the C of flow.ci, `loops` and `to_max`, whose loops call nothing, keep
     their fuel count in a local, and `loop_calls`, whose loop makes a call, charges the
     context (back_c.ci fuel_local; SPEC-01 IM-142);
+  - place discard: the C of field_views.ci discards each place pointer of a function's
+    head as `(void)q<k>;`, and no program's C reads one there as `(void)(*q<k>);`, a
+    load of a pointer that is still NULL (clang's UndefinedBehaviorSanitizer reported it
+    in the cint-v0.2.2 clean room);
   - checked: a frozen compile-error case inside the checker's subset, built through
     main.ci, stops with the diagnostic code and position of its `.expect` file, so
     compile runs compiler/check.ci between parse and lower (CINTC-OQ-30); the C3004 case
     also carries the D-22 note position in detail[0] and detail[1] (CINTC-OQ-14);
   - refused: a module outside the checker's subset (switch.ci) stops with check.ci's C9102
-    at the first construct the checker does not take, before lowering (CINTC-OQ-45);
+    at the first construct the checker does not take, before lowering (CINTC-OQ-45); and a
+    module whose extern lowering.ci does not take (REFUSED) stops with its C9102 at the
+    parameter or the result (I/O services lane U2, CINTC-OQ-66);
   - digest: the `digest` export of main.ci (sha256.ci) equals hashlib's SHA-256 (M1);
   - revision: the revision identity in the program file (`cg_revision`) equals SHA-256 over
     the SIR-17 manifest assembled here from the program's SIR text output (`sir17_revision`,
@@ -41,7 +47,7 @@ is equal byte for byte:
     with cint_ref's `.expect` body (a frozen file for a conformance case); a script is an
     executable whose stdout bytes, exit status (SPEC-06 3.4a) and fault record (decoded
     with cint_ref's IM-149 reader) and fuel consumed (the fuel record of
-    cint_program_run_fuel) are compared with cint_ref's outcome, and a fault
+    cint_program_run_args) are compared with cint_ref's outcome, and a fault
     record's revision with the program's SIR-17 revision (CONF-01 `fault.revision self`).
     The run of hello.ci is also compared with the 23 bytes of M1. kernel_loops.ci, whose
     kernels fault at later work items and whose sums cross the int64_t partial of back_c.ci
@@ -127,6 +133,7 @@ PROGRAMS = [
     ("wide_assert", TESTS, "wide_assert.ci", None),
     ("fill_reshape", TESTS, "fill_reshape.ci", None),
     ("wide_unsigned", TESTS, "wide_unsigned.ci", None),
+    ("externs", GOLDEN, "externs.ci", ("externs.c", "externs.sir", "externs.program.c")),
 ]
 
 # The CONF-11 format of a program's calls or script, when not 1: a fault raised by a kernel
@@ -144,7 +151,7 @@ DEPENDENCIES = {"public_records": ["record_lib.ci", "record_mid.ci"],
                 "shaped_fields": ["shaped_field_lib.ci"],
                 "wide_transitive": ["wide_transitive_lib.ci", "wide_transitive_mid.ci"]}
 PUBLIC_HOSTS = ("public_views", "public_records", "nested_public", "record_arrays", "zero_fields", "zero_records",
-                "shaped_fields")
+                "shaped_fields", "externs")
 
 # Compile errors that check.ci reports through main.compile: a frozen case under
 # conformance/, and the detail[0..1] it must carry (None when not compared).
@@ -161,7 +168,9 @@ CHECKED = [("diag/c2002_integer_condition.ci", None), ("diag/c2050_uninitialized
 # first construct the checker does not take (CINTC-OQ-15, CINTC-OQ-45): the module path
 # under its source root and that construct's token, whose first token in
 # cint_ref's lexer gives the expected position.
-REFUSED = []
+# C9102 from lowering.ci through main.compile, at the token named (I/O services lane U2,
+# compiler/OPEN.md CINTC-OQ-66 item 1): an extern's `inout` view, and a wide result.
+REFUSED = [(TESTS, "externs_inout.ci", "cells"), (TESTS, "externs_wide.ci", "I128")]
 
 # A build whose compile order is not the byte order of its paths (decision 27, item
 # 3): the source root and the module paths in the order the bridge compiles them.
@@ -597,7 +606,7 @@ def run(tc, tools, work: pathlib.Path, emitted: dict, prepared: dict, cc) -> tup
         items.append((label, problem))
 
     total_planned = (1 + 2 * len(PUBLIC_HOSTS) + 2 * len(PROGRAMS) + 1 + 3 + len(CHECKED) + len(REFUSED) + len(CALLS) + len(SCRIPTS)
-                     + len(DIGESTS) + 1 + len(SIGNATURE_NAMES) + len(SIGNATURE_ROWS) + len(PROGRAMS))
+                     + len(DIGESTS) + 1 + len(SIGNATURE_NAMES) + len(SIGNATURE_ROWS) + len(PROGRAMS) + 1)
     c_file = work / "main.c"
     code, err = cc.run_seed(tools["seed"], ROOT / "compiler", "main.ci", c_file)
     if code != 0 or cc.sanitizer_reports(err):
@@ -658,6 +667,12 @@ def run(tc, tools, work: pathlib.Path, emitted: dict, prepared: dict, cc) -> tup
         for path, data in files.items():
             if path.endswith(".c") and (b"\r" in data or b"\t" in data or b" \n" in data or not data.endswith(b"\n")):
                 item("format %s" % path, "a CR, a tab, a trailing space, or no final LF (EMIT-24)")
+            if path.endswith(".c") and b"(void)(*q" in data:
+                item("place read %s" % path, "a `(void)(*q<k>);` reads a place pointer that may be NULL")
+        if name == "field_views":
+            text = files.get("field_views.c", b"")
+            item("place discard", "" if b"    (void)q" in text and b"(void)(*q" not in text
+                 else "field_views.c discards no place pointer as `(void)q<k>;`, or reads one")
         if name == "nest_blocks_256":
             depth = brace_depth(files["control/nest_blocks_256.c"])
             item("brace depth", "" if depth <= 2 else "brace depth %d" % depth)

@@ -1,5 +1,6 @@
 /* cint_fixed.h: signed binary fixed point Q<i>.<f> with storage of 8 to 64
- * bits (roadmap box 15; SPEC-01 IM-54 to IM-69; box 15 note 5.3, BX15-15).
+ * bits (roadmap box 15; SPEC-01 IM-54 to IM-69; box 15 note 5.3, BX15-15), and
+ * of 128 bits through the out-of-line helpers of section 5 (OQ-292).
  *
  * A Q<i>.<f> value is its raw storage integer, held in the C type of I8 to
  * I64 for w = i + f. A type word names an operand type: CINT_QT(storage tag,
@@ -54,7 +55,7 @@
  * sign and a 128-bit magnitude (the 2w-bit intermediate of IM-54; one 64-bit
  * word for storage of up to 32 bits), rounded once, then range-checked. A
  * failed check calls cint_rt_fixed_fault (rt/cint_fixed.c), which recomputes
- * the exact result on 256 bits and writes the record of IM-106: fixed-point
+ * the exact result as an exact integer and writes the record of IM-106: fixed-point
  * operands as tag 31 values (IM-146), `exact` the rounded raw value, and
  * `limit` the bound of the result type on exact's side. Division and the
  * square root use cint_rt_div_wide and cint_rt_isqrt64 of cint_rt.h, so no
@@ -154,42 +155,46 @@ CINT_RT_FOLD cint_q_mag cint_q_of(uint64_t bits, bool s)
     return m;
 }
 
-/* Whether a magnitude whose bits below the cut are not all zero (`half` the
- * bit just below the cut, `sticky` any bit under it) moves one step away from
- * zero under mode (SPEC-01 4.5; cint_rt_round_up's rule); odd is the parity
- * of the truncated magnitude. */
-CINT_RT_FOLD bool cint_q_up(bool half, bool sticky, bool odd, bool negative, uint32_t mode)
+/* 1 when a magnitude whose bits below the cut are not all zero (`half` the
+ * bit just below the cut, `sticky` 1 when any bit under it is set) moves one
+ * step away from zero under mode (SPEC-01 4.5; cint_rt_round_up's rule), and
+ * 0 otherwise; odd is the parity of the truncated magnitude and negative its
+ * sign. Every flag is 0 or 1 and they combine bitwise, so that with mode a
+ * constant no branch remains on the bits cut off (rt/OPEN.md RT-OQ-62). */
+CINT_RT_FOLD uint64_t cint_q_up(uint64_t half, uint64_t sticky, uint64_t odd, uint64_t negative, uint32_t mode)
 {
-    if (!half && !sticky) return false;
-    if (mode <= 4u) return mode == 1u ? negative : mode == 2u ? !negative : mode == 4u;
-    if (!half) return false;
-    if (sticky) return true;
-    return mode == 5u ? odd : mode == 6u || (mode == 8u ? !negative : mode == 9u && negative);
+    uint64_t tie;
+    if (mode <= 4u)
+        return (half | sticky) & (mode == 1u ? negative : mode == 2u ? negative ^ 1u : mode == 4u ? 1u : 0u);
+    tie = mode == 5u ? odd : mode == 6u ? 1u : mode == 8u ? negative ^ 1u : mode == 9u ? negative : 0u;
+    return half & (sticky | tie);
 }
 
 /* m / 2^k rounded once under mode, 0 <= k <= 127. */
 CINT_RT_FOLD cint_q_mag cint_q_shr(cint_q_mag m, unsigned k, uint32_t mode)
 {
     cint_q_mag q = m;
-    bool half, sticky;
+    uint64_t half, sticky, up;
     if (k == 0u) return m;
     if (k < 64u) {
-        half = ((m.lo >> (k - 1u)) & 1u) != 0u;
-        sticky = (m.lo & (((uint64_t)1 << (k - 1u)) - 1u)) != 0u;
+        half = (m.lo >> (k - 1u)) & 1u;
+        sticky = (m.lo & (((uint64_t)1 << (k - 1u)) - 1u)) != 0u ? 1u : 0u;
         q.lo = (m.lo >> k) | (m.hi << (64u - k));
         q.hi = m.hi >> k;
     } else if (k == 64u) {
-        half = (m.lo >> 63) != 0u;
-        sticky = (m.lo << 1) != 0u;
+        half = m.lo >> 63;
+        sticky = (m.lo << 1) != 0u ? 1u : 0u;
         q.lo = m.hi;
         q.hi = 0u;
     } else {
-        half = ((m.hi >> (k - 65u)) & 1u) != 0u;
-        sticky = m.lo != 0u || (m.hi & (((uint64_t)1 << (k - 65u)) - 1u)) != 0u;
+        half = (m.hi >> (k - 65u)) & 1u;
+        sticky = (m.lo | (m.hi & (((uint64_t)1 << (k - 65u)) - 1u))) != 0u ? 1u : 0u;
         q.lo = m.hi >> (k - 64u);
         q.hi = 0u;
     }
-    if (cint_q_up(half, sticky, (q.lo & 1u) != 0u, m.negative, mode) && ++q.lo == 0u) q.hi++;
+    up = cint_q_up(half, sticky, q.lo & 1u, m.negative ? 1u : 0u, mode);
+    q.lo += up;
+    q.hi += q.lo < up ? 1u : 0u;
     return q;
 }
 
@@ -504,6 +509,28 @@ CINT_Q_REDUCE(i8, int8_t, CINT_TAG_I8, 8u)
 CINT_Q_REDUCE(i16, int16_t, CINT_TAG_I16, 16u)
 CINT_Q_REDUCE(i32, int32_t, CINT_TAG_I32, 32u)
 CINT_Q_REDUCE(i64, int64_t, CINT_TAG_I64, 64u)
+
+/* ------------------------------------------------------------------------- */
+/* 5. Operations with a side held in limbs (games wave G2b; RT-OQ-63).        */
+
+/* Fixed point of storage I128 (OQ-292) is a cint_i128. An operation on it,
+ * or on fixed point and a wide integer, forms the exact result in limbs, rounds
+ * it once by mode and applies form (CINT_Q_CHECKED, _WRAP or _SAT); op and mode
+ * are as for cint_rt_fixed_fault. a, b (NULL for one operand) and out point to
+ * C objects, a narrow operand's a 64-bit pattern. False after a fault. */
+bool cint_rt_q_limbs(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t form, uint32_t mode, uint32_t ta, uint32_t tb,
+                     uint32_t tr, const void *a, const void *b, void *out);
+
+/* cint_rt_print_format_fixed for a value of 128-bit storage at raw. */
+bool cint_rt_print_q_limbs(cint_ctx *ctx, uint32_t qt, const void *raw, uint32_t form, uint32_t fill, uint64_t width,
+                           uint64_t precision);
+
+/* cint_rt_reduce_wide for elem or result fixed point of 128-bit storage, with
+ * dot's mode as for cint_rt_dot_fixed; init points to the element's C object. */
+bool cint_rt_reduce_q_limbs(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t elem, uint32_t result, uint32_t mode,
+                            const cint_vdesc *xs, const cint_vdesc *ys, const void *init, void *out);
+/* cint_ksum_q_<S> for 128-bit storage, the total in a cint_wzacc of the storage's elements. */
+bool cint_rt_wzacc_fit_q(cint_ctx *ctx, cint_site site, uint32_t qt, int64_t n, const cint_wzacc *a, void *out);
 
 #if defined(CINT_RT_LIBRARY) && !defined(_WIN32) && (defined(__GNUC__) || defined(__clang__))
 #pragma GCC visibility pop

@@ -1,0 +1,10 @@
+// case: fixed/convert_narrow_q80_48
+// clause: SPEC-01 IM-68, IM-106 (2^31 in Q80.48 converted to Q32.32 is out of range: E_NARROW, exact the raw value 2^63)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: fault E_NARROW at 9:15 (the `as`), operation as.checked.q80_48.q32_32.half_even, operand Q80.48 raw 2^79, exact 2^63, limit Q32.32 raw 2^63 - 1; stack depth 0; fuel 1. Games wave G2a (OQ-292)
+
+export Bool run() {
+    Q80.48 x = 2147483648.0;
+    return (x as Q32.32) != 0.0;
+}

@@ -44,12 +44,13 @@ class UnsupportedLines(unittest.TestCase):
                     cint_check.read_unsupported(self.write(text))
 
     def test_repository_backend_lines(self):
-        # each names a case of the suite and a capability that back_ptx names (cap_name)
+        # each names a case of the suite and a capability that back_ptx names (cap_name); 16 since
+        # fixed/kernel_scale_reduce_q80_48 (OQ-294)
         entries = cint_check.read_unsupported(ROOT / "conformance" / "unsupported.txt")
         names = set(re.findall(r'w_str\(w, dst, "([a-z.]+)"\)',
                                (ROOT / "compiler" / "back_ptx.ci").read_text(encoding="utf-8")))
         gpu = {case: v for (case, compiler), v in entries.items() if compiler == GPU}
-        self.assertEqual(len(gpu), 13)
+        self.assertEqual(len(gpu), 16)
         for case, (_, _, reason) in gpu.items():
             self.assertIn(reason.split(" ")[1], names, case)
             self.assertTrue((ROOT / "conformance" / (case + ".ci")).is_file(), case)

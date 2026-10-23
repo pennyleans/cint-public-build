@@ -286,7 +286,9 @@ def _convert(form, source, operands, target, mode):
         return Fault("E_NARROW", operation, (v,), v.value, Value(t.name, t.max if v.value > t.max else t.min))
     if form == "wrap":
         return Value(t.name, t.wrap(v.value))
-    raise OpenCase("saturating conversion `as|` is Proposed and not implemented (SPEC-01 2.4)")
+    if form == "sat":
+        return Value(t.name, t.sat(v.value))                # `as|` (SPEC-01 IM-50; OQ-272)
+    raise ValueError("unknown form %r" % (form,))
 
 
 def _arity(operands, n):

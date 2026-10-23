@@ -1,0 +1,10 @@
+// case: fixed/literal_off_grid_c2006_q64_64
+// clause: SPEC-04 LS-37 (0.1 is not a multiple of 2^-64)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: compile-error C2006 at 8:16 (the literal). Games wave G2a (OQ-292)
+
+export I64 run() {
+    Q64.64 x = 0.1;
+    return 0;
+}

@@ -1,0 +1,32 @@
+// case: fixed/translation_q80_48
+// clause: SPEC-01 IM-54, IM-60, IM-61, IM-67, IM-68 (one encounter at the origin and 1,000,000 light-years out: Q80.48 positions in meters, local physics in Q32.32 on the exact difference, one digest)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value Bool true; prints `2221610611489727190 2221610611489727190` (the same digest at the origin and 10^6 light-years out); fuel 8195. Games wave G2a (OQ-292)
+
+I64 local_digest(Q80.48 ax0, Q80.48 ay0, Q80.48 bx, Q80.48 b_y) {
+    Q80.48 ax = ax0;
+    Q80.48 ay = ay0;
+    Q80.48 vx = 0.0009765625;
+    Q80.48 vy = -0.000244140625;
+    I64 h = 1469598103934665603;
+    for t in 0..4096 {
+        Q32.32 dx = (bx - ax) as Q32.32;
+        Q32.32 dy = (b_y - ay) as Q32.32;
+        Q32.32 d = sqrt(dx * dx + dy * dy);
+        h = (h ^ d.raw) *% 1099511628211;
+        ax += vx;
+        ay += vy;
+        vx -= (dx * 0.0000002384185791015625) as Q80.48;
+        vy -= (dy * 0.0000002384185791015625) as Q80.48;
+    }
+    return h;
+}
+
+export Bool run() {
+    Q80.48 far = 9460730472580800000000.0;
+    I64 a = local_digest(0.0, 0.0, 50.0, 20.0);
+    I64 b = local_digest(far, -far, far + 50.0, -far + 20.0);
+    "{a} {b}\n";
+    return a == b;
+}

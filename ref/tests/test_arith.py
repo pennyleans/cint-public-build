@@ -277,6 +277,16 @@ class Conversions(unittest.TestCase):
         r = op("as", "checked", "I64", m, target="I128")
         self.assertEqual((r.type, r.value), ("I128", m))
 
+    def test_saturating(self):                           # SPEC-01 IM-50 `as|` (OQ-272)
+        for source, x, target, want in (("I64", 2147483648, "I32", 2147483647), ("I64", -129, "I8", -128),
+                                        ("I64", -1, "U64", 0), ("U64", 9223372036854775808, "I64", M),
+                                        ("I64", 300, "U8", 255), ("I8", -1, "U128", 0),
+                                        ("I256", -2**200, "I64", m), ("U128", 2**127, "I128", 2**127 - 1),
+                                        ("I64", 5, "I8", 5), ("I64", M, "I128", M)):
+            with self.subTest(source=source, x=x, target=target):
+                r = op("as", "sat", source, x, target=target)
+                self.assertEqual((r.type, r.value), (target, want))
+
     def test_bool_source(self):
         r = op("as", "checked", "Bool", True, target="I64")
         self.assertEqual((r.type, r.value), ("I64", 1))

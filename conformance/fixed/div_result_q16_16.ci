@@ -1,0 +1,38 @@
+// case: fixed/div_result_q16_16
+// clause: SPEC-01 IM-63 to IM-65, IM-188; SPEC-04 LS-96, LS-145 (`div_result(a, b[, mode])` holds the quotient `div` rounds by the mode, half_even without one, .div_zero for a zero divisor before any other check, or .overflow; OQ-273 A)
+// subset: cint-core-1 (fixed point, error unions, `try`, `catch`)
+// entry: run; args: none
+// spec outcome: value I64 -21; prints `21845 21846 -21846 -21845` and `-21845 -2 -1 -1`, each with a line feed (30000.0 / raw 1 and Q16.16.min / -1.0 overflow); fuel 13 (the entry and six calls of code, each calling ratio). Box 15, OQ-280 group 1
+
+ArithError!Q16.16 ratio(Q16.16 a, Q16.16 b) {
+    return try div_result(a, b, trunc);
+}
+
+I64 code(Q16.16 a, Q16.16 b) {
+    Q16.16 r = ratio(a, b) catch (e) {
+        if (e == ArithError.div_zero) {
+            return -2;
+        }
+        if (e == ArithError.overflow) {
+            return -1;
+        }
+        return -3;
+    };
+    return r.raw as I64;
+}
+
+export I64 run() {
+    Q16.16 one = 1.0;
+    Q16.16 three = 3.0;
+    Q16.16 none = -1.0;
+    Q16.16 zero = 0.0;
+    Q16.16 tiny = Q16.16.raw(1);
+    Q16.16 big = 30000.0;
+    Q16.16 d1 = div_result(one, three) catch 0.0;
+    Q16.16 d2 = div_result(one, three, ceil) catch 0.0;
+    Q16.16 d3 = div_result(none, three, floor) catch 0.0;
+    Q16.16 d4 = div_result(none, three, half_away) catch 0.0;
+    "{d1!raw} {d2!raw} {d3!raw} {d4!raw}\n";
+    "{code(none, three)} {code(one, zero)} {code(big, tiny)} {code(Q16.16.min, none)}\n";
+    return code(one, zero) * 10 + code(big, tiny);
+}

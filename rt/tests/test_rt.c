@@ -34,6 +34,8 @@
  *      cint-abi-1 wrapper, and the registry of SPEC-03 5.3 (descriptor
  *      registration, created buffers, reads, export leases, max_buffers);
  *      ABI 3.1 (box 11 unit 5): the device fields of cint_ctx_config.
+ *  11. rotl and rotr on the inline path of cint_builtin_<r> against
+ *      cint_rt_builtin (rt/OPEN.md RT-OQ-67).
  *
  * The JSON reading below handles only the CIF-1 line shape of SPEC-01 13.1
  * (keys in order, every integer a JSON string) and is confined to this test.
@@ -42,6 +44,9 @@
 /* The test uses fopen and sscanf, which MSVC deprecates in favor of its
  * _s variants (warning C4996); the runtime itself uses neither. */
 #define _CRT_SECURE_NO_WARNINGS 1
+#endif
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L /* mkdir and symlink, for test_fs_services; pipe and dup2, for test_console_services */
 #endif
 #include "cint_rt.h"
 
@@ -59,6 +64,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_WIN32)
+#include <direct.h>
+#include <fcntl.h>
+#include <io.h>
+#else
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <termios.h>
+#include <unistd.h>
+#if defined(__linux__)
+#include <sys/ioctl.h>
+#endif
+#endif
 
 static long g_pass;
 static long g_fail;
@@ -1332,7 +1350,7 @@ static void test_context(void)
     memset(&cfg, 0, sizeof cfg);
     cfg.size = (uint32_t)sizeof cfg;
     cfg.program = &t_program;
-    CHECK(strcmp(CINT_RT_CONTRACT, "cint-rt-3") == 0 && cint_abi_version() == 0x00030002u, "contract and ABI 3.2");
+    CHECK(strcmp(CINT_RT_CONTRACT, "cint-rt-3") == 0 && cint_abi_version() == 0x00030004u, "contract and ABI 3.4");
     CHECK(cint_ctx_create(NULL, &ctx) == CINT_REFUSED && ctx == sentinel, "NULL config refused, out unwritten");
     CHECK(cint_ctx_create(&cfg, NULL) == CINT_REFUSED, "NULL out refused");
     cfg.size = 40u;
@@ -3087,6 +3105,22 @@ static cint_status p_hello(cint_ctx *ctx, int64_t fuel)
     return cint_rt_entry_end(ctx);
 }
 
+/* main(in U8[_] args): prints the bytes of the program arguments (OQ-306, RT-OQ-76). */
+static cint_status p_args(cint_ctx *ctx, int64_t fuel)
+{
+    size_t n = 0u;
+    const uint8_t *a;
+    cint_status st = cint_rt_entry_begin(ctx, p_site(1u), fuel, CINT_DEPTH_FROM_CONFIG);
+    if (st != CINT_OK) {
+        return st;
+    }
+    a = cint_ctx_args(ctx, &n);
+    if (n != 0u) {
+        (void)(cint_rt_print_begin(ctx, p_site(1u)) && cint_rt_print_bytes(ctx, (const char *)a, n) && cint_rt_print_end(ctx));
+    }
+    return cint_rt_entry_end(ctx);
+}
+
 /* I64 big = MAX; "partial: big={big}"; I64 c = big + 1; "never\n"; */
 static cint_status p_print_then_fault(cint_ctx *ctx, int64_t fuel)
 {
@@ -3226,6 +3260,7 @@ static const struct {
     {"state_error", p_state_error, CINT_FUEL_UNBOUNDED, &p_states},
     {"state_fault", p_state_fault, CINT_FUEL_UNBOUNDED, &p_states},
     {"state_bad_table", p_state_error, CINT_FUEL_UNBOUNDED, &p_states_bad},
+    {"args", p_args, CINT_FUEL_UNBOUNDED, NULL},
 };
 
 /* dests: the fault destination, then (cint_program_run_state) the fuel and
@@ -3347,6 +3382,44 @@ static void test_agreement(long pairs)
     printf("agreement: builtin bodies not available on this compiler; skipped\n");
 }
 #endif
+
+/* rotl and rotr through cint_rt_builtin_fast against cint_rt_builtin (rt/OPEN.md
+ * RT-OQ-67): every operand tag, every count tag, modes 0 and 1, the counts -1 to
+ * w + 1, then seeded patterns, three in four of them counts in that range. The fast path must give the generic result
+ * whenever it answers, and answer every unsigned rotation that does not fault. */
+static void test_rotations_fast(long pairs)
+{
+    static const uint32_t tags[8] = {CINT_TAG_I8, CINT_TAG_I16, CINT_TAG_I32, CINT_TAG_I64,
+                                     CINT_TAG_U8, CINT_TAG_U16, CINT_TAG_U32, CINT_TAG_U64};
+    cint_ctx *ctx = new_ctx();
+    long i, calls = 0, fast = 0, bad = 0;
+    unsigned op, t, u, mode;
+    CHECK(ctx != NULL, "rotations: context");
+    if (ctx == NULL) return;
+    for (i = 0; i < pairs; i++) {
+        uint64_t a = pick(), r = pick();
+        for (op = 15u; op <= 16u; op++) {
+            for (t = 0u; t < 8u; t++) {
+                unsigned w = cint_rt_tag_width(tags[t]);
+                for (u = 0u; u < 8u; u++) {
+                    for (mode = 0u; mode <= 1u; mode++) {
+                        uint64_t b = i < (long)w + 3 ? (uint64_t)(i - 1)
+                                     : (r & 3u) != 0u ? (r >> 2) % (w + 3u) - 1u : r, of = 0u, og = 0u;
+                        bool f = cint_rt_builtin_fast(op, tags[t], mode, tags[u], a, b, 0u, &of);
+                        bool g = cint_rt_builtin(ctx, S_OP, op, tags[t], mode, tags[u], a, b, 0u, &og);
+                        if (cint_rt_faulted(ctx)) (void)cint_ctx_clear_fault(ctx);
+                        calls++;
+                        fast += f ? 1 : 0;
+                        if ((f && (!g || of != og)) || (g && !f && mode == 0u && tags[t] >= CINT_TAG_U8)) bad++;
+                    }
+                }
+            }
+        }
+    }
+    CHECK(bad == 0, "rotations: the fast path gives the generic result");
+    printf("rotations: %ld calls, %ld on the fast path, %ld disagreements\n", calls, fast, bad);
+    cint_ctx_destroy(ctx);
+}
 
 /* ------------------------------------------------------------------------- */
 /* An overflowing checked add or sub writes the record that cint_rt_fault_arith */
@@ -4398,6 +4471,916 @@ static void test_host_dispatch(void)
     cint_ctx_destroy(ctx);
 }
 
+/* ------------------------------------------------------------------------- */
+/* Host functions (cint_rt_host.h 6f; SPEC-03 A-10, A-15; rt/OPEN.md         */
+/* RT-OQ-70): a program whose module imports three externs, resolved against  */
+/* the configuration's host table and called through cint_rt_host_call.      */
+
+static const uint8_t h_sig_get[] = {0x10, 0x20, 0x30};   /* a canonical type signature stands in: the runtime hashes it */
+static const uint8_t h_sig_sq[] = {0x40};
+static const char h_long[] = "a_name_of_fifty_four_bytes_whose_fault_names_no_function";
+static const cint_host_import h_imports[] = {
+    {{"get", 3u, 0u}, CINT_OBSERVE, 2u, h_sig_get, sizeof h_sig_get},  /* observe I64 get(I64 key, out I64[] buf) */
+    {{"sq", 2u, 0u}, CINT_PURE, 1u, h_sig_sq, sizeof h_sig_sq},        /* I64 sq(I64 x) */
+    {{"sync", 4u, 0u}, CINT_UNRESTRICTED, 0u, NULL, 0u},               /* unrestricted void sync() */
+    {{h_long, 56u, 0u}, CINT_PURE, 0u, NULL, 0u},                      /* I64 <h_long>() */
+};
+static const cint_host_table h_table = {4u, 0u, h_imports};
+static const cint_host_table *const h_tables[1] = {&h_table};
+static const cint_host_desc h_desc = {1u, 0u, h_tables};
+static const cint_host_desc h_desc_two = {2u, 0u, h_tables};   /* not t_program's: two modules */
+static const cint_host_import h_bad_imports[] = {{{"get", 3u, 0u}, 0u, 2u, h_sig_get, sizeof h_sig_get}};
+static const cint_host_table h_bad_table = {1u, 0u, h_bad_imports};
+static const cint_host_table *const h_bad_tables[1] = {&h_bad_table};
+static const cint_host_desc h_desc_bad = {1u, 0u, h_bad_tables};
+
+static int64_t h_calls;              /* host functions called */
+static cint_status h_get_status;     /* what get returns after writing */
+
+/* get(key, buf): writes key + i into buf[i] and returns the extent. Key 0 produces the error
+ * alternative 1; key -1 the error alternative 2 (not of a set of one); key -2 a result of
+ * another kind; key -3 a result of the declared type that does not fit. */
+static cint_status h_get(void *user, const cint_value *args, uint32_t nargs, cint_value *result)
+{
+    const cint_arg_view *buf = &args[1].as.view;
+    int64_t key = args[0].as.i64;
+    h_calls++;
+    if (user != &h_calls || nargs != 2u || args[0].kind != CINT_VAL_SCALAR || args[1].kind != CINT_VAL_VIEW ||
+        buf->perm != CINT_VIEW_WRITE || buf->byte_stride[0] != 8 || buf->reachable_bytes != buf->shape[0] * 8) {
+        return CINT_REFUSED;  /* the staging is contiguous */
+    }
+    for (int64_t i = 0; i < buf->shape[0]; i++) {
+        int64_t v = key + i;
+        memcpy((uint8_t *)buf->mem.u.host.ptr + i * 8, &v, 8u);
+    }
+    if (key == 0 || key == -1) {
+        result->is_error = 1u;
+        result->error = key == 0 ? 1 : 2;
+    } else if (key == -2) {
+        result->kind = CINT_VAL_VIEW;
+    } else if (key == -3) {
+        result->type.code = CINT_TAG_I8;
+        result->as.u64 = 300u;
+    } else {
+        result->as.i64 = buf->shape[0];
+    }
+    return h_get_status;
+}
+
+static cint_status h_sq(void *user, const cint_value *args, uint32_t nargs, cint_value *result)
+{
+    (void)user;
+    h_calls++;
+    if (nargs != 1u) {
+        return CINT_REFUSED;
+    }
+    result->as.i64 = args[0].as.i64 * args[0].as.i64;
+    return CINT_OK;
+}
+
+static cint_status h_void(void *user, const cint_value *args, uint32_t nargs, cint_value *result)
+{
+    (void)user;
+    (void)args;
+    (void)result;
+    h_calls++;
+    return nargs == 0u ? CINT_OK : CINT_REFUSED;
+}
+
+static cint_status h_refuse(void *user, const cint_value *args, uint32_t nargs, cint_value *result)
+{
+    (void)user;
+    (void)args;
+    (void)nargs;
+    (void)result;
+    h_calls++;
+    return CINT_REFUSED;
+}
+
+/* The host table: the four functions, with the digests of the import rows' signatures. */
+static void h_fns_of(cint_host_fn fns[4])
+{
+    static const char *const names[4] = {"get", "sq", "sync", h_long};
+    static cint_status (*const calls[4])(void *, const cint_value *, uint32_t, cint_value *) = {h_get, h_sq, h_void,
+                                                                                                h_refuse};
+    memset(fns, 0, 4u * sizeof *fns);
+    for (unsigned i = 0u; i < 4u; i++) {
+        fns[i].name = names[i];
+        fns[i].effect = h_imports[i].effect;
+        cint_sha256(h_imports[i].type_signature, (size_t)h_imports[i].type_signature_len, fns[i].signature);
+        fns[i].call = calls[i];
+        fns[i].user = &h_calls;
+    }
+}
+
+static void h_scalar(cint_value *v, uint32_t tag, int64_t x)
+{
+    memset(v, 0, sizeof *v);
+    v->type.code = (uint16_t)tag;
+    v->kind = CINT_VAL_SCALAR;
+    v->as.i64 = x;
+}
+
+static void test_host_calls(void)
+{
+    cint_ctx_config cfg;
+    cint_ctx *ctx = NULL;
+    cint_host_fn fns[4];
+    cint_value hv[2], hr;
+    int64_t cells[6], used = 0;
+    unsigned i;
+    char buf[80];
+    h_fns_of(fns);
+    memset(&cfg, 0, sizeof cfg);
+    cfg.size = (uint32_t)sizeof cfg;
+    cfg.program = &t_program;
+    cfg.imports = &h_desc;
+
+    /* Resolution at context creation (A-10). */
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED, "an import with no host function is refused");
+    cfg.host_count = 4u;
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED, "a count with no table");
+    cfg.host = fns;
+    cfg.reserved2 = 1u;
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED, "a nonzero reserved2");
+    cfg.reserved2 = 0u;
+    cfg.grants_length = 1u;
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED, "a grants length with no grants");
+    cfg.grants_length = 0u;
+    cfg.size = 96u;
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED, "the ABI 3.1 config size is refused (A-5)");
+    cfg.size = (uint32_t)sizeof cfg;
+    fns[1].effect = CINT_OBSERVE;
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED, "another effect class");
+    fns[1].effect = CINT_PURE;
+    fns[0].signature[5] ^= 1u;
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED, "another signature digest");
+    fns[0].signature[5] ^= 1u;
+    fns[2].call = NULL;
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED, "a row without a function");
+    fns[2].call = h_void;
+    cfg.imports = &h_desc_bad;
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED, "an import table with an effect class of 0");
+    cfg.imports = &h_desc_two;
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED, "a descriptor of another module count");
+    cfg.imports = NULL;
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_OK && ctx != NULL, "no imports: a host table is kept, nothing resolved");
+    CHECK(cint_rt_entry_begin(ctx, S_FUEL, 100, 8) == CINT_OK && !cint_rt_host_call(ctx, S_CALL, 0u, NULL, 0u, &hr, 0u) &&
+              cint_rt_entry_end(ctx) == CINT_FAULT,
+          "a call with no imports faults");
+    CHECK_REC(ctx, "10 host.call", "E_UNSUPPORTED host.call");
+    cint_ctx_destroy(ctx);
+    ctx = NULL;
+    cfg.imports = &h_desc;
+    cfg.host_count = 3u;
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED, "the fourth import has no function");
+    cfg.host_count = 4u;
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_OK && ctx != NULL, "every import resolves");
+    if (ctx == NULL) {
+        return;
+    }
+
+    /* Calls (A-15): a pure call, with its fuel unit. */
+    h_calls = 0;
+    CHECK(cint_rt_entry_begin(ctx, S_FUEL, 100, 8) == CINT_OK, "entry");
+    h_scalar(&hv[0], CINT_TAG_I64, 7);
+    h_scalar(&hr, CINT_TAG_I64, 0);
+    CHECK(cint_rt_host_call(ctx, S_CALL, 1u, hv, 1u, &hr, 0u) && hr.is_error == 0u && hr.as.i64 == 49 && h_calls == 1,
+          "sq 7 is 49");
+    CHECK(cint_rt_entry_end(ctx) == CINT_OK && cint_fuel_consumed(ctx, &used) == CINT_OK && used == 2,
+          "an extern call charges one unit after the entry's");
+
+    /* An out view of stride 2 over six cells: the odd cells stay. */
+    CHECK(cint_rt_entry_begin(ctx, S_FUEL, 100, 8) == CINT_OK, "entry");
+    for (i = 0u; i < 6u; i++) {
+        cells[i] = -(int64_t)i - 1;
+    }
+    h_scalar(&hv[0], CINT_TAG_I64, 10);
+    cint_rt_arg_view(&hv[1], CINT_TAG_I64, cells, 0, 3, 2, CINT_VIEW_WRITE);
+    h_scalar(&hr, CINT_TAG_I64, 0);
+    CHECK(hv[1].kind == CINT_VAL_VIEW && hv[1].as.view.byte_stride[0] == 16 && hv[1].as.view.reachable_bytes == 40 &&
+              hv[1].as.view.mem.kind == CINT_MEM_HOST,
+          "cint_rt_arg_view: a stride of 16 bytes reaching 40");
+    CHECK(cint_rt_host_call(ctx, S_CALL, 0u, hv, 2u, &hr, 1u) && hr.as.i64 == 3 && cells[0] == 10 && cells[2] == 11 &&
+              cells[4] == 12 && cells[1] == -2 && cells[3] == -4 && cells[5] == -6,
+          "get 10 writes the staged elements back through the stride");
+    CHECK(hv[1].as.view.mem.u.host.ptr == cells && hv[1].as.view.byte_stride[0] == 16 && hv[1].as.view.reachable_bytes == 40,
+          "the argument addresses the caller's memory again");
+    /* The error alternative: the out view is left as it was. */
+    h_scalar(&hv[0], CINT_TAG_I64, 0);
+    CHECK(cint_rt_host_call(ctx, S_CALL, 0u, hv, 2u, &hr, 1u) && hr.is_error == 1u && hr.error == 1 && cells[0] == 10 &&
+              cells[2] == 11 && cells[4] == 12,
+          "get 0: the error alternative, and the out view keeps its values");
+    /* void. */
+    memset(&hr, 0, sizeof hr);
+    CHECK(cint_rt_host_call(ctx, S_CALL, 2u, NULL, 0u, &hr, 0u) && hr.kind == 0u && h_calls == 4, "sync: a void result");
+    CHECK(cint_rt_entry_end(ctx) == CINT_OK && cint_fuel_consumed(ctx, &used) == CINT_OK && used == 4,
+          "three units after the entry's");
+
+    /* Faults. */
+    CHECK(cint_rt_entry_begin(ctx, S_FUEL, 100, 8) == CINT_OK, "entry");
+    h_scalar(&hv[0], CINT_TAG_I64, -1);
+    h_scalar(&hr, CINT_TAG_I64, 0);
+    CHECK(!cint_rt_host_call(ctx, S_CALL, 0u, hv, 2u, &hr, 1u) && cells[0] == 10 && cint_rt_entry_end(ctx) == CINT_FAULT,
+          "an error tag outside the set faults");
+    CHECK_REC(ctx, "10 host.result.get", "E_UNSUPPORTED host.result.get");
+    CHECK(cint_rt_entry_begin(ctx, S_FUEL, 100, 8) == CINT_OK, "entry");
+    h_scalar(&hv[0], CINT_TAG_I64, -2);
+    h_scalar(&hr, CINT_TAG_I64, 0);
+    CHECK(!cint_rt_host_call(ctx, S_CALL, 0u, hv, 2u, &hr, 1u) && cint_rt_entry_end(ctx) == CINT_FAULT,
+          "a result of another kind faults");
+    CHECK_REC(ctx, "10 host.result.get", "E_UNSUPPORTED host.result.get");
+    CHECK(cint_rt_entry_begin(ctx, S_FUEL, 100, 8) == CINT_OK, "entry");
+    h_scalar(&hv[0], CINT_TAG_I64, -3);
+    h_scalar(&hr, CINT_TAG_I64, 0);
+    CHECK(!cint_rt_host_call(ctx, S_CALL, 0u, hv, 2u, &hr, 1u) && cint_rt_entry_end(ctx) == CINT_FAULT,
+          "a result that does not fit its type faults");
+    CHECK_REC(ctx, "10 host.result.get", "E_UNSUPPORTED host.result.get");
+    CHECK(cint_rt_entry_begin(ctx, S_FUEL, 100, 8) == CINT_OK, "entry");
+    h_scalar(&hv[0], CINT_TAG_I64, 20);
+    h_scalar(&hr, CINT_TAG_I64, 0);
+    h_get_status = CINT_RESOURCE;
+    CHECK(!cint_rt_host_call(ctx, S_CALL, 0u, hv, 2u, &hr, 1u) && cells[0] == 10 && cells[2] == 11 &&
+              cint_rt_entry_end(ctx) == CINT_FAULT,
+          "a status other than CINT_OK faults, and the out view keeps its values");
+    h_get_status = CINT_OK;
+    snprintf(buf, sizeof buf, "10 host.error.get | I64 %d", CINT_RESOURCE);
+    CHECK_REC(ctx, buf, "E_UNSUPPORTED host.error.get with the status");
+    CHECK(cint_rt_entry_begin(ctx, S_FUEL, 100, 8) == CINT_OK, "entry");
+    h_scalar(&hr, CINT_TAG_I64, 0);
+    CHECK(!cint_rt_host_call(ctx, S_CALL, 3u, NULL, 0u, &hr, 0u) && cint_rt_entry_end(ctx) == CINT_FAULT,
+          "a refused call of the long name");
+    snprintf(buf, sizeof buf, "10 host.error | I64 %d", CINT_REFUSED);
+    CHECK_REC(ctx, buf, "a name the operation cannot hold is left out");
+    CHECK(cint_rt_entry_begin(ctx, S_FUEL, 100, 8) == CINT_OK, "entry");
+    h_calls = 0;
+    CHECK(!cint_rt_host_call(ctx, S_CALL, 1u, hv, 2u, &hr, 0u) && h_calls == 0 && cint_rt_entry_end(ctx) == CINT_FAULT,
+          "another argument count is not called");
+    CHECK_REC(ctx, "10 host.call.sq", "E_UNSUPPORTED host.call.sq");
+    CHECK(cint_rt_entry_begin(ctx, S_FUEL, 100, 8) == CINT_OK, "entry");
+    CHECK(!cint_rt_host_call(ctx, S_CALL, 4u, hv, 1u, &hr, 0u) && cint_rt_entry_end(ctx) == CINT_FAULT, "no import 4");
+    CHECK_REC(ctx, "10 host.call", "E_UNSUPPORTED host.call");
+    CHECK(cint_rt_entry_begin(ctx, S_FUEL, 100, 8) == CINT_OK, "entry");
+    h_scalar(&hv[0], CINT_TAG_I8, 200);
+    CHECK(!cint_rt_host_call(ctx, S_CALL, 1u, hv, 1u, &hr, 0u) && h_calls == 0 && cint_rt_entry_end(ctx) == CINT_FAULT,
+          "an argument that does not fit its type is not passed");
+    CHECK_REC(ctx, "10 host.call.sq", "E_UNSUPPORTED host.call.sq");
+    CHECK(cint_rt_entry_begin(ctx, S_FUEL, 2, 8) == CINT_OK, "entry with two units, one its own");
+    h_scalar(&hv[0], CINT_TAG_I64, 3);
+    h_scalar(&hr, CINT_TAG_I64, 0);
+    CHECK(cint_rt_host_call(ctx, S_CALL, 1u, hv, 1u, &hr, 0u) && hr.as.i64 == 9 &&
+              !cint_rt_host_call(ctx, S_CALL, 1u, hv, 1u, &hr, 0u) && h_calls == 1 && cint_rt_entry_end(ctx) == CINT_FAULT,
+          "the second call has no unit, and is not made");
+    CHECK_REC(ctx, "9 fuel.charge | limit I64 2", "E_FUEL at the call site");
+    cint_ctx_destroy(ctx);
+}
+
+/* rt/OPEN.md RT-OQ-68: cint_rt_state answers from the context head once a
+ * module's block exists; the first access and a refused descriptor take
+ * cint_rt_state_slow, which creates the block or records the fault. */
+static const int64_t si_init[2] = {7, 9};
+static const cint_state si_state = {0u, 0u, 16u, 0u, si_init, NULL};
+static const cint_state si_empty = {0u, 0u, 0u, 0u, si_init, NULL};   /* refused: no bytes */
+static const cint_state si_far = {1u, 0u, 16u, 0u, si_init, NULL};    /* refused: no module 1 */
+
+static const uint8_t f_sig_read[] = {
+    0x1d, 0x00, 0x00, 0x00, 0x63, 0x69, 0x6e, 0x74, 0x2d, 0x63, 0x6f, 0x72, 0x65, 0x2d, 0x31, 0x2f, 0x74, 0x79, 0x70, 0x65,
+    0x2d, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x2f, 0x76, 0x31, 0x01, 0x00, 0x00, 0x00, 0x73, 0x0a, 0x00,
+    0x00, 0x00, 0x66, 0x73, 0x2e, 0x46, 0x73, 0x45, 0x72, 0x72, 0x6f, 0x72, 0x22, 0x00, 0x09, 0x00, 0x00, 0x00, 0x04, 0x00,
+    0x00, 0x00, 0x70, 0x61, 0x74, 0x68, 0x06, 0x00, 0x00, 0x00, 0x64, 0x65, 0x6e, 0x69, 0x65, 0x64, 0x09, 0x00, 0x00, 0x00,
+    0x6e, 0x6f, 0x74, 0x5f, 0x66, 0x6f, 0x75, 0x6e, 0x64, 0x06, 0x00, 0x00, 0x00, 0x65, 0x78, 0x69, 0x73, 0x74, 0x73, 0x0d,
+    0x00, 0x00, 0x00, 0x6e, 0x6f, 0x74, 0x5f, 0x64, 0x69, 0x72, 0x65, 0x63, 0x74, 0x6f, 0x72, 0x79, 0x0c, 0x00, 0x00, 0x00,
+    0x69, 0x73, 0x5f, 0x64, 0x69, 0x72, 0x65, 0x63, 0x74, 0x6f, 0x72, 0x79, 0x09, 0x00, 0x00, 0x00, 0x6e, 0x6f, 0x74, 0x5f,
+    0x65, 0x6d, 0x70, 0x74, 0x79, 0x06, 0x00, 0x00, 0x00, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x73, 0x05, 0x00, 0x00, 0x00, 0x71,
+    0x75, 0x6f, 0x74, 0x61, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x52, 0x21, 0x01, 0x00, 0x00, 0x14, 0x02,
+    0x52, 0x21, 0x01, 0x00, 0x74, 0x00, 0x00, 0x00, 0x00, 0x14};
+static const uint8_t f_sig_stat[] = {
+    0x1d, 0x00, 0x00, 0x00, 0x63, 0x69, 0x6e, 0x74, 0x2d, 0x63, 0x6f, 0x72, 0x65, 0x2d, 0x31, 0x2f, 0x74, 0x79, 0x70, 0x65,
+    0x2d, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x2f, 0x76, 0x31, 0x01, 0x00, 0x00, 0x00, 0x73, 0x0a, 0x00,
+    0x00, 0x00, 0x66, 0x73, 0x2e, 0x46, 0x73, 0x45, 0x72, 0x72, 0x6f, 0x72, 0x22, 0x00, 0x09, 0x00, 0x00, 0x00, 0x04, 0x00,
+    0x00, 0x00, 0x70, 0x61, 0x74, 0x68, 0x06, 0x00, 0x00, 0x00, 0x64, 0x65, 0x6e, 0x69, 0x65, 0x64, 0x09, 0x00, 0x00, 0x00,
+    0x6e, 0x6f, 0x74, 0x5f, 0x66, 0x6f, 0x75, 0x6e, 0x64, 0x06, 0x00, 0x00, 0x00, 0x65, 0x78, 0x69, 0x73, 0x74, 0x73, 0x0d,
+    0x00, 0x00, 0x00, 0x6e, 0x6f, 0x74, 0x5f, 0x64, 0x69, 0x72, 0x65, 0x63, 0x74, 0x6f, 0x72, 0x79, 0x0c, 0x00, 0x00, 0x00,
+    0x69, 0x73, 0x5f, 0x64, 0x69, 0x72, 0x65, 0x63, 0x74, 0x6f, 0x72, 0x79, 0x09, 0x00, 0x00, 0x00, 0x6e, 0x6f, 0x74, 0x5f,
+    0x65, 0x6d, 0x70, 0x74, 0x79, 0x06, 0x00, 0x00, 0x00, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x73, 0x05, 0x00, 0x00, 0x00, 0x71,
+    0x75, 0x6f, 0x74, 0x61, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x52, 0x21, 0x01, 0x00, 0x74, 0x00, 0x00,
+    0x00, 0x00, 0x14};
+static const uint8_t f_sig_put[] = {
+    0x1d, 0x00, 0x00, 0x00, 0x63, 0x69, 0x6e, 0x74, 0x2d, 0x63, 0x6f, 0x72, 0x65, 0x2d, 0x31, 0x2f, 0x74, 0x79, 0x70, 0x65,
+    0x2d, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x2f, 0x76, 0x31, 0x01, 0x00, 0x00, 0x00, 0x73, 0x0a, 0x00,
+    0x00, 0x00, 0x66, 0x73, 0x2e, 0x46, 0x73, 0x45, 0x72, 0x72, 0x6f, 0x72, 0x22, 0x00, 0x09, 0x00, 0x00, 0x00, 0x04, 0x00,
+    0x00, 0x00, 0x70, 0x61, 0x74, 0x68, 0x06, 0x00, 0x00, 0x00, 0x64, 0x65, 0x6e, 0x69, 0x65, 0x64, 0x09, 0x00, 0x00, 0x00,
+    0x6e, 0x6f, 0x74, 0x5f, 0x66, 0x6f, 0x75, 0x6e, 0x64, 0x06, 0x00, 0x00, 0x00, 0x65, 0x78, 0x69, 0x73, 0x74, 0x73, 0x0d,
+    0x00, 0x00, 0x00, 0x6e, 0x6f, 0x74, 0x5f, 0x64, 0x69, 0x72, 0x65, 0x63, 0x74, 0x6f, 0x72, 0x79, 0x0c, 0x00, 0x00, 0x00,
+    0x69, 0x73, 0x5f, 0x64, 0x69, 0x72, 0x65, 0x63, 0x74, 0x6f, 0x72, 0x79, 0x09, 0x00, 0x00, 0x00, 0x6e, 0x6f, 0x74, 0x5f,
+    0x65, 0x6d, 0x70, 0x74, 0x79, 0x06, 0x00, 0x00, 0x00, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x73, 0x05, 0x00, 0x00, 0x00, 0x71,
+    0x75, 0x6f, 0x74, 0x61, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x52, 0x21, 0x01, 0x00, 0x00, 0x52, 0x21,
+    0x01, 0x00, 0x74, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+
+/* The fs/1 service of the standard service table (rt/cint_fs.c; SPEC-03 A-10, H-8a; SPEC-07
+ * SEC-OS-5 to SEC-OS-8; RT-OQ-72): grant lines, service rows, and the three operations over
+ * a directory `fs_t` made beside the test. */
+static const cint_host_import f_imports[] = {
+    {{"fs/1.read", 9u, 0u}, CINT_OBSERVE, 4u, f_sig_read, sizeof f_sig_read},
+    {{"fs/1.stat", 9u, 0u}, CINT_OBSERVE, 2u, f_sig_stat, sizeof f_sig_stat},
+    {{"fs/1.put", 8u, 0u}, CINT_OBSERVE, 3u, f_sig_put, sizeof f_sig_put},
+};
+static const cint_host_table f_table = {3u, 0u, f_imports};
+static const cint_host_table *const f_tables[1] = {&f_table};
+static const cint_host_desc f_desc = {1u, 0u, f_tables};
+
+static void f_mkdir(const char *path)
+{
+#if defined(_WIN32)
+    (void)_mkdir(path);
+#else
+    (void)mkdir(path, 0777);
+#endif
+}
+
+#if !defined(_WIN32)
+static void f_link(const char *target, const char *path)
+{
+    int rc = symlink(target, path);
+    (void)rc;
+}
+#endif
+
+static void f_file(const char *path, const char *text)
+{
+    FILE *f = fopen(path, "wb");
+    if (f != NULL) {
+        fwrite(text, 1u, strlen(text), f);
+        fclose(f);
+    }
+}
+
+static bool f_exists(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (f != NULL) fclose(f);
+    return f != NULL;
+}
+
+static void f_path(cint_value *v, const char *p)
+{
+    cint_rt_arg_view(v, CINT_TAG_U8, p, 0, (int64_t)strlen(p), 1, CINT_VIEW_READ);
+}
+
+/* One call of row k inside an entry: the value, -tag for the error alternative, -100 for a
+ * fault (the record is left for CHECK_REC). */
+static int64_t f_call(cint_ctx *ctx, uint32_t k, cint_value *args, uint32_t nargs, cint_value *r)
+{
+    bool ok;
+    if (cint_rt_entry_begin(ctx, S_FUEL, 100, 8) != CINT_OK) return -101;
+    ok = cint_rt_host_call(ctx, S_CALL, k, args, nargs, r, 9u);
+    if (cint_rt_entry_end(ctx) != (ok ? CINT_OK : CINT_FAULT)) return -102;
+    if (!ok) return -100;
+    return r->is_error != 0u ? -r->error : r->as.i64;
+}
+
+static int64_t f_stat(cint_ctx *ctx, const char *path, int64_t handle)
+{
+    cint_value a[2], r;
+    h_scalar(&a[0], CINT_TAG_I64, handle);
+    f_path(&a[1], path);
+    h_scalar(&r, CINT_TAG_I64, 0);
+    return f_call(ctx, 1u, a, 2u, &r);
+}
+
+static int64_t f_read(cint_ctx *ctx, const char *path, int64_t offset, uint8_t *buf, int64_t n)
+{
+    cint_value a[4], r;
+    h_scalar(&a[0], CINT_TAG_I64, 0);
+    f_path(&a[1], path);
+    h_scalar(&a[2], CINT_TAG_I64, offset);
+    cint_rt_arg_view(&a[3], CINT_TAG_U8, buf, 0, n, 1, CINT_VIEW_WRITE);
+    h_scalar(&r, CINT_TAG_I64, 0);
+    return f_call(ctx, 0u, a, 4u, &r);
+}
+
+static int64_t f_put(cint_ctx *ctx, const char *path, const char *bytes)
+{
+    cint_value a[3], r;
+    h_scalar(&a[0], CINT_TAG_I64, 0);
+    f_path(&a[1], path);
+    f_path(&a[2], bytes);
+    memset(&r, 0, sizeof r);
+    return f_call(ctx, 2u, a, 3u, &r);
+}
+
+static void test_fs_services(void)
+{
+    static const char *const bad[] = {"fs.read:/data",          "fs.read:/data/=fs_t",       "console.input=fs_t",
+                                      "fs.read:/data=fs_t_none", "\nfs.read:/data=fs_t",      "bad name:x=fs_t",
+                                      "fs.read=fs_t",            "fs.read:/data=fs_t\n\n",    "fs.write:/d=",
+                                      "fs.read:data=fs_t",       "fs.read:/aux/x=fs_t"};
+    static const char grants[] = "fs.read:/data=fs_t\nfs.read:/out=fs_t/d\nfs.write:/out=fs_t/d\nconsole.input\n";
+    cint_ctx_config cfg;
+    cint_ctx *ctx = NULL;
+    cint_host_fn fn;
+    cint_host_import rows[3];
+    cint_host_table r_table = {3u, 0u, rows};
+    const cint_host_table *r_tables[1];
+    cint_host_desc r_desc = {1u, 0u, NULL};
+    uint8_t buf[16];
+    int64_t used = 0;
+    unsigned i;
+    char msg[96];
+    r_tables[0] = &r_table;
+    r_desc.tables = r_tables;
+
+    f_mkdir("fs_t");
+    f_mkdir("fs_t/d");
+    f_file("fs_t/a.bin", "0123456789");
+    f_file("fs_t/d/x.txt", "xx");
+    (void)remove("fs_t/d/new.txt");
+#if !defined(_WIN32)
+    (void)remove("fs_t/l");
+    (void)remove("fs_t/d/l2");
+    f_link("a.bin", "fs_t/l");
+    f_link("x.txt", "fs_t/d/l2");
+#endif
+
+    memset(&cfg, 0, sizeof cfg);
+    cfg.size = (uint32_t)sizeof cfg;
+    cfg.program = &t_program;
+    /* Grant lines this runtime refuses at creation. */
+    for (i = 0u; i < sizeof bad / sizeof bad[0]; i++) {
+        cfg.grants = (const uint8_t *)bad[i];
+        cfg.grants_length = strlen(bad[i]);
+        snprintf(msg, sizeof msg, "grant line refused: %s", bad[i]);
+        CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED, msg);
+    }
+    cfg.grants = NULL;
+    cfg.grants_length = 0u;
+    memset(&fn, 0, sizeof fn);
+    fn.name = "x/y";
+    fn.effect = CINT_PURE;
+    fn.call = h_sq;
+    cfg.host = &fn;
+    cfg.host_count = 1u;
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED, "a host function whose name holds '/' is refused");
+    cfg.host = NULL;
+    cfg.host_count = 0u;
+    /* Service rows resolve by name, class, parameter count and signature bytes. */
+    cfg.imports = &f_desc;
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_OK && ctx != NULL, "the three fs/1 rows resolve without grants");
+    cint_ctx_destroy(ctx);
+    ctx = NULL;
+    memcpy(rows, f_imports, sizeof rows);
+    cfg.imports = &r_desc;
+    rows[0].effect = CINT_PURE;
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED, "a service row of another class");
+    rows[0].effect = CINT_OBSERVE;
+    rows[1].param_count = 1u;
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED, "a service row without the Grants handle");
+    rows[1].param_count = 2u;
+    rows[2].type_signature_len -= 1u;
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED, "a service row of another signature");
+    rows[2].type_signature_len += 1u;
+    rows[0].name.bytes = "fs/1.nope";
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_REFUSED, "a service row of no service");
+    rows[0].name.bytes = "fs/1.read";
+
+    /* The operations under three grants. */
+    cfg.imports = &f_desc;
+    cfg.grants = (const uint8_t *)grants;
+    cfg.grants_length = sizeof grants - 1u;
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_OK && ctx != NULL, "the grant lines are taken");
+    if (ctx == NULL) return;
+    CHECK(f_stat(ctx, "/data/a.bin", 0) == 10, "stat: the size");
+    CHECK(cint_fuel_consumed(ctx, &used) == CINT_OK && used == 2, "a service call charges one unit after the entry's");
+    memset(buf, '.', sizeof buf);
+    CHECK(f_read(ctx, "/data/a.bin", 3, buf, 4) == 4 && memcmp(buf, "3456.", 5u) == 0, "read: four bytes from offset 3");
+    CHECK(f_read(ctx, "/data/a.bin", 4, buf, 16) == 6 && memcmp(buf, "456789", 6u) == 0, "read: to the end");
+    CHECK(f_read(ctx, "/data/a.bin", 10, buf, 4) == 0, "read at the size: nothing");
+    CHECK(f_read(ctx, "/data/a.bin", 11, buf, 4) == -8, "read past the size: bounds");
+    CHECK(f_read(ctx, "/data/a.bin", -1, buf, 4) == -8, "read before 0: bounds");
+    CHECK(f_read(ctx, "/data/a.bin", 0, buf, 0) == 0, "read into an empty view");
+    CHECK(f_stat(ctx, "/data", 0) == -6 && f_stat(ctx, "/data/d", 0) == -6, "a directory: is_directory");
+    CHECK(f_stat(ctx, "/data/nope", 0) == -3, "no entry: not_found");
+    CHECK(f_stat(ctx, "/data/a.bin/x", 0) == -5 && f_stat(ctx, "/data/a.bin/x/y", 0) == -5,
+          "a file on the way: not_directory");
+    CHECK(f_stat(ctx, "/data/A.BIN", 0) == -3, "another case: not_found on every host (SEC-OS-5a)");
+    CHECK(f_stat(ctx, "/Data/a.bin", 0) == -2 && f_stat(ctx, "/database/x", 0) == -2 && f_stat(ctx, "/nowhere", 0) == -2,
+          "outside every read root: denied");
+    CHECK(f_stat(ctx, "/data/../x", 0) == -1 && f_stat(ctx, "/data//x", 0) == -1 && f_stat(ctx, "/data/x.", 0) == -1 &&
+              f_stat(ctx, "/data/aux.txt", 0) == -1 && f_stat(ctx, "/data/", 0) == -1 && f_stat(ctx, "data", 0) == -1 &&
+              f_stat(ctx, "", 0) == -1,
+          "syntax before permission: path");
+    CHECK(f_stat(ctx, "/out/x.txt", 0) == 2, "the second read root");
+#if !defined(_WIN32)
+    CHECK(f_stat(ctx, "/data/l", 0) == -3 && f_read(ctx, "/data/l", 0, buf, 4) == -3, "a link is not an entry");
+#endif
+    CHECK(f_stat(ctx, "/out/new.txt", 0) == -3, "before the put");
+    CHECK(f_put(ctx, "/out/new.txt", "hi") == 0 && f_stat(ctx, "/out/new.txt", 0) == 2 &&
+              f_read(ctx, "/out/new.txt", 0, buf, 16) == 2 && memcmp(buf, "hi", 2u) == 0,
+          "put creates the file");
+    CHECK(f_stat(ctx, "/data/d/new.txt", 0) == 2, "the same host directory under the other root");
+    CHECK(f_put(ctx, "/out/new.txt", "bye") == 0 && f_stat(ctx, "/out/new.txt", 0) == 3, "put replaces the file");
+    CHECK(f_put(ctx, "/out/x.txt", "") == 0 && f_stat(ctx, "/out/x.txt", 0) == 0, "put of no bytes");
+    CHECK(f_put(ctx, "/out/NEW.TXT", "x") == -4 && f_stat(ctx, "/out/new.txt", 0) == 3, "a case-fold collision: exists");
+    CHECK(f_put(ctx, "/out", "x") == -6, "put at the root: is_directory");
+    CHECK(f_put(ctx, "/data/z", "x") == -2 && f_put(ctx, "/out2/z", "x") == -2, "put without a write grant: denied");
+    CHECK(f_put(ctx, "/out/d2/x", "x") == -3, "put under a missing directory: not_found");
+    CHECK(f_put(ctx, "/out/x.txt/y", "x") == -5 && f_put(ctx, "/out/x.txt/y/z", "x") == -5,
+          "put under a file: not_directory");
+    CHECK(f_put(ctx, "/out/..", "x") == -1 && f_put(ctx, "/out/nul", "x") == -1, "put with a bad path: path");
+#if !defined(_WIN32)
+    CHECK(f_put(ctx, "/out/l2", "x") == -4 && f_stat(ctx, "/out/x.txt", 0) == 0, "put over a link: exists, nothing written");
+#endif
+    CHECK(!f_exists("fs_t/d/.cint-put-1") && !f_exists("fs_t/d/.cint-put-2") && !f_exists("fs_t/d/.cint-put-3"),
+          "no temporary entry stays");
+    CHECK(f_stat(ctx, "/data/a.bin", 1) == -100, "a Grants handle other than 0 is refused");
+    snprintf(msg, sizeof msg, "10 host.error.fs/1.stat | I64 %d", CINT_REFUSED);
+    CHECK_REC(ctx, msg, "the refusal is the fault host.error.fs/1.stat");
+    cint_ctx_destroy(ctx);
+    ctx = NULL;
+    /* Without grants every operation is denied. */
+    cfg.grants = NULL;
+    cfg.grants_length = 0u;
+    CHECK(cint_ctx_create(&cfg, &ctx) == CINT_OK && ctx != NULL, "created without grants");
+    if (ctx != NULL) {
+        CHECK(f_stat(ctx, "/data/a.bin", 0) == -2 && f_put(ctx, "/out/q", "x") == -2, "no grant: denied");
+        cint_ctx_destroy(ctx);
+    }
+}
+
+
+/* The console/1 service of the standard service table (rt/cint_console.c; SPEC-07 SEC-OS-10,
+ * catalog rows console.input and console.raw; RT-OQ-73): the five rows, `write` through the
+ * output sink, `read` and `read_line` from a pipe put in place of the standard input, the
+ * grants each needs, and on Linux, raw mode on a pseudoterminal and its restore at a fault. */
+static const uint8_t c_sig_raw[] = {
+    0x1d, 0x00, 0x00, 0x00, 0x63, 0x69, 0x6e, 0x74, 0x2d, 0x63, 0x6f, 0x72, 0x65, 0x2d, 0x31, 0x2f, 0x74, 0x79, 0x70, 0x65,
+    0x2d, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x2f, 0x76, 0x31, 0x01, 0x00, 0x00, 0x00, 0x73, 0x14, 0x00,
+    0x00, 0x00, 0x63, 0x6f, 0x6e, 0x73, 0x6f, 0x6c, 0x65, 0x2e, 0x43, 0x6f, 0x6e, 0x73, 0x6f, 0x6c, 0x65, 0x45, 0x72, 0x72,
+    0x6f, 0x72, 0x22, 0x00, 0x03, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x64, 0x65, 0x6e, 0x69, 0x65, 0x64, 0x06, 0x00,
+    0x00, 0x00, 0x63, 0x6c, 0x6f, 0x73, 0x65, 0x64, 0x0b, 0x00, 0x00, 0x00, 0x75, 0x6e, 0x61, 0x76, 0x61, 0x69, 0x6c, 0x61,
+    0x62, 0x6c, 0x65, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x74, 0x00, 0x00, 0x00, 0x00, 0x00};
+static const uint8_t c_sig_read[] = {
+    0x1d, 0x00, 0x00, 0x00, 0x63, 0x69, 0x6e, 0x74, 0x2d, 0x63, 0x6f, 0x72, 0x65, 0x2d, 0x31, 0x2f, 0x74, 0x79, 0x70, 0x65,
+    0x2d, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x2f, 0x76, 0x31, 0x01, 0x00, 0x00, 0x00, 0x73, 0x14, 0x00,
+    0x00, 0x00, 0x63, 0x6f, 0x6e, 0x73, 0x6f, 0x6c, 0x65, 0x2e, 0x43, 0x6f, 0x6e, 0x73, 0x6f, 0x6c, 0x65, 0x45, 0x72, 0x72,
+    0x6f, 0x72, 0x22, 0x00, 0x03, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x64, 0x65, 0x6e, 0x69, 0x65, 0x64, 0x06, 0x00,
+    0x00, 0x00, 0x63, 0x6c, 0x6f, 0x73, 0x65, 0x64, 0x0b, 0x00, 0x00, 0x00, 0x75, 0x6e, 0x61, 0x76, 0x61, 0x69, 0x6c, 0x61,
+    0x62, 0x6c, 0x65, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02, 0x52, 0x21, 0x01, 0x00, 0x00, 0x14, 0x74, 0x00,
+    0x00, 0x00, 0x00, 0x14};
+static const uint8_t c_sig_write[] = {
+    0x1d, 0x00, 0x00, 0x00, 0x63, 0x69, 0x6e, 0x74, 0x2d, 0x63, 0x6f, 0x72, 0x65, 0x2d, 0x31, 0x2f, 0x74, 0x79, 0x70, 0x65,
+    0x2d, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x2f, 0x76, 0x31, 0x01, 0x00, 0x00, 0x00, 0x73, 0x14, 0x00,
+    0x00, 0x00, 0x63, 0x6f, 0x6e, 0x73, 0x6f, 0x6c, 0x65, 0x2e, 0x43, 0x6f, 0x6e, 0x73, 0x6f, 0x6c, 0x65, 0x45, 0x72, 0x72,
+    0x6f, 0x72, 0x22, 0x00, 0x03, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x64, 0x65, 0x6e, 0x69, 0x65, 0x64, 0x06, 0x00,
+    0x00, 0x00, 0x63, 0x6c, 0x6f, 0x73, 0x65, 0x64, 0x0b, 0x00, 0x00, 0x00, 0x75, 0x6e, 0x61, 0x76, 0x61, 0x69, 0x6c, 0x61,
+    0x62, 0x6c, 0x65, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x52, 0x21, 0x01, 0x00, 0x74, 0x00, 0x00, 0x00,
+    0x00, 0x00};
+static const uint8_t c_sig_window[] = {
+    0x1d, 0x00, 0x00, 0x00, 0x63, 0x69, 0x6e, 0x74, 0x2d, 0x63, 0x6f, 0x72, 0x65, 0x2d, 0x31, 0x2f, 0x74, 0x79, 0x70, 0x65,
+    0x2d, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x2f, 0x76, 0x31, 0x01, 0x00, 0x00, 0x00, 0x73, 0x14, 0x00,
+    0x00, 0x00, 0x63, 0x6f, 0x6e, 0x73, 0x6f, 0x6c, 0x65, 0x2e, 0x43, 0x6f, 0x6e, 0x73, 0x6f, 0x6c, 0x65, 0x45, 0x72, 0x72,
+    0x6f, 0x72, 0x22, 0x00, 0x03, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x64, 0x65, 0x6e, 0x69, 0x65, 0x64, 0x06, 0x00,
+    0x00, 0x00, 0x63, 0x6c, 0x6f, 0x73, 0x65, 0x64, 0x0b, 0x00, 0x00, 0x00, 0x75, 0x6e, 0x61, 0x76, 0x61, 0x69, 0x6c, 0x61,
+    0x62, 0x6c, 0x65, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x74, 0x00, 0x00, 0x00, 0x00, 0x14};
+static const uint8_t c_sig_read_line[] = {
+    0x1d, 0x00, 0x00, 0x00, 0x63, 0x69, 0x6e, 0x74, 0x2d, 0x63, 0x6f, 0x72, 0x65, 0x2d, 0x31, 0x2f, 0x74, 0x79, 0x70, 0x65,
+    0x2d, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x2f, 0x76, 0x31, 0x01, 0x00, 0x00, 0x00, 0x73, 0x14, 0x00,
+    0x00, 0x00, 0x63, 0x6f, 0x6e, 0x73, 0x6f, 0x6c, 0x65, 0x2e, 0x43, 0x6f, 0x6e, 0x73, 0x6f, 0x6c, 0x65, 0x45, 0x72, 0x72,
+    0x6f, 0x72, 0x22, 0x00, 0x03, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x64, 0x65, 0x6e, 0x69, 0x65, 0x64, 0x06, 0x00,
+    0x00, 0x00, 0x63, 0x6c, 0x6f, 0x73, 0x65, 0x64, 0x0b, 0x00, 0x00, 0x00, 0x75, 0x6e, 0x61, 0x76, 0x61, 0x69, 0x6c, 0x61,
+    0x62, 0x6c, 0x65, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x52, 0x21, 0x01, 0x00, 0x74, 0x00, 0x00, 0x00,
+    0x00, 0x14};
+static const cint_host_import c_imports[] = {
+    {{"console/1.raw", 13u, 0u}, CINT_OBSERVE, 2u, c_sig_raw, sizeof c_sig_raw},
+    {{"console/1.read", 14u, 0u}, CINT_OBSERVE, 3u, c_sig_read, sizeof c_sig_read},
+    {{"console/1.write", 15u, 0u}, CINT_OBSERVE, 2u, c_sig_write, sizeof c_sig_write},
+    {{"console/1.window", 16u, 0u}, CINT_OBSERVE, 1u, c_sig_window, sizeof c_sig_window},
+    {{"console/1.read_line", 19u, 0u}, CINT_OBSERVE, 2u, c_sig_read_line, sizeof c_sig_read_line},
+};
+static const cint_host_table c_table = {5u, 0u, c_imports};
+static const cint_host_table *const c_tables[1] = {&c_table};
+static const cint_host_desc c_desc = {1u, 0u, c_tables};
+
+static cint_ctx *c_ctx(const char *grants, sink *s)
+{
+    cint_ctx_config cfg;
+    cint_ctx *ctx = NULL;
+    memset(&cfg, 0, sizeof cfg);
+    cfg.size = (uint32_t)sizeof cfg;
+    cfg.program = &t_program;
+    cfg.imports = &c_desc;
+    cfg.output = s != NULL ? sink_write : NULL;
+    cfg.output_user = s;
+    cfg.grants = (const uint8_t *)grants;
+    cfg.grants_length = grants != NULL ? strlen(grants) : 0u;
+    return cint_ctx_create(&cfg, &ctx) == CINT_OK ? ctx : NULL;
+}
+
+/* A pipe in place of the standard input: its write end, or -1. */
+static int c_pipe_in(void)
+{
+    int fds[2];
+#if defined(_WIN32)
+    if (_pipe(fds, 4096u, _O_BINARY) != 0) return -1;
+    if (_dup2(fds[0], 0) != 0) return -1;
+    (void)SetStdHandle(STD_INPUT_HANDLE, (HANDLE)_get_osfhandle(0));
+    _close(fds[0]);
+#else
+    if (pipe(fds) != 0) return -1;
+    if (dup2(fds[0], 0) != 0) return -1;
+    close(fds[0]);
+#endif
+    return fds[1];
+}
+
+static void c_feed(int w, const char *text)
+{
+#if defined(_WIN32)
+    (void)_write(w, text, (unsigned)strlen(text));
+#else
+    ssize_t rc = write(w, text, strlen(text));
+    (void)rc;
+#endif
+}
+
+static void c_close(int fd)
+{
+#if defined(_WIN32)
+    _close(fd);
+#else
+    close(fd);
+#endif
+}
+
+static int64_t c_read(cint_ctx *ctx, uint8_t *buf, int64_t extent, int64_t wait_ms)
+{
+    cint_value v[3], r;
+    h_scalar(&v[0], CINT_TAG_I64, 0);
+    cint_rt_arg_view(&v[1], CINT_TAG_U8, buf, 0, extent, 1, CINT_VIEW_WRITE);
+    h_scalar(&v[2], CINT_TAG_I64, wait_ms);
+    h_scalar(&r, CINT_TAG_I64, 0);
+    return f_call(ctx, 1u, v, 3u, &r);
+}
+
+static int64_t c_read_line(cint_ctx *ctx, uint8_t *buf, int64_t extent)
+{
+    cint_value v[2], r;
+    h_scalar(&v[0], CINT_TAG_I64, 0);
+    cint_rt_arg_view(&v[1], CINT_TAG_U8, buf, 0, extent, 1, CINT_VIEW_WRITE);
+    h_scalar(&r, CINT_TAG_I64, 0);
+    return f_call(ctx, 4u, v, 2u, &r);
+}
+
+static int64_t c_write(cint_ctx *ctx, const char *text)
+{
+    cint_value v[2], r;
+    h_scalar(&v[0], CINT_TAG_I64, 0);
+    cint_rt_arg_view(&v[1], CINT_TAG_U8, text, 0, (int64_t)strlen(text), 1, CINT_VIEW_READ);
+    h_scalar(&r, CINT_TAG_I64, 0);
+    return f_call(ctx, 2u, v, 2u, &r);
+}
+
+static int64_t c_window(cint_ctx *ctx, int64_t handle)
+{
+    cint_value v[1], r;
+    h_scalar(&v[0], CINT_TAG_I64, handle);
+    h_scalar(&r, CINT_TAG_I64, 0);
+    return f_call(ctx, 3u, v, 1u, &r);
+}
+
+static int64_t c_raw(cint_ctx *ctx, int on)
+{
+    cint_value v[2], r;
+    h_scalar(&v[0], CINT_TAG_I64, 0);
+    h_scalar(&v[1], CINT_TAG_BOOL, on);
+    h_scalar(&r, CINT_TAG_I64, 0);
+    return f_call(ctx, 0u, v, 2u, &r);
+}
+
+#if defined(__linux__)
+/* A pseudoterminal in place of the standard input, 24 rows by 80 columns: the master, or -1. */
+static int c_pty_in(void)
+{
+    int master = open("/dev/ptmx", O_RDWR | O_NOCTTY), unlock = 0, slave;
+    unsigned n = 0u;
+    struct winsize ws;
+    char name[32];
+    if (master < 0) return -1;
+    if (ioctl(master, TIOCSPTLCK, &unlock) != 0 || ioctl(master, TIOCGPTN, &n) != 0) {
+        close(master);
+        return -1;
+    }
+    memset(&ws, 0, sizeof ws);
+    ws.ws_row = 24;
+    ws.ws_col = 80;
+    (void)ioctl(master, TIOCSWINSZ, &ws);
+    snprintf(name, sizeof name, "/dev/pts/%u", n);
+    slave = open(name, O_RDWR | O_NOCTTY);
+    if (slave < 0 || dup2(slave, 0) != 0) {
+        if (slave >= 0) close(slave);
+        close(master);
+        return -1;
+    }
+    close(slave);
+    return master;
+}
+
+static bool c_canonical(void)
+{
+    struct termios t;
+    return tcgetattr(0, &t) == 0 && (t.c_lflag & ICANON) != 0;
+}
+#endif
+
+#if !defined(_WIN32)
+/* An output sink that writes to the C library's stdout, as the generated program's does. */
+static cint_status c_stdout_sink(void *user, const uint8_t *bytes, size_t len)
+{
+    (void)user;
+    return fwrite(bytes, 1u, len, stdout) == len ? CINT_OK : CINT_RESOURCE;
+}
+
+/* Whether the nonblocking pipe `fd` holds exactly `text` now; it is read empty. */
+static bool c_drain(int fd, const char *text)
+{
+    char got[64];
+    ssize_t k = read(fd, got, sizeof got);
+    size_t n = k > 0 ? (size_t)k : 0u;
+    return n == strlen(text) && memcmp(got, text, n) == 0;
+}
+#endif
+
+static void test_console_services(void)
+{
+    sink s;
+    cint_ctx *ctx;
+    uint8_t buf[16];
+    int64_t v;
+    int w;
+#if defined(_WIN32)
+    int saved_in = _dup(0);
+#else
+    int saved_in = dup(0);
+#endif
+
+    /* Without grants: input and raw mode are denied, output without a sink is unavailable. */
+    ctx = c_ctx(NULL, NULL);
+    CHECK(ctx != NULL, "the five console/1 rows resolve without grants");
+    CHECK(c_read(ctx, buf, 16, 0) == -1 && c_read_line(ctx, buf, 16) == -1 && c_window(ctx, 0) == -1 && c_raw(ctx, 1) == -1,
+          "read, read_line, window and raw are denied without a grant");
+    CHECK(c_write(ctx, "x") == -3, "write without an output sink is unavailable");
+    CHECK(c_window(ctx, 1) == -100, "a handle other than 0 is refused");
+    CHECK_REC(ctx, "10 host.error.console/1.window | I64 2", "the boundary fault names the row");
+    cint_ctx_destroy(ctx);
+
+    /* A grant with arguments covers; `write` reaches the sink whole. */
+    memset(&s, 0, sizeof s);
+    ctx = c_ctx("console.input:tty\nfs.read:/d=fs_t\n", &s);
+    CHECK(ctx != NULL, "a context with console.input and an fs grant");
+    CHECK(c_raw(ctx, 1) == -1 && c_raw(ctx, 0) == -1, "raw is denied without console.raw");
+    CHECK(c_write(ctx, "hello") == 0 && c_write(ctx, "") == 0 && s.calls == 1 && SINK_IS(s, "hello"),
+          "write hands its bytes to the sink once; an empty write makes no call");
+    s.status = CINT_RESOURCE;
+    CHECK(c_write(ctx, "y") == -2, "a sink that refuses the bytes is `closed`");
+    s.status = CINT_OK;
+
+    w = c_pipe_in();
+    CHECK(w >= 0, "a pipe stands in for the standard input");
+    if (w >= 0) {
+        c_feed(w, "ab\ncd\r\nxyz");
+        CHECK(c_read_line(ctx, buf, 16) == 2 && memcmp(buf, "ab", 2u) == 0, "read_line: the first line without its end");
+        CHECK(c_read_line(ctx, buf, 16) == 2 && memcmp(buf, "cd", 2u) == 0, "read_line strips a CR before the LF");
+        CHECK(c_read(ctx, buf, 16, 0) == 3 && memcmp(buf, "xyz", 3u) == 0, "read: the bytes that are there, polled");
+        CHECK(c_read(ctx, buf, 0, 0) == 0, "an empty buffer reads nothing");
+        c_feed(w, "0123456789abcdef!");
+        CHECK(c_read_line(ctx, buf, 16) == 16 && memcmp(buf, "0123456789abcdef", 16u) == 0,
+              "a line longer than the buffer comes in pieces");
+        CHECK(c_read(ctx, buf, 16, 50) == 1 && buf[0] == '!', "read with a timeout returns what arrives");
+        v = c_read(ctx, buf, 16, 20);
+        CHECK(v == 0, "read times out at 0 with the writer open");
+        c_close(w);
+        CHECK(c_read(ctx, buf, 16, 1000) == -2, "read at the end of the input is `closed`");
+        CHECK(c_read_line(ctx, buf, 16) == -2, "read_line at the end of the input is `closed`");
+        CHECK(c_raw(ctx, 0) == -1 && c_window(ctx, 0) == -3, "a pipe has no window");
+    }
+    cint_ctx_destroy(ctx);
+
+#if defined(__linux__)
+    {
+        int master = c_pty_in();
+        cint_ctx *other;
+        if (master < 0) {
+            printf("console: no pseudoterminal here; raw mode not tested\n");
+        } else {
+            ctx = c_ctx("console.input\nconsole.raw\n", &s);
+            other = c_ctx("console.raw\n", NULL);
+            CHECK(ctx != NULL && other != NULL, "two contexts with console.raw");
+            CHECK(c_window(ctx, 0) == ((int64_t)24 << 32 | 80), "window: rows high, columns low");
+            CHECK(c_canonical() && c_raw(ctx, 1) == 0 && !c_canonical(), "raw(true) leaves canonical mode");
+            CHECK(c_raw(other, 1) == -3, "a second context cannot take raw mode");
+            CHECK(c_raw(ctx, 1) == 0 && !c_canonical(), "raw(true) again holds");
+            c_feed(master, "k");
+            CHECK(c_read(ctx, buf, 16, 2000) == 1 && buf[0] == 'k', "a key arrives raw");
+            CHECK(c_window(ctx, 1) == -100 && c_canonical(), "a fault restores the terminal");
+            CHECK(cint_ctx_clear_fault(ctx) == CINT_OK && c_raw(ctx, 1) == 0 && !c_canonical(), "raw again after the fault");
+            cint_ctx_destroy(ctx);
+            CHECK(c_canonical(), "destroying the holder restores the terminal");
+            CHECK(c_raw(other, 1) == 0 && !c_canonical() && c_raw(other, 0) == 0 && c_canonical(),
+                  "the other context takes raw mode and gives it back");
+            cint_ctx_destroy(other);
+            close(master);
+        }
+    }
+#endif
+#if !defined(_WIN32)
+    /* stdout on a pipe, as `cint run` and an editor give a program (RT-OQ-77): what the program
+     * wrote through the C library's stdout reaches the pipe before read waits, after write, and
+     * before read_line blocks. Results are checked after stdout is back, since a failed check
+     * prints. */
+    {
+        int out[2] = {-1, -1}, saved_out;
+        bool held = false, before_read = false, after_write = false, before_line = false;
+        cint_ctx_config cfg;
+        cint_ctx *octx = NULL;
+        (void)fflush(stdout);
+        saved_out = dup(1);
+        if (saved_out >= 0 && pipe(out) == 0 && dup2(out[1], 1) == 1 && fcntl(out[0], F_SETFL, O_NONBLOCK) == 0) {
+            memset(&cfg, 0, sizeof cfg);
+            cfg.size = (uint32_t)sizeof cfg;
+            cfg.program = &t_program;
+            cfg.imports = &c_desc;
+            cfg.output = c_stdout_sink;
+            cfg.grants = (const uint8_t *)"console.input\n";
+            cfg.grants_length = 14u;
+            w = c_pipe_in();
+            if (w >= 0 && cint_ctx_create(&cfg, &octx) == CINT_OK) {
+                (void)fputs("name? ", stdout);
+                held = c_drain(out[0], "");
+                before_read = c_read(octx, buf, 16, 0) == 0 && c_drain(out[0], "name? ");
+                after_write = c_write(octx, "\x1b[H") == 0 && c_drain(out[0], "\x1b[H");
+                (void)fputs("> ", stdout);
+                c_feed(w, "q\n");
+                before_line = c_read_line(octx, buf, 16) == 1 && c_drain(out[0], "> ");
+            }
+            cint_ctx_destroy(octx);
+            if (w >= 0) close(w);
+        }
+        (void)fflush(stdout);
+        if (saved_out >= 0) {
+            (void)dup2(saved_out, 1);
+            close(saved_out);
+        }
+        if (out[0] >= 0) close(out[0]);
+        if (out[1] >= 0) close(out[1]);
+        CHECK(held, "stdout on a pipe holds a short text the program wrote");
+        CHECK(before_read, "read flushes stdout before it waits");
+        CHECK(after_write, "write flushes stdout after the sink takes its bytes");
+        CHECK(before_line, "read_line flushes stdout before it reads");
+    }
+#endif
+    if (saved_in >= 0) {
+#if defined(_WIN32)
+        (void)_dup2(saved_in, 0);
+        (void)SetStdHandle(STD_INPUT_HANDLE, (HANDLE)_get_osfhandle(0));
+        _close(saved_in);
+#else
+        (void)dup2(saved_in, 0);
+        close(saved_in);
+#endif
+    }
+}
+
+static void test_state_inline(void)
+{
+    cint_ctx *ctx = new_ctx();
+    const cint_rt_head *h;
+    int64_t *a, *b;
+    if (ctx == NULL) {
+        CHECK(0, "state context");
+        return;
+    }
+    h = cint_rt_head_of(ctx);
+    CHECK(h->state == NULL && h->module_count == 1u, "no block before the first access; one module");
+    CHECK(cint_rt_entry_begin(ctx, S_FUEL, 100, 8) == CINT_OK, "state entry");
+    a = (int64_t *)cint_rt_state(ctx, &si_state);
+    CHECK(a != NULL && a[0] == 7 && a[1] == 9 && h->state != NULL && h->state[0] == a,
+          "the first access creates the block from the image");
+    a[0] = 8;
+    b = (int64_t *)cint_rt_state(ctx, &si_state);
+    CHECK(b == a && b[0] == 8, "a later access answers inline with the same block");
+    CHECK(cint_rt_state(ctx, &si_far) == NULL && cint_rt_faulted(ctx), "a module the program lacks faults");
+    CHECK(cint_rt_entry_end(ctx) == CINT_FAULT && cint_ctx_clear_fault(ctx) == CINT_OK, "the entry ends faulted");
+    CHECK(cint_rt_entry_begin(ctx, S_FUEL, 100, 8) == CINT_OK, "a second entry");
+    CHECK(cint_rt_state(ctx, &si_empty) == NULL && cint_rt_faulted(ctx), "a descriptor of no bytes faults");
+    (void)cint_rt_entry_end(ctx);
+    (void)cint_ctx_clear_fault(ctx);
+    CHECK(cint_rt_entry_begin(ctx, S_FUEL, 100, 8) == CINT_OK && cint_rt_state(ctx, &si_state) == a && a[0] == 8,
+          "the block outlives a fault and a clear");
+    (void)cint_rt_entry_end(ctx);
+    cint_ctx_destroy(ctx);
+}
+
 static void test_scratch(void)
 {
     cint_ctx_config cfg;
@@ -4548,7 +5531,8 @@ int main(int argc, char **argv)
     if (argc < 2) {
         fprintf(stderr, "usage: test_rt <repository-root> [--no-exh8] [--pairs N]\n"
                         "       test_rt --run <scenario> <fault-destination or -> [<fuel> <state>]\n"
-                        "       test_rt --record <scenario>\n");
+                        "       test_rt --record <scenario>\n"
+                        "       test_rt --args <scenario> [ARG...]\n");
         return 2;
     }
     if ((argc == 4 || argc == 6) && strcmp(argv[1], "--run") == 0) {
@@ -4580,6 +5564,25 @@ int main(int argc, char **argv)
     }
     if (argc == 3 && strcmp(argv[1], "--record") == 0) {
         return run_scenario(argv[2], NULL, true);
+    }
+    if (argc >= 3 && strcmp(argv[1], "--args") == 0) {
+        /* `test_rt --args <scenario> ARG...`: the scenario through cint_program_run_args with
+         * ARG... as a generated main's argv after argv[0] (RT-OQ-74; ASCII arguments); the
+         * `args` scenario, whose main takes the program arguments, through
+         * cint_program_run_argv with CINT_PROGRAM_ARGS (RT-OQ-76). */
+        size_t k;
+        for (k = 0; k < sizeof p_scenarios / sizeof p_scenarios[0]; k++) {
+            if (strcmp(argv[2], p_scenarios[k].name) == 0) {
+                if (strcmp(argv[2], "args") == 0) {
+                    return cint_program_run_argv(&p_program, p_scenarios[k].fn, p_scenarios[k].fuel, argc - 2, argv + 2,
+                                                 NULL, p_scenarios[k].state, CINT_PROGRAM_ARGS);
+                }
+                return cint_program_run_args(&p_program, p_scenarios[k].fn, p_scenarios[k].fuel, argc - 2, argv + 2,
+                                             NULL, p_scenarios[k].state);
+            }
+        }
+        fprintf(stderr, "unknown scenario: %s\n", argv[2]);
+        return 2;
     }
     for (i = 2; i < argc; i++) {
         if (strcmp(argv[i], "--no-exh8") == 0) {
@@ -4615,6 +5618,10 @@ int main(int argc, char **argv)
     test_kernel_entry();
     test_host_dispatch();
     test_scratch();
+    test_host_calls();
+    test_fs_services();
+    test_console_services();
+    test_state_inline();
     test_state(&g_pass, &g_fail);
     test_record(&g_pass, &g_fail);
     test_density(&g_pass, &g_fail);
@@ -4622,6 +5629,7 @@ int main(int argc, char **argv)
     test_result_forms();
     test_hand();
     test_agreement(pairs);
+    test_rotations_fast(pairs / 64 + 70);
     test_fault_operands();
     test_tables(argv[1], exh8);
     printf("checks: %ld passed, %ld failed; records skipped: %ld\n", g_pass, g_fail, g_skip);

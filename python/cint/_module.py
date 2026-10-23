@@ -389,7 +389,7 @@ class Module:
             api = _state.StateApi(lib)
             if api.stale is not None:
                 problem = ("%s was built at %s, whose checkpoint and recording structures are smaller than "
-                           "ABI 3.2's (SPEC-03 A-5): load its .ci source with cint.load to rebuild it"
+                           "ABI 3.3's (SPEC-03 A-5): load its .ci source with cint.load to rebuild it"
                            % (self.path, api.stale))
             elif api.missing is not None:
                 problem = ("%s was built without the canonical state code of rt/cint_state.c and rt/cint_rec.c "

@@ -1,0 +1,12 @@
+// case: services/c3041_path_syntax
+// clause: SPEC-04 LS-323 to LS-328; SPEC-07 SEC-CAP-3, SEC-CAP-6, 11.3
+// subset: cint-core-1 (a `requires` whose path root ends in a separator)
+// entry: run; args: none
+// spec outcome: compile error C3041 at 8:18, the string `"/data/"`: a path root is a logical path of SPEC-07 11.3, and a trailing separator is not one
+
+import fs;
+requires fs.read("/data/");
+
+export I64 run(Grants g) {
+    return fs.stat(g, "/data/a") catch -1;
+}

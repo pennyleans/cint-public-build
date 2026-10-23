@@ -293,9 +293,10 @@ void cint_state_rd_value(cint_state_rd *r, cint_tvalue *v, bool scalar)
             r->bad = true;
         }
     } else if (tag == 0x31u && !scalar) {
-        /* Q<i>.<f> (rt/cint_fixed.h): the storage tag I8 to I64, f below its width, the raw integer. */
+        /* Q<i>.<f> (rt/cint_fixed.h): the storage tag I8 to I64 or I128 (OQ-292; SPEC-01 11.1 row 31),
+         * f below its width, the raw integer. */
         uint32_t st = (uint32_t)cint_state_rd_u(r, 1u), f = (uint32_t)cint_state_rd_u(r, 2u);
-        if (st < CINT_TAG_I8 || st > CINT_TAG_I64 || f >= cint_rt_tag_width(st) ||
+        if (st < CINT_TAG_I8 || (st > CINT_TAG_I64 && st != 0x15u) || f >= cint_rt_tag_width(st) ||
             cint_state_rd_take(r, cint_rt_tag_width(st) / 8u) == NULL) {
             r->bad = true;
         }
@@ -1421,7 +1422,7 @@ static cint_status globals(cint_ctx *ctx, const cint_program *p, const cint_stat
  * that its initial image. */
 static const uint8_t *block_of(const cint_ctx *ctx, const cint_state *s)
 {
-    return ctx->state != NULL && ctx->state[s->module] != NULL ? (const uint8_t *)ctx->state[s->module]
+    return ctx->head.state != NULL && ctx->head.state[s->module] != NULL ? (const uint8_t *)ctx->head.state[s->module]
                                                                 : (const uint8_t *)s->init;
 }
 
@@ -1476,10 +1477,10 @@ static bool same_type(const gref *x, const gref *y)
 static bool covered(const cint_ctx *ctx, const cint_state_table *t)
 {
     uint32_t n = ctx->program->module_count;
-    for (uint32_t m = 0u; ctx->state != NULL && m < n; m++) {
-        bool found = ctx->state[m] == NULL;
+    for (uint32_t m = 0u; ctx->head.state != NULL && m < n; m++) {
+        bool found = ctx->head.state[m] == NULL;
         for (uint32_t i = 0u; !found && i < t->count; i++) {
-            found = t->states[i] == (const cint_state *)ctx->state[n + m];
+            found = t->states[i] == (const cint_state *)ctx->head.state[n + m];
         }
         if (!found) {
             return false;
@@ -2282,7 +2283,7 @@ cint_status cint_ctx_restore(cint_ctx *ctx, const uint8_t *bytes, size_t length)
     memset(&g, 0, sizeof g);
     st = restore_check(ctx, bytes, length, &c, &g, &rec);
     if (st == CINT_OK) {
-        st = blocks_make(ctx, &ctx->state, ctx->program->module_count, ctx->states);
+        st = blocks_make(ctx, &ctx->head.state, ctx->program->module_count, ctx->states);
     }
     if (st == CINT_OK) {
         st = mem_build(ctx, &c, &mem);
@@ -2293,7 +2294,7 @@ cint_status cint_ctx_restore(cint_ctx *ctx, const uint8_t *bytes, size_t length)
         }
         ctx->mem = mem;
         for (size_t i = 0u; i < g.count; i++) {
-            uint8_t *at = (uint8_t *)ctx->state[g.g[i].state->module] + g.g[i].offset;
+            uint8_t *at = (uint8_t *)ctx->head.state[g.g[i].state->module] + g.g[i].offset;
             (void)cint_checkpoint_global_next(&c, &cur, &cg);
             if (g.g[i].plan != NULL) {  /* a struct, through its payload (OQ-260) */
                 const uint8_t *in = cg.elements + g.g[i].type->type_len;
@@ -2736,7 +2737,7 @@ cint_status cint_ctx_change_revision(cint_ctx *ctx, const cint_program *program,
                 j++;
             }
         }
-        blocks_free(ctx, ctx->state, ctx->program->module_count);
+        blocks_free(ctx, ctx->head.state, ctx->program->module_count);
         if (cy.from != NULL) {
             cint_mem_state_free(ctx, ctx->mem);
             ctx->mem = cy.to;
@@ -2744,8 +2745,9 @@ cint_status cint_ctx_change_revision(cint_ctx *ctx, const cint_program *program,
         }
         ctx->last_arena = cy.last_arena;
         ctx->last_pool = cy.last_pool;
-        ctx->state = state;
+        ctx->head.state = state;
         ctx->program = program;
+        ctx->head.module_count = program->module_count;
         ctx->states = t;
         ctx->error_set = ctx->saved_error_set = NULL;  /* the last entry's, of the old revision */
         ctx->error_tag = ctx->saved_error_tag = 0u;

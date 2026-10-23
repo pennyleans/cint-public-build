@@ -651,6 +651,17 @@ static void test_inspect(void)
     wb_free(&err);
 }
 
+/* Timings read a monotonic clock, and an elapsed time is never negative. */
+static void test_clock(void)
+{
+    long long a = wb_now_ns(), b = wb_now_ns();
+    CHECK(a > 0 && b >= a);
+    CHECK(wb_elapsed_ns(a, b) == b - a);
+    CHECK(wb_elapsed_ns(0, 7) == 7);
+    CHECK(wb_elapsed_ns(3, 3) == 0);
+    CHECK(wb_elapsed_ns(b, a - 86000000) == 0);   /* a reading 86 ms earlier, as the clock that stepped back */
+}
+
 int main(void)
 {
     test_num();
@@ -658,6 +669,7 @@ int main(void)
     test_decode();
     test_report();
     test_inspect();
+    test_clock();
     printf("%s test_wb: %d checks, %d failed\n", g_failed == 0 ? "pass" : "FAIL", g_checks, g_failed);
     return g_failed == 0 ? 0 : 1;
 }

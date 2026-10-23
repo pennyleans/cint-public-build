@@ -1,17 +1,18 @@
 /* check_host.c: runs compiler/tests/front_check.ci over source files (slice 2 task 2.10c).
  *
- *   check-host <token> <node> <frame> <diag> <sem> <sym> <name> <list-file>
+ *   check-host <token> <node> <frame> <diag> <sem> <sym> <name> <decl> <list-file>
  *
  * The checker's test entry takes its tables as views, which cint-harness cannot pass (it
  * passes scalars only), so compiler/tests/run.py builds this host with the C that cint-seed
  * emits for compiler/tests/front_check.ci and the runtime, and names the record ids the
- * seed gave the seven record types of the tables. Each line of the list file is a source
+ * seed gave the eight record types of the tables. Each line of the list file is a source
  * path, a tab, and the module path the diagnostics name. For each source it allocates the
  * tables (SPEC-09 CINTC-02: tokens n + 1, nodes 2 * tokens + 16, the parse stack 512 +
  * tokens / 32 up to 131,072, 101 diagnostic rows, symbols tokens / 2 + 64 and twice as
  * many name rows, the check stack nodes + 16 (KR-02; Frame rows, the frame region's
  * record, KR-03), the literal table (n + 1) / 2 + 12 * n + 64 bytes, 100 fault slots of 2,372
- * bytes), calls front_check once in a fresh context, and writes
+ * bytes, a declaration table of nodes rows of 64 bytes), calls front_check once in a fresh
+ * context, and writes
  *
  *   file <path>
  *   status <cint_status> <result>
@@ -40,12 +41,13 @@ cint_status cx_23_tests_x2Ffront_x5Fcheck_14_front_x5Fcheck(cint_ctx *ctx, int64
                                                               cint_view p_nodes, cint_view p_st, cint_view p_diag,
                                                               cint_view p_sem, cint_view p_syms, cint_view p_names,
                                                               cint_view p_wk, cint_view p_lits, cint_view p_faults,
-                                                              cint_view p_dst, cint_view p_stats, int64_t *result);
+                                                              cint_view p_decls, cint_view p_dst, cint_view p_stats,
+                                                              int64_t *result);
 
 enum {
     TOKEN_BYTES = 32, NODE_BYTES = 48, FRAME_BYTES = 48, DIAG_BYTES = 64, SEM_BYTES = 56, SYM_BYTES = 80,
-    NAME_BYTES = 40, DIAG_ROWS = 101, FAULT_BYTES = 237200, OUT_BYTES = 65536, STATS = 8,
-    TABLES = 14
+    NAME_BYTES = 40, DECL_BYTES = 64, DIAG_ROWS = 101, FAULT_BYTES = 237200, OUT_BYTES = 65536, STATS = 8,
+    TABLES = 15
 };
 
 typedef struct table {
@@ -58,7 +60,7 @@ typedef struct table {
     cint_buffer_id id;
 } table;
 
-static uint32_t g_records[7];
+static uint32_t g_records[8];
 
 static int read_file(const char *path, uint8_t **data, int64_t *len)
 {
@@ -153,6 +155,7 @@ static int run_file(const char *path, const char *module_path, const uint8_t *sr
         {NULL, nodes + 16, FRAME_BYTES, CINT_TAG_RECORD, g_records[2], CINT_VIEW_WRITE, 0},
         {NULL, (n + 1) / 2 + 12 * n + 64, 1, CINT_TAG_U8, 0, CINT_VIEW_WRITE, 0},
         {NULL, FAULT_BYTES, 1, CINT_TAG_U8, 0, CINT_VIEW_WRITE, 0},
+        {NULL, nodes, DECL_BYTES, CINT_TAG_RECORD, g_records[7], CINT_VIEW_WRITE, 0},
         {NULL, OUT_BYTES, 1, CINT_TAG_U8, 0, CINT_VIEW_WRITE, 0},
         {NULL, STATS, 8, CINT_TAG_I64, 0, CINT_VIEW_WRITE, 0},
     };
@@ -188,9 +191,9 @@ static int run_file(const char *path, const char *module_path, const uint8_t *sr
         cint_status st = cx_23_tests_x2Ffront_x5Fcheck_14_front_x5Fcheck(
             ctx, CINT_FUEL_UNBOUNDED, view_of(&t[0]), view_of(&t[1]), view_of(&t[2]), view_of(&t[3]),
             view_of(&t[4]), view_of(&t[5]), view_of(&t[6]), view_of(&t[7]), view_of(&t[8]), view_of(&t[9]),
-            view_of(&t[10]), view_of(&t[11]), view_of(&t[12]), view_of(&t[13]), &result);
+            view_of(&t[10]), view_of(&t[11]), view_of(&t[12]), view_of(&t[13]), view_of(&t[14]), &result);
         printf("file %s\nstatus %d %lld\n", path, (int)st, (long long)result);
-        const int64_t *stats = t[13].base;
+        const int64_t *stats = t[14].base;
         printf("stats");
         for (int i = 0; i < STATS; i++) {
             printf(" %lld", (long long)stats[i]);
@@ -214,7 +217,7 @@ static int run_file(const char *path, const char *module_path, const uint8_t *sr
                 }
             }
             if (result == 1) {
-                const char *text = t[12].base;
+                const char *text = t[13].base;
                 int64_t len = stats[7], start = 0;
                 for (int64_t j = 0; j < len; j++) {
                     if (text[j] == '\n') {
@@ -241,16 +244,16 @@ int main(int argc, char **argv)
 #if defined(_WIN32)
     (void)_setmode(_fileno(stdout), _O_BINARY);
 #endif
-    if (argc != 9) {
-        fprintf(stderr, "usage: check-host <token> <node> <frame> <diag> <sem> <sym> <name> <list-file>\n");
+    if (argc != 10) {
+        fprintf(stderr, "usage: check-host <token> <node> <frame> <diag> <sem> <sym> <name> <decl> <list-file>\n");
         return 2;
     }
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < 8; i++) {
         g_records[i] = (uint32_t)strtoul(argv[1 + i], NULL, 10);
     }
-    FILE *list = fopen(argv[8], "rb");
+    FILE *list = fopen(argv[9], "rb");
     if (list == NULL) {
-        fprintf(stderr, "check-host: cannot read %s\n", argv[8]);
+        fprintf(stderr, "check-host: cannot read %s\n", argv[9]);
         return 3;
     }
     char line[8192];

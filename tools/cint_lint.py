@@ -2,12 +2,13 @@
 
 This is a token lint, not a proof. It refuses binary floating-point types and
 literals in the C sources of rt/, seed/, harness/, cli/, interp/, workbench/ and flight/abi/
-(tests included) and in the Python of ref/cint_ref/ and python/cint/; it refuses any CR byte in
-conformance/, compiler/, cli/, interp/, workbench/ and rt/*.h; it fails a component over its
-SPEC-09 4.2 ceiling and reports one over its target. The CLI size rows count cli/*.c, with
-cli/cint_receipt.c in its own row (decision 26); the CLI headers are reported separately. The
-workbench row counts workbench/*.c and workbench/*.h (box 14 ruling BX14-03 A); workbench/tests/
-is not counted.
+(tests included) and in the Python of ref/cint_ref/, python/cint/, games/ and the game math kit's
+tools/gamekit_*.py; it refuses any CR byte in conformance/, compiler/, cli/, interp/, workbench/,
+games/ and rt/*.h; it fails a component over its SPEC-09 4.2 ceiling and reports one over its
+target. The CLI size rows count cli/*.c, with cli/cint_receipt.c in its own row (decision 26) and
+cli/cint_discover.c in its own (I/O services lane U4);
+the CLI headers are reported separately. The workbench row counts workbench/*.c and
+workbench/*.h (box 14 ruling BX14-03 A); workbench/tests/ is not counted.
 Python test drivers under rt/, seed/, harness/, cli/, interp/ and workbench/, and python/tests/, are
 host tooling and are not scanned. The one exemption is python/cint/_floats.py, the float
 boundary of SPEC-03 section 8 (BX10-18): it may name the floating-point types, to read
@@ -23,10 +24,12 @@ import tokenize
 
 ROOT = Path(__file__).resolve().parents[1]
 
-C_TREES = ("rt", "seed", "harness", "cli", "interp", "workbench", "flight/abi")
-PY_TREES = ("ref/cint_ref", "python/cint")
+C_TREES = ("rt", "seed", "harness", "cli", "interp", "workbench", "flight/abi", "flight/stream",
+           "gateway/core")
+PY_TREES = ("ref/cint_ref", "python/cint", "games")
+PY_GLOBS = ("tools/gamekit_*.py",)   # the game math kit's table writer and exact oracle (lane G4)
 PY_NAMES_EXEMPT = ("python/cint/_floats.py",)   # SPEC-03 section 8 host boundary (BX10-18)
-CR_TREES = ("conformance", "compiler", "cli", "interp", "workbench")  # compiler/: SPEC-09 CINTC-07
+CR_TREES = ("conformance", "compiler", "cli", "interp", "workbench", "games")  # compiler/: SPEC-09 CINTC-07
 CR_GLOBS = ("rt/*.h",)
 SKIP_DIRS = {"__pycache__", ".git"}
 
@@ -62,15 +65,25 @@ SIZE_ROWS = (
     ("cint_state.c", ("rt/cint_state.c",), 2500, 4000),  # decisions 2026-10-06 on OQ-218, 2026-10-08 on OQ-235
     # Decision 2026-10-08 on OQ-240: recordings and replay, split from rt/cint_state.c.
     ("cint_rec.c", ("rt/cint_rec.c", "rt/cint_state_internal.h"), 1500, 2000),
+    # RT-OQ-70 defaults (I/O services lane, unit 2), Proposed: extern calls, outside the cint_rt and
+    # cint_rec.c rows; rt/cint_host.c is included by rt/cint_rt.c and rt/cint_rec_host.c by rt/cint_rec.c.
+    ("cint_host.c", ("rt/cint_host.c",), 400, 600),
+    ("cint_fs.c", ("rt/cint_fs.c",), 600, 900),   # the fs/1 service (RT-OQ-72), included by rt/cint_rt.c; Proposed
+    ("cint_console.c", ("rt/cint_console.c",), 400, 600),   # the console/1 service (RT-OQ-73), included by rt/cint_rt.c; Proposed
+    ("cint_program.c", ("rt/cint_program.c",), 450, 700),   # program processes and cint_program_run_args (RT-OQ-74), included by rt/cint_rt.c; Proposed
+    ("cint_rec_host.c", ("rt/cint_rec_host.c",), 350, 500),
     # Decision 2026-10-06 on OQ-212: arenas, pools and handles, outside the cint_rt row.
     ("cint_mem (rt/cint_mem.c, rt/cint_mem.h)", ("rt/cint_mem.c", "rt/cint_mem.h"), 600, 900),
     # Box 15 default BX15-15: the wide integers, outside the cint_rt rows; set again after unit 3.
     ("cint_wide (rt/cint_wide.c, rt/cint_wide.h)", ("rt/cint_wide.c", "rt/cint_wide.h"), 2000, 3000),
     # Box 15 default BX15-15: fixed point, outside the cint_rt rows; its record writer counts here.
-    ("cint_fixed (rt/cint_fixed.c, rt/cint_fixed.h)", ("rt/cint_fixed.c", "rt/cint_fixed.h"), 600, 1000),
+    # Decision 2026-10-16 on OQ-295: set again from measured counts for fixed point of 128-bit storage.
+    ("cint_fixed (rt/cint_fixed.c, rt/cint_fixed.h)", ("rt/cint_fixed.c", "rt/cint_fixed.h"), 1000, 1200),
     ("cint-harness (harness/*.c, harness/*.h)", ("harness/*.c", "harness/*.h"), 600, 1000),
-    ("cint CLI (cli/*.c except cli/cint_receipt.c)", ("cli/*.c", "!cli/cint_receipt.c"), 1500, 2500),
+    ("cint CLI (cli/*.c except cli/cint_receipt.c and cli/cint_discover.c)",
+     ("cli/*.c", "!cli/cint_receipt.c", "!cli/cint_discover.c"), 1500, 2500),
     ("cint CLI receipts (cli/cint_receipt.c)", ("cli/cint_receipt.c",), 400, 600),
+    ("cint CLI discovery (cli/cint_discover.c)", ("cli/cint_discover.c",), 250, 350),
     # Decisions 2026-10-06 on OQ-218 (BX13-21) and 2026-10-10 on OQ-279: set again from measured counts.
     ("cint-interp (interp/*.c, interp/*.h)", ("interp/*.c", "interp/*.h"), 8000, 10000),
     # Decision 2026-10-08 on OQ-231 (BX14-S1): set again from the counts of box 14's units.
@@ -143,11 +156,12 @@ def float_findings(root):
         for path in walk(root, tree, {".c", ".h"}):
             scanned += 1
             found += c_findings(path, path.relative_to(root).as_posix())
-    for tree in PY_TREES:
-        for path in walk(root, tree, {".py"}):
-            scanned += 1
-            rel = path.relative_to(root).as_posix()
-            found += py_findings(path, rel, rel in PY_NAMES_EXEMPT)
+    py_paths = [p for tree in PY_TREES for p in walk(root, tree, {".py"})]
+    py_paths += [p for pattern in PY_GLOBS for p in sorted(root.glob(pattern)) if p.is_file()]
+    for path in py_paths:
+        scanned += 1
+        rel = path.relative_to(root).as_posix()
+        found += py_findings(path, rel, rel in PY_NAMES_EXEMPT)
     return found, scanned
 
 

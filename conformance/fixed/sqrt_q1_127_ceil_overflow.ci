@@ -1,0 +1,10 @@
+// case: fixed/sqrt_q1_127_ceil_overflow
+// clause: SPEC-01 IM-67 (Q1.127 raw 2^127 - 1 with ceil rounds up to 2^127, out of range; the 5.5 row of Q1.63 at 128 bits)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 9:12 (the `sqrt`), operation sqrt.checked.q1_127.ceil, operand Q1.127 raw 2^127 - 1, exact 2^127, limit Q1.127 raw 2^127 - 1; stack depth 0; fuel 1. Games wave G2a (OQ-292)
+
+export Bool run() {
+    Q1.127 x = Q1.127.max;
+    return sqrt(x, ceil) != 0.0;
+}

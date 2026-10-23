@@ -1,0 +1,15 @@
+// case: services/denied_catch
+// clause: SPEC-04 LS-323 to LS-328; SPEC-07 SEC-CAP-1, SEC-CAP-13, SEC-OS-1, SEC-OS-12; SPEC-03 A-10, H-8a
+// subset: cint-core-1 (`import` of the standard service module `fs`, `requires`, `Grants`, calls of service externs)
+// entry: run; args: none
+// spec outcome: value I64 7, fuel 3: no grant covers `fs.read:/data`, so `fs.read` returns `denied` (caught as -1) and `fs.stat` returns `denied`, which the catch block compares with `fs.FsError.denied` and returns 7; n + s is never reached
+
+import fs;
+requires fs.read("/data");
+
+export I64 run(Grants g) {
+    U8[4] buf;
+    I64 n = fs.read(g, "/data/a", 0, buf) catch -1;
+    I64 s = fs.stat(g, "/data/a") catch (e) { return e == fs.FsError.denied ? 7 : 8; };
+    return n + s;
+}

@@ -1,0 +1,17 @@
+case fixed/sqrt_q1_127_ceil_overflow
+clause SPEC-01 IM-67 (Q1.127 raw 2^127 - 1 with ceil rounds up to 2^127, out of range; the 5.5 row of Q1.63 at 128 bits)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_OVERFLOW
+fault.operation sqrt.checked.q1_127.ceil
+fault.operand Q1.127 raw 170141183460469231731687303715884105727
+fault.exact 170141183460469231731687303715884105728
+fault.limit Q1.127 raw 170141183460469231731687303715884105727
+fault.position fixed/sqrt_q1_127_ceil_overflow.ci:9:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

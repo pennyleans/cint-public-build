@@ -190,6 +190,10 @@ Status: Provisional, 2026-10-05.
 
 Status: Provisional, 2026-10-09.
 
+### REF-OQ-48. Extern declarations, services, `requires` and `Grants`
+
+Status: Provisional, 2026-10-21.
+
 ### O-1. CIF-1 has no `derivation` key
 
 Status: Recorded.

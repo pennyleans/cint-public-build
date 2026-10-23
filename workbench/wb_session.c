@@ -1377,7 +1377,7 @@ static wb_c17 *c17_lib(session *s, wb_buf *b)
     (void)snprintf(name, sizeof name, "c17-%.16s", hex);
     wb_buf err = {0};
     int status = 0;
-    long long t0 = wb_now_ns() / 1000000;
+    long long t0 = wb_now_ns();
     char *out = wb_join(s->build, name), *log = wb_join(s->build, "c17.stderr");
     char *made = out != NULL ? wb_join(out, CLI_LIB_PREFIX "session" CLI_LIB_SUFFIX) : NULL, *path = NULL;
     wb_c17 *lib = made != NULL ? wb_c17_open(made, &err) : NULL;
@@ -1385,7 +1385,8 @@ static wb_c17 *c17_lib(session *s, wb_buf *b)
     if (lib == NULL && out != NULL && log != NULL &&
         (path = wb_c17_build(s->o->cint, 0, s->src, "session.ci", out, log, &status, &err)) != NULL) {
         lib = wb_c17_open(path, &err);
-        if (lib != NULL) wb_f(b, "cpu-c17: revision %.8s built as a library in %lld ms\n", hex, wb_now_ns() / 1000000 - t0);
+        if (lib != NULL) wb_f(b, "cpu-c17: revision %.8s built as a library in %lld ms\n", hex,
+                                 wb_elapsed_ns(t0, wb_now_ns()) / 1000000);
     }
     if (lib != NULL && memcmp(wb_c17_program(lib)->revision, rev, 32u) != 0) {
         wb_f(&err, "%s has another revision identity than the SIR text of this revision", path != NULL ? path : made);

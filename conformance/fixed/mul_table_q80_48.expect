@@ -1,0 +1,9 @@
+case fixed/mul_table_q80_48
+clause SPEC-01 IM-61, IM-62 (the 5.3 table in Q80.48, and products whose intermediate needs more than 128 bits)
+format 5
+source reference
+outcome value
+stdout-bytes 146
+stdout-sha256 2596a3d3f869d1c20a8b8545abf4e63f862a311ee8b6e04c664da2009492b801
+return I64 0
+fuel-consumed 1

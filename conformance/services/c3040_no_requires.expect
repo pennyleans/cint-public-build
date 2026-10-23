@@ -1,0 +1,6 @@
+case services/c3040_no_requires
+clause SPEC-04 LS-323 to LS-328; SPEC-07 SEC-CAP-1
+source compile-error
+outcome compile-error
+diagnostic.code C3040
+diagnostic.position services/c3040_no_requires.ci:10:12

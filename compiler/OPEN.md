@@ -177,3 +177,23 @@ Status: Decided, 2026-10-05.
 ### CINTC-OQ-64. Memory lifetimes in `cintc`: the checker, the lowering and the C
 
 Status: Proposed.
+
+### CINTC-OQ-65. I/O services lane U1 in `cintc`: `extern`, `requires`, `@service` and `Grants` in the checker and the declaration table
+
+Status: Proposed.
+
+### CINTC-OQ-66. I/O services lane U2 in `cintc`: extern rows, the host call and the host import table
+
+Status: Proposed.
+
+### CINTC-OQ-67. I/O services lane U5 in `cintc`: `Grants` parameters, service rows and the generated `main`
+
+Status: Proposed.
+
+### CINTC-OQ-68. I/O services lane U5b in `cintc`: imported error sets and imported service externs
+
+Status: Proposed.
+
+### CINTC-OQ-69. I/O services lane U6 in `cintc`: the program arguments of `main`
+
+Status: Proposed.

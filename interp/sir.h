@@ -6,7 +6,8 @@
  * recomputes the revision identity (SIR-17). Names point into the module's text,
  * which stays loaded. The interpreter (sir_exec.c) runs the nodes. Status: Proposed, box
  * 13 units 1 to 3, 7a and 7b (docs/design/notes/2026-10-05-box13-interpreter-checkpoints.md,
- * section 9); box 12's error forms from unit 8b. */
+ * section 9); box 12's error forms from unit 8b; extern rows and host.call from I/O services lane
+ * U5c (rt/OPEN.md RT-OQ-75). */
 #ifndef CINT_SIR_H
 #define CINT_SIR_H
 
@@ -18,7 +19,8 @@
 /* Scalar types, as SIR text spells them; I128 to I1024 and U128 to U512 are the wide integers of
  * box 15 (SPEC-01 IM-11; BX15-02), a value in w / 64 cells, limb 0 first (rt/cint_wide.h). The
  * fixed-point types of box 15 follow SC_COUNT (SPEC-01 IM-54, IM-55): Q<w - f>.<f> for storage w
- * of 8 to 64 bits and f below w is SC_Q + w - 8 + f, a value its storage integer in one cell. */
+ * of 8 to 128 bits and f below w is SC_Q + w - 8 + f, a value its storage integer, in one cell to
+ * 64 bits and in an I128's two limbs at 128 (OQ-292). A scalar code takes 16 bits. */
 enum { SC_NONE, SC_BOOL, SC_I8, SC_I16, SC_I32, SC_I64, SC_U8, SC_U16, SC_U32, SC_U64,
        SC_I128, SC_I256, SC_I512, SC_I1024, SC_U128, SC_U256, SC_U512 };
 #define SC_COUNT 17
@@ -26,12 +28,12 @@ enum { SC_NONE, SC_BOOL, SC_I8, SC_I16, SC_I32, SC_I64, SC_U8, SC_U16, SC_U32, S
 
 static inline int sc_is_q(int sc)
 {
-    return sc >= SC_Q && sc < SC_Q + 120;
+    return sc >= SC_Q && sc < SC_Q + 248;
 }
 
 static inline unsigned sc_qwidth(int sc)
 {
-    return sc < SC_Q + 8 ? 8u : sc < SC_Q + 24 ? 16u : sc < SC_Q + 56 ? 32u : 64u;
+    return sc < SC_Q + 8 ? 8u : sc < SC_Q + 24 ? 16u : sc < SC_Q + 56 ? 32u : sc < SC_Q + 120 ? 64u : 128u;
 }
 
 /* The fraction bits of a scalar: 0 for an integer. */
@@ -53,7 +55,7 @@ typedef struct si_name {
 
 typedef struct si_type {
     uint8_t kind;
-    uint8_t scalar;  /* the scalar, or the element scalar of an array or view (0: struct) */
+    uint16_t scalar; /* the scalar, or the element scalar of an array or view (0: struct) */
     uint8_t inout;   /* an `inout` struct parameter */
     uint8_t out;     /* a kernel's scalar `out` parameter, which its caller passes by place */
     uint32_t smod;   /* the struct, or the element struct: its module and its struct line */
@@ -63,7 +65,16 @@ typedef struct si_type {
                         1 to 4; 0 for a view parameter of rank 1 and for every other type */
     uint8_t mem;     /* TK_MEM: CINT_HANDLE_ARENA or CINT_HANDLE_POOL; scalar, smod and sidx give
                         its element */
+    uint8_t grants;  /* a `Grants` parameter (SPEC-04 LS-323; I/O services lane U5c): an I64 handle,
+                        which an entry passes as 0, the context's grant set */
 } si_type;
+
+/* The program arguments parameter of `main`, `in U8[_] args` (SPEC-04 LS-221; OQ-306, RT-OQ-76):
+ * a view of U8 of rank 1 and any extent. */
+static inline int si_args_param(const si_type *t)
+{
+    return t->kind == TK_VIEW && t->scalar == SC_U8 && t->extent == -1 && t->rank <= 1u && !t->out;
+}
 
 /* A struct line (SIR-09a): its fields in declaration order, each at its first cell. A
  * scalar takes one cell, a wide integer one per limb, an array its extent times its element's. */
@@ -133,7 +144,10 @@ enum {
     OP_ETAG, OP_ELEAVE, OP_WIDEN,
     /* box 12's memory (compiler/OPEN.md CINTC-OQ-64, item 10; unit 8b): a member, arena.alloc
      * to pool.remove (si_node.sub, MB_*), handle.view, handle.lease and pool.deref */
-    OP_MEMBER, OP_HVIEW, OP_HLEASE, OP_PDEREF
+    OP_MEMBER, OP_HVIEW, OP_HLEASE, OP_PDEREF,
+    /* a call of an extern (SPEC-03 A-15; I/O services lane U5c): host.call, whose extern row is
+     * si_node.cfn of the calling module */
+    OP_HCALL
 };
 
 /* OP_MEMBER sub-operations, in the order of compiler/resolve.ci's MB_ALLOC to MB_REMOVE. */
@@ -154,11 +168,11 @@ typedef struct si_node {
     uint8_t op;
     uint8_t sub;    /* BO_*, CM_*, or the built-in's number (cint_rt.h section 13) */
     uint8_t form;   /* FM_* */
-    uint8_t t1;     /* operand scalar of the operation name; switch: the scrutinee's;
+    uint16_t t1;    /* operand scalar of the operation name; switch: the scrutinee's;
                        struct.copy: 1 where it fills a hidden slot */
-    uint8_t t2;     /* result scalar when it differs (as, uabs, mul_full, muldiv); index.load and
+    uint16_t t2;    /* result scalar when it differs (as, uabs, mul_full, muldiv); index.load and
                        index.store: the element's */
-    uint8_t t3;     /* the count's scalar (shl, shr, rotl, rotr); qmul and mul_int: the second
+    uint16_t t3;    /* the count's scalar (shl, shr, rotl, rotr); qmul and mul_int: the second
                        operand's (box 15) */
     uint8_t mode;   /* rounding mode, numbered from 1 as cint_rt.h section 13 numbers it */
     uint8_t view;   /* index.checked, index.load, index.store, bind.shape: the place is a view of
@@ -208,7 +222,7 @@ typedef struct si_func {
     uint32_t nparam;
     uint32_t pcells;   /* the cells of its parameters */
     si_type result;    /* TK_NONE when it has none; of an error union, the value's */
-    uint8_t etag;      /* an error union result (box 12): its tag's scalar, else 0 */
+    uint16_t etag;     /* an error union result (box 12): its tag's scalar, else 0 */
     int32_t eset;      /* an entry's error set (` error E<k>`): its index in the module's table,
                           else -1 */
     uint32_t first;    /* first node */
@@ -227,7 +241,7 @@ typedef struct si_func {
 
 typedef struct si_global {
     si_name name;
-    uint8_t scalar;    /* the scalar, or a module-level array's element (box 13 MLA) */
+    uint16_t scalar;   /* the scalar, or a module-level array's element (box 13 MLA) */
     uint8_t handle;    /* 1 for a Handle, the null handle at start (OQ-242) */
     int64_t value;     /* the bits, sign-extended for signed types; a wide integer's limbs are
                           nitem items from item */
@@ -275,6 +289,23 @@ typedef struct si_widen {
     uint32_t nrun;
 } si_widen;
 
+/* An extern row (SPEC-09 SIR-09a, edition 41; I/O services lane U5c; `extern @<module>.<name>(...)`):
+ * a row of the module's host import table, in its order. Its parameters are in the module's
+ * parameter table: a scalar, a `Grants` handle, or a rank-1 view of scalars, `out` (si_type.out)
+ * when the extern writes it. */
+typedef struct si_extern {
+    si_name name;      /* `<module>.<name>`, as host.call spells its callee */
+    uint32_t param;
+    uint32_t nparam;
+    si_type result;    /* TK_NONE when it has none; of an error union, the value's */
+    uint16_t etag;     /* an error union result: its tag's scalar, else 0 */
+    uint32_t errors;   /* the set's value count, which cint_rt_host_call checks an error against */
+    uint32_t effect;   /* CINT_PURE, CINT_OBSERVE or CINT_UNRESTRICTED */
+    si_name row;       /* the row's name, its quoted text */
+    si_name sig;       /* its canonical type signature, in hexadecimal */
+    uint32_t line;
+} si_extern;
+
 typedef struct si_site {
     uint32_t line;
     uint32_t col;
@@ -308,6 +339,8 @@ typedef struct si_module {
     uint32_t nmem;
     int64_t *runs;     /* the conversions' runs, two numbers each (si_widen.run) */
     uint32_t nrun;
+    si_extern *externs;   /* its host import table's rows (I/O services lane U5c) */
+    uint32_t nextern;
     si_func *funcs;
     uint32_t nfunc;
     si_node *nodes;

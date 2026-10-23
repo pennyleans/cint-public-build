@@ -1,0 +1,18 @@
+// case: fixed/convert_table_q128
+// clause: SPEC-01 IM-68, IM-69 (conversions between the 64-bit and 128-bit formats and I128, with round clauses, `as%` and `as|`)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 0; prints `65536 18446744073709551616 170141183460469231731687022240907395072 -30064771072`, `-2 -3 -3 -163840`, `1431655765 1431655765 10923` and `9223372036854775807 -1 -9223372036854775808 -1`; fuel 1. Games wave G2a (OQ-292)
+
+export I64 run() {
+    Q32.32 tiny = Q32.32.raw(1);
+    Q16.16 one = 1.0;
+    I128 big = 604462909807314587353087;
+    Q80.48 a = -2.5;
+    Q80.48 third = Q80.48.raw(93824992236885);
+    "{(tiny as Q80.48)!raw} {(one as Q64.64)!raw} {(big as Q80.48)!raw} {(-7 as Q96.32)!raw}\n";
+    "{a as I128} {a as I128 round floor} {a as I64 round half_away} {(a as Q16.16)!raw}\n";
+    "{(third as Q32.32)!raw} {(third as Q32.32 round floor)!raw} {(third as Q1.15 round ceil)!raw}\n";
+    "{(Q80.48.max as| Q32.32)!raw} {(Q80.48.max as% Q32.32 round floor)!raw} {Q80.48.min as| I64} {Q96.32.max as% I64 round floor}\n";
+    return 0;
+}

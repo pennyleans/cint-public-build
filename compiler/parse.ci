@@ -263,6 +263,20 @@ export const I32 N_WILD = 82;
 export const I32 N_RANGE = 83;
 export const I32 N_TUPLE_TYPE = 84;
 export const I32 N_ERRUNION = 85;
+// Module level, I/O services lane U1 (SPEC-04 18.3 extern_decl, requires_decl; LS-323 to
+// LS-328). N_EXTERN: tok name, start `extern`, op the effect class (EFFECT_*), a result
+// type (-1 for void; N_ERRUNION), e KW_IN or KW_INOUT for a view result, b N_PARAM list,
+// f attributes, F_EXPORT. The `@service`
+// attribute is an N_ATTR with op 1: a its N_STRING service name, b the N_NAME segments of
+// the covering capability's name (-1 for none), c the N_NAME argument kinds (-1 for
+// none). N_REQUIRES: tok `requires`, start the first name of the capability, a its
+// N_NAME segments, b the argument expressions.
+export const I32 N_EXTERN = 86;
+export const I32 N_REQUIRES = 87;
+// The effect class of an extern declaration (SPEC-03 H-1), N_EXTERN.op.
+export const I32 EFFECT_PURE = 1;
+export const I32 EFFECT_OBSERVE = 2;
+export const I32 EFFECT_UNRESTRICTED = 3;
 
 export const I32 F_PAREN = 1;
 export const I32 F_EXPORT = 2;
@@ -291,6 +305,7 @@ export const I64 C_PARENS_REQUIRED = 2101;
 export const I64 C_CHAINED = 2102;
 export const I64 C_IMPORT_LATE = 3012;
 export const I64 C_EXPECT_FAULT_PLACE = 3021;
+export const I64 C_SERVICE_PLACE = 3043;
 export const I64 C_STATEMENT_FORM = 4012;
 export const I64 C_HALF_OPEN_CASE = 4022;
 export const I64 C_EMPTY_CASE = 4023;
@@ -966,7 +981,8 @@ I64 hole_conversion[n](in U8[n] src, I64 k, I64 end) {
 // in an I64[11] at these indices. The fill is the fill's scalar value or -1; the alignment,
 // the sign, the group and the kind are the byte written or 0; FS_ALT and FS_ZERO are 1 when
 // written; the width is its value or -1, and FS_WIDE is 1 when it does not fit I64; the
-// precision is 1 when written or -1 (no type B1 prints takes one); the scale is the number
+// precision is its value or -1 (a fixed-point value's; box 15 unit 4e), and FS_WIDE is 1 when
+// it does not fit I32 either; the scale is the number
 // of zeros after its `1`, or -1. An array, not a struct: main.ci numbers the records of the
 // compiler's record table (R_SIR and the rest), and a new struct here would move them.
 export const I64 FS_FILL = 0;
@@ -1045,13 +1061,20 @@ export Bool format_spec[n](in U8[n] src, I64 k, I64 end, inout I64[_] sp) {
     if (i < end && src[i] == '.') {
         i += 1;
         j = i;
+        I64 pv = 0;
         while (i < end && ascii_digit(src[i] as I64)) {
+            I64 dv = (src[i] as I64) - '0';
+            if (pv <= (2147483647 - dv) / 10) {
+                pv = pv * 10 + dv;
+            } else {
+                sp[FS_WIDE] = 1;
+            }
             i += 1;
         }
         if (i == j) {
             return false;
         }
-        sp[FS_PRECISION] = 1;
+        sp[FS_PRECISION] = pv;
     }
     if (i < end && (src[i] == 'd' || src[i] == 'x' || src[i] == 'X' || src[i] == 'o' || src[i] == 'b' ||
             src[i] == 't' || src[i] == 'c' || src[i] == 's')) {
@@ -1103,11 +1126,15 @@ void h_operand[n, t, m, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node
             I64 lit = new_node(toks, nodes, diag, ps, N_NEGLIT, tk, tk);
             if (lit >= 0) {
                 nodes[lit].c = nt as I32;
-                // A fraction's `round` clause rounds the negative value (SPEC-04 LS-37).
-                if (nk == scan.TK_FRAC && class_at(toks, ps, 0) == scan.IDC_ROUND &&
-                        kind_at(toks, ps, 1) == scan.TK_IDENT) {
+                // A fraction's `round` clause rounds the negative value (SPEC-04 LS-37); its mode
+                // is an identifier (C1050 at the token after `round` otherwise, LS-282).
+                if (nk == scan.TK_FRAC && class_at(toks, ps, 0) == scan.IDC_ROUND) {
                     _ = advance(toks, ps);
-                    nodes[lit].b = advance(toks, ps) as I32;
+                    I64 mode = expect_ident(toks, diag, ps);
+                    if (mode < 0) {
+                        return;
+                    }
+                    nodes[lit].b = mode as I32;
                 }
                 to_postfix(st, f, lit);
             }
@@ -1137,10 +1164,15 @@ void h_operand[n, t, m, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node
         x = new_node(toks, nodes, diag, ps, N_LIT, tk, tk);
         if (x >= 0) {
             nodes[x].op = kind;
-            if (kind == scan.TK_FRAC && class_at(toks, ps, 0) == scan.IDC_ROUND &&
-                    kind_at(toks, ps, 1) == scan.TK_IDENT) {
+            if (kind == scan.TK_FRAC && class_at(toks, ps, 0) == scan.IDC_ROUND) {
+                // A fraction's `round` clause (SPEC-04 LS-37): its mode is an identifier (C1050
+                // at the token after `round` otherwise, LS-282).
                 _ = advance(toks, ps);
-                nodes[x].c = advance(toks, ps) as I32;
+                I64 mode = expect_ident(toks, diag, ps);
+                if (mode < 0) {
+                    return;
+                }
+                nodes[x].c = mode as I32;
             }
         }
     } else if (kind == scan.TK_STRING) {
@@ -1231,7 +1263,8 @@ void h_unary[s](inout Node[_] nodes, inout Frame[s] st, inout PState[_] ps) {
 void start_arg[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
         inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 f) {
     st[f].c = -1;
-    if (kind_at(toks, ps, 0) == scan.TK_IDENT && is_op(toks, ps, 1, scan.OP_ASSIGN)) {
+    if (kind_at(toks, ps, 0) == scan.TK_IDENT && is_op(toks, ps, 1, scan.OP_ASSIGN) &&
+            nodes[st[f].node as I64].kind != N_REQUIRES) {
         I64 tk = advance(toks, ps);
         _ = advance(toks, ps);
         I64 named = new_node(toks, nodes, diag, ps, N_NAMEDARG, tk, tk);
@@ -2973,6 +3006,11 @@ void statement[n, t, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node[_]
             fail(toks, diag, ps, C_EXPECT_FAULT_PLACE, tk);
             return;
         }
+        if (kw == scan.KW_EXTERN || kw == scan.KW_REQUIRES) {
+            // A module-level declaration (SPEC-04 LS-323, LS-327), as `cint_ref` reports it.
+            fail(toks, diag, ps, C_STATEMENT_FORM, tk);
+            return;
+        }
         if (kw == scan.KW_IF || kw == scan.KW_WHILE || kw == scan.KW_FOR || kw == scan.KW_DO) {
             loop_or_if(toks, nodes, st, diag, ps, -1);
             return;
@@ -3088,7 +3126,8 @@ Bool size_params[t, r](inout scan.Token[t] toks, inout Node[_] nodes, inout limi
 }
 
 // The parameters of S_FUNC frame f from the current token: each `[mode] type IDENT [= expr]`
-// (Frame.c 3 after the type), then `)`, `over`, `where`, and the body.
+// (Frame.c 3 after the type), then `)`, `over`, `where`, and the body; for an extern
+// declaration (Frame.b 2), `out` is a mode (SPEC-03 H-5) and `;` follows the `)`.
 void params_loop[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
         inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 f) {
     I64 fn = st[f].node as I64;
@@ -3096,7 +3135,7 @@ void params_loop[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout F
     if (!is_op(toks, ps, 0, scan.OP_RPAREN)) {
         I64 first = cur(ps);
         I32 mode = 0;
-        if (is_kw(toks, ps, 0, scan.KW_OUT) && !is_kernel) {
+        if (is_kw(toks, ps, 0, scan.KW_OUT) && st[f].b == 0) {
             fail(toks, diag, ps, C_OUT_PARAM, first);
             return;
         }
@@ -3118,6 +3157,14 @@ void params_loop[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout F
         return;
     }
     _ = advance(toks, ps);
+    if (st[f].b == 2) {
+        // An extern declaration has no body (SPEC-03 H-1): `;` ends it, and `{`, like any
+        // other token, is C1050, as `cint_ref` reports it (parse_extern).
+        if (expect_op(toks, diag, ps, scan.OP_SEMI, scan.C_SYNTAX)) {
+            ps[0].sp -= 1;
+        }
+        return;
+    }
     if (is_kernel && is_kw(toks, ps, 0, scan.KW_OVER)) {
         _ = advance(toks, ps);
         if (!expect_op(toks, diag, ps, scan.OP_LBRACKET, scan.C_SYNTAX)) {
@@ -3204,7 +3251,9 @@ void func_header[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout F
         return;
     }
     nodes[fn].tok = name as I32;
-    if (st[f].b == 1 && !is_op(toks, ps, 0, scan.OP_LBRACKET)) {
+    Bool bracket = is_op(toks, ps, 0, scan.OP_LBRACKET);
+    if ((st[f].b == 1 && !bracket) || (st[f].b == 2 && bracket)) {
+        // A kernel has size parameters; an extern declaration has none (SPEC-04 18.3).
         fail(toks, diag, ps, scan.C_SYNTAX, cur(ps));
         return;
     }
@@ -3215,7 +3264,7 @@ void func_header[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout F
     params_loop(toks, nodes, st, diag, ps, f);
 }
 
-// S_FUNC: a function (Frame.b 0) or kernel (1). Frame.c: 0 after the result type, 1 after
+// S_FUNC: a function (Frame.b 0), kernel (1) or extern declaration (2). Frame.c: 0 after the result type, 1 after
 // the value type of an error union, 3 after a parameter's type, 4 after its default, 5
 // after a `where` expression, 6 and 7 in an `over` clause.
 void h_func[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
@@ -3364,6 +3413,187 @@ void kernel_decl[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout F
     }
 }
 
+// `extern effect_class (void | type | error_union) IDENT ( [extern_param {, extern_param}] ) ;`
+// (SPEC-04 18.3 extern_decl, LS-323; SPEC-03 H-1, H-5; I/O services lane U1): the effect
+// class is one of the contextual words `pure`, `observe` and `unrestricted` (C1050 at any
+// other token, as `cint_ref`'s parse_extern reports it); the result, name and parameters
+// are a function's, in an S_FUNC frame with Frame.b 2, and `;` ends the declaration.
+void extern_decl[n, t, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, Bool exported, I64 attrs) {
+    I64 kw = advance(toks, ps);
+    I64 c = cur(ps);
+    I32 cls = 0;
+    if (kind_at(toks, ps, 0) == scan.TK_IDENT) {
+        I64 cs = toks[c].start as I64;
+        I64 cb = toks[c].len as I64;
+        if (spell(src, cs, cb, "pure")) {
+            cls = EFFECT_PURE;
+        } else if (spell(src, cs, cb, "observe")) {
+            cls = EFFECT_OBSERVE;
+        } else if (spell(src, cs, cb, "unrestricted")) {
+            cls = EFFECT_UNRESTRICTED;
+        }
+    }
+    if (cls == 0) {
+        fail(toks, diag, ps, scan.C_SYNTAX, c);
+        return;
+    }
+    _ = advance(toks, ps);
+    I64 fn = new_node(toks, nodes, diag, ps, N_EXTERN, kw, kw);
+    if (fn < 0) {
+        return;
+    }
+    nodes[fn].op = cls;
+    if (exported) {
+        nodes[fn].flags = F_EXPORT;
+    }
+    nodes[fn].f = attrs as I32;
+    link_stmt(nodes, st, ps, fn);
+    if (!push(toks, st, diag, ps, S_FUNC, fn, 0)) {
+        return;
+    }
+    I64 f = ps[0].sp - 1;
+    st[f].b = 2;
+    if (is_kw(toks, ps, 0, scan.KW_VOID)) {
+        _ = advance(toks, ps);
+        func_header(toks, nodes, st, diag, ps, f);
+        return;
+    }
+    if (is_kw(toks, ps, 0, scan.KW_IN) || is_kw(toks, ps, 0, scan.KW_INOUT)) {
+        // A view result parses (SPEC-04 18.3 result_type); the checker refuses it (C5050).
+        nodes[fn].e = toks[advance(toks, ps)].sub;
+    }
+    st[f].c = 0;
+    _ = push(toks, st, diag, ps, S_TYPE, -1, 0);
+}
+
+// `requires qualified_name [ ( [expr {, expr}] ) ] ;` (SPEC-04 18.3 requires_decl, LS-327;
+// SPEC-07 SEC-CAP-1): the capability's name, then its arguments as a call's (no named
+// argument: start_arg), then `;`.
+void requires_decl[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    I64 kw = advance(toks, ps);
+    I64 seg = expect_ident(toks, diag, ps);
+    if (seg < 0) {
+        return;
+    }
+    I64 x = new_node(toks, nodes, diag, ps, N_REQUIRES, kw, seg);
+    if (x < 0) {
+        return;
+    }
+    link_stmt(nodes, st, ps, x);
+    I64 tail = -1;
+    while (true) {
+        I64 y = new_node(toks, nodes, diag, ps, N_NAME, seg, seg);
+        if (y < 0) {
+            return;
+        }
+        tail = append(nodes, x, true, tail, y);
+        if (!is_op(toks, ps, 0, scan.OP_DOT)) {
+            break;
+        }
+        _ = advance(toks, ps);
+        seg = expect_ident(toks, diag, ps);
+        if (seg < 0) {
+            return;
+        }
+    }
+    if (!push(toks, st, diag, ps, S_SEMI, x, 0)) {
+        return;
+    }
+    if (is_op(toks, ps, 0, scan.OP_LPAREN)) {
+        _ = advance(toks, ps);
+        _ = push(toks, st, diag, ps, S_ARGS, x, 0);
+    }
+}
+
+// `@service("fs/1", fs.read(path))`, `@service("console/1", console.input)` or
+// `@service("console/1")` (SPEC-07 SEC-CAP-13, spelling Proposed; `cint_ref`'s
+// parse_service_attribute): after the `(`, the service name as one string without holes,
+// then the covering capability, a qualified name with the kinds `path` or `name` of its
+// arguments in parentheses (C1050 at another word). Fills N_ATTR node x (op 1).
+Bool service_attr[n, t, m, r](in U8[n] src, inout scan.Token[t] toks, inout Node[m] nodes,
+        inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 x) {
+    if (!expect_op(toks, diag, ps, scan.OP_LPAREN, scan.C_SYNTAX)) {
+        return false;
+    }
+    if (kind_at(toks, ps, 0) != scan.TK_STRING) {
+        fail(toks, diag, ps, scan.C_SYNTAX, cur(ps));
+        return false;
+    }
+    I64 s = single_string(src, toks, nodes, diag, ps);
+    if (s < 0) {
+        return false;
+    }
+    nodes[x].op = 1;
+    nodes[x].a = s as I32;
+    if (is_op(toks, ps, 0, scan.OP_COMMA)) {
+        _ = advance(toks, ps);
+        I64 tail = -1;
+        while (true) {
+            I64 seg = expect_ident(toks, diag, ps);
+            if (seg < 0) {
+                return false;
+            }
+            I64 y = new_node(toks, nodes, diag, ps, N_NAME, seg, seg);
+            if (y < 0) {
+                return false;
+            }
+            tail = append(nodes, x, false, tail, y);
+            if (!is_op(toks, ps, 0, scan.OP_DOT)) {
+                break;
+            }
+            _ = advance(toks, ps);
+        }
+        if (is_op(toks, ps, 0, scan.OP_LPAREN)) {
+            _ = advance(toks, ps);
+            tail = -1;
+            while (true) {
+                I64 k = expect_ident(toks, diag, ps);
+                if (k < 0) {
+                    return false;
+                }
+                I64 ks = toks[k].start as I64;
+                I64 kl = toks[k].len as I64;
+                if (!spell(src, ks, kl, "path") && !spell(src, ks, kl, "name")) {
+                    fail(toks, diag, ps, scan.C_SYNTAX, k);
+                    return false;
+                }
+                I64 y = new_node(toks, nodes, diag, ps, N_NAME, k, k);
+                if (y < 0) {
+                    return false;
+                }
+                if (tail < 0) {
+                    nodes[x].c = y as I32;
+                } else {
+                    nodes[tail].next = y as I32;
+                }
+                tail = y;
+                if (!is_op(toks, ps, 0, scan.OP_COMMA)) {
+                    break;
+                }
+                _ = advance(toks, ps);
+            }
+            if (!expect_op(toks, diag, ps, scan.OP_RPAREN, scan.C_SYNTAX)) {
+                return false;
+            }
+        }
+    }
+    return expect_op(toks, diag, ps, scan.OP_RPAREN, scan.C_SYNTAX);
+}
+
+// Whether the attribute list at head holds a `@service` attribute (N_ATTR op 1).
+Bool has_service(in Node[_] nodes, I64 head) {
+    I64 x = head;
+    while (x >= 0) {
+        if (nodes[x].op == 1) {
+            return true;
+        }
+        x = nodes[x].next as I64;
+    }
+    return false;
+}
+
 // S_STRUCT: the fields of a struct, each `{ attribute } type IDENT [: expr] [= expr] ;`.
 // Frame.c: 0 at a field, 1 after its type, 2 after its bit width, 3 after its default;
 // Frame.a the last field, Frame.d the attributes of the next field.
@@ -3446,6 +3676,18 @@ void h_attrs[n, t, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node[_] n
             nodes[st[f].a as I64].next = x as I32;
         }
         st[f].a = x as I32;
+        if (spell(src, toks[name].start as I64, toks[name].len as I64, "service")) {
+            // `@service(...)` (SEC-CAP-13): its own form, and the last attribute before the
+            // `extern` (C3043 at a further `@`, where `cint_ref` expects the declaration).
+            if (!service_attr(src, toks, nodes, diag, ps, x)) {
+                return;
+            }
+            if (is_op(toks, ps, 0, scan.OP_AT)) {
+                fail(toks, diag, ps, C_SERVICE_PLACE, cur(ps));
+                return;
+            }
+            continue;
+        }
         if (is_op(toks, ps, 0, scan.OP_LPAREN)) {
             _ = advance(toks, ps);
             nodes[x].flags = F_PARENS;
@@ -3618,6 +3860,19 @@ Bool declaration[n, t, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node[
     I32 kw = toks[tk].sub;
     if (kw == scan.KW_KERNEL) {
         kernel_decl(toks, nodes, st, diag, ps, exported, attrs);
+        return true;
+    }
+    if (kw == scan.KW_EXTERN) {
+        extern_decl(src, toks, nodes, st, diag, ps, exported, attrs);
+        return true;
+    }
+    if (kw == scan.KW_REQUIRES) {
+        if (exported) {
+            // A `requires` declaration is not exported (SPEC-07 SEC-CAP-1): C1050 at it.
+            fail(toks, diag, ps, scan.C_SYNTAX, tk);
+            return true;
+        }
+        requires_decl(toks, nodes, st, diag, ps);
         return true;
     }
     if (kw == scan.KW_TEST && !exported && attrs < 0) {
@@ -3812,6 +4067,12 @@ void top_item[n, t, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node[_] 
         _ = advance(toks, ps);
         exported = true;
         tk = cur(ps);
+    }
+    if (attrs >= 0 && has_service(nodes, attrs) && !is_kw(toks, ps, 0, scan.KW_EXTERN)) {
+        // `@service` applies to an extern declaration (SPEC-07 SEC-CAP-13), C3043 at the
+        // token after it and any `export`, as `cint_ref`'s parse_module reports it.
+        fail(toks, diag, ps, C_SERVICE_PLACE, tk);
+        return;
     }
     if (declaration(src, toks, nodes, st, diag, ps, exported, attrs) || ps[0].err != 0) {
         return;

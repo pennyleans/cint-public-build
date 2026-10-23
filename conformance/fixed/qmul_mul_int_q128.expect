@@ -1,0 +1,9 @@
+case fixed/qmul_mul_int_q128
+clause SPEC-01 IM-63, IM-64 (`qmul` between 64-bit and 128-bit formats, exact and rounded, and `mul_int` by I128 and I8)
+format 5
+source reference
+outcome value
+stdout-bytes 47
+stdout-sha256 17fc1980edfcfae5e4cd404b4800e1ae5303f99caca2314124b103c45f1ea65e
+return I64 211106232532992
+fuel-consumed 1

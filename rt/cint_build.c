@@ -57,7 +57,9 @@ cint_status cint_emit(cint_ctx *ctx, int64_t fuel, int64_t module_index, int64_t
 
 typedef struct stage_entry { char *rel; size_t len; bool dir; char hex[65]; } stage_entry;
 struct cint_stage { char *out, *dir; stage_entry *e; size_t n, cap; };
-static int g_writes;
+#ifdef CINT_BRIDGE_TEST_HOOKS
+static int g_writes;   /* writes since cint_stage_begin, which the injected failures count */
+#endif
 
 static bool stage_add(cint_stage *st, const char *rel, size_t len, bool dir, const uint8_t *bytes)
 {
@@ -98,7 +100,9 @@ bool cint_stage_begin(const char *out, cint_stage **stage)
         if (st != NULL) stage_free(st);
         return false;
     }
+#ifdef CINT_BRIDGE_TEST_HOOKS
     g_writes = 0;
+#endif
     *stage = st;
     return true;
 }
@@ -134,8 +138,8 @@ bool cint_stage_write(cint_stage *st, const char *rel, const uint8_t *bytes, siz
 {
     if (st == NULL) return false;
     bool ok = cint_bridge_rel_ok(rel) && (bytes != NULL || len == 0) && strcmp(rel, "MANIFEST") != 0;
-    ++g_writes;
 #ifdef CINT_BRIDGE_TEST_HOOKS
+    ++g_writes;
     ok = ok && cint_bridge_test_fail_write != g_writes;
 #endif
     ok = ok && stage_file(st, rel, bytes == NULL ? (const uint8_t *)"" : bytes, len);

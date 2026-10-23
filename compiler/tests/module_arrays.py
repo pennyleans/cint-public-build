@@ -1,8 +1,8 @@
 """Compares module-level arrays (SPEC-04 LS-113, OQ-233; rt/OPEN.md RT-OQ-49) with cint_ref:
 zero-filled and initialized arrays of integers and Bool, of rank 1 to 4, read and written by
 several functions, passed as views, copied, reduced and faulting; the initializers cint_ref
-refuses; and the forms cintc refuses with C9102 that cint_ref runs (more than 65,536 bytes of
-elements, an extent that is not a literal, another module's array). Module-level structs are
+refuses; and the forms cintc refuses with C9102 that cint_ref runs (more than 65,536 elements,
+an extent that is not a literal, another module's array). Module-level structs are
 compiler/tests/module_structs.py's."""
 import argparse
 import json
@@ -68,6 +68,12 @@ VALUES = {
     'rank2_unnamed': 'I64[2, 2] m;\nI64 other() { return 1; }\nexport I64 run() { return other(); }',
     'rank2_bounds_fault': 'I64[2, 2] m;\nexport I64 run() { I64 k = 2; return m[0, k]; }',
     'rank2_overflow_fault': 'I8[1, 1] m = [[127]];\nexport I64 run() { m[0, 0] += 1; return 0; }',
+    # Up to 65,536 elements whatever their type (OQ-297; rt/OPEN.md RT-OQ-61).
+    'u8_most': 'U8[65536] bs;\nexport I64 run() { bs[65535] = 7; return bs[65535] as I64 * 100000 + len(bs); }',
+    'i64_most': 'I64[65536] room;\nexport I64 run() { room[8767] = 5; room[65535] = 6; '
+                'return (room[8767] * 10 + room[65535]) * 100000 + len(room); }',
+    'i1024_large': 'I1024[9000] w;\nexport I64 run() { w[8999] = 3; w[8999] *= w[8999]; return (w[8999] as I64) * 10000 + len(w); }',
+    'rank2_large': 'I64[100, 100] big;\nexport I64 run() { big[99, 99] = 4; return big[99, 99] * 100000 + size(big); }',
 }
 DIAGNOSTICS = {
     'call_item': 'I64 one() { return 1; }\nI64[2] xs = [one(), 2];\nexport I64 run() { return xs[0]; }',
@@ -82,12 +88,13 @@ DIAGNOSTICS = {
     'rank2_parameter_named_alike': 'I64[2, 2] m;\nI64 f(I64 m) { return m + 1; }\nexport I64 run() { return f(4); }',
     'rank2_local_named_alike': 'I64[2, 2] m;\nexport I64 run() { I64 m = 1; return m; }',
 }
-# cint_ref runs these; cintc refuses them with C9102 at the token it names (OQ-233): the
-# declaration's name for more than 65,536 bytes of elements, the extent that is not a
-# literal, or the imported name.
+# cint_ref runs these; cintc refuses them with C9102 at the token it names (OQ-233, OQ-297):
+# a rank-1 extent above 65,536, the declaration's name for more than 65,536 elements of rank
+# 2 to 4, the extent that is not a literal, or the imported name.
 BOUNDARIES = {
-    'rank1_bytes': ('I64[8193] big;\nexport I64 run() { return big[1]; }', 'big;'),
-    'rank2_bytes': ('I64[100, 100] big;\nexport I64 run() { return big[1, 0]; }', 'big;'),
+    'rank1_elements': ('U8[65537] big;\nexport I64 run() { return big[1] as I64; }', '65537]'),
+    'rank1_wide_elements': ('I64[65537] big;\nexport I64 run() { return big[1]; }', '65537]'),
+    'rank2_elements': ('I64[300, 300] big;\nexport I64 run() { return big[1, 0]; }', 'big;'),
     'rank2_named_extent': ('const I64 N = 2;\nI64[N, 2] m;\nexport I64 run() { return m[1, 0]; }', 'N, 2]'),
     'imported_array': ('export I64 run() { return records.shared[1]; }', 'shared['),
 }

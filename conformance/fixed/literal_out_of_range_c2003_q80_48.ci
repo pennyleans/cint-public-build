@@ -1,0 +1,10 @@
+// case: fixed/literal_out_of_range_c2003_q80_48
+// clause: SPEC-04 LS-37; SPEC-01 IM-54 (2^79 is one past the largest Q80.48 value)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: compile-error C2003 at 8:16 (the literal). Games wave G2a (OQ-292)
+
+export I64 run() {
+    Q80.48 x = 604462909807314587353088.0;
+    return 0;
+}

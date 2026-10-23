@@ -344,7 +344,43 @@ class Writer:
             return "(_)"
         return self.expr(e)
 
+    def service_attr(self, x) -> str:
+        """The `@service(...)` attribute of extern x as cintc's N_ATTR of op 1 (I/O services
+        lane U1): `(attr service@pos (str ...) [segments] [kinds])`. cint_ref keeps the service
+        name, the capability's segments and the argument kinds; the positions are read from
+        the tokens after the last `@` before the `extern` keyword."""
+        if self.index is None:
+            self.index = {(t.line, t.col): k for k, t in enumerate(self.toks)}
+        at = self.last_token_before(x.pos, "@")
+        k = self.index[(at.line, at.col)]
+        svc, s = self.toks[k + 1], self.toks[k + 3]
+        out = "(attr service@%d:%d (str %s@%d:%d^%d:%d)" % (
+            svc.line, svc.col, hexs(x.service.encode("utf-8")), s.line, s.col, s.line, s.col)
+        segs, kinds = [], []
+        if x.capability is not None:
+            j = k + 5
+            for n in x.capability:
+                t = self.toks[j]
+                segs.append("(name %s@%d:%d^%d:%d)" % (n, t.line, t.col, t.line, t.col))
+                j += 2
+            for n in x.cap_kinds:
+                t = self.toks[j]
+                kinds.append("(name %s@%d:%d^%d:%d)" % (n, t.line, t.col, t.line, t.col))
+                j += 2
+        return out + " [%s] [%s])" % (" ".join(segs), " ".join(kinds))
+
     def item(self, x) -> str:
+        if isinstance(x, T.ExternDecl):
+            # I/O services lane U1 (SPEC-04 LS-323): a function's result and parameters, no body.
+            params = " ".join("(param %s %s%s %s -)" % (p.mode, p.name, at(p.pos), self.type(p.type))
+                              for p in x.params)
+            attrs = self.service_attr(x) if x.service is not None else ""
+            return "(extern %s%s%s class:%s %s [%s] [%s])" % (
+                x.name, at(x.name_pos), " export" if x.exported else "", x.effect, self.result(x.result),
+                params, attrs)
+        if isinstance(x, T.RequiresDecl):
+            return "(requires %s path:%s%s [%s])" % (at(x.pos), ".".join(x.segments), at(x.name_pos),
+                                                    " ".join(self.expr(a) for a in x.args))
         if isinstance(x, T.FuncDecl):
             sizes, params = self.sizes_params(x)
             return "(func %s%s%s %s [%s] [%s] [] - [] %s)" % (x.name, at(x.name_pos), " export" if x.exported else "",
@@ -393,7 +429,7 @@ class Writer:
         for x in m.imports:
             items.append(((x.pos.line, x.pos.column), self.item(x)))
         for group in (m.functions, m.kernels, m.structs, m.errors, m.consts, m.tests, m.statements, m.static_asserts,
-                      m.memories):
+                      m.memories, m.externs, m.requires):
             for x in group:
                 p = x.name_pos if isinstance(x, (T.FuncDecl, T.KernelDecl, T.StructDecl, T.ErrorDecl)) else x.pos
                 items.append(((p.line, p.column), self.item(x)))

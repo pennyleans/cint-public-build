@@ -19,9 +19,10 @@ chooses it). Each build is checked on:
   - the SIR-17 golden test: compiler/tests/golden/add.sir has the revision identity that
     compiler/tests/golden_suite.py fixes (ADD_REVISION), and hello.sir the one in
     hello.program.c;
-  - the programs under interp/tests/sir/, for kernels (unit 7b) interp/tests/kernels/, and for
-    error sets and error results (unit 8b) interp/tests/errors/, SIR text that B1 wrote for
-    conformance cases (each directory is a case, `<category>__<name>`): the revision
+  - the programs under interp/tests/sir/, for kernels (unit 7b) interp/tests/kernels/, for
+    error sets and error results (unit 8b) interp/tests/errors/, and for extern rows, Grants
+    parameters and service calls (I/O services lane U5c) interp/tests/services/, SIR text
+    that B1 wrote for conformance cases (each directory is a case, `<category>__<name>`): the revision
     identity equals the one cintc wrote in the program file, kept in the REVISIONS of its
     directory, and the one computed here in Python from the same bytes; the counts of
     modules, functions and nodes equal the ones counted here;
@@ -96,7 +97,10 @@ KERNELS = TESTS / "kernels"
 # Error programs (box 12 forms, unit 8b): error sets, result forms, error.tag, return.error,
 # error.leave and widen; the workbench does not explain them yet.
 ERRORS = TESTS / "errors"
-DIRECTORIES = (FIXTURES, KERNELS, ERRORS)
+# Service programs (I/O services lane U5c, rt/OPEN.md RT-OQ-75): extern rows, Grants parameters
+# and host.call, each call denied, since no grant is given.
+SERVICES = TESTS / "services"
+DIRECTORIES = (FIXTURES, KERNELS, ERRORS, SERVICES)
 PROBES = TESTS / "probes"
 # Wide integers (box 15): one program over two signed wide types, feat128.ci over I128 and I256
 # and feat512.ci over I512 and I1024, with the SIR text B1 wrote for each under <name>/; each
@@ -207,7 +211,8 @@ def counts(modules) -> str:
         for line in sir.decode("ascii").split("\n")[2:]:
             if re.match(r"(export )?(func|script|test|kernel) @", line):
                 functions += 1
-            elif line and not line.startswith(("global ", "struct ", "widen W", "error E", "arena @", "pool @")):
+            elif line and not line.startswith(("global ", "struct ", "widen W", "error E", "arena @", "pool @",
+                                               "extern @")):
                 nodes += 1
     return "counts %d %d %d" % (len(modules), functions, nodes)
 
@@ -228,13 +233,13 @@ def recorded_revisions() -> dict:
 
 
 def fixture_names() -> list:
-    """The programs under interp/tests/sir/, kernels/ and errors/, each named for its case."""
+    """The programs under interp/tests/sir/, kernels/, errors/ and services/, each named for its case."""
     return sorted(p.name for d in DIRECTORIES for p in d.iterdir() if p.is_dir())
 
 
 def fixture(name: str) -> pathlib.Path:
     """The directory of fixture `name`."""
-    return next((d for d in (KERNELS, ERRORS) if (d / name).is_dir()), FIXTURES) / name
+    return next((d for d in (KERNELS, ERRORS, SERVICES) if (d / name).is_dir()), FIXTURES) / name
 
 
 def run(exe, directory) -> tuple:
@@ -314,16 +319,17 @@ def interp(exe, *args, timeout=120):
     return r.returncode, r.stdout, r.stderr.decode("utf-8", "replace").replace("\r\n", "\n")
 
 
-def run_entry(exe, directory: pathlib.Path, work: pathlib.Path, fmt: int = 1, pre=()):
-    """`cint-interp run` on a program with a script or test entry, pre before the command: (exit
-    status, its record lines in format fmt as tools/cint_check.py composes them, the error record
-    and module state included, stderr)."""
+def run_entry(exe, directory: pathlib.Path, work: pathlib.Path, fmt: int = 1, pre=(), argv=()):
+    """`cint-interp run` on a program with a script or test entry, pre before the command and
+    argv the program arguments of `main` as `--arg` pairs (OQ-306): (exit status, its record
+    lines in format fmt as tools/cint_check.py composes them, the error record and module state
+    included, stderr)."""
     fault, fuel, state = work / "fault.bin", work / "fuel.bin", work / "state.txt"
     for f in (fault, fuel, state):
         f.unlink(missing_ok=True)
     stateful = any(re.search(rb"^global @", sir, re.M) for _, sir in program(directory))
-    r = subprocess.run([str(exe), *map(str, pre), "run", str(directory), str(fault), str(fuel),
-                        *([str(state)] if stateful else [])],
+    r = subprocess.run([str(exe), *map(str, pre), "run", str(directory), *(x for a in argv for x in ("--arg", a)),
+                        str(fault), str(fuel), *([str(state)] if stateful else [])],
                        capture_output=True, timeout=120, stdin=subprocess.DEVNULL)
     lines = cint_check.entry_record(r, fault, fuel, state if stateful else None, fmt)
     return r.returncode, lines, r.stderr.decode("utf-8", "replace")
@@ -567,7 +573,8 @@ MALFORMED = [
     ("widen line after a function", ADD, "add.ci", lambda t: t + b"widen W0: 0 1\n", 1,
      "add.sites:9:0: widen and error lines come before the functions"),
     ("error.tag without its producer", ADD, "add.ci", (b"  return %t1\n", b"  %t2 = error.tag\n  return %t1\n"), 1,
-     "add.sites:7:9: error.tag follows a call of a function with an error union result, or a result form"),
+     "add.sites:7:9: error.tag follows a call of a function or an extern with an error union result, or a result "
+     "form"),
     ("return.error without an error union", ADD, "add.ci", (b"  return %t1\n", b"  return.error %t1\n"), 1,
      "add.sites:7:3: return.error is in a function with an error union result"),
     ("error.leave outside a test", ADD, "add.ci",
@@ -872,7 +879,7 @@ class Interp(unittest.TestCase):
                 with self.subTest(build=label, case=case, trace=bool(pre)):
                     if h["entries"][0] is None:
                         fmt = gen_expect.expect_format(str(frozen))
-                        code, lines, err = run_entry(exe, fixture(case), self.work, fmt, pre)
+                        code, lines, err = run_entry(exe, fixture(case), self.work, fmt, pre, h["argv"])
                         want = cint_check.body(frozen.read_bytes().decode("ascii").rstrip("\n").split("\n"))
                         self.assertEqual(lines, want, err)
                         self.assertEqual(code, {"outcome fault": 1, "outcome error": 6}.get(want[0], 0), err)
@@ -960,6 +967,37 @@ class Interp(unittest.TestCase):
                 code, out, err = interp(exe, "observe", broken, "--entry", "add", "--clause", "x")
                 self.assertEqual((code, out), (3, b""))
                 self.assertIn("malformed SIR: add.sites:7:4: indented 3 spaces", err)
+
+    def test_program_args_tail(self):
+        """The program arguments of `main` (OQ-306) after `--`, alone, after `--arg` pairs or as an
+        empty tail, on `run`, `run --record`, `run --case` and `replay`: the separator is not an
+        argument, and an empty tail gives the empty view. `replay` of a full recording or a case
+        runs the entry over the recorded arguments, whatever tail it is given. Before the fix the
+        three commands that take the arguments out of argv copied the separator as well, past the
+        end of the arguments' buffer."""
+        directory = fixture("services__main_args_print")
+        source = self.work / "src"
+        (source / "services").mkdir(parents=True)
+        shutil.copyfile(ROOT / "lib" / "console.ci", source / "console.ci")
+        shutil.copyfile(ROOT / "conformance" / "services" / "main_args_print.ci",
+                        source / "services" / "main_args_print.ci")
+        three, none = b"3 10 9710811210497|98|99|\n", b"0 0 \n"
+        rec, case = self.work / "m.rec", self.work / "m.case"
+        for label, exe in INTERPS:
+            for argv, want in ((("--", "alpha", "b", "c"), three), (("--arg", "alpha", "--", "b", "c"), three),
+                               (("--arg", "alpha", "--arg", "b", "--arg", "c", "--"), three), (("--",), none)):
+                with self.subTest(build=label, argv=argv):
+                    code, out, err = interp(exe, "run", directory, *argv)
+                    self.assertEqual((code, out, err), (0, want, ""))
+                    code, out, err = interp(exe, "run", "--record", rec, directory, *argv)
+                    self.assertEqual((code, out, err), (0, want, ""))
+                    code, out, err = interp(exe, "run", "--case", case, "--source", source, directory, *argv)
+                    self.assertEqual((code, out, err), (0, want, ""))
+                    for path in (rec, case):
+                        for tail in ((), ("--",), ("--", "x", "--")):
+                            code, out, err = interp(exe, "replay", "--echo", path, *tail)
+                            self.assertEqual((code, out), (0, want), (path.name, tail, err))
+                            self.assertRegex(err, r"^replay: ok, boundaries [0-9]+, chain [0-9a-f]{64}\n$")
 
     def test_operand_free_module(self):
         """A module none of whose nodes has an operand reads, prepares and runs, also when it is

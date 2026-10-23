@@ -1,0 +1,7 @@
+case fixed/literal_off_grid_c2006_q64_64
+clause SPEC-04 LS-37 (0.1 is not a multiple of 2^-64)
+format 5
+source compile-error
+outcome compile-error
+diagnostic.code C2006
+diagnostic.position fixed/literal_off_grid_c2006_q64_64.ci:8:16

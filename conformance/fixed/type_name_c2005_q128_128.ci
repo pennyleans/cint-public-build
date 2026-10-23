@@ -1,0 +1,10 @@
+// case: fixed/type_name_c2005_q128_128
+// clause: SPEC-04 LS-36; SPEC-01 IM-54, IM-59 (i + f is 8, 16, 32, 64 or 128; Q128.128 has 256 bits, which IM-59 keeps Proposed)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: compile-error C2005 at 8:5 (the type name Q128.128). Games wave G2a (OQ-292)
+
+export I64 run() {
+    Q128.128 x = 1.0;
+    return 0;
+}

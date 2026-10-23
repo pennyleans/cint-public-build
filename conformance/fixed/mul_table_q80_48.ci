@@ -1,0 +1,17 @@
+// case: fixed/mul_table_q80_48
+// clause: SPEC-01 IM-61, IM-62 (the 5.3 table in Q80.48, and products whose intermediate needs more than 128 bits)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 0; prints `2.25 2 1 1 -2 -1 -1`, `0 0 -1` (the 5.3 table at raw 1 and raw -1) and `85070591730234615865843651857942052864 85070591730234615865843651857942052863 -170141183460469231731687303715884105727` (Q80.48.max times 0.5 is raw 2^126 - 0.5 before rounding: half_even 2^126, floor 2^126 - 1); fuel 1. Games wave G2a (OQ-292)
+
+export I64 run() {
+    Q80.48 u = Q80.48.epsilon;
+    Q80.48 m = -u;
+    Q80.48 x = 1.5;
+    Q80.48 h = 0.5;
+    Q80.48 top = Q80.48.max;
+    "{x * x} {(u * x)!raw} {mul(u, x, floor)!raw} {mul(u, x, trunc)!raw} {(m * x)!raw} {mul(m, x, trunc)!raw} {mul(m, x, half_up)!raw}\n";
+    "{(u * h)!raw} {(m * h)!raw} {mul(m, h, half_away)!raw}\n";
+    "{(top * h)!raw} {mul(top, h, floor)!raw} {(top * -1.0)!raw}\n";
+    return 0;
+}

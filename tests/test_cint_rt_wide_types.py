@@ -31,6 +31,10 @@ U64 both ways, and among I8 to U64, checked, wrapping and saturating (`as|`, rt/
 0, 1, 2^63 - 1, 2^63 or 2^64 - 1, and divisions whose dividend is a multiple of the divisor plus
 a remainder, so that the corrections of algorithm D are reached.
 
+rt/tests/test_wide_calls.c, linked into the driver, calls cint_builtin_<t> as emitted code calls it, with
+NULL for each operand a built-in does not take, in a translation unit of its own; gcc 13 at -O2 refused
+that unit before rt/OPEN.md RT-OQ-60.
+
 The driver, with rt/cint_rt.c, rt/cint_state.c and rt/cint_rec.c, is built for each leg of this host (gcc, and clang when installed, on Linux;
 apple-clang on macOS; msvc on Windows) at -O0 and -O2 (MSVC /Od and /O2) in both helper modes,
 with the flags of tools/cint_check.py and, under `workflow.py check --sanitize`, its sanitizers
@@ -158,12 +162,6 @@ def ref(name: str, form: str, t: str, *operands, mode=None, target=None):
         raise
 
 
-def sat(target: str, x: int) -> Value:
-    """`x as| target`: sat(target, x), which never faults (SPEC-01 IM-50; decision 2026-10-10 on OQ-272).
-    cint_ref's arith.py does not take `as|` yet, so this is the saturation of its types.py."""
-    return Value(target, int_type(target).sat(x))
-
-
 def generate(seed: int = 15, scale: int = 1):
     """The case lines of every wide width."""
     rng = random.Random(seed)
@@ -270,14 +268,14 @@ def generate(seed: int = 15, scale: int = 1):
             for x in vals:
                 add("as", tag, 0, rtag, [arg(t, x)], outcome(ref("as", "checked", t, x, target=target)))
                 add("as_wrap", tag, 0, rtag, [arg(t, x)], outcome(ref("as", "wrap", t, x, target=target)))
-                add("as_sat", tag, 0, rtag, [arg(t, x)], outcome(sat(target, x)))
+                add("as_sat", tag, 0, rtag, [arg(t, x)], outcome(ref("as", "sat", t, x, target=target)))
         for source, stag in NARROW:
             st = int_type(source)
             for x in (st.min, st.max, 0, 1, -1, rng.randint(st.min, st.max)):
                 if st.contains(x):
                     add("as", stag, 0, tag, [arg(source, x)], outcome(ref("as", "checked", source, x, target=t)))
                     add("as_wrap", stag, 0, tag, [arg(source, x)], outcome(ref("as", "wrap", source, x, target=t)))
-                    add("as_sat", stag, 0, tag, [arg(source, x)], outcome(sat(t, x)))
+                    add("as_sat", stag, 0, tag, [arg(source, x)], outcome(ref("as", "sat", source, x, target=t)))
     for t, tag in NARROW:
         nt = int_type(t)
         for ct, _ in WIDE + NARROW:
@@ -300,7 +298,7 @@ def generate(seed: int = 15, scale: int = 1):
                 if st.contains(x):
                     add("as", stag, 0, rtag, [arg(source, x)], outcome(ref("as", "checked", source, x, target=target)))
                     add("as_wrap", stag, 0, rtag, [arg(source, x)], outcome(ref("as", "wrap", source, x, target=target)))
-                    add("as_sat", stag, 0, rtag, [arg(source, x)], outcome(sat(target, x)))
+                    add("as_sat", stag, 0, rtag, [arg(source, x)], outcome(ref("as", "sat", source, x, target=target)))
     for t, t2 in (("I64", "I128"), ("U64", "U128")):
         for x, y in pairs(rng, t, 200):
             add("mul_full", TAG[t], 0, TAG[t2], [arg(t, x), arg(t, y)], outcome(Value(t2, x * y)))
@@ -347,13 +345,15 @@ class WideTypes(unittest.TestCase):
                             out.mkdir()
                             tc = cc.Toolchain(leg, opt, helpers, sanitize and leg in ("gcc", "clang"))
                             objs = tc.compile([ROOT / "rt" / f for f in ("cint_rt.c", "cint_state.c", "cint_rec.c",
-                                                                          "tests/test_wide.c")], out, name)
+                                                                          "tests/test_wide.c",
+                                                                          "tests/test_wide_calls.c")], out, name)
                             exe = tc.link_exe(objs, out / "test_wide", name)
                             run = subprocess.run([str(exe), str(cases), str(pairs)], capture_output=True,
                                                  timeout=300 + pairs // 100000)
                             self.assertEqual(run.returncode, 0, run.stderr[-3000:])
                             self.assertEqual(run.stderr, b"")
                             self.assertIn(b"helper mode: " + helpers.encode("ascii"), run.stdout)
+                            self.assertIn(b"builtin calls: 13, failed 0", run.stdout)
                             self.assertIn(b"limb steps: %d pairs, 0 disagree" % pairs, run.stdout)
                             self.assertIn(b"wide cases: %d, passed %d, failed 0" % (len(self.lines), len(self.lines)),
                                           run.stdout)

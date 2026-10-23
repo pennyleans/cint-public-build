@@ -48,7 +48,8 @@ run-time record bound of SPEC-01 IM-108, and BX15-07 proposes C2103 for it. The
 unsigned wide types `U128` to `U512` (ruling BX15-02) come with `uabs` of `I128`
 to `I512`, rotations, and `mul_full` of `U64` to `U256`. Fixed point (rulings
 BX15-03 to BX15-06; ref/OPEN.md REF-OQ-47) types `Q<i>.<f>` with storage of 8 to 64
-bits wherever an integer element is admitted, fraction literals with their `round`
+bits, and of 128 bits since the decision of 2026-10-15 on OQ-292, wherever an integer
+element is admitted, fraction literals with their `round`
 clause, `.raw` and `Q.raw(n)`, the operators and built-ins of SPEC-01 IM-60 to
 IM-67, `qmul` and `mul_int`, conversions with a `round` clause, the reductions at
 the element format and `dot` with one rounding. A module parsed with `fixed=False`
@@ -78,6 +79,51 @@ from .types import BOOL, INT_TYPES, int_type, is_int_type
 
 VOID = "void"
 Z = "Z"
+GRANTS = "Grants"       # the opaque grant set (SPEC-07 SEC-OS-2; SPEC-03 H-8a), a parameter type only
+EFFECTS = ("pure", "observe", "unrestricted")       # SPEC-03 H-1, in the order of H-2
+CAP_KINDS = ("path", "name")                        # kinds of a capability's arguments (SEC-CAP-6)
+_DEVICE_STEMS = {"con", "prn", "aux", "nul"} | {"%s%d" % (d, k) for d in ("com", "lpt") for k in range(1, 10)}
+_SEGMENT_CHARS = frozenset(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-.")
+
+
+def logical_path_fault(path: bytes) -> str | None:
+    """Why `path` is not a logical path of SPEC-07 SEC-OS-5, or None: absolute, `/`-separated,
+    segments of ASCII letters, digits, `_`, `-` and `.`, no empty segment, no `.` or `..`, no
+    trailing `/`, no segment ending in `.`, and no Windows reserved device name before the
+    first `.`; `/` alone is the root with zero segments."""
+    if path == b"/":
+        return None
+    if not path.startswith(b"/"):
+        return "a logical path is absolute"
+    for seg in path[1:].split(b"/"):
+        if not seg:
+            return "a logical path has no empty segment and no trailing `/`"
+        if seg in (b".", b".."):
+            return "`.` and `..` are not segments of a logical path"
+        if any(c not in _SEGMENT_CHARS for c in seg):
+            return "a segment holds ASCII letters, digits, `_`, `-` and `.` only"
+        if seg.endswith(b"."):
+            return "a segment does not end in `.`"
+        if seg.split(b".")[0].lower().decode("ascii") in _DEVICE_STEMS:
+            return "a segment is not a Windows reserved device name"
+    return None
+
+
+def logical_name_fault(name: bytes) -> str | None:
+    """Why `name` is not a service, domain or library name of SEC-CAP-6 (a logical segment of
+    1 to 63 bytes), or None."""
+    if not 1 <= len(name) <= 63:
+        return "a name is 1 to 63 bytes"
+    if any(c not in _SEGMENT_CHARS for c in name):
+        return "a name holds ASCII letters, digits, `_`, `-` and `.` only"
+    return None
+
+
+def capability_text(segments, args) -> str:
+    """The canonical capability text of SEC-CAP-6: the name, then `:` and the arguments
+    separated by `,` when there are any."""
+    name = ".".join(segments)
+    return name if not args else name + ":" + ",".join(a.decode("ascii") for a in args)
 
 # Built-in function names of SPEC-04 6.8 (the implicit prelude); they must not be redefined.
 PRELUDE = frozenset("""
@@ -104,6 +150,10 @@ POOL_MEMBERS = {"insert": 1, "insert_result": 1, "remove": 1}
 # The result-returning built-ins (SPEC-01 IM-28, IM-30) and the operation of each.
 RESULT_BUILTINS = {"add_result": "add", "sub_result": "sub", "mul_result": "mul", "div_result": "div",
                    "rem_result": "rem", "shl_result": "shl"}
+# The result forms that take an optional rounding mode on fixed point (SPEC-01 IM-188; OQ-273),
+# and those defined on fixed point only.
+RESULT_MODES = frozenset({"mul_result", "div_result"})
+Q_ONLY_RESULTS = frozenset()
 # The reductions of SPEC-04 LS-145; `min` and `max` are reductions when their last argument is an array.
 REDUCTIONS = frozenset({"sum", "fold_checked", "sum_wrap", "sum_sat", "count", "dot"})
 # The reductions a `reduce` statement names (SPEC-02 R-1, SPEC-04 LS-249).
@@ -192,6 +242,14 @@ class ArrayType:
 
     def __repr__(self):
         return self.name
+
+
+def is_program_args(p, t) -> bool:
+    """Whether parameter `p` of type `t` is the program arguments of `main`, `in U8[_] args`
+    (SPEC-04 LS-221; OQ-306): an `in` view of rank 1 over U8 with no extent and no size parameter.
+    """
+    return (p.mode == "in" and isinstance(t, ArrayType) and t.rank == 1 and t.elem == "U8"
+            and t.dims[0].extent is None and t.dims[0].size is None)
 
 
 def array_of(elem, extents, writable=True, view=False) -> ArrayType:
@@ -374,7 +432,7 @@ def elem_ident(t) -> str:
 
 @dataclass(eq=False)
 class Sym:
-    kind: str          # var param loopvar modvar const func struct module sizeparam view kernel errorset errbind
+    kind: str          # var param loopvar modvar const func struct module sizeparam view kernel errorset errbind extern
     name: str
     type: object
     pos: object
@@ -401,6 +459,10 @@ class Program:
     state: list = field(default_factory=list)   # every module's (key, type, value), in check order
     kernels: dict = field(default_factory=dict)
     memories: list = field(default_factory=list)  # every module's (key, MemType, capacity), in module order
+    externs: list = field(default_factory=list)   # every module's (module name, ExternDecl), in module order
+    host_imports: list = field(default_factory=list)   # (qualified name, effect) of each non-service extern (A-10)
+    manifest: list = field(default_factory=list)  # the canonical capability texts of CICAP001, sorted (SEC-CAP-7)
+    effects: dict = field(default_factory=dict)   # FuncDecl -> its computed effect class (SPEC-03 H-2)
 
 
 def module_name(path: str) -> str:
@@ -443,6 +505,9 @@ class Checker:
             self.types = self.types | MEMORY_SETS
         self.errsets: dict[str, ErrorSet] = {}
         self.memories: list = []     # (key, MemType, capacity) of each module-level arena and pool
+        self.effect = "pure"         # the class of the body being checked (SPEC-03 H-2, H-7)
+        self.service_calls: list = []    # (call node, ExternDecl) of each service extern call (SEC-CAP-1)
+        self.requires_decls: list = []   # (RequiresDecl, [argument bytes]) of each `requires`
 
     # -- names ----------------------------------------------------------------------
     def visible(self, name) -> bool:
@@ -515,6 +580,13 @@ class Checker:
             elem = sym.type
         elif ref.name in INT_TYPES or ref.name == BOOL:
             elem = ref.name
+        elif ref.name == GRANTS:
+            # A grant set is received as a parameter and passed on; it is not stored, returned
+            # or held in an array (SPEC-07 SEC-OS-2; SPEC-03 H-8a).
+            if where != "param" or ref.shape is not None:
+                error("C3042", ref.pos, "a `Grants` value is a parameter, received and passed on; it is not stored, "
+                                        "returned or held in an array")
+            elem = GRANTS
         elif Q_SPELLING.match(ref.name):
             elem = self.q_name(ref.name, ref.pos)
         elif ref.name in self.structs:
@@ -534,11 +606,12 @@ class Checker:
         return self.shape_type(elem, ref.dims or [ref.shape], where, ref)
 
     def q_name(self, name, pos) -> str:
-        """`Q<i>.<f>` with `i + f` of 8, 16, 32 or 64 and `i >= 1`, else C2005 (SPEC-04 LS-36)."""
+        """`Q<i>.<f>` with `i + f` of 8, 16, 32, 64 or 128 and `i >= 1`, else C2005 (SPEC-04 LS-36;
+        128 by decision 2026-10-15 on OQ-292)."""
         try:
             return fixed.q_type(name).name
         except ValueError:
-            error("C2005", pos, "`%s` is not a fixed-point type: i + f is 8, 16, 32 or 64, with i >= 1 and f >= 0 "
+            error("C2005", pos, "`%s` is not a fixed-point type: i + f is 8, 16, 32, 64 or 128, with i >= 1 and f >= 0 "
                   "(SPEC-04 LS-36)" % name)
 
     def memory_type(self, ref: P.TypeRef, where):
@@ -717,7 +790,8 @@ class Checker:
         # its later declaration (C3001; SPEC-04 LS-112, LS-228).
         decls = [(s.name_pos, "struct", s) for s in m.structs] + [(c.name_pos, "const", c) for c in m.consts] \
             + [(f.name_pos, "func", f) for f in m.functions] + [(k.name_pos, "kernel", k) for k in m.kernels] \
-            + [(e.name_pos, "errorset", e) for e in m.errors] + [(d.name_pos, "memory", d) for d in m.memories]
+            + [(e.name_pos, "errorset", e) for e in m.errors] + [(d.name_pos, "memory", d) for d in m.memories] \
+            + [(x.name_pos, "extern", x) for x in m.externs]
         if self.script_stmt is None:
             decls += [(s.name_pos, "modvar", s) for s in m.statements]
         for _, kind, d in sorted(decls, key=lambda x: (x[0].line, x[0].column)):
@@ -743,6 +817,10 @@ class Checker:
             self.check_memory_decl(d)
         for f in m.functions:
             self.ensure_signature(f)
+        for x in m.externs:
+            self.extern_signature(x)
+        for r in m.requires:
+            self.check_requires(r)
         for k in m.kernels:
             self.kernel_signature(k)
         is_script = self.is_script = self.script_stmt is not None
@@ -763,6 +841,18 @@ class Checker:
             if result is not None and not (isinstance(result, P.UnionType) and result.value is None):
                 # SPEC-04 LS-221 admits `void main()` and `E!void main()` only (D-19; ref/OPEN.md REF-OQ-28).
                 error("C2066", main.decl.result.pos, "`main` returns no value: write `void main()` (SPEC-04 LS-221)")
+            if main is not None and main.kind == "func":
+                # `main()`, `main(Grants g)`, `main(in U8[_] args)` or `main(Grants g, in U8[_] args)`
+                # (SPEC-04 LS-221; SPEC-07 SEC-CAP-1; the program arguments of OQ-306): C3044 at the
+                # first parameter outside those forms.
+                grants = False
+                for i, (p, t) in enumerate(zip(main.decl.params, main.decl.param_types)):
+                    if t == GRANTS and i == 0:
+                        grants = True
+                    elif not (is_program_args(p, t) and (i == 0 or (i == 1 and grants))):
+                        error("C3044", getattr(p, "start", p.pos), "`main` takes no parameter, `Grants g`, "
+                              "`in U8[_] args`, or both in that order (SPEC-04 LS-221)")
+                        break
         seen_tests = set()
         for t in m.tests:
             if t.name in seen_tests:
@@ -797,7 +887,11 @@ class Checker:
         self.module_vars = module_vars
         return Program(self.path, functions, self.structs, module_vars, is_script,
                        m.statements if is_script else [], m.tests, script_pos, self.name,
-                       kernels={k.name: k for k in m.kernels}, memories=list(self.memories))
+                       kernels={k.name: k for k in m.kernels}, memories=list(self.memories),
+                       externs=[(self.name, x) for x in m.externs])
+
+    def externs_of(self):
+        return [(self.name, x) for x in self.m.externs]
 
     def check_memory_decl(self, d: P.VarDecl):
         """`Arena(T, capacity) name;` or `Pool(T, capacity) name;` at module level, created with
@@ -896,6 +990,61 @@ class Checker:
             f.result_type = VOID if f.result is None else self.resolve_type(f.result, "result")
         self.size_params = {}
 
+    def extern_signature(self, x):
+        """Parameter and result types of an `extern` (SPEC-03 H-5, 5.3): scalars, `Grants` and
+        views only, in the modes `in`, `out` and `inout`; the result void, a scalar or an error
+        union of one (C5050 otherwise). A service extern that names a capability returns an
+        error union whose set holds `denied`, the result of a call without the grant (SPEC-03
+        A-10; SEC-OS-1; C3043)."""
+        saved = self.ctx, self.scopes, self.result, self.loops, self.size_params
+        self.ctx, self.scopes, self.result, self.loops, self.size_params = "module", [{}], VOID, [], {}
+        try:
+            x.param_types = []
+            for p in x.params:
+                t = self.resolve_type(p.type, "param")
+                if isinstance(t, ArrayType):
+                    t.writable = p.mode != "in"
+                    t.view = True
+                elif not (is_num(t) or t == BOOL or t == GRANTS):
+                    error("C5050", getattr(p, "start", p.pos), "an extern receives scalars, `Grants` and views only; "
+                          "%s is not admitted (SPEC-03 H-5)" % type_name(t))
+                elif p.mode != "in":
+                    error("C2064", getattr(p, "start", p.pos), "an `%s` parameter of an extern is a view (SPEC-03 H-5)"
+                          % p.mode)
+                x.param_types.append(t)
+            if isinstance(x.result, P.UnionType):
+                x.result_type = self.union_type(x.result)
+                v = x.result_type.value
+            else:
+                x.result_type = v = VOID if x.result is None else self.resolve_type(x.result, "result")
+            if not (v == VOID or is_num(v) or v == BOOL):
+                error("C5050", x.result.pos if not isinstance(x.result, P.UnionType) else x.result.pos,
+                      "an extern returns void, a scalar or an error union of one; %s is not admitted (SPEC-03 H-5)"
+                      % type_name(v))
+            if x.capability is not None and not (isinstance(x.result_type, ErrorUnion)
+                                                 and x.result_type.set.named("denied")):
+                error("C3043", x.name_pos, "a service extern covered by a capability returns an error union whose set "
+                                           "holds `denied` (SPEC-03 A-10)")
+            if x.service is not None:
+                if len(x.cap_kinds) > 0 and x.capability is None:
+                    error("C3043", x.name_pos, "argument kinds without a capability name")
+            for k in x.cap_kinds:
+                if k not in CAP_KINDS:
+                    error("C3043", x.capability_pos, "a capability argument kind is `path` or `name`")
+        finally:
+            self.ctx, self.scopes, self.result, self.loops, self.size_params = saved
+
+    def check_requires(self, r):
+        """`requires fs.read("/data");` (SEC-CAP-1, SEC-CAP-3): every argument is a string literal,
+        the constant form cint_ref admits; the capability is matched against the program's
+        service modules by check_program (C3041)."""
+        args = []
+        for a in r.args:
+            if not isinstance(a, P.StrLit):
+                error("C3041", a.start, "a capability argument is a string constant")
+            args.append(bytes(a.parts[0]))
+        self.requires_decls.append((r, args))
+
     def _check_struct_cycles(self):
         """C2055 at the field that closes a cycle, structs and fields in declaration order."""
         state = {}
@@ -992,6 +1141,7 @@ class Checker:
             params.append((p.name, p.pos, Sym("param", p.name, t, p.pos, mode=p.mode)))
         self.size_params = dict(f.size_params)
         self.check_body("function", f.result_type, params, f.body.stmts, f)
+        f.effect = self.effect               # its own class; callees are folded in by check_program (H-2)
         self.size_params = {}
         r = f.result_type
         # An `E!void` function, like a `void` one, succeeds at its closing brace (LS-190).
@@ -1250,6 +1400,7 @@ class Checker:
     def check_body(self, ctx, result, params, stmts, owner=None):
         self.ctx, self.result, self.scopes, self.loops = ctx, result, [{}], []
         self.writes, self.callees = set(), set()
+        self.effect = "pure"
         for name, pos, sym in params:
             self.declare(name, pos, sym)
         self.scopes.append({})
@@ -1292,8 +1443,10 @@ class Checker:
         LS-70, LS-117). Returns `e`'s type."""
         if isinstance(e, P.StrLit):
             # BOOT-02: a string literal is a read-only view of its bytes where an `in U8`
-            # view is expected (SPEC-09 5.5; ref/OPEN.md REF-OQ-30).
-            if t.elem not in ("U8", None) or t.writable or t.rank != 1:
+            # view is expected (SPEC-09 5.5; ref/OPEN.md REF-OQ-30). Where an `inout` or `out`
+            # `U8` view is expected it is that view, which is not a writable place, so the call
+            # reports C2067 at it (SPEC-04 LS-119, LS-323; REF-OQ-48).
+            if t.elem not in ("U8", None) or t.rank != 1:
                 raise Refused("a string literal where no `in U8` view is expected (Str is outside the "
                               "surface cint_ref implements)", e.start)
             got = array_of("U8", [len(e.parts[0])], False, True)
@@ -1569,9 +1722,9 @@ class Checker:
         sym = self.lookup(e.name, e.start)
         if sym.kind == "errorset":
             error("C3007", e.start, "the error set name `%s` is not a value" % e.name)
-        if sym.kind in ("func", "kernel"):
+        if sym.kind in ("func", "kernel", "extern"):
             error("C4010", e.start, "`%s` names a %s without calling it" % (e.name, "function" if sym.kind == "func"
-                                                                               else "kernel"))
+                                                                               else sym.kind))
         if sym.kind == "struct":
             error("C3007", e.start, "the struct name `%s` is not a value" % e.name)
         if sym.kind == "module":
@@ -1663,7 +1816,7 @@ class Checker:
             if tl != tr:
                 error("C2001", e.right.start, "operands of `%s` have types %s and %s" % (e.op, type_name(tl), type_name(tr)))
             t = tl
-        if t in (VOID,) or isinstance(t, (StructType, HandleType, MemType)):
+        if t in (VOID, GRANTS) or isinstance(t, (StructType, HandleType, MemType)):
             # Handles, arenas and pools are not compared, as structs are not (ref/OPEN.md REF-OQ-45).
             error("C2103", e.start, "values of type %s cannot be compared" % type_name(t))
         if t == BOOL and e.op not in ("==", "!="):
@@ -1792,8 +1945,9 @@ class Checker:
         if self.is_alias(e.obj):
             # `alias.NAME`: an exported constant or module-level variable (SPEC-04 LS-225, LS-227).
             sym = self.qualified(e.obj.name, e.field, e.pos)
-            if sym.kind == "func":
-                error("C4010", e.pos, "`%s` names a function without calling it" % e.field)
+            if sym.kind in ("func", "extern"):
+                error("C4010", e.pos, "`%s` names a %s without calling it" % (e.field, "function" if sym.kind == "func"
+                                                                                else "extern"))
             if sym.kind == "struct":
                 error("C3007", e.pos, "the struct name `%s` is not a value" % e.field)
             if sym.kind == "kernel":
@@ -1836,6 +1990,8 @@ class Checker:
             sym = self.qualified(e.qual, name, e.pos)
             if sym.kind == "func":
                 return self._user_call(e, sym.decl)
+            if sym.kind == "extern":
+                return self._extern_call(e, sym.decl)
             if sym.kind == "kernel":
                 return self._dispatch(e, sym.decl)
             if sym.kind == "struct":
@@ -1846,6 +2002,8 @@ class Checker:
             sym = self.globals[name]
             if sym.kind == "func":
                 return self._user_call(e, sym.decl)
+            if sym.kind == "extern":
+                return self._extern_call(e, sym.decl)
             if sym.kind == "kernel":
                 return self._dispatch(e, sym.decl)
             if sym.kind == "struct":
@@ -2264,6 +2422,34 @@ class Checker:
         e.ty = f.result_type
         return e.ty
 
+    def _extern_call(self, e, x):
+        """A call of an `extern` (SPEC-03 H-1, H-5): arguments as for a function, an `out` or
+        `inout` view argument a writable place, a `Grants` argument a `Grants` parameter of the
+        caller. The call raises the caller's effect class to the extern's (H-2); a service
+        extern's call is checked against the program's `requires` once every module is checked
+        (SEC-CAP-1, C3040)."""
+        if self.ctx == "kernel":
+            raise Refused("a call in a kernel body is outside the surface cint_ref implements (SPEC-02 K-11)", e.start)
+        order, filled = self._bind_args(e, [p.name for p in x.params], "`%s`" % x.name)
+        if len(filled) != len(x.params):
+            error("C2022", e.start, "`%s` takes %d arguments" % (x.name, len(x.params)))
+        for idx, a in order:
+            self.expect(a, x.param_types[idx])
+            if x.params[idx].mode != "in" and not self._writable_place(a):
+                error("C2067", a.start, "the argument of `%s` parameter `%s` is not a writable place (SPEC-04 LS-119)"
+                      % (x.params[idx].mode, x.params[idx].name))
+        for a in filled.values():
+            self._fold_place(a)
+        if EFFECTS.index(x.effect) > EFFECTS.index(self.effect):
+            self.effect = x.effect
+        if x.capability is not None:
+            self.service_calls.append((e, x))
+        e.kind = "extern"
+        e.func = x
+        e.order = order
+        e.ty = x.result_type
+        return e.ty
+
     def _writable_place(self, a) -> bool:
         """`a` is a place that may be written: rooted at a variable, an `inout` (or, in a
         kernel, `out`) parameter, or an `inout` view variable (SPEC-04 LS-119, LS-162)."""
@@ -2488,16 +2674,29 @@ class Checker:
         """`add_result(a, b)` and the other result-returning forms (SPEC-01 IM-28, IM-30): the
         operands are typed as the checked form's, by LS-56 rule 7 and then rule 8 (`I64`),
         since the result `ArithError!T` is not the operand type; `shl_result` types its count
-        as a shift count is typed (LS-57)."""
+        as a shift count is typed (LS-57). On operands of one fixed-point type, `add_result`
+        and `sub_result` act on the raw values, and `mul_result` and `div_result` take an
+        optional rounding mode, `half_even` without one (SPEC-01 IM-188, SPEC-04 LS-145;
+        OQ-273, OQ-278)."""
         if self.ctx == "kernel":
             error("C5022", e.start, "a kernel body does not use error unions; `%s` returns one (SPEC-04 LS-250)"
                   % e.callee)
-        named = next((a for a in e.args if a.name is not None), None)
+        args = list(e.args)
+        named = next((a for a in args if a.name is not None), None)
         if named is not None:
             error("C2063", named.pos, "`%s` takes no named arguments" % e.callee)
-        if len(e.args) != 2:
-            error("C2022", e.start, "`%s` takes 2 arguments" % e.callee)
-        values = [a.value for a in e.args]
+        n = 1 if e.callee == "sqrt_result" else 2
+        rounding = e.callee in RESULT_MODES
+        if len(args) not in ((n, n + 1) if rounding else (n,)):
+            error("C2022", e.start, "`%s` takes %s" % (e.callee, "%d or %d arguments" % (n, n + 1) if rounding
+                                                       else "%d arguments" % n))
+        mode = None
+        if len(args) > n:
+            ma = args.pop().value
+            if not isinstance(ma, P.Name) or ma.name not in ROUND_MODES:
+                error("C3007", ma.start, "expected a rounding-mode name (SPEC-01 4.5)")
+            mode = ma.name
+        values = [a.value for a in args]
         for v in values:
             if isinstance(v, P.TypeArg):
                 error("C3007", v.start, "the type name `%s` is not a value" % v.name)
@@ -2520,13 +2719,21 @@ class Checker:
             else:
                 self.require_int(tk, values[1])
         if is_q(op_t):
-            raise Refused("`%s` on fixed point: cint_ref does not implement the result forms on fixed point yet"
-                          % e.callee, e.start)
-        if not is_int_type(op_t):
+            if e.callee in ("rem_result", "shl_result"):
+                error("C2103", e.start, "`%s` is defined on integers only (SPEC-04 LS-145)" % e.callee)
+            if rounding:
+                mode = mode or "half_even"
+        elif e.callee in Q_ONLY_RESULTS:
+            error("C2103", e.start, "`%s` is defined on fixed point only (SPEC-04 LS-145)" % e.callee)
+        elif mode is not None:
+            error("C2103", e.start, "`%s` with a rounding mode is defined on fixed point only (SPEC-04 LS-145)"
+                  % e.callee)
+        elif not is_int_type(op_t):
             error("C2103", e.start, "`%s` needs integer arguments" % e.callee)
         e.kind = "result"
         e.op = RESULT_BUILTINS[e.callee]
         e.values = values
+        e.mode = mode
         e.operand_type = op_t
         e.ty = ErrorUnion(ARITH_ERROR, op_t)
         return e.ty
@@ -2911,6 +3118,8 @@ class Checker:
         if self.ctx == "kernel":
             error("C5020", s.pos, "a kernel body does not print (SPEC-04 LS-250)")
         self.check_holes(s.parts)
+        if self.effect == "pure":
+            self.effect = "observe"          # an output-only effect (SPEC-03 H-7)
 
     def _stmt_Reduce(self, s):
         """`reduce target = op(e);` (SPEC-02 R-1 to R-3, section 8.2; SPEC-04 LS-249): `target`
@@ -3314,7 +3523,7 @@ def children(e):
             return [e.arg]
         if e.kind == "builtin":
             return list(e.values) + ([e.count] if e.count is not None else [])
-        if e.kind in ("user", "struct"):
+        if e.kind in ("user", "struct", "extern"):
             return [a for _, a in e.order]
         return list(getattr(e, "values", []))
     return []
@@ -3770,7 +3979,68 @@ def check_program(root: P.Module, load=None) -> Program:
     prog = programs[root.path]
     prog.state = [((u.name, name), t, v) for u in (units[m.path] for m in order) for name, t, v in u.module_vars]
     prog.memories = [x for u in (units[m.path] for m in order) for x in u.memories]
+    ordered = [units[m.path] for m in order]
+    prog.externs = [x for u in ordered for x in u.externs_of()]
+    prog.host_imports = [("%s.%s" % (name, x.name), x.effect) for name, x in prog.externs if x.service is None]
+    prog.manifest = _check_capabilities(ordered)
+    prog.effects = _effect_classes([units[m.path] for m in post])
     return prog
+
+
+def _check_capabilities(checkers) -> list:
+    """The capability manifest of the program (SPEC-07 SEC-CAP-1, SEC-CAP-6, SEC-CAP-7, SEC-CAP-13):
+    each `requires` names a capability that a service extern of the program carries, with one
+    string argument per kind, a logical path for `path` and a logical segment for `name` (C3041
+    otherwise); every call of a service extern covered by a capability has a `requires` of that
+    capability somewhere in the program (C3040 otherwise). Returns the canonical texts, sorted
+    bytewise and without duplicates."""
+    catalog = {}
+    for c in checkers:
+        for x in c.m.externs:
+            if x.capability is not None:
+                catalog.setdefault(tuple(x.capability), x)
+    texts, declared = set(), set()
+    for c in checkers:
+        for r, args in c.requires_decls:
+            key = tuple(r.segments)
+            x = catalog.get(key)
+            if x is None:
+                error("C3041", r.name_pos, "no service module of the program publishes a capability `%s`" % ".".join(r.segments))
+            if len(args) != len(x.cap_kinds):
+                error("C3041", r.name_pos, "`%s` takes %d argument%s, %d given"
+                      % (".".join(r.segments), len(x.cap_kinds), "" if len(x.cap_kinds) == 1 else "s", len(args)))
+            for a, kind, node in zip(args, x.cap_kinds, r.args):
+                why = logical_path_fault(a) if kind == "path" else logical_name_fault(a)
+                if why is not None:
+                    error("C3041", node.start, why)
+            texts.add(capability_text(r.segments, args))
+            declared.add(key)
+    for c in checkers:
+        for e, x in c.service_calls:
+            if tuple(x.capability) not in declared:
+                error("C3040", e.start, "`%s` is covered by the capability `%s`, which no `requires` of the program "
+                                        "declares" % (x.name, ".".join(x.capability)))
+    return sorted(texts, key=lambda s: s.encode("ascii"))
+
+
+def _effect_classes(checkers) -> dict:
+    """Each function's class: the maximum of its own and its callees' (SPEC-03 H-2), to a
+    fixed point over the program."""
+    effects, callees = {}, {}
+    for c in checkers:
+        for f, (_, cs) in c.func_writes.items():
+            if isinstance(f, P.FuncDecl):
+                effects[f] = getattr(f, "effect", "pure")
+                callees[f] = [g for g in cs if isinstance(g, P.FuncDecl)]
+    changed = True
+    while changed:
+        changed = False
+        for f in effects:
+            for g in callees[f]:
+                if EFFECTS.index(effects.get(g, "pure")) > EFFECTS.index(effects[f]):
+                    effects[f] = effects[g]
+                    changed = True
+    return effects
 
 
 def _check_module_state_args(checkers):

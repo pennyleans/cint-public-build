@@ -1,0 +1,14 @@
+// case: services/c3043_no_denied
+// clause: SPEC-04 LS-323 to LS-328; SPEC-04 LS-325; SPEC-07 SEC-CAP-13, SEC-OS-12
+// subset: cint-core-1 (a `@service` extern whose error set lacks `denied`)
+// entry: run; args: none
+// spec outcome: compile error C3043 at 10:22, the extern's name `f`: a service extern's result is an error union whose set names `denied`
+
+error E { full }
+
+@service("x/1", x.cap)
+extern observe E!I64 f(Grants g);
+
+export I64 run() {
+    return 1;
+}

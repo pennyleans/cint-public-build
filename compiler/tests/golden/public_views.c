@@ -566,3 +566,5 @@ static const cint_export cg_15_public_x5Fviews_exports[5] = {
 };
 
 CINT_RT_INTERNAL const cint_module_table cg_15_public_x5Fviews_table = {&cm_15_public_x5Fviews, 0u, 5u, cg_15_public_x5Fviews_exports, NULL};
+
+CINT_RT_INTERNAL const cint_host_table cg_15_public_x5Fviews_host = {0u, 0u, NULL};

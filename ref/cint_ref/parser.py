@@ -401,13 +401,28 @@ class Parser:
                 error("C3012", self.pos(t), "import declarations come before every other item (SPEC-04 LS-226)")
             if t.kind == "keyword" and t.text == "profile":
                 error("C1050", self.pos(t), "the `profile` line comes first in the module (SPEC-04 LS-299)")
+            service = None
             if t.kind == "op" and t.text == "@":
-                self.refuse(t, "an attribute")
+                if self.peek(1).kind == "ident" and self.peek(1).text == "service":
+                    service = self.parse_service_attribute()
+                    t = self.peek()
+                else:
+                    self.refuse(t, "an attribute")
             exported = False
             if self.is_kw("export"):
                 exported = True
                 self.next()
                 t = self.peek()
+            if service is not None and not self.is_kw("extern"):
+                error("C3043", self.pos(t), "`@service` applies to an `extern` declaration")
+            if self.is_kw("extern"):
+                m.externs.append(self.parse_extern(exported, service))
+                continue
+            if self.is_kw("requires"):
+                if exported:
+                    error("C1050", self.pos(t), "a `requires` declaration is not exported")
+                m.requires.append(self.parse_requires())
+                continue
             if t.kind == "keyword" and t.text in ("enum", "error", "type", "kernel", "schedule") and \
                     not (t.text == "kernel" and self.box09) and not (t.text == "error" and self.box12):
                 self.refuse(t, "`%s` declarations" % t.text)
@@ -490,6 +505,108 @@ class Parser:
             alias, alias_pos = a.text, self.pos(a)
         self.expect_op(";")
         return Import(segments, self.pos(kw), self.pos(first), alias, alias_pos, selected)
+
+    def parse_service_attribute(self):
+        """`@service("fs/1", fs.read(path))`, `@service("console/1", console.input)` or
+        `@service("console/1")` before an `extern` (SPEC-07 SEC-CAP-13, spelling Proposed):
+        (service, capability segments or None, capability position, argument kinds)."""
+        at = self.next()
+        self.next()                                   # `service`
+        self.expect_op("(")
+        t = self.peek()
+        if t.kind != "string":
+            error("C1050", self.pos(t), "expected the service name as a string literal, such as \"fs/1\"")
+        self.next()
+        service = b"".join(string_parts(t, allow_holes=False)).decode("utf-8")
+        segments, cap_pos, kinds = None, None, []
+        if self.is_op(","):
+            self.next()
+            first = self.expect_ident()
+            segments, cap_pos = [first.text], self.pos(first)
+            while self.is_op("."):
+                self.next()
+                segments.append(self.expect_ident().text)
+            if self.is_op("("):
+                self.next()
+                while True:
+                    k = self.expect_ident()
+                    if k.text not in ("path", "name"):
+                        error("C1050", self.pos(k), "a capability argument kind is `path` or `name`, found `%s`"
+                              % k.text)
+                    kinds.append(k.text)
+                    if not self.is_op(","):
+                        break
+                    self.next()
+                self.expect_op(")")
+        self.expect_op(")")
+        return service, segments, cap_pos, kinds, self.pos(at)
+
+    def parse_extern(self, exported, service) -> ExternDecl:
+        """`extern observe FsError!I64 read(Grants g, in U8[] path, I64 offset, out U8[] buf);`
+        (SPEC-03 H-1, H-5; SPEC-04 LS-299, Proposed). The effect class is a contextual word."""
+        kw = self.next()
+        c = self.peek()
+        if c.kind != "ident" or c.text not in ("pure", "observe", "unrestricted"):
+            error("C1050", self.pos(c), "an `extern` declaration names its effect class: `pure`, `observe` or "
+                                        "`unrestricted` (SPEC-03 H-1)")
+        self.next()
+        if self.is_kw("void"):
+            self.next()
+            result = None
+        else:
+            if self.is_kw("in") or self.is_kw("inout"):
+                self.refuse(self.peek(), "a view result")
+            if self.union_len():
+                result = self.parse_union_type()
+            else:
+                result = self.parse_type()
+                if result.shape is not None:
+                    self.refuse(self.peek(), "an array result")
+        name = self.decl_name()
+        if self.is_op("["):
+            self.refuse(self.peek(), "size parameters of an extern")
+        self.expect_op("(")
+        params = []
+        while not self.is_op(")"):
+            mode = "in"
+            first = self.peek()
+            if self.is_kw("in") or self.is_kw("inout") or self.is_kw("out"):
+                mode = self.next().text
+            ty = self.parse_type()
+            pname = self.decl_name()
+            if self.is_op("="):
+                self.refuse(self.peek(), "a default argument")
+            params.append(Param(ty, pname.text, self.pos(pname), mode))
+            params[-1].start = self.pos(first)
+            if not self.is_op(")"):
+                self.expect_op(",")
+        self.expect_op(")")
+        if self.is_op("{"):
+            error("C1050", self.pos(self.peek()), "an `extern` declaration has no body (SPEC-03 H-1)")
+        self.expect_op(";")
+        d = ExternDecl(name.text, self.pos(name), c.text, result, params, exported, self.pos(kw))
+        if service is not None:
+            d.service, d.capability, d.capability_pos, d.cap_kinds, _ = service
+        return d
+
+    def parse_requires(self) -> RequiresDecl:
+        """`requires fs.read("/data");` or `requires console.input;` (SPEC-07 SEC-CAP-1)."""
+        kw = self.next()
+        first = self.expect_ident()
+        segments = [first.text]
+        while self.is_op("."):
+            self.next()
+            segments.append(self.expect_ident().text)
+        args = []
+        if self.is_op("("):
+            self.next()
+            while not self.is_op(")"):
+                args.append(self.parse_expr())
+                if not self.is_op(")"):
+                    self.expect_op(",")
+            self.expect_op(")")
+        self.expect_op(";")
+        return RequiresDecl(segments, self.pos(kw), self.pos(first), args)
 
     def parse_error_decl(self, exported) -> ErrorDecl:
         """`error Name [: U] { a, b, ... }` or `error Name [: U] = A | B;` (SPEC-04 LS-92,
@@ -755,6 +872,8 @@ class Parser:
                 self.refuse(t, "`%s`" % k)
             if k == "expect_fault":
                 error("C3021", self.pos(t), "`expect_fault` is permitted only in a test header")
+            if k in ("extern", "requires"):
+                error("C4012", self.pos(t), "`%s` is a module-level declaration (SPEC-04 LS-323, LS-327)" % k)
             if k == "if":
                 return self.parse_if()
             if k == "while":
@@ -1216,7 +1335,7 @@ class Parser:
             t = self.next()
             if isinstance(e, Unary) and not e.paren:
                 error("C2101", e.start, "a unary operator followed by a conversion needs parentheses")
-            if t.text == "as|" or (t.text == "as?" and not self.box12):
+            if t.text == "as?" and not self.box12:
                 self.refuse(t, "`%s` (Proposed)" % t.text)
             target = self.parse_type()
             mode = None

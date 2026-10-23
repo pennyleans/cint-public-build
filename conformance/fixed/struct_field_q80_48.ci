@@ -1,0 +1,20 @@
+// case: fixed/struct_field_q80_48
+// clause: SPEC-04 3.6, LS-213; SPEC-01 IM-54, IM-146, IM-156 (Q80.48 and Q64.64 fields in a local struct and in a module-level struct)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 -4; prints `302231454903657293676542.5 -0.25 302231454903657293676541.0`; fuel 1; no state.global line, as `home` is a struct (CONF-11 rule 10). Games wave G2a (OQ-292)
+
+struct Body {
+    Q80.48 x;
+    Q64.64 k;
+}
+
+Body home = Body(x = -1.5, k = 0.25);
+
+export I64 run() {
+    Body b = Body(x = 302231454903657293676543.5, k = -0.25);
+    b.x = b.x - 1.0;
+    home.x = home.x + b.x;
+    "{b.x} {b.k} {home.x}\n";
+    return (b.k.raw >> 60) as I64;
+}

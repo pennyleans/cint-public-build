@@ -1,0 +1,16 @@
+// case: fixed/module_state_q80_48
+// clause: SPEC-09 CONF-11 rules 10 and 14; SPEC-01 IM-146, IM-156 (a module-level Q80.48 scalar has a state.global line; a fixed-point array has none)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 38146972656250000; prints `2500000000000000000000.0 -0.5`; fuel 1; state.global fixed.module_state_q80_48 g Q80.48 raw 703687441776640000000000000000000000, and no line for the array t. Games wave G2a (OQ-292)
+
+Q80.48 g = 2.5;
+Q64.64[2] t = [0.5, -1.0];
+
+export I64 run() {
+    g = g * 1000000000000000000000.0;
+    t[1] = t[0] + t[1];
+    Q80.48 observed = g;
+    "{observed} {t[1]}\n";
+    return (observed.raw >> 64) as I64;
+}

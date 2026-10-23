@@ -1,0 +1,25 @@
+// case: services/main_args_print
+// clause: SPEC-04 LS-221; SPEC-03 5.3; SPEC-06 3.1; SPEC-07 SEC-CAP-1
+// argv: alpha, b, c
+// subset: cint-core-1 (`main(Grants g, in U8[_] args)`: the program arguments of OQ-306)
+// spec outcome: value void, stdout `3 10 9710811210497|98|99|\n`: `main` may take `Grants` and the program arguments in that order; each argument is its bytes and one NUL, in the order given, so three arguments of 5, 1 and 1 bytes are a view of 10 bytes with 3 NULs
+
+import console;
+
+export void main(Grants g, in U8[_] args) {
+    I64 n = 0;
+    for i in 0..len(args) {
+        if (args[i] == 0) {
+            n += 1;
+        }
+    }
+    "{n} {len(args)} ";
+    for i in 0..len(args) {
+        if (args[i] == 0) {
+            "|";
+        } else {
+            "{args[i]}";
+        }
+    }
+    "\n";
+}

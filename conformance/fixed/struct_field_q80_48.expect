@@ -1,0 +1,9 @@
+case fixed/struct_field_q80_48
+clause SPEC-04 3.6, LS-213; SPEC-01 IM-54, IM-146, IM-156 (Q80.48 and Q64.64 fields in a local struct and in a module-level struct)
+format 5
+source reference
+outcome value
+stdout-bytes 60
+stdout-sha256 8b4eb9b1c19a81c6612db0ec0d9a30ddf814602437098dd4a910c4d4c7af5d11
+return I64 -4
+fuel-consumed 1

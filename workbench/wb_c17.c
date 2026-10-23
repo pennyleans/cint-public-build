@@ -318,7 +318,7 @@ static int make_runtime(tc_file *t, const char *work, const char *obj, wb_buf *e
     if (!t->msvc) t->argv[n++] = "-o";
     t->argv[n++] = out.p;
     t->argv[n] = NULL;
-    cli_proc proc = {t->argv, log, NULL, NULL, NULL, NULL, NULL};
+    cli_proc proc = {t->argv, log, NULL, NULL, NULL, NULL, NULL, 0};
     wb_s(&tc, "cint-toolchain-1\n");
     for (const char *line = t->text + 17, *end; *line != '\0'; line = *end != '\0' ? end + 1 : end) {
         end = strchr(line, '\n') != NULL ? strchr(line, '\n') : line + strlen(line);
@@ -443,7 +443,7 @@ char *wb_c17_build(const char *cint, int json, const char *root, const char *rel
     argv[n++] = out;
     argv[n++] = rel;
     argv[n] = NULL;
-    cli_proc proc = {argv, NULL, log, NULL, NULL, NULL, NULL};
+    cli_proc proc = {argv, NULL, log, NULL, NULL, NULL, NULL, 0};
     if (cli_mkdirs(out) != 0 || cli_proc_run(&proc, status) != 0) {
         *status = -1;
         wb_f(err, "cannot run %s; give --cint PATH", cint);

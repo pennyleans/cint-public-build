@@ -132,6 +132,18 @@ void cint_bridge_root_close(cint_bridge_root *root);
 bool cint_bridge_read_input(cint_bridge_root *root, const char *rel, size_t limit,
                             uint8_t **bytes, size_t *len);
 void cint_bridge_free_input(uint8_t *bytes);
+/* True when no entry spelled `rel` exists under `root`: at some segment the
+ * directory has no entry of that exact spelling (so a name that differs only
+ * in case is absent on every host), or an earlier segment is a regular file.
+ * A path that exists and is refused (a link at any segment, a directory as the
+ * last segment, an unreadable or oversized file) is not absent, so a caller
+ * that falls back to another root on absence never hides a refusal. */
+bool cint_bridge_input_absent(cint_bridge_root *root, const char *rel);
+/* After this call cint_bridge_read_input(root, rel, ...) reads `rel` under
+ * `next` when it is absent under `root` (one level: the standard library root
+ * of the `cint` command, SPEC-09 RCPT-07 and SPEC-07 SEC-CAP-13; rt/OPEN.md
+ * RT-OQ-71). `next` must outlive the use of `root`; NULL removes the chain. */
+void cint_bridge_root_chain(cint_bridge_root *root, cint_bridge_root *next);
 /* Forgets every recorded input identity (the start of a build). */
 void cint_bridge_clear_inputs(void);
 

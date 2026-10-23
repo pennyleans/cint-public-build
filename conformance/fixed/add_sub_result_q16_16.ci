@@ -1,0 +1,40 @@
+// case: fixed/add_sub_result_q16_16
+// clause: SPEC-01 IM-30, IM-60, IM-188; SPEC-04 LS-145 (on one Q<i>.<f>, `add_result` and `sub_result` act on the raw values and hold .overflow where `+` or `-` faults; OQ-278 A)
+// subset: cint-core-1 (fixed point, error unions, `catch`)
+// entry: run; args: none
+// spec outcome: value I64 -2; prints `81920 -1 114688 -1` and `-1.0 -50.0`, each with a line feed (raw 2147483647 + raw 1 and Q16.16.min - raw 1 give .overflow; 100.0 + 50.0 overflows Q8.8); fuel 7 (the entry and six calls). Box 15, OQ-280 group 1
+
+I64 total(Q16.16 a, Q16.16 b) {
+    Q16.16 r = add_result(a, b) catch (e) {
+        if (e == ArithError.overflow) {
+            return -1;
+        }
+        return -2;
+    };
+    return r.raw as I64;
+}
+
+I64 gap(Q16.16 a, Q16.16 b) {
+    Q16.16 r = sub_result(a, b) catch (e) {
+        if (e == ArithError.overflow) {
+            return -1;
+        }
+        return -2;
+    };
+    return r.raw as I64;
+}
+
+export I64 run() {
+    Q16.16 top = Q16.16.raw(2147483647);
+    Q16.16 tiny = Q16.16.raw(1);
+    Q16.16 a = 1.5;
+    Q16.16 b = -0.25;
+    Q16.16 low = Q16.16.min;
+    Q8.8 c = 100.0;
+    Q8.8 d = 50.0;
+    Q8.8 e = add_result(c, d) catch -1.0;
+    Q8.8 g = sub_result(d, c) catch -1.0;
+    "{total(a, b)} {total(top, tiny)} {gap(a, b)} {gap(low, tiny)}\n";
+    "{e} {g}\n";
+    return total(top, tiny) + gap(low, tiny);
+}

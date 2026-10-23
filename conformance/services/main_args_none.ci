@@ -1,0 +1,8 @@
+// case: services/main_args_none
+// clause: SPEC-04 LS-221; SPEC-03 5.3; SPEC-06 3.1
+// subset: cint-core-1 (`main(in U8[_] args)` without `Grants`, and no program arguments given)
+// spec outcome: value void, stdout `0\n`: `main` may take the program arguments alone; a run that gives none makes `args` the empty view
+
+export void main(in U8[_] args) {
+    "{len(args)}\n";
+}

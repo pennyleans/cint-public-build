@@ -1,0 +1,7 @@
+case diag/c2008_convert_sat_bool
+clause SPEC-04 LS-133, LS-135 (`Bool` converts to integers only with `as`, so `b as| I32` is C2008; OQ-272 A)
+format 5
+source compile-error
+outcome compile-error
+diagnostic.code C2008
+diagnostic.position diag/c2008_convert_sat_bool.ci:9:13

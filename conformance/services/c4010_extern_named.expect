@@ -1,0 +1,6 @@
+case services/c4010_extern_named
+clause SPEC-04 LS-323 to LS-328; SPEC-04 LS-323, LS-201
+source compile-error
+outcome compile-error
+diagnostic.code C4010
+diagnostic.position services/c4010_extern_named.ci:10:13

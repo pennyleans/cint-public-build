@@ -1,0 +1,6 @@
+case services/c3043_no_denied
+clause SPEC-04 LS-323 to LS-328; SPEC-04 LS-325; SPEC-07 SEC-CAP-13, SEC-OS-12
+source compile-error
+outcome compile-error
+diagnostic.code C3043
+diagnostic.position services/c3043_no_denied.ci:10:22

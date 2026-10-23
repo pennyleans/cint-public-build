@@ -1,0 +1,18 @@
+case fixed/div_overflow_q96_32
+clause SPEC-01 IM-65, IM-106 (Q96.32.min / -1.0 is 2^95, outside Q96.32; exact is the raw value 2^127)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_OVERFLOW
+fault.operation div.checked.q96_32.half_even
+fault.operand Q96.32 raw -170141183460469231731687303715884105728
+fault.operand Q96.32 raw -4294967296
+fault.exact 170141183460469231731687303715884105728
+fault.limit Q96.32 raw 170141183460469231731687303715884105727
+fault.position fixed/div_overflow_q96_32.ci:10:14
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

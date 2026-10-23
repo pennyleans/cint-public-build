@@ -1,0 +1,9 @@
+case fixed/type_properties_q128
+clause SPEC-04 LS-51; SPEC-01 IM-54 (min, max and epsilon of 128-bit fixed-point types; OQ-292)
+format 5
+source reference
+outcome value
+stdout-bytes 557
+stdout-sha256 84c5b7fd7dff3236c3da202a3a0de5854afde560fcd5a1e1830d9471a4c9fc01
+return I64 1
+fuel-consumed 1

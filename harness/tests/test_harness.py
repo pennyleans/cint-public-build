@@ -43,6 +43,9 @@ import sys
 import tempfile
 import unittest
 
+# Apple Clang's AddressSanitizer has no leak checker and aborts when asked for one.
+LEAK_CHECK = "0" if sys.platform == "darwin" else "1"
+
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 RT = ROOT / "rt"
 HARNESS = ROOT / "harness"
@@ -284,6 +287,10 @@ def available_memory() -> int:
         if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
             raise OSError("GlobalMemoryStatusEx failed")
         return int(status.avail_phys)
+    if sys.platform == "darwin":
+        # macOS has no /proc; its physical memory stands in for what is available.
+        return int(subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True,
+                                  check=True).stdout)
     with open("/proc/meminfo", encoding="ascii") as f:
         for line in f:
             if line.startswith("MemAvailable:"):
@@ -444,7 +451,7 @@ class HarnessLeg(unittest.TestCase):
     def harness(self, targets, module, args):
         program = str(targets["mod_" + module]) if module else str(targets["cint-harness"].parent / "absent.lib")
         env = dict(self.env)
-        env["ASAN_OPTIONS"] = "detect_leaks=1:abort_on_error=0"
+        env["ASAN_OPTIONS"] = "detect_leaks=" + LEAK_CHECK + ":abort_on_error=0"
         env["UBSAN_OPTIONS"] = "print_stacktrace=1:halt_on_error=1"
         if "--no-default-clause" in args:
             args = [a for a in args if a != "--no-default-clause"]
@@ -554,7 +561,7 @@ class HarnessLeg(unittest.TestCase):
                     passed += 1
                 with self.subTest(config=name, case="recovery"):
                     env = dict(self.env)
-                    env["ASAN_OPTIONS"] = "detect_leaks=1:abort_on_error=0"
+                    env["ASAN_OPTIONS"] = "detect_leaks=" + LEAK_CHECK + ":abort_on_error=0"
                     env["UBSAN_OPTIONS"] = "print_stacktrace=1:halt_on_error=1"
                     run = subprocess.run([str(targets["recovery_fixture"])], env=env, capture_output=True)
                     out = run.stdout.decode("ascii", "replace")

@@ -1,0 +1,6 @@
+case services/c2064_out_scalar
+clause SPEC-04 LS-323 to LS-328; SPEC-04 LS-324; SPEC-03 H-5
+source compile-error
+outcome compile-error
+diagnostic.code C2064
+diagnostic.position services/c2064_out_scalar.ci:7:23

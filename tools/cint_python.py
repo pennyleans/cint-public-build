@@ -256,7 +256,7 @@ def identity_of() -> dict:
             "compiler_source_identity": cc.sha256(boot.source_manifest(boot.compiler_closure(sources))),
             "runtime_header_sha256": cc.runtime_header_digest(),
             "runtime_library_sha256": cc.files_digest([rt / "cint_rt.c", rt / "cint_rt_internal.h",
-                                                         rt / "cint_mem.c", rt / "cint_mem.h",
+                                                         rt / "cint_host.c", rt / "cint_fs.c", rt / "cint_console.c", rt / "cint_program.c", rt / "cint_mem.c", rt / "cint_mem.h",
                                                          rt / "cint_wide.c", rt / "cint_wide.h",
                                                          rt / "cint_fixed.c", rt / "cint_fixed.h"]),
             "bridge_sha256": cc.files_digest([rt / "cint_bridge.c", rt / "cint_bridge.h",

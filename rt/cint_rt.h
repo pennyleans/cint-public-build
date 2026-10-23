@@ -93,6 +93,20 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* MSVC's intrinsics header, outside the extern "C" block below: a C++ host
+ * reads it as C++ (section 2 selects the MSVC builtins). */
+#if !defined(__GNUC__) && !defined(__clang__) && defined(_MSC_VER) && (defined(_M_X64) || defined(_M_ARM64))
+#include <intrin.h>
+#endif
+
+/* The layout checks. C++ spells C11's _Static_assert as static_assert, which
+ * g++ and cl require of a host that compiles this header as C++. */
+#ifdef __cplusplus
+#define CINT_RT_STATIC_ASSERT(cond, message) static_assert(cond, message)
+#else
+#define CINT_RT_STATIC_ASSERT(cond, message) _Static_assert(cond, message)
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -104,9 +118,9 @@ extern "C" {
     !defined(UINT8_MAX) || !defined(UINT16_MAX) || !defined(UINT32_MAX) || !defined(UINT64_MAX)
 #error "cint-rt-3 needs int8_t to int64_t and uint8_t to uint64_t (SPEC-09 EMIT-02)"
 #endif
-_Static_assert(CHAR_BIT == 8, "cint-rt-3: CHAR_BIT must be 8 (SPEC-09 EMIT-02)");
-_Static_assert(SIZE_MAX >= 0xFFFFFFFFu, "cint-rt-3: size_t must have at least 32 bits (EMIT-02)");
-_Static_assert(sizeof(void *) == 8, "cint-rt-3 supports 64-bit hosts only (SPEC-03 A-1)");
+CINT_RT_STATIC_ASSERT(CHAR_BIT == 8, "cint-rt-3: CHAR_BIT must be 8 (SPEC-09 EMIT-02)");
+CINT_RT_STATIC_ASSERT(SIZE_MAX >= 0xFFFFFFFFu, "cint-rt-3: size_t must have at least 32 bits (EMIT-02)");
+CINT_RT_STATIC_ASSERT(sizeof(void *) == 8, "cint-rt-3 supports 64-bit hosts only (SPEC-03 A-1)");
 
 /* The runtime contract version (SPEC-09 RCPT-08; RT-CONTRACT.md). */
 #define CINT_RT_CONTRACT "cint-rt-3"
@@ -170,7 +184,6 @@ _Static_assert(sizeof(void *) == 8, "cint-rt-3 supports 64-bit hosts only (SPEC-
 #elif defined(_MSC_VER) && (defined(_M_X64) || defined(_M_ARM64))
 #define CINT_RT_HAVE_BUILTINS 1
 #define CINT_RT_BUILTINS_MSVC 1
-#include <intrin.h>
 #else
 #define CINT_RT_HAVE_BUILTINS 0
 #endif
@@ -223,8 +236,10 @@ typedef int32_t cint_status;
  * cint_buffer_register, cint_ctx_config and the result of a struct-valued
  * export, and adds the reflection table; 3.1 adds config.devices (OQ-216);
  * 3.2 widens cint_tvalue to a Z of fault record version 3, so the structures
- * that hold one grow (OQ-263). */
-#define CINT_ABI_VERSION 0x00030002u
+ * that hold one grow (OQ-263); 3.3 adds the host table, the host import
+ * descriptor and the grants to cint_ctx_config, and the host call of SPEC-03
+ * A-10 and A-15 (I/O services lane U2; rt/OPEN.md RT-OQ-70). */
+#define CINT_ABI_VERSION 0x00030004u
 
 #define CINT_E_OVERFLOW 1u
 #define CINT_E_DIV_ZERO 2u
@@ -282,7 +297,7 @@ typedef struct cint_site {
     uint32_t module;
     uint32_t index;
 } cint_site;
-_Static_assert(sizeof(cint_site) == 8, "cint_site");
+CINT_RT_STATIC_ASSERT(sizeof(cint_site) == 8, "cint_site");
 
 /* One row of a module's static site table: the 1-based line and column (in
  * Unicode scalar values, SPEC-09 DIAG-01) of the operator token or call, and
@@ -292,7 +307,7 @@ typedef struct cint_site_info {
     uint32_t column;
     const char *operation;
 } cint_site_info;
-_Static_assert(sizeof(cint_site_info) == 16, "cint_site_info");
+CINT_RT_STATIC_ASSERT(sizeof(cint_site_info) == 16, "cint_site_info");
 
 /* A module descriptor: module-relative path ('/' separators, at most 1024
  * UTF-8 bytes, SPEC-01 9.2) and its site table (row 0 is the "no site" row). */
@@ -302,18 +317,21 @@ typedef struct cint_module {
     uint32_t site_count;
     const cint_site_info *sites;
 } cint_module;
-_Static_assert(sizeof(cint_module) == 24, "cint_module");
+CINT_RT_STATIC_ASSERT(sizeof(cint_module) == 24, "cint_module");
 
 /* A program: its modules in program order (cint_site.module indexes this
- * table) and its revision identity (32 bytes, SPEC-01 11.4), or NULL when the
- * compiler reports it absent (the seed, SPEC-09 SEED-05). */
+ * table), its revision identity (32 bytes, SPEC-01 11.4), or NULL when the
+ * compiler reports it absent (the seed, SPEC-09 SEED-05). Its host import
+ * tables travel apart, in the library's cint_host_desc (cint_rt_host.h 6f),
+ * so that this initializer, which the frozen seed emits, keeps its four
+ * members (RT-OQ-70). */
 typedef struct cint_program {
     uint32_t module_count;
     uint32_t reserved;  /* 0 */
     const cint_module *const *modules;
     const uint8_t *revision;
 } cint_program;
-_Static_assert(sizeof(cint_program) == 24, "cint_program");
+CINT_RT_STATIC_ASSERT(sizeof(cint_program) == 24, "cint_program");
 
 /* A resolved site. `path` is not NUL-terminated; `operation` is. */
 typedef struct cint_position {
@@ -324,7 +342,7 @@ typedef struct cint_position {
     uint32_t reserved;
     const char *operation;
 } cint_position;
-_Static_assert(sizeof(cint_position) == 32, "cint_position");
+CINT_RT_STATIC_ASSERT(sizeof(cint_position) == 32, "cint_position");
 
 /* ------------------------------------------------------------------------- */
 /* 4a. Element types and views (SPEC-03 5.3, A-1, A-13; SPEC-02 V-1, V-2;     */
@@ -343,7 +361,7 @@ typedef struct cint_type {
     uint32_t record_id;  /* record: layout table index; otherwise 0 */
     uint32_t reserved2;  /* 0 */
 } cint_type;
-_Static_assert(sizeof(cint_type) == 16 && offsetof(cint_type, record_id) == 8, "cint_type");
+CINT_RT_STATIC_ASSERT(sizeof(cint_type) == 16 && offsetof(cint_type, record_id) == 8, "cint_type");
 
 /* A view of registered memory. `origin` is the offset of the first logical
  * element from the buffer base, in elements; `shape`, `stride` (elements,
@@ -362,9 +380,9 @@ typedef struct cint_view {
     int64_t stride[CINT_MAX_RANK];
     int64_t lower[CINT_MAX_RANK];
 } cint_view;
-_Static_assert(sizeof(cint_view) == 144 && offsetof(cint_view, origin) == 40 &&
-                   offsetof(cint_view, shape) == 48,
-               "cint_view");
+CINT_RT_STATIC_ASSERT(sizeof(cint_view) == 144 && offsetof(cint_view, origin) == 40 &&
+                          offsetof(cint_view, shape) == 48,
+                      "cint_view");
 
 /* Parameter modes a view is bound for (SPEC-04 6.2). */
 #define CINT_MODE_IN 0u
@@ -381,7 +399,7 @@ typedef struct cint_tvalue {
     uint16_t len;
     uint8_t bytes[CINT_TVALUE_MAX];
 } cint_tvalue;
-_Static_assert(sizeof(cint_tvalue) == 272, "cint_tvalue");
+CINT_RT_STATIC_ASSERT(sizeof(cint_tvalue) == 272, "cint_tvalue");
 
 /* A shift count of any integer type (SPEC-01 4.6): its type tag and its value
  * as a 64-bit pattern, sign-extended for signed types. A count of I128 to
@@ -396,7 +414,7 @@ typedef struct cint_count {
     uint32_t reserved;      /* 0 */
     const uint64_t *limbs;  /* a wide count's; read for no other tag */
 } cint_count;
-_Static_assert(sizeof(cint_count) == 24, "cint_count");
+CINT_RT_STATIC_ASSERT(sizeof(cint_count) == 24, "cint_count");
 
 /* The kernel-dispatch address of SPEC-01 9.2 and 9.3. Absent for scalar code;
  * present only for kernel faults (slice 3). */
@@ -410,7 +428,7 @@ typedef struct cint_fault_address {
     uint32_t reserved;
     char name[256];         /* kernel qualified name, UTF-8, not NUL-terminated */
 } cint_fault_address;
-_Static_assert(sizeof(cint_fault_address) == 288, "cint_fault_address");
+CINT_RT_STATIC_ASSERT(sizeof(cint_fault_address) == 288, "cint_fault_address");
 
 /* The fault record (SPEC-01 9.2) as a host structure. It is a non-canonical
  * view (SPEC-01 1.4, 11.2); cint_fault_encode produces the canonical bytes.
@@ -437,12 +455,12 @@ typedef struct cint_fault_record {
     uint32_t reserved;
     cint_site stack[CINT_RT_MAX_DEPTH];
 } cint_fault_record;
-_Static_assert(offsetof(cint_fault_record, operation) == 16, "cint_fault_record.operation");
-_Static_assert(offsetof(cint_fault_record, position) == 80, "cint_fault_record.position");
-_Static_assert(offsetof(cint_fault_record, operands) == 120, "cint_fault_record.operands");
-_Static_assert(offsetof(cint_fault_record, address) == 2840, "cint_fault_record.address");
-_Static_assert(offsetof(cint_fault_record, stack) == 3136, "cint_fault_record.stack");
-_Static_assert(sizeof(cint_fault_record) == 3136 + 8 * CINT_RT_MAX_DEPTH, "cint_fault_record");
+CINT_RT_STATIC_ASSERT(offsetof(cint_fault_record, operation) == 16, "cint_fault_record.operation");
+CINT_RT_STATIC_ASSERT(offsetof(cint_fault_record, position) == 80, "cint_fault_record.position");
+CINT_RT_STATIC_ASSERT(offsetof(cint_fault_record, operands) == 120, "cint_fault_record.operands");
+CINT_RT_STATIC_ASSERT(offsetof(cint_fault_record, address) == 2840, "cint_fault_record.address");
+CINT_RT_STATIC_ASSERT(offsetof(cint_fault_record, stack) == 3136, "cint_fault_record.stack");
+CINT_RT_STATIC_ASSERT(sizeof(cint_fault_record) == 3136 + 8 * CINT_RT_MAX_DEPTH, "cint_fault_record");
 
 /* The version of fault record a run-time record of `operation` is written in
  * (SPEC-01 IM-149, BX15-07 C): 3 for dot.checked.i1024.<R>, 2 for any other.
@@ -536,6 +554,36 @@ bool cint_shape_check(cint_ctx *ctx, cint_site site, uint32_t param, int64_t exp
  * I64 destination limit and no exact. Preserves fuel and the first fault. */
 bool cint_copy_shape_check(cint_ctx *ctx, cint_site site, int64_t dimension,
                            int64_t destination_extent, int64_t source_extent);
+
+/* A call of a non-service extern (SPEC-03 A-10, A-15, H-9; I/O services lane
+ * U2, rt/OPEN.md RT-OQ-70): import k of the host import table of the site's
+ * module (cint_ctx_config.imports; cint_rt_host.h 6f), resolved at context
+ * creation.
+ * `args` are the nargs arguments in declaration order, each a scalar or a
+ * rank-1 view (cint_rt_arg_view); `result` has its `type` set to the result's
+ * scalar tag with `kind` CINT_VAL_SCALAR, or `kind` 0 for `void`, and
+ * `error_count` is the value count of an error-union result's set, else 0.
+ * The call charges one unit of fuel at `site`, as a user call does; an `out`
+ * view is staged and its contents reach the argument only on CINT_OK with the
+ * value alternative; the host's status other than CINT_OK is the boundary
+ * fault `host.error.<name>` with the status as an I64 operand (A-6), and a
+ * result that is not one alternative of the declared type is `host.result.
+ * <name>`. Returns false after a fault. Under a recorder the call is an
+ * `effect` event, and an `unrestricted` extern ends the recording (H-14). */
+typedef struct cint_value cint_value;
+bool cint_rt_host_call(cint_ctx *ctx, cint_site site, uint32_t k, cint_value *args, uint32_t nargs, cint_value *result,
+                       uint32_t error_count);
+/* Fills *v with a rank-1 view argument of element tag `tag`: `extent`
+ * elements from elements[origin], `stride` elements apart, with permission
+ * CINT_VIEW_READ for `in` and CINT_VIEW_WRITE for `out`. cint_rt_arg_scalar
+ * fills *v with a scalar argument of tag `tag` from its bits widened to 64,
+ * sign-extended for a signed type; cint_rt_result_init prepares *r for a
+ * result of tag `tag`, or for `void` when `tag` is 0. Generated code uses
+ * the three (SPEC-09 EMIT-16). */
+void cint_rt_arg_view(cint_value *v, uint32_t tag, const void *elements, int64_t origin, int64_t extent, int64_t stride,
+                      uint32_t perm);
+void cint_rt_arg_scalar(cint_value *v, uint32_t tag, uint64_t bits);
+void cint_rt_result_init(cint_value *r, uint32_t tag);
 
 /* ------------------------------------------------------------------------- */
 /* 6a. View binding (SPEC-03 A-12, A-13a, H-12). The buffer registry is in    */
@@ -650,7 +698,7 @@ typedef struct cint_bind {
     uint32_t rank;           /* the declared rank */
     void *ptr;               /* written: the origin element */
 } cint_bind;
-_Static_assert(sizeof(cint_bind) == 56 && offsetof(cint_bind, ptr) == 48, "cint_bind");
+CINT_RT_STATIC_ASSERT(sizeof(cint_bind) == 56 && offsetof(cint_bind, ptr) == 48, "cint_bind");
 
 bool cint_rt_bind_views(cint_ctx *ctx, cint_site site, cint_bind *b, uint32_t count);
 bool cint_rt_bind_finish(cint_ctx *ctx, cint_site site, const cint_bind *b, uint32_t count);
@@ -703,16 +751,14 @@ typedef struct cint_rt_zero_place {
 
 static inline cint_rt_zero_place cint_rt_zero_local(const void *allocation)
 {
-    cint_rt_zero_place p = {0};
-    p.local = allocation;
+    cint_rt_zero_place p = {allocation, 0u, 0u, NULL, 0};
     return p;
 }
 
 /* Called after successful zero-size binding in the current context. */
 static inline cint_rt_zero_place cint_rt_zero_bound(const cint_view *v)
 {
-    cint_rt_zero_place p = {0};
-    p.buffer = v->buffer; p.generation = v->generation; p.origin = v->origin;
+    cint_rt_zero_place p = {NULL, v->buffer, v->generation, NULL, v->origin};
     return p;
 }
 
@@ -767,11 +813,12 @@ static inline bool cint_rt_zero_overlap(cint_rt_zero_place a, int64_t an,
 /* in the block), the block's size and its initial image. The context owns  */
 /* one block per module, created from the image at the module's first      */
 /* access and kept until cint_ctx_destroy, so a store is not rolled back by */
-/* a fault or a clear (A-7, IM-121). cint_rt_state returns the block, or    */
-/* NULL with the entry faulted E_UNSUPPORTED host.resource when it cannot   */
-/* be allocated. Proposed (rt/OPEN.md H-OQ-08): a program for cint-harness  */
-/* may also export `const cint_state_table cint_observer_state`, its        */
-/* tables in CONF-11 rule 10 order. cint_state_render writes the lines     */
+/* a fault or a clear (A-7, IM-121). cint_rt_state (inline, 6e) returns    */
+/* the block, or NULL with the entry faulted E_UNSUPPORTED host.resource    */
+/* when it cannot be allocated. Proposed (rt/OPEN.md H-OQ-08): a program  */
+/* for cint-harness may also export `const cint_state_table                 */
+/* cint_observer_state`, its tables in CONF-11 rule 10 order.               */
+/* cint_state_render writes the lines                                       */
 /* `state.global <module> <name> <typed value>` of every scalar variable   */
 /* of `t` (CONF-11 rule 10; an array and a struct have none until OQ-156,  */
 /* a handle none, SPEC-03 M-20a) into `out` and                            */
@@ -792,7 +839,7 @@ typedef struct cint_state_type {
     uint32_t cell;      /* 0 or 8 */
     uint32_t reserved;  /* 0 */
 } cint_state_type;
-_Static_assert(sizeof(cint_state_type) == 32, "cint_state_type");
+CINT_RT_STATIC_ASSERT(sizeof(cint_state_type) == 32, "cint_state_type");
 
 typedef struct cint_state_var {
     const char *name;  /* not NUL-terminated */
@@ -803,7 +850,7 @@ typedef struct cint_state_var {
     const int64_t *extents; /* `rank` extents; NULL for a scalar */
     const cint_state_type *type; /* a struct's; NULL otherwise */
 } cint_state_var;
-_Static_assert(sizeof(cint_state_var) == 40, "cint_state_var");
+CINT_RT_STATIC_ASSERT(sizeof(cint_state_var) == 40, "cint_state_var");
 
 typedef struct cint_state {
     uint32_t module;     /* index into program->modules */
@@ -813,7 +860,7 @@ typedef struct cint_state {
     const void *init;    /* `bytes` bytes */
     const cint_state_var *vars;
 } cint_state;
-_Static_assert(sizeof(cint_state) == 32, "cint_state");
+CINT_RT_STATIC_ASSERT(sizeof(cint_state) == 32, "cint_state");
 
 typedef struct cint_state_table {
     uint32_t count;
@@ -822,9 +869,8 @@ typedef struct cint_state_table {
     const struct cint_mem_table *memory;  /* the root module's arenas and pools, which a change of revision
                                            * carries (cint_mem.h; rt/OPEN.md RT-OQ-46), or NULL */
 } cint_state_table;
-_Static_assert(sizeof(cint_state_table) == 24, "cint_state_table");
+CINT_RT_STATIC_ASSERT(sizeof(cint_state_table) == 24, "cint_state_table");
 
-void *cint_rt_state(cint_ctx *ctx, const cint_state *s);
 size_t cint_state_render(const cint_ctx *ctx, const cint_state_table *t, char *out, size_t cap);
 
 /* ------------------------------------------------------------------------- */
@@ -841,7 +887,7 @@ typedef struct cint_record_field {
     uint32_t count;   /* 1, or the extent of a fixed-length array field */
     cint_type type;   /* the field's (element) type */
 } cint_record_field;
-_Static_assert(sizeof(cint_record_field) == 24 && offsetof(cint_record_field, type) == 8, "cint_record_field");
+CINT_RT_STATIC_ASSERT(sizeof(cint_record_field) == 24 && offsetof(cint_record_field, type) == 8, "cint_record_field");
 
 typedef struct cint_record_layout {
     uint32_t bytes;        /* logical record bytes; private zero carriers add none */
@@ -850,7 +896,7 @@ typedef struct cint_record_layout {
     uint32_t reserved;     /* 0 */
     const cint_record_field *fields;
 } cint_record_layout;
-_Static_assert(sizeof(cint_record_layout) == 24 && offsetof(cint_record_layout, fields) == 16, "cint_record_layout");
+CINT_RT_STATIC_ASSERT(sizeof(cint_record_layout) == 24 && offsetof(cint_record_layout, fields) == 16, "cint_record_layout");
 /* The alignment of an element of `b` bytes that cint_view_bind requires: the
  * largest power of two dividing b, at most 8. A-13a gives 8 for every record,
  * which a record of 12 bytes cannot meet; RT-OQ-27 records the difference. */
@@ -862,8 +908,8 @@ struct cint_module_info {
     const cint_program *program;
     const cint_record_layout *records;  /* NULL when record_count is 0 */
 };
-_Static_assert(sizeof(cint_module_info) == 24 && offsetof(cint_module_info, program) == 8 &&
-               offsetof(cint_module_info, records) == 16, "cint_module_info");
+CINT_RT_STATIC_ASSERT(sizeof(cint_module_info) == 24 && offsetof(cint_module_info, program) == 8 &&
+                      offsetof(cint_module_info, records) == 16, "cint_module_info");
 
 /* ------------------------------------------------------------------------- */
 /* 6c. Print output (SPEC-04 LS-193 to LS-197; SPEC-01 IM-90).                */
@@ -949,9 +995,9 @@ typedef struct cint_error_set {
                                    "<Set>.<value>" where another member set declares the same
                                    name (LS-97) */
 } cint_error_set;
-_Static_assert(sizeof(cint_error_set) == 24 && offsetof(cint_error_set, tag) == 8 &&
-                   offsetof(cint_error_set, count) == 12 && offsetof(cint_error_set, values) == 16,
-               "cint_error_set");
+CINT_RT_STATIC_ASSERT(sizeof(cint_error_set) == 24 && offsetof(cint_error_set, tag) == 8 &&
+                          offsetof(cint_error_set, count) == 12 && offsetof(cint_error_set, values) == 16,
+                      "cint_error_set");
 
 void cint_rt_error_result(cint_ctx *ctx, const cint_error_set *set, uint64_t tag);
 
@@ -973,8 +1019,13 @@ typedef struct cint_rt_head {
     uint32_t stack_count;  /* sites on `stack`: active calls, then dispatch positions (14) */
     uint32_t reserved;     /* 0 */
     cint_site *stack;      /* the context's CINT_RT_MAX_DEPTH sites */
+    void **state;          /* NULL, or 2 * module_count: the blocks, then their cint_state (6b) */
+    uint32_t module_count; /* the program's modules */
+    uint32_t reserved1;    /* 0 */
 } cint_rt_head;
-_Static_assert(sizeof(cint_rt_head) == 56 && offsetof(cint_rt_head, stack) == 48, "cint_rt_head");
+CINT_RT_STATIC_ASSERT(sizeof(cint_rt_head) == 72 && offsetof(cint_rt_head, stack) == 48 &&
+                          offsetof(cint_rt_head, state) == 56 && offsetof(cint_rt_head, module_count) == 64,
+                      "cint_rt_head");
 
 static inline cint_rt_head *cint_rt_head_of(cint_ctx *ctx)
 {
@@ -1030,6 +1081,18 @@ static inline void cint_rt_call_leave(cint_ctx *ctx)
         h->stack_count--;
         h->depth--;
     }
+}
+
+/* cint_rt_state (6b), inline (rt/OPEN.md RT-OQ-68): a block already created
+ * is returned here; its first access and a refused descriptor take
+ * cint_rt_state_slow, which creates it or records the fault. */
+void *cint_rt_state_slow(cint_ctx *ctx, const cint_state *s);
+static inline void *cint_rt_state(cint_ctx *ctx, const cint_state *s)
+{
+    const cint_rt_head *h = cint_rt_head_of(ctx);
+    if (h->state != NULL && s->module < h->module_count && s->bytes != 0u && h->state[s->module] != NULL)
+        return h->state[s->module];
+    return cint_rt_state_slow(ctx, s);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1839,8 +1902,9 @@ static inline uint64_t cint_rt_div_wide(uint64_t hi, uint64_t lo, uint64_t d, ui
 /* The two above in the builtin helper mode, for the fast path below: the 128-bit
  * product of GCC and Clang, _umul128 and _udiv128 on MSVC x64, __umulh on MSVC
  * ARM64, admitted per EMIT-05 and EMIT-12 as box 15's limb steps are (BX15-15).
- * GCC and Clang would call a support routine for a 128-bit quotient, so they
- * keep the long division. */
+ * On x86-64 outside macOS, GCC and Clang take the 128-bit quotient, which calls
+ * __udivti3 (SPEC-09 EMIT-31, OQ-271), and divide a zero high word in 64 bits,
+ * which GCC does not narrow by itself; elsewhere they keep the long division. */
 static inline uint64_t cint_rt_mul_wide_b(uint64_t a, uint64_t b, uint64_t *hi)
 {
 #if CINT_RT_USE_BUILTINS && defined(CINT_RT_BUILTINS_GNU)
@@ -1861,6 +1925,14 @@ static inline uint64_t cint_rt_div_wide_b(uint64_t hi, uint64_t lo, uint64_t d, 
 {
 #if CINT_RT_USE_BUILTINS && defined(CINT_RT_BUILTINS_MSVC) && defined(_M_X64)
     return _udiv128(hi, lo, d, rem);
+#elif CINT_RT_USE_BUILTINS && defined(CINT_RT_BUILTINS_GNU) && defined(__x86_64__) && !defined(__APPLE__)
+    if (hi == 0u) {
+        *rem = lo % d;
+        return lo / d;
+    }
+    __extension__ uint64_t q = (uint64_t)((((unsigned __int128)hi << 64) | lo) / d);
+    *rem = lo - q * d;
+    return q;
 #else
     return cint_rt_div_wide(hi, lo, d, rem);
 #endif
@@ -1908,16 +1980,36 @@ CINT_RT_FOLD uint64_t cint_rt_magnitude(uint32_t tag, uint64_t bits, bool *negat
 }
 
 /* The fast path of cint_builtin_<r> (OQ-227): div_round, muldiv, isqrt and
- * isqrt_round whose result is in range return true with its pattern in *out.
- * Every other call returns false and goes to cint_rt_builtin, which writes the
- * record. In emitted code op, tag, mode and aux are constants, so a compiler
- * that inlines it keeps only the branch of the built-in at hand (CINT_RT_FOLD). */
+ * isqrt_round whose result is in range, and rotl and rotr of an unsigned
+ * operand by a count in 0 ..= w - 1 (rt/OPEN.md RT-OQ-67), return true with
+ * the result's pattern in *out. Every other call returns false and goes to
+ * cint_rt_builtin, which writes the record. In emitted code op, tag, mode and
+ * aux are constants, so a compiler that inlines it keeps only the branch of
+ * the built-in at hand (CINT_RT_FOLD). */
 CINT_RT_FOLD bool cint_rt_builtin_fast(uint32_t op, uint32_t tag, uint32_t mode, uint32_t aux, uint64_t a,
                                        uint64_t b, uint64_t c, uint64_t *out)
 {
     uint32_t rtag = op == 11u ? aux : tag;
     bool an, bn, cn, neg = false;
     uint64_t am, bm, cm, hi = 0u, q, rem, lim;
+    if (op == 15u || op == 16u) {
+        /* The count is of any integer type (aux), canonical as cint_rt_builtin
+         * reads it; a count outside 0 ..= w - 1 faults there. */
+        unsigned w, s;
+        uint64_t n;
+        if (mode != 0u || (tag >> 4) != 2u || (tag & 0x0fu) < 1u || (tag & 0x0fu) > 4u ||
+            ((aux >> 4) != 1u && (aux >> 4) != 2u) || (aux & 0x0fu) < 1u || (aux & 0x0fu) > 4u) {
+            return false;
+        }
+        w = cint_rt_tag_width(tag);
+        n = cint_rt_tag_signed(aux) ? (uint64_t)cint_rt_sext(b, cint_rt_tag_width(aux))
+                                    : b & cint_rt_mask(cint_rt_tag_width(aux));
+        if ((n >> 63) != 0u || n > (uint64_t)(w - 1u)) return false;
+        a &= cint_rt_mask(w);
+        s = op == 15u ? (unsigned)n : (w - (unsigned)n) % w;
+        *out = s == 0u ? a : ((a << s) | (a >> ((w - s) & 63u))) & cint_rt_mask(w);
+        return true;
+    }
     if (op < 10u || op > 14u || op == 12u || (op == 13u ? mode != 0u : mode < 1u || mode > 9u) ||
         ((tag >> 4) != 1u && (tag >> 4) != 2u) || (tag & 0x0fu) < 1u || (tag & 0x0fu) > 4u ||
         ((rtag >> 4) != 1u && (rtag >> 4) != 2u) || (rtag & 0x0fu) < 1u || (rtag & 0x0fu) > 4u) {
@@ -2037,7 +2129,7 @@ typedef struct cint_vdesc {
     int64_t shape[4];
     int64_t stride[4];
 } cint_vdesc;
-_Static_assert(sizeof(cint_vdesc) == 88 && offsetof(cint_vdesc, shape) == 24, "cint_vdesc");
+CINT_RT_STATIC_ASSERT(sizeof(cint_vdesc) == 88 && offsetof(cint_vdesc, shape) == 24, "cint_vdesc");
 
 /* Index checks of rank 2 and above (ruling R1): as cint_rt_fault_index and
  * cint_index_check, with operands dim (from 0) then index; limit the extent
@@ -2128,7 +2220,7 @@ bool cint_rt_fault_decl_shape(cint_ctx *ctx, cint_site site, int64_t dim, int64_
 typedef struct cint_zacc {
     uint64_t limb[4];
 } cint_zacc;
-_Static_assert(sizeof(cint_zacc) == 32, "cint_zacc");
+CINT_RT_STATIC_ASSERT(sizeof(cint_zacc) == 32, "cint_zacc");
 
 static inline uint64_t cint_rt_zcanon(uint32_t tag, uint64_t bits)
 {

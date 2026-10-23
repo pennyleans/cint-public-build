@@ -14,6 +14,9 @@ produces inputs, each (name, bytes):
     mixed operands (task 2.13 part a);
   - prelude_names(): modules that declare a prelude name and use it (G-C2 review COR-4);
   - big_extents(): extents of 2^63 - 1 in a declaration and a `reshape` (box 15);
+  - fixed(): fixed-point constant expressions in each place a constant expression is
+    evaluated, and modules of the fixed-point forms that `cint_ref` checks or refuses, with
+    `as|` and the result forms (box 15 unit 4e, OQ-272, OQ-273, OQ-278);
   - mutants(): seeded single-token mutations of the written modules.
 """
 import pathlib
@@ -41,9 +44,101 @@ def in_script(body: str) -> bytes:
             % body).encode("utf-8")
 
 
+# A service extern of `fs/1` under its covering capability, for the I/O services cases.
+FS_SERVICE = ('error FsError { denied }\n@service("fs/1", fs.read(path))\n'
+              'extern observe FsError!I64 w(Grants g, in U8[] path, I64 offset, out U8[] buf);\n')
+
 # Whole modules: (name, text).
 MODULES = [
     ("hello", 'I64 x = 21 * 2;\n"hello, world\\n";\n"x = {x}\\n";\n'),
+    # I/O services lane U1: extern, requires, @service and Grants (SPEC-04 LS-323 to LS-328,
+    # SPEC-07 SEC-CAP-1, SEC-CAP-3, SEC-CAP-13). The capability check (C3040, C3041) runs over
+    # the module's own declaration block (check.capabilities).
+    ("extern_pure", "extern pure I64 f(I64 a);\nexport I64 run() { return f(1); }\n"),
+    ("extern_service",
+     '@service("console/1") extern observe E!void write(Grants g, in U8[] bytes);\n'
+     "error E { denied }\nexport I64 run() { return 0; }\n"),
+    ("requires_only", 'requires fs.read("/data");\nexport I64 run() { return 0; }\n'),
+    ("extern_observe_call", "extern observe I64 f(I64 a, Bool b);\nvoid main() {\n    _ = f(1, true);\n}\n"),
+    ("extern_unrestricted", "extern unrestricted I64 f(I64 a);\nvoid main() {\n    _ = f(1);\n}\n"),
+    ("extern_private_call",
+     "extern observe I64 f(I64 a);\nI64 g() {\n    return f(2);\n}\nvoid main() {\n    _ = g();\n}\n"),
+    ("extern_export", "export extern observe I64 f(I64 a);\nvoid main() {\n    _ = f(1);\n}\n"),
+    ("extern_void", "extern observe void f(I64 a);\nvoid main() {\n    f(1);\n}\n"),
+    ("extern_q", "extern observe Q32.32 f(Q32.32 a);\nvoid main() {\n    _ = f(1.5);\n}\n"),
+    ("extern_array_param", "extern observe I64 f(in I64[] a, out U8[] b);\nvoid main() {\n    U8[4] b;\n"
+     "    I64[2] a;\n    _ = f(a, b);\n}\n"),
+    ("extern_view_result", "extern observe in U8[] f(I64 a);\nvoid main() {\n}\n"),
+    ("extern_named_value", "extern observe I64 f(I64 p);\nvoid main() {\n    I64 a = f;\n}\n"),
+    ("extern_dup", "extern observe I64 f(I64 p);\nI64 f(I64 p) {\n    return p;\n}\nvoid main() {\n}\n"),
+    ("extern_dup_extern", "extern observe I64 f(I64 p);\nextern observe I64 f(I64 p);\nvoid main() {\n}\n"),
+    ("extern_prelude_name", "extern observe I64 len(I64 p);\nvoid main() {\n}\n"),
+    ("extern_arg_count", "extern observe I64 f(I64 p);\nvoid main() {\n    _ = f(1, 2);\n}\n"),
+    ("extern_arg_type", "extern observe I64 f(I64 p);\nvoid main() {\n    _ = f(true);\n}\n"),
+    ("extern_out_scalar", "extern observe I64 f(out I64 p);\nvoid main() {\n}\n"),
+    ("extern_inout_scalar", "extern observe I64 f(inout I64 p);\nvoid main() {\n}\n"),
+    ("extern_struct_param", "struct P { I64 a; }\nextern observe I64 f(P p);\nvoid main() {\n}\n"),
+    ("extern_errset_param", "error E { x }\nextern observe I64 f(E a);\nvoid main() {\n}\n"),
+    ("extern_struct_result", "struct P { I64 a; }\nextern observe P f(I64 p);\nvoid main() {\n}\n"),
+    ("extern_union_struct_result",
+     "struct P { I64 a; }\nerror E { x }\nextern observe E!P f(I64 p);\nvoid main() {\n}\n"),
+    ("extern_unknown_type", "extern observe I64 f(Foo a);\nvoid main() {\n}\n"),
+    ("extern_unknown_result", "extern observe Foo f(I64 a);\nvoid main() {\n}\n"),
+    ("extern_grants_param", "extern observe I64 f(Grants g, I64 a);\nvoid main(Grants g) {\n    _ = f(g, 1);\n}\n"),
+    ("grants_main", "void main(Grants g) {\n}\n"),
+    ("grants_main_union", "error E { x }\nE!void main(Grants g) {\n}\n"),
+    ("grants_pass", "void f(Grants g, I64 a) {\n}\nvoid main(Grants g) {\n    f(g, 1);\n}\n"),
+    ("grants_local", "void main(Grants g) {\n    Grants h = g;\n}\n"),
+    ("grants_array", "void main(Grants g) {\n    Grants[2] a;\n}\n"),
+    ("grants_result", "Grants f(Grants g) {\n    return g;\n}\nvoid main(Grants g) {\n    _ = f(g);\n}\n"),
+    ("grants_field", "struct P { Grants g; }\nvoid main() {\n}\n"),
+    ("grants_modvar", "Grants x;\nvoid main() {\n}\n"),
+    ("grants_to_int", "void main(Grants g) {\n    I64 a = g;\n}\n"),
+    ("grants_wrong_arg", "void f(Grants g) {\n}\nvoid main(Grants g) {\n    f(1);\n}\n"),
+    ("grants_compare", "void main(Grants g) {\n    if (g == g) {\n    }\n}\n"),
+    ("grants_print", 'void main(Grants g) {\n    "{g}\\n";\n}\n'),
+    ("grants_arith", "void main(Grants g) {\n    I64 a = g + 1;\n}\n"),
+    ("service_call_no_requires", FS_SERVICE +
+     'FsError!void main(Grants g) {\n    U8[4] b;\n    _ = try w(g, "/doc/a", 0, b);\n}\n'),
+    ("service_call_requires", 'requires fs.read("/doc");\n' + FS_SERVICE +
+     'FsError!void main(Grants g) {\n    U8[4] b;\n    _ = try w(g, "/doc/a", 0, b);\n}\n'),
+    ("service_call_twice", FS_SERVICE +
+     'FsError!void main(Grants g) {\n    U8[4] b;\n    _ = try w(g, "/doc/a", 0, b);\n'
+     '    _ = try w(g, "/doc/b", 0, b);\n}\n'),
+    ("service_call_in_function", FS_SERVICE +
+     'FsError!I64 f(Grants g) {\n    U8[4] b;\n    return try w(g, "/doc/a", 0, b);\n}\n'
+     'FsError!void main(Grants g) {\n    _ = try f(g);\n}\n'),
+    ("service_no_denied", 'error FsError { other }\n@service("fs/1", fs.read(path))\n'
+     'extern observe FsError!I64 w(Grants g, in U8[] path);\nvoid main(Grants g) {\n}\n'),
+    ("service_void_result", '@service("console/1")\nextern observe void w(Grants g, in U8[] bytes);\n'
+     "void main(Grants g) {\n}\n"),
+    ("service_no_capability", 'error E { denied }\n@service("console/1")\n'
+     'extern observe E!void w(Grants g, in U8[] bytes);\nE!void main(Grants g) {\n    try w(g, "hi");\n}\n'),
+    ("service_pure", 'error E { denied }\n@service("console/1")\nextern pure E!void w(Grants g, in U8[] bytes);\n'
+     "void main(Grants g) {\n}\n"),
+    ("service_two_kinds", 'error E { denied }\nrequires svc.op("/a", "x");\n@service("svc/1", svc.op(path, name))\n'
+     'extern observe E!I64 w(Grants g, in U8[] p);\nE!void main(Grants g) {\n    _ = try w(g, "/a");\n}\n'),
+    ("requires_unknown", 'requires fs.nothing("/doc");\nvoid main(Grants g) {\n}\n'),
+    ("requires_arg_count", 'requires fs.read("/doc", "/x");\n' + FS_SERVICE + "void main(Grants g) {\n}\n"),
+    ("requires_no_arg", "requires fs.read();\n" + FS_SERVICE + "void main(Grants g) {\n}\n"),
+    ("requires_non_string", "requires fs.read(1);\n" + FS_SERVICE + "void main(Grants g) {\n}\n"),
+    ("requires_expr", "requires fs.read(1 + 2);\n" + FS_SERVICE + "void main(Grants g) {\n}\n"),
+    ("requires_root", 'requires fs.read("/");\n' + FS_SERVICE + "void main(Grants g) {\n}\n"),
+    ("requires_trailing_slash", 'requires fs.read("/doc/");\n' + FS_SERVICE + "void main(Grants g) {\n}\n"),
+    ("requires_relative", 'requires fs.read("doc");\n' + FS_SERVICE + "void main(Grants g) {\n}\n"),
+    ("requires_dotdot", 'requires fs.read("/a/../b");\n' + FS_SERVICE + "void main(Grants g) {\n}\n"),
+    ("requires_device", 'requires fs.read("/CON.txt/a");\n' + FS_SERVICE + "void main(Grants g) {\n}\n"),
+    ("requires_space", 'requires fs.read("/a b");\n' + FS_SERVICE + "void main(Grants g) {\n}\n"),
+    ("requires_upper", 'requires fs.read("/Doc");\n' + FS_SERVICE + "void main(Grants g) {\n}\n"),
+    ("requires_name", 'error E { denied }\nrequires net.open("example.org");\n@service("net/1", net.open(name))\n'
+     "extern observe E!I64 w(Grants g, in U8[] host);\nvoid main(Grants g) {\n}\n"),
+    ("requires_name_slash", 'error E { denied }\nrequires net.open("a/b");\n@service("net/1", net.open(name))\n'
+     "extern observe E!I64 w(Grants g, in U8[] host);\nvoid main(Grants g) {\n}\n"),
+    ("requires_name_empty", 'error E { denied }\nrequires net.open("");\n@service("net/1", net.open(name))\n'
+     "extern observe E!I64 w(Grants g, in U8[] host);\nvoid main(Grants g) {\n}\n"),
+    ("requires_twice", 'requires fs.read("/doc");\nrequires fs.read("/doc");\n' + FS_SERVICE +
+     'FsError!void main(Grants g) {\n    U8[4] b;\n    _ = try w(g, "/doc/a", 0, b);\n}\n'),
+    ("requires_long", 'requires fs.read("/%s");\n' % ("a" * 300) + FS_SERVICE + "void main(Grants g) {\n}\n"),
     ("hello_main", 'void main() {\n    I64 x = 6 * 7;\n    "x = {x}, again {x=}\\n";\n}\n'),
     ("hello_bool", 'Bool ok = 1 < 2;\n"ok = {ok}\\n";\n"{ok=} {!ok}\\n";\n'),
     ("hello_holes", 'I64 a = 1;\nI64 b = 2;\n"{a + b} {a * b - 3} {(a << 3) >> 1} {a == b}\\n";\n'),
@@ -459,7 +554,27 @@ MODULES = [
     ("reshape_view", "    I64 s = sum(reshape(transpose(a), 6));"),
     ("reshape_argument", "    I64 s = 0;\n    put(a, reshape(a, 6));"),
     ("reshape_extent", "    I64 s = sum(reshape(m, 1, 3071, 0));"),
-]]
+]] + [
+    # A string literal is no writable place, so it cannot fill an `out` view (C2067, LS-119, LS-323),
+    # of a module's own extern and of an imported one alike (release tag lane finding at 193eb10).
+    # Last, so that the seeded mutants of the earlier modules keep their texts.
+    ("service_call_out_literal", 'requires fs.read("/doc");\n' + FS_SERVICE +
+     'FsError!void main(Grants g) {\n    _ = try w(g, "/doc/a", 0, "xx");\n}\n'),
+    ("service_import_out_literal", 'import fs;\nrequires fs.read("/doc");\n'
+     'fs.FsError!void main(Grants g) {\n    _ = try fs.read(g, "/doc/a", 0, "xx");\n}\n'),
+    # I/O services lane U6 (OQ-306 A; SPEC-04 LS-221): the parameter lists of `main`, the four
+    # forms and C3044 for the rest. Last, so that the seeded mutants of the earlier modules keep
+    # their texts.
+    ("main_args_both", 'void main(Grants g, in U8[_] args) {\n    "{len(args)}\\n";\n}\n'),
+    ("main_args_only", "void main(in U8[_] args) {\n    I64 n = 0;\n    for i in 0..len(args) {\n"
+     "        if (args[i] == 0) {\n            n += 1;\n        }\n    }\n}\n"),
+    ("main_args_after_scalar", "void main(Grants g, I64 x) {\n}\n"),
+    ("main_args_scalar", "void main(I64 x) {\n}\n"),
+    ("main_args_order", "void main(in U8[_] args, Grants g) {\n}\n"),
+    ("main_args_inout", "void main(inout U8[_] args) {\n}\n"),
+    ("main_args_fixed", "void main(in U8[4] args) {\n}\n"),
+    ("main_args_two_grants", "void main(Grants g, Grants h) {\n}\n"),
+]
 
 
 def else_if_chain(arms: int, bad_arm: int = -1) -> bytes:
@@ -646,6 +761,118 @@ def wide_consts() -> list:
         for pi, place in enumerate(WIDE_CONST_PLACES):
             out.append(("wide_const/%d_%d" % (ei, pi), (place.format(t=t, e=e) + "\n").encode("utf-8")))
     return out
+
+
+# Box 15 unit 4e and `as|`: constant expressions of fixed point and saturating conversions,
+# each folded in the places of WIDE_CONST_PLACES ({t} is the expression's type): literals on
+# and off the grid, `round` clauses, the operators and built-ins at the bounds of their types,
+# the conversion forms, `Q<i>.<f>.raw(n)`, and the faults whose records carry fixed-point
+# operands. A fraction literal as a conversion's source, a type property past `min`, `max` and
+# `epsilon`, a `qmul` mode that does not round and a conversion between fixed point and a
+# wide type are C9102 in B1 (check_suite.FIXED_REFUSALS).
+FIXED_CONST_EXPRS = [
+    ("Q16.16", "1.5"), ("Q16.16", "0.1"), ("Q16.16", "0.1 round floor"), ("Q16.16", "-0.1 round ceil"),
+    ("Q16.16", "0.1 round nearest"), ("Q8.8", "200.0"), ("Q8.8", "-128.0"), ("Q16.16", "Q16.16.max + 0.5"),
+    ("Q16.16", "Q16.16.min - Q16.16.epsilon"), ("Q16.16", "Q16.16.max * 2.0"), ("Q16.16", "-Q16.16.min"),
+    ("Q16.16", "1.0 / (Q16.16.epsilon - Q16.16.epsilon)"), ("Q16.16", "Q16.16.max / Q16.16.epsilon"),
+    ("Q16.16", "Q16.16.max +| 1.0"), ("Q16.16", "Q16.16.min -% 1.0"), ("Q16.16", "Q16.16.epsilon * 0.5"),
+    ("Q16.16", "mul(Q16.16.epsilon, 0.5, ceil)"), ("Q16.16", "div(1.0, 3.0, floor)"), ("Q16.16", "sqrt(2.0)"),
+    ("Q16.16", "mul_sat(Q16.16.max, 2.0, floor)"), ("Q16.16", "mul_wrap(Q16.16.max, 2.0, trunc)"),
+    ("Q16.16", "qmul(Q16.16, Q8.8.max, Q8.8.max)"), ("Q8.8", "qmul(Q8.8, Q16.16.max, 1.0, half_up)"),
+    ("Q16.16", "qmul(Q16.16, Q8.8.max, Q8.8.max, floor)"), ("Q16.16", "mul_int(Q16.16.max, 2)"),
+    ("Q16.16", "abs(Q16.16.min)"), ("Q16.16", "min(Q16.16.max, 1.5) + max(-2.0, Q16.16.min)"),
+    ("Q16.16", "Q16.16.raw(65536) * 3.0"), ("Q16.16", "Q16.16.raw(-1)"), ("I32", "Q16.16.max as I32"),
+    ("I32", "Q16.16.min as I32 round floor"), ("I8", "Q16.16.max as I8"), ("I8", "Q16.16.max as% I8"),
+    ("I8", "Q16.16.max as| I8"), ("I8", "Q16.16.min as| I8 round ceil"), ("Q8.8", "Q16.16.max as Q8.8"),
+    ("Q8.8", "Q16.16.max as| Q8.8"), ("Q8.8", "Q16.16.min as% Q8.8"), ("Q8.8", "1.75 as Q8.8"),
+    ("Q16.16", "Q8.8.max as Q16.16"), ("Q16.16", "Q8.8.min as Q16.16 round floor"), ("Q16.16", "100000 as| Q16.16"),
+    ("Q16.16", "-100000 as Q16.16"), ("Q16.16", "I64.max as| Q16.16"), ("Q16.16", "Q16.16.bits"),
+    ("Q16.16", "(5 as I128) as Q16.16"), ("I128", "Q16.16.max as| I128"), ("I8", "1000 as| I8"),
+    ("U8", "-5 as| U8"), ("I32", "I64.min as| I32"), ("U64", "I64.min as| U64"), ("I128", "U128.max as| I128"),
+    ("U8", "U512.max as| U8"), ("I64", "(I64.max as| I32) as I64 + 1"), ("I8", "true as| I8"),
+    ("I8", "1000 as| I8 round floor"),
+]
+
+
+def fixed() -> list:
+    out = []
+    for ei, (t, e) in enumerate(FIXED_CONST_EXPRS):
+        for pi, place in enumerate(WIDE_CONST_PLACES):
+            out.append(("fixed_const/%d_%d" % (ei, pi), (place.format(t=t, e=e) + "\n").encode("utf-8")))
+    for name, text in FIXED_MODULES:
+        out.append(("fixed/" + name, text.encode("utf-8")))
+    return out
+
+
+# Box 15: modules of the fixed-point forms whose outcome is not a constant's, the C9102 ones of
+# check.ci included.
+FIXED_MODULES = [
+    ("arith", "export I64 run(Q16.16 a, Q16.16 b) {\n    Q16.16 c = a * b + a / b - 0.25;\n"
+              "    Q16.16 d = c *| 2.0 -| a;\n    return (d as I64) + (c.raw as I64);\n}\n"),
+    ("rem", "export I64 run(Q16.16 a, Q16.16 b) {\n    Q16.16 c = a % b;\n    return 0;\n}\n"),
+    ("mixed", "export I64 run(Q16.16 a, Q8.8 b) {\n    Q16.16 c = a + b;\n    return 0;\n}\n"),
+    ("increment", "export I64 run() {\n    Q16.16 x = 1.0;\n    x++;\n    return 0;\n}\n"),
+    ("compound", "export I64 run() {\n    Q16.16 x = 1.0;\n    x += 0.5;\n    x *= 3.0;\n"
+                 "    return x as I64;\n}\n"),
+    ("integer_context", "export I64 run() {\n    I64 x = 1.5;\n    return x;\n}\n"),
+    ("frac_source", "export I64 run() {\n    Q16.16 x = 0.5 as Q16.16;\n    return 0;\n}\n"),
+    ("round_unknown", "export I64 run() {\n    Q16.16 x = 0.1 round sideways;\n    return 0;\n}\n"),
+    ("round_clause_exact", "export I64 run(Q16.16 a) {\n    Q32.32 x = a as Q32.32 round floor;\n    return 0;\n}\n"),
+    ("bad_type", "export I64 run() {\n    Q60.60 x = 1.0;\n    return 0;\n}\n"),
+    ("bad_property", "export I64 run() {\n    Q16.16 x = Q16.16.bits;\n    return 0;\n}\n"),
+    ("epsilon", "export I64 run() {\n    Q1.63 x = Q1.63.epsilon;\n    return x.raw;\n}\n"),
+    ("raw_ctor", "export I64 run(I32 n) {\n    Q16.16 x = Q16.16.raw(n);\n    return x.raw as I64;\n}\n"),
+    ("raw_ctor_type", "export I64 run(I64 n) {\n    Q16.16 x = Q16.16.raw(n);\n    return 0;\n}\n"),
+    ("holes", "export I64 run(Q8.8 a) {\n    \"{a} {a:+} {a:*>9} {a:.2} {a!raw:x} {a!bits:#b} {a=}\\n\";\n"
+              "    return 0;\n}\n"),
+    ("hole_kind_d", "export I64 run(Q8.8 a) {\n    \"{a:d}\\n\";\n    return 0;\n}\n"),
+    ("hole_kind_x", "export I64 run(Q8.8 a) {\n    \"{a:x}\\n\";\n    return 0;\n}\n"),
+    ("hole_group", "export I64 run(Q8.8 a) {\n    \"{a:_}\\n\";\n    return 0;\n}\n"),
+    ("hole_int_bits", "export I64 run(I64 a) {\n    \"{a!bits:x}\\n\";\n    return 0;\n}\n"),
+    ("hole_int_raw", "export I64 run(I64 a) {\n    \"{a!raw}\\n\";\n    return 0;\n}\n"),
+    ("hole_array", "export I64 run() {\n    Q8.8[3] v = [0.5, -1.25, 3.0];\n    \"{v} {v:.1} {v!raw}\\n\";\n"
+                   "    return 0;\n}\n"),
+    ("array_sum", "export I64 run() {\n    Q8.8[3] v = [0.5, -1.25, 3.0];\n    Q8.8 s = sum(v);\n"
+                  "    return s.raw as I64;\n}\n"),
+    ("array_sum_into_int", "export I64 run() {\n    Q8.8[3] v = [0.5, -1.25, 3.0];\n    I64 s = sum(I64, v);\n"
+                           "    return s;\n}\n"),
+    ("array_fold_mul", "export I64 run() {\n    Q8.8[3] v = [0.5, -1.25, 3.0];\n"
+                       "    Q8.8 s = fold_checked(mul, 1.0, v);\n    return 0;\n}\n"),
+    ("dot", "export I64 run() {\n    Q8.8[2] v = [0.5, 1.5];\n    Q16.16 d = dot(Q16.16, v, v);\n"
+            "    return d.raw as I64;\n}\n"),
+    ("script_array", "Q8.8[2] t = [0.5, 1.0];\n\"{t[1]}\\n\";\n"),
+    ("script_array_late", "Q8.8[3] t;\nt[1] = 0.5;\n\"{t[1]}\\n\";\n"),
+    ("round_no_mode", "export I64 run() {\n    Q16.16 x = -(0.1 round in);\n    Q16.16 y = 0.1 round ;\n"
+                      "    return 0;\n}\n"),
+    ("bit_field", "struct S {\n    Q16.16 x;\n    U16 m : 3;\n}\nexport I64 run() {\n    return 0;\n}\n"),
+    ("module_state", "Q16.16 g = 2.5;\nQ8.8[2] t = [0.5, -1.0];\nexport I64 run() {\n    g = g * 2.0;\n"
+                     "    t[1] = t[0] + t[1];\n    return g.raw as I64;\n}\n"),
+    ("struct_field", "struct P {\n    Q16.16 x;\n    Q8.8[2] v;\n}\nexport I64 run() {\n"
+                     "    Q8.8[2] v = [0.5, 0.25];\n    P p = P(1.5, v);\n    p.v[1] = p.v[0] - 0.75;\n"
+                     "    return (p.x.raw as I64) + (p.v[1].raw as I64);\n}\n"),
+    ("sat_bool", "export I64 run(Bool b) {\n    I8 x = b as| I8;\n    return 0;\n}\n"),
+    ("sat_round_clause", "export I64 run(I64 a) {\n    I8 x = a as| I8 round floor;\n    return 0;\n}\n"),
+    ("sat_forms", "export I64 run(I64 a, Q16.16 q) {\n    I8 x = a as| I8;\n    U16 y = a as| U16;\n"
+                  "    Q8.8 z = q as| Q8.8;\n    I32 w = q as| I32 round half_up;\n    Q8.8 v = a as| Q8.8;\n"
+                  "    return (x as I64) + (y as I64) + (w as I64) + (z.raw as I64) + (v.raw as I64);\n}\n"),
+    ("result_forms",
+     "ArithError!Q16.16 f(Q16.16 a, Q16.16 b) {\n    Q16.16 s = try add_result(a, b);\n"
+     "    Q16.16 d = try sub_result(s, b);\n    Q16.16 m = try mul_result(d, b, floor);\n"
+     "    return try div_result(m, b);\n}\n"
+     "export I64 run(Q16.16 a, Q16.16 b) {\n    Q16.16 r = f(a, b) catch 0.0;\n    return r.raw as I64;\n}\n"),
+    ("result_rem", "export I64 run(Q16.16 a, Q16.16 b) {\n    Q16.16 r = rem_result(a, b) catch 0.0;\n"
+                   "    return 0;\n}\n"),
+    ("result_mode_int", "export I64 run(I64 a, I64 b) {\n    I64 r = mul_result(a, b, floor) catch 0;\n"
+                        "    return r;\n}\n"),
+    ("result_unconsumed", "export I64 run(Q16.16 a, Q16.16 b) {\n    Q16.16 r = add_result(a, b);\n"
+                          "    return 0;\n}\n"),
+    ("result_mixed", "export I64 run(Q16.16 a, Q8.8 b) {\n    Q16.16 r = add_result(a, b) catch 0.0;\n"
+                     "    return 0;\n}\n"),
+    ("as_try", "export I64 run(Q16.16 q) {\n    I8 x = q as? I8 catch 0;\n    return x as I64;\n}\n"),
+    ("kernel", "kernel scale[n](in Q16.16[n] a, out Q16.16[n] b) over [i: n] {\n    b[i] = a[i] * 2.0;\n}\n"
+               "export I64 run() {\n    Q16.16[2] a = [1.5, 200.0];\n    Q16.16[2] b;\n    scale(a, b);\n"
+               "    return b[0].raw as I64;\n}\n"),
+]
 
 
 def switches() -> list:

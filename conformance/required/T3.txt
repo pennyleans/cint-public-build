@@ -8,7 +8,12 @@
 # (OQ-268): the 88 rows of its 44 signed wide table programs, with the 14 rows of 7 wide
 # cases B1 compiles (CONF-14); amended 2026-10-10 (OQ-274): the 58 rows of its 12 wide shift
 # table programs and 17 wide cases B1 compiles; amended 2026-10-10 (OQ-277): the 136 rows of
-# its 42 unsigned wide table programs and 26 wide cases of the unsigned types B1 compiles.
+# its 42 unsigned wide table programs and 26 wide cases of the unsigned types B1 compiles;
+# amended 2026-10-15 (OQ-291): the 94 rows of its 47 fixed-point cases, which B1 compiles;
+# amended 2026-10-15 (OQ-280): the 22 rows of the 11 programs of `as|` and the fixed-point
+# result forms in its group 1; amended 2026-10-15 (OQ-293): the
+# 58 rows of the 29 cases of fixed-point storage of 128 bits; amended 2026-10-16 (OQ-293,
+# OQ-294): the 56 rows of the 28 of those cases B1 compiles.
 # Required case list of stage T3 (SPEC-09 CONF-15, CONF-17; slice 2 decision patch D-14).
 # One line per case and backend: <case> <compiler> <category> [<detail>], where the
 # detail is the limit identifier of an unsupported case or the Open item of a held case,
@@ -19,9 +24,9 @@
 # Written by tools/cint_check.py --write-required from two full-scope runs of B1 at ae62993
 # on Linux (gcc -O0, portable helpers): `--stage T3` on cpu-c17, and `--backend gpu-cuda
 # --stand-in` (block 256) on the stand-in driver of rt/tests; then reviewed. Sorted by
-# case bytes, then compiler. All 1073 available IDs have both rows.
-# cintc: 800 compared, 11 held, 67 not_applicable, 195 unsupported. cintc/gpu-cuda: 792
-# compared, 11 held, 67 not_applicable, 203 unsupported.
+# case bytes, then compiler. All 1124 available IDs have both rows.
+# cintc: 812 compared, 11 held, 67 not_applicable, 223 unsupported. cintc/gpu-cuda: 804
+# compared, 11 held, 67 not_applicable, 231 unsupported.
 # 2026-10-08 (OQ-232): memory/arena_struct_element_store, the case of a B1 defect fix
 # (a whole-struct store into an arena element), is compared on both backends; its
 # gpu-cuda row was measured on the stand-in driver as above.
@@ -69,16 +74,81 @@
 # compared and the 2 compile errors as cint_ref gives them, none disagreeing, every row in
 # its category. cintc: 948 compared, 11 held, 67 not_applicable, 47 unsupported.
 # cintc/gpu-cuda: 935 compared, 11 held, 67 not_applicable, 60 unsupported.
+# 2026-10-15, box 15 unit 4e (OQ-291 A): the 47 cases that T2.txt moves are compared on
+# cpu-c17; on gpu-cuda 45 are compared, and the kernel cases fixed/kernel_mul_overflow and
+# fixed/kernel_scale_reduce are unsupported under BACK-05, as back_ptx refuses a kernel
+# with a fixed-point value or view (capability fixed; OQ-290 A; their cintc/gpu-cuda lines
+# in conformance/unsupported.txt). Measured with --stage T3 --required T3.txt on cpu-c17
+# and, with --backend gpu-cuda --stand-in --stage T3 --required T3.txt (block 256), on the
+# stand-in driver, each with --only fixed/ (B1 of compiler source identity 47b89885; gcc
+# -O0, portable helpers): 47 and 45 records compared, the 10 compile errors among them as
+# cint_ref gives them, none disagreeing, every row in its category. cintc: 995 compared, 11
+# held, 67 not_applicable, 0 unsupported. cintc/gpu-cuda: 980 compared, 11 held, 67
+# not_applicable, 15 unsupported.
+# 2026-10-15, box 15 (OQ-280 A, group 1): the 11 programs of cases 1 to 10 of `as|` and the
+# fixed-point result forms are compared on both backends; none has a kernel. Measured with
+# --stage T3 --required T3.txt on cpu-c17 and, with --backend gpu-cuda --stand-in --stage T3
+# --required T3.txt (block 256), on the stand-in driver, each with --only for the 11 (B1 of
+# compiler source identity 9500e240; gcc -O0, portable helpers): 11 records compared on each,
+# the 4 compile errors among them as cint_ref gives them, none disagreeing, every row in its
+# category. cintc: 1006 compared, 11 held, 67 not_applicable, 0 unsupported.
+# cintc/gpu-cuda: 991 compared, 11 held, 67 not_applicable, 15 unsupported.
+# 2026-10-15, games wave G2a (OQ-292 A; rows by OQ-293 A under OQ-232): the
+# 29 cases of fixed-point storage of 128 bits are unsupported on both backends under
+# CINTC-OQ-15, as in T2.txt: B1's front end refuses the first fixed-point type of 128 bits
+# with C9102 before either backend runs, and the gpu-cuda rows use the cintc line of
+# conformance/unsupported.txt; fixed/type_name_c2005_q128_128, an expected compile error
+# (C2005), is compared on both. Measured with --stage T3 --required T3.txt on cpu-c17 and,
+# with --backend gpu-cuda --stand-in --stage T3 --required T3.txt (block 256), on the
+# stand-in driver, each with --only fixed/ (B1 of compiler source identity 829ab40d; gcc
+# -O0, portable helpers): over the 83 cases under conformance/fixed/, 55 and 53 records
+# compared, the 14 compile errors among them as cint_ref gives them, none disagreeing,
+# every row in its category. cintc: 1007 compared, 11 held, 67
+# not_applicable, 28 unsupported. cintc/gpu-cuda: 992 compared, 11 held, 67
+# not_applicable, 43 unsupported.
+# 2026-10-16, games wave G2b (OQ-293 A, amended by OQ-294 A): B1 compiles fixed-point
+# storage of 128 bits (compiler/OPEN.md CINTC-OQ-15), so of the 56 rows of those 28 cases
+# 55 change from unsupported CINTC-OQ-15 to compared; the cintc/gpu-cuda row of
+# fixed/kernel_scale_reduce_q80_48 becomes unsupported BACK-05, as back_ptx refuses its
+# kernel over Q80.48 views with the capability fixed (OQ-290), the line in
+# conformance/unsupported.txt. Measured as above with --only fixed/ (B1 of compiler source
+# identity e6e8bd53; gcc -O0, portable helpers): on cpu-c17, 83 records compared, the 17
+# compile errors among them as cint_ref gives them; on the stand-in driver, 80 records
+# compared and the 3 kernels of fixed point refused under BACK-05; none disagreeing, every
+# row in its category. cintc: 1035 compared, 11 held, 67 not_applicable, 0 unsupported.
+# cintc/gpu-cuda: 1019 compared, 11 held, 67 not_applicable, 16 unsupported.
 # The cintc rows are T2.txt's cintc rows. The gpu-cuda unsupported rows are the kernel
 # tables whose operator the cuda capability table refuses (BACK-05; conformance/
 # unsupported.txt): the saturating forms (capability sat), div and rem (div), and the
-# shifts (shift); and the kernels of wide types (wide).
+# shifts (shift); the kernels of wide types (wide); and the kernels of fixed-point values
+# (fixed).
 # The boundary matrices run as kernels are the 14 tables/kernel_* tables of the I64
 # matrices (CONF-17); no 8- or 16-bit boundary matrix exists, so CONF-17's widening
 # has no rows yet.
 # Each compared gpu-cuda row holds under both schedules, blocks 32 and 256 (SPEC-02
 # Q-3), on the device; the stand-in measured the rows, and T3 acceptance (box 11 unit
 # 6b) takes the device receipts of the GPU machine.
+# 2026-10-22, I/O services lane (OQ-304): the 22 rows of the 11 conformance/services/ cases,
+# frozen from cint_ref; on both backends the 5 cases whose diagnostic the checker reports are
+# compared and the 6 whose lowering meets a call of a service extern or a Grants parameter
+# are unsupported under compiler/OPEN.md CINTC-OQ-66 item 8 (the same front end on each).
+# 2026-10-22, I/O services lane U5b (OQ-305 A): the 6 rows of services/c3040_no_requires,
+# c3041_path_syntax and c3041_unknown_capability change to compared on both backends; the 6
+# of denied_catch, denied_try_main and main_grants_print stay unsupported until
+# cpu-sir-interp runs service calls. Measured on Linux with --required T3.txt and --only
+# services/ (B1 of compiler source identity d2a0417e; gcc -O0, portable helpers), on
+# cpu-c17 with --stage T3 and on gpu-cuda with the stand-in: 11 records compared on each,
+# none disagreeing; the only problems are the 3 rows that wait on each. cintc: 1043
+# compared, 11 held, 67 not_applicable, 3 unsupported; cintc/gpu-cuda: 1027 compared, 11
+# held, 67 not_applicable, 19 unsupported.
+# 2026-10-22, I/O services lane U5c (OQ-305 A): cpu-sir-interp runs Grants parameters and
+# service calls (rt/OPEN.md RT-OQ-75), so the 6 rows of denied_catch, denied_try_main and
+# main_grants_print change to compared on both backends, with the rows of T2 and T4.
+# Measured on Linux with --required T3.txt and --only services/ (B1 of compiler source
+# identity 4f3f8b8e; gcc -O0, portable helpers), on cpu-c17 with --stage T3 and on gpu-cuda
+# with the stand-in: 11 records compared on each, none disagreeing, every row in its
+# category. cintc: 1046 compared, 11 held, 67 not_applicable, 0 unsupported;
+# cintc/gpu-cuda: 1030 compared, 11 held, 67 not_applicable, 16 unsupported.
 anchors/abs.checked.i64.001 cintc compared
 anchors/abs.checked.i64.001 cintc/gpu-cuda compared
 anchors/abs.checked.i64.002 cintc compared
@@ -719,6 +789,10 @@ arith/const_skipped_cond_arm cintc compared
 arith/const_skipped_cond_arm cintc/gpu-cuda compared
 arith/const_type_mismatch cintc compared
 arith/const_type_mismatch cintc/gpu-cuda compared
+arith/convert_sat_literal cintc compared
+arith/convert_sat_literal cintc/gpu-cuda compared
+arith/convert_sat_table cintc compared
+arith/convert_sat_table cintc/gpu-cuda compared
 arith/div_zero_runtime cintc compared
 arith/div_zero_runtime cintc/gpu-cuda compared
 arith/eval_order_left_first cintc compared
@@ -1063,6 +1137,8 @@ diag/c2003_unsigned_minus_one cintc compared
 diag/c2003_unsigned_minus_one cintc/gpu-cuda compared
 diag/c2003_unsigned_minus_space cintc compared
 diag/c2003_unsigned_minus_space cintc/gpu-cuda compared
+diag/c2008_convert_sat_bool cintc compared
+diag/c2008_convert_sat_bool cintc/gpu-cuda compared
 diag/c2050_uninitialized_scalar cintc compared
 diag/c2050_uninitialized_scalar cintc/gpu-cuda compared
 diag/c2052_assign_loop_variable cintc compared
@@ -1163,100 +1239,172 @@ errors/underlying_type_u8 cintc compared
 errors/underlying_type_u8 cintc/gpu-cuda compared
 errors/widen_in_assignment_and_compare cintc compared
 errors/widen_in_assignment_and_compare cintc/gpu-cuda compared
-fixed/add_checked_overflow_raw cintc unsupported CINTC-OQ-15
-fixed/add_checked_overflow_raw cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/array_index_bounds_q16_16 cintc unsupported CINTC-OQ-15
-fixed/array_index_bounds_q16_16 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/constant_fold_overflow cintc unsupported CINTC-OQ-15
-fixed/constant_fold_overflow cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/convert_integer_narrow cintc unsupported CINTC-OQ-15
-fixed/convert_integer_narrow cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/convert_literal_c6001 cintc unsupported CINTC-OQ-15
-fixed/convert_literal_c6001 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/convert_narrow_q32_32 cintc unsupported CINTC-OQ-15
-fixed/convert_narrow_q32_32 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/convert_round_clause_c2009 cintc unsupported CINTC-OQ-15
-fixed/convert_round_clause_c2009 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/convert_table cintc unsupported CINTC-OQ-15
-fixed/convert_table cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/convert_wrap_and_result cintc unsupported CINTC-OQ-15
-fixed/convert_wrap_and_result cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/div_overflow_q16_16 cintc unsupported CINTC-OQ-15
-fixed/div_overflow_q16_16 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/div_table_q16_16 cintc unsupported CINTC-OQ-15
-fixed/div_table_q16_16 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/div_zero_q16_16 cintc unsupported CINTC-OQ-15
-fixed/div_zero_q16_16 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/dot_one_rounding cintc unsupported CINTC-OQ-15
-fixed/dot_one_rounding cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/dot_overflow_q8_8 cintc unsupported CINTC-OQ-15
-fixed/dot_overflow_q8_8 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/fraction_integer_context_c2004 cintc unsupported CINTC-OQ-15
-fixed/fraction_integer_context_c2004 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/kernel_mul_overflow cintc unsupported CINTC-OQ-15
-fixed/kernel_mul_overflow cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/kernel_scale_reduce cintc unsupported CINTC-OQ-15
-fixed/kernel_scale_reduce cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/literal_grid_q16_16 cintc unsupported CINTC-OQ-15
-fixed/literal_grid_q16_16 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/literal_off_grid_c2006 cintc unsupported CINTC-OQ-15
-fixed/literal_off_grid_c2006 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/literal_out_of_range_c2003 cintc unsupported CINTC-OQ-15
-fixed/literal_out_of_range_c2003 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/literal_round_clause cintc unsupported CINTC-OQ-15
-fixed/literal_round_clause cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/literal_round_negative cintc unsupported CINTC-OQ-15
-fixed/literal_round_negative cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/module_state_q16_16 cintc unsupported CINTC-OQ-15
-fixed/module_state_q16_16 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/mul_forms_q16_16 cintc unsupported CINTC-OQ-15
-fixed/mul_forms_q16_16 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/mul_int_overflow cintc unsupported CINTC-OQ-15
-fixed/mul_int_overflow cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/mul_overflow_q16_16 cintc unsupported CINTC-OQ-15
-fixed/mul_overflow_q16_16 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/mul_table_q16_16 cintc unsupported CINTC-OQ-15
-fixed/mul_table_q16_16 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/print_kind_c1037 cintc unsupported CINTC-OQ-15
-fixed/print_kind_c1037 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/print_layout_raw_bits cintc unsupported CINTC-OQ-15
-fixed/print_layout_raw_bits cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/print_ls215 cintc unsupported CINTC-OQ-15
-fixed/print_ls215 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/qmul_formats cintc unsupported CINTC-OQ-15
-fixed/qmul_formats cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/qmul_overflow cintc unsupported CINTC-OQ-15
-fixed/qmul_overflow cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/raw_and_constructor cintc unsupported CINTC-OQ-15
-fixed/raw_and_constructor cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/raw_forms_q8_8 cintc unsupported CINTC-OQ-15
-fixed/raw_forms_q8_8 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/raw_not_assignable_c2058 cintc unsupported CINTC-OQ-15
-fixed/raw_not_assignable_c2058 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/reductions_q16_16 cintc unsupported CINTC-OQ-15
-fixed/reductions_q16_16 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/rem_c2103 cintc unsupported CINTC-OQ-15
-fixed/rem_c2103 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/round_modes_convert cintc unsupported CINTC-OQ-15
-fixed/round_modes_convert cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/round_modes_div cintc unsupported CINTC-OQ-15
-fixed/round_modes_div cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/round_modes_mul cintc unsupported CINTC-OQ-15
-fixed/round_modes_mul cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/sqrt_negative_domain cintc unsupported CINTC-OQ-15
-fixed/sqrt_negative_domain cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/sqrt_q1_15_ceil_overflow cintc unsupported CINTC-OQ-15
-fixed/sqrt_q1_15_ceil_overflow cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/sqrt_table cintc unsupported CINTC-OQ-15
-fixed/sqrt_table cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/struct_field_q cintc unsupported CINTC-OQ-15
-fixed/struct_field_q cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/sum_overflow_q8_8 cintc unsupported CINTC-OQ-15
-fixed/sum_overflow_q8_8 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/type_name_c2005 cintc unsupported CINTC-OQ-15
-fixed/type_name_c2005 cintc/gpu-cuda unsupported CINTC-OQ-15
-fixed/type_properties cintc unsupported CINTC-OQ-15
-fixed/type_properties cintc/gpu-cuda unsupported CINTC-OQ-15
+fixed/add_checked_overflow_raw cintc compared
+fixed/add_checked_overflow_raw cintc/gpu-cuda compared
+fixed/add_sub_result_q16_16 cintc compared
+fixed/add_sub_result_q16_16 cintc/gpu-cuda compared
+fixed/array_index_bounds_q16_16 cintc compared
+fixed/array_index_bounds_q16_16 cintc/gpu-cuda compared
+fixed/constant_fold_overflow cintc compared
+fixed/constant_fold_overflow cintc/gpu-cuda compared
+fixed/constant_fold_q80_48 cintc compared
+fixed/constant_fold_q80_48 cintc/gpu-cuda compared
+fixed/convert_integer_narrow cintc compared
+fixed/convert_integer_narrow cintc/gpu-cuda compared
+fixed/convert_literal_c6001 cintc compared
+fixed/convert_literal_c6001 cintc/gpu-cuda compared
+fixed/convert_literal_c6001_q1_127_max cintc compared
+fixed/convert_literal_c6001_q1_127_max cintc/gpu-cuda compared
+fixed/convert_narrow_i1024_q1_127 cintc compared
+fixed/convert_narrow_i1024_q1_127 cintc/gpu-cuda compared
+fixed/convert_narrow_q32_32 cintc compared
+fixed/convert_narrow_q32_32 cintc/gpu-cuda compared
+fixed/convert_narrow_q80_48 cintc compared
+fixed/convert_narrow_q80_48 cintc/gpu-cuda compared
+fixed/convert_round_clause_c2009 cintc compared
+fixed/convert_round_clause_c2009 cintc/gpu-cuda compared
+fixed/convert_sat_fixed cintc compared
+fixed/convert_sat_fixed cintc/gpu-cuda compared
+fixed/convert_sat_round_clause_c2009 cintc compared
+fixed/convert_sat_round_clause_c2009 cintc/gpu-cuda compared
+fixed/convert_table cintc compared
+fixed/convert_table cintc/gpu-cuda compared
+fixed/convert_table_q128 cintc compared
+fixed/convert_table_q128 cintc/gpu-cuda compared
+fixed/convert_wrap_and_result cintc compared
+fixed/convert_wrap_and_result cintc/gpu-cuda compared
+fixed/div_overflow_q16_16 cintc compared
+fixed/div_overflow_q16_16 cintc/gpu-cuda compared
+fixed/div_overflow_q96_32 cintc compared
+fixed/div_overflow_q96_32 cintc/gpu-cuda compared
+fixed/div_result_q16_16 cintc compared
+fixed/div_result_q16_16 cintc/gpu-cuda compared
+fixed/div_table_q16_16 cintc compared
+fixed/div_table_q16_16 cintc/gpu-cuda compared
+fixed/div_table_q96_32 cintc compared
+fixed/div_table_q96_32 cintc/gpu-cuda compared
+fixed/div_zero_q16_16 cintc compared
+fixed/div_zero_q16_16 cintc/gpu-cuda compared
+fixed/div_zero_q96_32 cintc compared
+fixed/div_zero_q96_32 cintc/gpu-cuda compared
+fixed/dot_one_rounding cintc compared
+fixed/dot_one_rounding cintc/gpu-cuda compared
+fixed/dot_one_rounding_q80_48 cintc compared
+fixed/dot_one_rounding_q80_48 cintc/gpu-cuda compared
+fixed/dot_overflow_q8_8 cintc compared
+fixed/dot_overflow_q8_8 cintc/gpu-cuda compared
+fixed/fraction_integer_context_c2004 cintc compared
+fixed/fraction_integer_context_c2004 cintc/gpu-cuda compared
+fixed/kernel_mul_overflow cintc compared
+fixed/kernel_mul_overflow cintc/gpu-cuda unsupported BACK-05
+fixed/kernel_scale_reduce cintc compared
+fixed/kernel_scale_reduce cintc/gpu-cuda unsupported BACK-05
+fixed/kernel_scale_reduce_q80_48 cintc compared
+fixed/kernel_scale_reduce_q80_48 cintc/gpu-cuda unsupported BACK-05
+fixed/literal_grid_q16_16 cintc compared
+fixed/literal_grid_q16_16 cintc/gpu-cuda compared
+fixed/literal_grid_q80_48 cintc compared
+fixed/literal_grid_q80_48 cintc/gpu-cuda compared
+fixed/literal_off_grid_c2006 cintc compared
+fixed/literal_off_grid_c2006 cintc/gpu-cuda compared
+fixed/literal_off_grid_c2006_q64_64 cintc compared
+fixed/literal_off_grid_c2006_q64_64 cintc/gpu-cuda compared
+fixed/literal_out_of_range_c2003 cintc compared
+fixed/literal_out_of_range_c2003 cintc/gpu-cuda compared
+fixed/literal_out_of_range_c2003_q80_48 cintc compared
+fixed/literal_out_of_range_c2003_q80_48 cintc/gpu-cuda compared
+fixed/literal_round_clause cintc compared
+fixed/literal_round_clause cintc/gpu-cuda compared
+fixed/literal_round_negative cintc compared
+fixed/literal_round_negative cintc/gpu-cuda compared
+fixed/module_state_q16_16 cintc compared
+fixed/module_state_q16_16 cintc/gpu-cuda compared
+fixed/module_state_q80_48 cintc compared
+fixed/module_state_q80_48 cintc/gpu-cuda compared
+fixed/mul_forms_q16_16 cintc compared
+fixed/mul_forms_q16_16 cintc/gpu-cuda compared
+fixed/mul_forms_q80_48 cintc compared
+fixed/mul_forms_q80_48 cintc/gpu-cuda compared
+fixed/mul_int_overflow cintc compared
+fixed/mul_int_overflow cintc/gpu-cuda compared
+fixed/mul_overflow_q16_16 cintc compared
+fixed/mul_overflow_q16_16 cintc/gpu-cuda compared
+fixed/mul_overflow_q80_48 cintc compared
+fixed/mul_overflow_q80_48 cintc/gpu-cuda compared
+fixed/mul_result_q16_16 cintc compared
+fixed/mul_result_q16_16 cintc/gpu-cuda compared
+fixed/mul_table_q16_16 cintc compared
+fixed/mul_table_q16_16 cintc/gpu-cuda compared
+fixed/mul_table_q80_48 cintc compared
+fixed/mul_table_q80_48 cintc/gpu-cuda compared
+fixed/print_kind_c1037 cintc compared
+fixed/print_kind_c1037 cintc/gpu-cuda compared
+fixed/print_layout_raw_bits cintc compared
+fixed/print_layout_raw_bits cintc/gpu-cuda compared
+fixed/print_ls215 cintc compared
+fixed/print_ls215 cintc/gpu-cuda compared
+fixed/print_q128 cintc compared
+fixed/print_q128 cintc/gpu-cuda compared
+fixed/qmul_formats cintc compared
+fixed/qmul_formats cintc/gpu-cuda compared
+fixed/qmul_mul_int_q128 cintc compared
+fixed/qmul_mul_int_q128 cintc/gpu-cuda compared
+fixed/qmul_overflow cintc compared
+fixed/qmul_overflow cintc/gpu-cuda compared
+fixed/qmul_overflow_q1_127 cintc compared
+fixed/qmul_overflow_q1_127 cintc/gpu-cuda compared
+fixed/raw_and_constructor cintc compared
+fixed/raw_and_constructor cintc/gpu-cuda compared
+fixed/raw_and_constructor_q80_48 cintc compared
+fixed/raw_and_constructor_q80_48 cintc/gpu-cuda compared
+fixed/raw_forms_q8_8 cintc compared
+fixed/raw_forms_q8_8 cintc/gpu-cuda compared
+fixed/raw_not_assignable_c2058 cintc compared
+fixed/raw_not_assignable_c2058 cintc/gpu-cuda compared
+fixed/reductions_q16_16 cintc compared
+fixed/reductions_q16_16 cintc/gpu-cuda compared
+fixed/reductions_q80_48 cintc compared
+fixed/reductions_q80_48 cintc/gpu-cuda compared
+fixed/rem_c2103 cintc compared
+fixed/rem_c2103 cintc/gpu-cuda compared
+fixed/rem_result_c2103 cintc compared
+fixed/rem_result_c2103 cintc/gpu-cuda compared
+fixed/result_mode_integer_c2103 cintc compared
+fixed/result_mode_integer_c2103 cintc/gpu-cuda compared
+fixed/round_modes_convert cintc compared
+fixed/round_modes_convert cintc/gpu-cuda compared
+fixed/round_modes_div cintc compared
+fixed/round_modes_div cintc/gpu-cuda compared
+fixed/round_modes_mul cintc compared
+fixed/round_modes_mul cintc/gpu-cuda compared
+fixed/sqrt_negative_domain cintc compared
+fixed/sqrt_negative_domain cintc/gpu-cuda compared
+fixed/sqrt_q1_127_ceil_overflow cintc compared
+fixed/sqrt_q1_127_ceil_overflow cintc/gpu-cuda compared
+fixed/sqrt_q1_15_ceil_overflow cintc compared
+fixed/sqrt_q1_15_ceil_overflow cintc/gpu-cuda compared
+fixed/sqrt_table cintc compared
+fixed/sqrt_table cintc/gpu-cuda compared
+fixed/sqrt_table_q64_64 cintc compared
+fixed/sqrt_table_q64_64 cintc/gpu-cuda compared
+fixed/struct_field_q cintc compared
+fixed/struct_field_q cintc/gpu-cuda compared
+fixed/struct_field_q80_48 cintc compared
+fixed/struct_field_q80_48 cintc/gpu-cuda compared
+fixed/sum_overflow_q80_48 cintc compared
+fixed/sum_overflow_q80_48 cintc/gpu-cuda compared
+fixed/sum_overflow_q8_8 cintc compared
+fixed/sum_overflow_q8_8 cintc/gpu-cuda compared
+fixed/translation_q80_48 cintc compared
+fixed/translation_q80_48 cintc/gpu-cuda compared
+fixed/type_name_c2005 cintc compared
+fixed/type_name_c2005 cintc/gpu-cuda compared
+fixed/type_name_c2005_q128_128 cintc compared
+fixed/type_name_c2005_q128_128 cintc/gpu-cuda compared
+fixed/type_properties cintc compared
+fixed/type_properties cintc/gpu-cuda compared
+fixed/type_properties_q128 cintc compared
+fixed/type_properties_q128 cintc/gpu-cuda compared
 kernel/advance_element_form cintc compared
 kernel/advance_element_form cintc/gpu-cuda compared
 kernel/alias_gcd_accepted cintc compared
@@ -1593,6 +1741,32 @@ reduce/sum_widened_i16 cintc compared
 reduce/sum_widened_i16 cintc/gpu-cuda compared
 reduce/sum_wrap_i8 cintc compared
 reduce/sum_wrap_i8 cintc/gpu-cuda compared
+services/c2064_out_scalar cintc compared
+services/c2064_out_scalar cintc/gpu-cuda compared
+services/c3040_no_requires cintc compared
+services/c3040_no_requires cintc/gpu-cuda compared
+services/c3041_path_syntax cintc compared
+services/c3041_path_syntax cintc/gpu-cuda compared
+services/c3041_unknown_capability cintc compared
+services/c3041_unknown_capability cintc/gpu-cuda compared
+services/c3042_grants_local cintc compared
+services/c3042_grants_local cintc/gpu-cuda compared
+services/c3043_no_denied cintc compared
+services/c3043_no_denied cintc/gpu-cuda compared
+services/c4010_extern_named cintc compared
+services/c4010_extern_named cintc/gpu-cuda compared
+services/c5050_struct_param cintc compared
+services/c5050_struct_param cintc/gpu-cuda compared
+services/denied_catch cintc compared
+services/denied_catch cintc/gpu-cuda compared
+services/denied_try_main cintc compared
+services/denied_try_main cintc/gpu-cuda compared
+services/main_grants_print cintc compared
+services/main_grants_print cintc/gpu-cuda compared
+services/main_args_none cintc compared
+services/main_args_none cintc/gpu-cuda compared
+services/main_args_print cintc compared
+services/main_args_print cintc/gpu-cuda compared
 struct/array_of_structs cintc compared
 struct/array_of_structs cintc/gpu-cuda compared
 struct/assignment_copies cintc compared
@@ -2135,6 +2309,8 @@ wide/array_i128_index_bounds cintc compared
 wide/array_i128_index_bounds cintc/gpu-cuda compared
 wide/convert_i256_to_u256_negative cintc compared
 wide/convert_i256_to_u256_negative cintc/gpu-cuda compared
+wide/convert_sat_wide cintc compared
+wide/convert_sat_wide cintc/gpu-cuda compared
 wide/convert_u512_to_u128_narrow cintc compared
 wide/convert_u512_to_u128_narrow cintc/gpu-cuda compared
 wide/convert_wrap_u128 cintc compared

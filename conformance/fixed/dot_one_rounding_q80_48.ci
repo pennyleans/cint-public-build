@@ -1,0 +1,17 @@
+// case: fixed/dot_one_rounding_q80_48
+// clause: SPEC-01 IM-87 (a Q80.48 dot rounds once, on the exact sum of products that need more than 128 bits)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 1; prints `1 151115727451828646838271.75 151115727451828646838271.75`; fuel 4 (the entry and three dot products). Games wave G2a (OQ-292)
+
+export I64 run() {
+    Q80.48[2] a = [Q80.48.raw(1 as I128), Q80.48.raw(1 as I128)];
+    Q80.48[2] b = [0.5, 0.5];
+    Q80.48 d = dot(Q80.48, a, b);
+    Q80.48[2] c = [302231454903657293676543.5, -302231454903657293676543.5];
+    Q80.48[2] e = [0.75, 0.25];
+    Q80.48 f = dot(Q80.48, c, e);
+    Q96.32 g = dot(Q96.32, c, e, floor);
+    "{d!raw} {f} {g}\n";
+    return d.raw as I64;
+}

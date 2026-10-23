@@ -18,6 +18,10 @@
  * printed as `case <n>` and the lines from `outcome` on (H-OQ-05). `--format 2`
  * adds the format 2 lines of CONF-11 (D-10), `state.global` from the optional
  * export `cint_observer_state` (rt/cint_rt.h; H-OQ-08); `--format 3` also. A
+ * program that exports `cint_imports_desc` (SPEC-03 A-10) has it passed as the
+ * context's host import tables, with no host table and no grants, so a service
+ * call is denied and a non-service extern refuses the context (rt/OPEN.md
+ * RT-OQ-74; I/O services lane U5b). A
  * call that leaves with an error result (cint_ctx_error, rt/cint_rt.h 6c') is
  * `outcome error` with `error.set`, `error.value` and `error.tag` (CONF-11 rule
  * 12, RT-OQ-33) in every format; only format 3 files hold it. `--format 4` adds
@@ -99,6 +103,7 @@ typedef struct program_symbols {
     const cint_program *program;
     const cint_observer_entry *entry;  /* NULL when the program has no such entry */
     const cint_state_table *state;     /* NULL when the program exports none */
+    const cint_host_desc *imports;     /* NULL when the program exports none */
 } program_symbols;
 
 typedef struct call_plan {
@@ -446,12 +451,14 @@ static FILE *open_file(const char *path, const char *mode)
 }
 
 /* The only function that touches the platform loader. It reads the two
- * symbols of CONF-13 X-2; entries are found through the descriptor. The
- * library is opened once and never unloaded. */
+ * symbols of CONF-13 X-2 and the optional state and import descriptors;
+ * entries are found through the descriptor. The library is opened once and
+ * never unloaded. */
 static int load_program(const char *path, program_symbols *out)
 {
-    static const char *const names[3] = {"cint_program_abi", "cint_observer_desc", "cint_observer_state"};
-    void *found[3];
+    static const char *const names[4] = {"cint_program_abi", "cint_observer_desc", "cint_observer_state",
+                                         "cint_imports_desc"};
+    void *found[4];
     int i;
 #if defined(_WIN32)
     static HMODULE lib;
@@ -478,7 +485,7 @@ static int load_program(const char *path, program_symbols *out)
     if (lib == NULL) return fail(EXIT_LOAD, "cannot load the program library", dlerror());
 #endif
 opened:
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < 4; i++) {
 #if defined(_WIN32)
         FARPROC p = GetProcAddress(lib, names[i]);
         _Static_assert(sizeof p == sizeof found[i], "FARPROC is pointer-sized");
@@ -494,6 +501,7 @@ opened:
     out->abi = (const uint32_t *)found[0];
     out->desc = (const cint_observer *)found[1];
     out->state = (const cint_state_table *)found[2];
+    out->imports = (const cint_host_desc *)found[3];
     return 0;
 }
 
@@ -708,9 +716,10 @@ static int call_entry(const options *o, const program_symbols *s, const call_pla
     cfg.size = (uint32_t)sizeof cfg;
     cfg.program = s->program;
     cfg.output = capture;
+    cfg.imports = s->imports;
     g_print_len = 0u;
     if (cint_ctx_create(&cfg, &ctx) != CINT_OK)
-        return fail(EXIT_BROKEN, "cint_ctx_create refused the program descriptor", NULL);
+        return fail(EXIT_BROKEN, "cint_ctx_create refused the program descriptor or its host import tables", NULL);
     st = s->entry->call(ctx, c->fuel, c->depth, c->args, &result);
     if (st == CINT_REFUSED) {
         cint_ctx_destroy(ctx);

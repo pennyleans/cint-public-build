@@ -15,6 +15,7 @@
 // [7] bytes of the text.
 
 import check;
+import decl;
 import emit;
 import fold;
 import limits;
@@ -41,13 +42,14 @@ void lines[o, p](inout emit.Writer[_] w, inout U8[o] dst, in U8[p] path, in limi
     }
 }
 
-// Scans, parses and checks module 0 (src, at module path `path`) into the tables, and
-// writes its first diagnostic's lines into dst. Returns 0 when the module checks, 1 when
+// Scans, parses and checks module 0 (src, at module path `path`) into the tables, writes
+// its declaration block into decls and checks its capabilities, and writes its first
+// diagnostic's lines into dst. Returns 0 when the module checks, 1 when
 // there is a diagnostic, 2 when the lines do not fit dst (stats[7] is then the bytes needed).
 export I64 front_check[o, p](in U8[_] src, in U8[p] path, inout scan.Token[_] toks, inout parse.Node[_] nodes,
         inout parse.Frame[_] st, inout limits.CompilerDiag[_] diag, inout resolve.Sem[_] sem,
         inout resolve.Sym[_] syms, inout resolve.Name[_] names, inout parse.Frame[_] wk, inout U8[_] lits,
-        inout U8[_] faults, inout U8[o] dst, inout I64[_] stats) {
+        inout U8[_] faults, inout limits.Decl[_] decls, inout U8[o] dst, inout I64[_] stats) {
     limits.diag_clear(diag);
     for k in 0..8 {
         stats[k] = 0;
@@ -69,11 +71,20 @@ export I64 front_check[o, p](in U8[_] src, in U8[p] path, inout scan.Token[_] to
             if (root >= 0) {
                 resolve.RState[1] rs;
                 check.CState[1] cs;
-                // No declaration table: an import names no block, and the checker refuses it.
-                limits.Decl[1] decls;
-                decls[0].kind = 0;
+                // The declaration table holds the module's own block, which the capability
+                // check reads (I/O services lane U1); an import still names no block, so the
+                // checker refuses it.
+                _ = decl.header(decls);
                 I64 err = check.check_module(src, toks, nodes, ps[0].nn, root, sem, syms, names, wk, lits, diag,
                     faults, fres, z, ws, wv, path, rs, cs, 0, decls);
+                if (err == 0) {
+                    if (!check.record_layout(toks, nodes, sem, syms, diag, rs, root) ||
+                            !decl.write_block(src, toks, nodes, sem, syms, lits, root, 0, decls, diag, ps[0].nn)) {
+                        err = 1;
+                    } else {
+                        err = check.capabilities(decls, diag, 0);
+                    }
+                }
                 stats[3] = rs[0].nsym;
                 stats[4] = rs[0].nname;
                 stats[5] = cs[0].max_sp;

@@ -1,0 +1,12 @@
+// case: services/c4010_extern_named
+// clause: SPEC-04 LS-323 to LS-328; SPEC-04 LS-323, LS-201
+// subset: cint-core-1 (an extern named without a call)
+// entry: run; args: none
+// spec outcome: compile error C4010 at 10:13, the name `clock` in `I64 x = clock;`: a function or extern name is not a value
+
+extern observe I64 clock();
+
+export I64 run() {
+    I64 x = clock;
+    return x;
+}

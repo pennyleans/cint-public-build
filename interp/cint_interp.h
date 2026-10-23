@@ -85,9 +85,17 @@ const cint_program *cint_sir_cint_program(const cint_sir_image *x);
 const cint_observer *cint_sir_observer(const cint_sir_image *x);
 const cint_state_table *cint_sir_state_table(const cint_sir_image *x);
 
+/* cint_imports_desc (CONF-13 X-2; rt/OPEN.md RT-OQ-75): one host import table per module, from
+ * its SIR text's extern rows (SPEC-09 SIR-09a), as compiled C writes them, for
+ * cint_ctx_config.imports. */
+const cint_host_desc *cint_sir_imports(const cint_sir_image *x);
+
 /* The program entry a generated C main runs (the root module's script, else its main(),
  * else its one test), for cint_program_run_fuel; NULL when it has none. */
 cint_main_fn cint_sir_main(const cint_sir_image *x);
+/* Whether that entry is a `main` that takes the program arguments, `in U8[_] args`
+ * (SPEC-04 LS-221; OQ-306), which cint_program_run_argv passes with CINT_PROGRAM_ARGS. */
+int cint_sir_main_args(const cint_sir_image *x);
 
 /* Trace events: one per operation that takes a step ordinal (SPEC-01 IM-113), one per
  * call when it starts and one when it returns. The operation is the node's spelling in

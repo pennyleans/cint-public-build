@@ -1,0 +1,19 @@
+// lib/fs.ci: the `fs/1` service module (SPEC-07 SEC-CAP-13, SEC-OS-5 to SEC-OS-10; SPEC-03 H-8a).
+// Proposed, I/O services lane U1 (docs/design/notes/2026-10-21-io-services.md, U4 names the
+// operations; OQ-303 places the module). Whole operations only: a fault leaves nothing open
+// (SEC-CAP-14). Every status of SEC-OS-8 is a value of FsError; `denied` is the result of a
+// call that no grant covers (SPEC-03 A-10; SEC-OS-1).
+
+export error FsError { path, denied, not_found, exists, not_directory, is_directory, not_empty, bounds, quota }
+
+// Bytes of the file at `path` from `offset`, at most the extent of `buf`; returns the count read.
+@service("fs/1", fs.read(path))
+export extern observe FsError!I64 read(Grants g, in U8[] path, I64 offset, out U8[] buf);
+
+// The size of the file at `path`, in bytes.
+@service("fs/1", fs.read(path))
+export extern observe FsError!I64 stat(Grants g, in U8[] path);
+
+// Replaces the file at `path` with `bytes` atomically (SEC-OS-8), or leaves it unchanged.
+@service("fs/1", fs.write(path))
+export extern observe FsError!void put(Grants g, in U8[] path, in U8[] bytes);

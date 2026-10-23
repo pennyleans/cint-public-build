@@ -1,0 +1,14 @@
+// case: services/denied_try_main
+// clause: SPEC-04 LS-323 to LS-328; SPEC-07 SEC-CAP-1, SEC-CAP-13, SEC-OS-1, SEC-OS-12; SPEC-09 CONF-11 rule 12
+// subset: cint-core-1 (`main(Grants g)` with an error-union result of an imported set, `try` on a call of an imported service extern)
+// spec outcome: error (format 3): error.set fs.FsError, error.value denied, error.tag U16 2: no grant covers `fs.read:/data`, so the `try` leaves `main` with `denied`; stdout 0 bytes, the print after it never runs
+
+import fs;
+requires fs.read("/data");
+
+export fs.FsError!void main(Grants g) {
+    U8[16] buf;
+    I64 n = try fs.read(g, "/data/field.bin", 0, buf);
+    "read {n} bytes\n";
+    return;
+}

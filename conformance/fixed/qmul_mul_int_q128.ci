@@ -1,0 +1,18 @@
+// case: fixed/qmul_mul_int_q128
+// clause: SPEC-01 IM-63, IM-64 (`qmul` between 64-bit and 128-bit formats, exact and rounded, and `mul_int` by I128 and I8)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 211106232532992 (0.75 in Q80.48); prints `0.75 2.25 0.25 1 1500000000000000000000.0 -4.5`; fuel 1. Games wave G2a (OQ-292)
+
+export I64 run() {
+    Q80.48 a = 1.5;
+    Q32.32 b = 0.5;
+    Q80.48 c = qmul(Q80.48, a, b);
+    Q96.32 d = qmul(Q96.32, a, a);
+    Q64.64 e = qmul(Q64.64, b, b);
+    Q32.32 g = qmul(Q32.32, a, Q80.48.epsilon, ceil);
+    Q80.48 h = mul_int(a, 1000000000000000000000 as I128);
+    Q80.48 k = mul_int(a, -3 as I8);
+    "{c} {d} {e} {g!raw} {h} {k}\n";
+    return c.raw as I64;
+}

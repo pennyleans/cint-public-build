@@ -1,7 +1,7 @@
 /* cint_interp_main.c: cint-interp, the command of cpu-sir-interp (SPEC-09 BACK-01a, CONF-10a).
  *
  *   cint-interp [--trace PATH] observe DIR <the options of cint-harness>
- *   cint-interp [--trace PATH] run DIR [fault_dest [fuel_dest [state_dest]]]
+ *   cint-interp [--trace PATH] run DIR [fault_dest [fuel_dest [state_dest]]] [--grant LINE]...
  *   cint-interp [--trace PATH] run --record [--boundary entry|dispatch] PATH DIR
  *   cint-interp replay [--stop K] [--echo] [--checkpoint PATH] [--receipt PATH]
  *                      [--source-identity HEX] FILE
@@ -12,12 +12,12 @@
  * the harness's source is compiled into this file with its two calls into the platform
  * loader pointed at the interpreter, so the .expect text, the refusals, and the exit
  * statuses are the harness's own. `run` does what the C main of a compiled script or
- * main() program does: cint_program_run_fuel with unbounded fuel and the two record
- * destinations, or for a program with module state cint_program_run_state with a third
- * destination for its state lines, which a program without module state refuses
- * (CINT_EXIT_USAGE). `--trace` writes one line per trace event to PATH. `show` prints a
- * checkpoint through the decoder a restore uses, or a recording; exit 3 for bytes it refuses
- * (BX13-11).
+ * main() program does: cint_program_run_args with unbounded fuel, the two record
+ * destinations, a third for the state lines of a program with module state, which a program
+ * without module state refuses (CINT_EXIT_USAGE), each `--grant` line, and the program's host
+ * import tables (cint_sir_imports; I/O services lane U5c, rt/OPEN.md RT-OQ-75). `--trace`
+ * writes one line per trace event to PATH. `show` prints a checkpoint through the decoder a
+ * restore uses, or a recording; exit 3 for bytes it refuses (BX13-11).
  *
  * Box 13 unit 5 (rt/cint_state.h; SPEC-03 H-14 to H-18, SPEC-06 10.5, 12.2): `run --record`
  * runs the program entry as `run` does, without the record destinations, under a recorder
@@ -103,6 +103,7 @@ static void *symbol(const char *name)
     if (strcmp(name, "cint_program_abi") == 0) return (void *)&g_abi;
     if (strcmp(name, "cint_observer_desc") == 0) return (void *)cint_sir_observer(g_image);
     if (strcmp(name, "cint_observer_state") == 0) return (void *)cint_sir_state_table(g_image);
+    if (strcmp(name, "cint_imports_desc") == 0) return (void *)cint_sir_imports(g_image);
     return NULL;
 }
 
@@ -161,12 +162,49 @@ static char *sir_dlerror(void)
 #undef main
 #undef wmain
 
-/* `run DIR [fault_dest [fuel_dest [state_dest]]]`, as a compiled program's C main
- * (compiler/back_c.ci; CINTC-OQ-63 for the state destination). */
+/* The program arguments of `run --record`, `run --case` and `replay` (OQ-306; RT-OQ-76): each
+ * `--arg TEXT` pair and every argument after `--`, taken out of argv in place, each its bytes
+ * and one NUL in g_args. */
+static uint8_t *g_args;
+static size_t g_args_len;
+
+static bool take_args(int *argc, char **argv)
+{
+    int n = 1, tail = *argc;
+    size_t at = 0u;
+    for (int i = 1; i < *argc; i++) {
+        if (i < tail && strcmp(argv[i], "--") == 0) tail = i + 1;
+        else if (i < tail && strcmp(argv[i], "--arg") == 0 && i + 1 < *argc) g_args_len += strlen(argv[++i]) + 1u;
+        else if (i < tail) argv[n++] = argv[i];
+        else g_args_len += strlen(argv[i]) + 1u;
+    }
+    if (g_args_len > 0u && (g_args = malloc(g_args_len)) == NULL) return false;
+    tail = *argc;
+    for (int i = 1; i < *argc; i++) {
+        if (i < tail && strcmp(argv[i], "--") == 0) {
+            tail = i + 1;   /* the separator itself is not an argument; the first loop did not count it */
+            continue;
+        }
+        if (i < tail && strcmp(argv[i], "--arg") == 0 && i + 1 < *argc) i++;
+        else if (i < tail) continue;
+        memcpy(g_args + at, argv[i], strlen(argv[i]) + 1u);
+        at += strlen(argv[i]) + 1u;
+    }
+    *argc = n;
+    return true;
+}
+
+/* `run DIR [fault_dest [fuel_dest [state_dest]]]`, with `--grant LINE`, `--arg TEXT` and a `--`
+ * tail anywhere after DIR, as a compiled program's C main (compiler/back_c.ci; CINTC-OQ-63 for
+ * the state destination; cint_program_run_argv, RT-OQ-74 to RT-OQ-76). */
 static int run_program(int argc, char **argv)
 {
-    if (argc < 2 || argc > 5) {
-        fprintf(stderr, "cint-interp: run takes DIR [fault_dest [fuel_dest [state_dest]]]\n");
+    int nd = 0;
+    for (int i = 2; i < argc && strcmp(argv[i], "--") != 0; i++)
+        nd += strcmp(argv[i], "--grant") == 0 || strcmp(argv[i], "--arg") == 0 ? (i++, 0) : 1;
+    if (argc < 2 || nd > 3) {
+        fprintf(stderr, "cint-interp: run takes DIR [fault_dest [fuel_dest [state_dest]]], --grant LINE, --arg TEXT "
+                        "and -- ARG...\n");
         return CINT_EXIT_USAGE;
     }
     int st = load_dir(argv[1]);
@@ -179,16 +217,13 @@ static int run_program(int argc, char **argv)
     if (entry == NULL) {
         fprintf(stderr, "cint-interp: the root module has no script, main(), or single test to run\n");
         st = CINT_EXIT_USAGE;
-    } else if (argc == 5 && state == NULL) {
+    } else if (nd == 3 && state == NULL) {
         fprintf(stderr, "cint-interp: a program without module state takes no state_dest\n");
         st = CINT_EXIT_USAGE;
-    } else if (state != NULL) {
-        st = cint_program_run_state(cint_sir_cint_program(g_image), entry, CINT_FUEL_UNBOUNDED,
-                                    argc >= 3 ? argv[2] : NULL, argc >= 4 ? argv[3] : NULL,
-                                    argc == 5 ? argv[4] : NULL, state);
     } else {
-        st = cint_program_run_fuel(cint_sir_cint_program(g_image), entry, CINT_FUEL_UNBOUNDED,
-                                   argc >= 3 ? argv[2] : NULL, argc == 4 ? argv[3] : NULL);
+        st = cint_program_run_argv(cint_sir_cint_program(g_image), entry, CINT_FUEL_UNBOUNDED, argc - 1, argv + 1,
+                                   cint_sir_imports(g_image), state,
+                                   cint_sir_main_args(g_image) ? CINT_PROGRAM_ARGS : 0u);
     }
     cint_sir_release(g_image);
     cint_sir_free(g_prog);
@@ -210,8 +245,8 @@ static cint_status to_file(void *user, const uint8_t *bytes, size_t len)
 }
 
 /* A context for the program as `run` makes one (SPEC-06 1.4), its print statements to
- * standard output, and its module state bound. */
-static cint_ctx *make_ctx(const cint_program *program, const cint_state_table *state)
+ * standard output, its host import tables and program arguments given and its module state bound. */
+static cint_ctx *make_ctx(const cint_program *program, const cint_state_table *state, const cint_host_desc *imports)
 {
     cint_ctx_config cfg;
     cint_ctx *ctx = NULL;
@@ -222,6 +257,9 @@ static cint_ctx *make_ctx(const cint_program *program, const cint_state_table *s
     cfg.size = (uint32_t)sizeof cfg;
     cfg.program = program;
     cfg.output = to_stdout;
+    cfg.imports = imports;
+    cfg.args = g_args;
+    cfg.args_length = g_args_len;
     if (cint_ctx_create(&cfg, &ctx) != CINT_OK) return NULL;
     if (cint_ctx_bind_state(ctx, state) != CINT_OK) {
         cint_ctx_destroy(ctx);
@@ -334,7 +372,9 @@ static int record_program(const char *path, const char *dir, const char *src, ui
     code = code_of(&count);
     if (code != NULL && src != NULL && !read_sources(code, count, src)) {
         unread = true;
-    } else if (code != NULL && (ctx = make_ctx(cint_sir_cint_program(g_image), cint_sir_state_table(g_image))) != NULL &&
+    } else if (code != NULL &&
+               (ctx = make_ctx(cint_sir_cint_program(g_image), cint_sir_state_table(g_image),
+                               cint_sir_imports(g_image))) != NULL &&
                (f = fopen(path, "wb")) != NULL) {
         sink.write = to_file;
         sink.user = f;
@@ -689,7 +729,8 @@ static int replay_recording(int argc, char **argv)
     status = CINT_EXIT_CHECK;
     if (memcmp(revision, info.revision, 32u) != 0) {
         fprintf(stderr, "cint-interp: the recording's code does not have the recording's revision identity\n");
-    } else if ((ctx = make_ctx(cint_sir_cint_program(host.image[0]), cint_sir_state_table(host.image[0]))) == NULL) {
+    } else if ((ctx = make_ctx(cint_sir_cint_program(host.image[0]), cint_sir_state_table(host.image[0]),
+                               cint_sir_imports(host.image[0]))) == NULL) {
         status = CINT_EXIT_ENVIRONMENT;
     } else {
         cint_status st;
@@ -770,6 +811,13 @@ static int interp(int argc, char **argv)
         k = 3;
     }
     int st = CINT_EXIT_USAGE;
+    if (argc - k >= 2 && ((strcmp(argv[k], "run") == 0 && (strcmp(argv[k + 1], "--record") == 0 ||
+                                                           strcmp(argv[k + 1], "--case") == 0)) ||
+                          (k == 1 && strcmp(argv[1], "replay") == 0)) &&
+        !take_args(&argc, argv)) {   /* the program arguments of a recording or a digest replay */
+        fprintf(stderr, "cint-interp: out of memory\n");
+        return CINT_EXIT_ENVIRONMENT;
+    }
     if (k < argc && strcmp(argv[k], "observe") == 0) {
         st = run(argc - k, argv + k);   /* the harness; argv[k] stands for its own name */
     } else if (argc - k >= 2 && strcmp(argv[k], "run") == 0 && strcmp(argv[k + 1], "--record") == 0) {
@@ -803,6 +851,7 @@ static int interp(int argc, char **argv)
     } else {
         fprintf(stderr, "usage: cint-interp [--trace PATH] observe DIR <cint-harness options>\n"
                         "       cint-interp [--trace PATH] run DIR [fault_dest [fuel_dest [state_dest]]]\n"
+                        "                                  [--grant LINE]...\n"
                         "       cint-interp [--trace PATH] run --record [--boundary entry|dispatch] PATH DIR\n"
                         "       cint-interp [--trace PATH] run --case [--boundary entry|dispatch] PATH\n"
                         "                                  --source SRC DIR\n"

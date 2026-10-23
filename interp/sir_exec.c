@@ -21,7 +21,9 @@
  * charge of N, staging views from scratch storage, the work-items in order, the
  * reductions' accumulators, the epilogue and the publication), a fault of one leaving the
  * dispatch's address in its record (CONF-11 format 4); and box 12's arenas, pools and handles
- * through rt/cint_mem.c, each element in the interpreter's cells (unit 8b-2).
+ * through rt/cint_mem.c, each element in the interpreter's cells (unit 8b-2); and calls of
+ * externs (host.call) through each module's host import table, which its extern lines give, with
+ * an entry's Grants parameter 0, as compiled C passes it (I/O services lane U5c, rt/OPEN.md RT-OQ-75).
  * A struct takes the cells its struct line measures (sir_read.c), its fields in order, and
  * an array its elements one after another; a struct parameter is a copy, as the C
  * backend passes it, and an `inout` one or a view is the caller's place. The observer
@@ -85,7 +87,8 @@ enum { EXF_NONE, EXF_NOP, EXF_CONST, EXF_LOADL, EXF_STOREL, EXF_RET, EXF_CMP, EX
 #define EX_PAR 0x80000000u   /* an operand that is a parameter, not a temporary */
 #define EXV(k) ((k) & EX_PAR ? *fr->par[(k) & ~EX_PAR].base : fr->t[k])
 typedef struct ex_ins {
-    uint8_t code, t;
+    uint8_t code;
+    uint16_t t;
     uint32_t site;
     int32_t dst;
     uint32_t a, b, src;
@@ -117,6 +120,9 @@ typedef struct ex_mod {
     cint_mem_table mem;
     const char **vnames;    /* their values' names */
     char *names;            /* the names, NUL-terminated */
+    cint_host_import *hosts;   /* its host import table (SIR-09a extern rows; RT-OQ-75), as compiled C's */
+    uint8_t *hbytes;           /* the rows' names and signatures */
+    cint_host_table host;
 } ex_mod;
 
 struct cint_sir_image {
@@ -131,6 +137,8 @@ struct cint_sir_image {
     uint32_t emod;
     const cint_state **states;
     cint_state_table table;
+    const cint_host_table **htabs;
+    cint_host_desc imports;   /* cint_imports_desc: the modules' host import tables, in program order */
     int32_t main_fn;   /* the root module's entry, or -1 */
     cint_sir_trace_fn trace;
     void *trace_user;
@@ -199,11 +207,12 @@ static unsigned width(int sc)
     return sc_is_q(sc) ? sc_qwidth(sc) : w[sc];
 }
 
-/* The storage integer of a fixed-point scalar (box 15), I8 to I64; another scalar itself. */
+/* The storage integer of a fixed-point scalar (box 15), I8 to I64, or I128 (OQ-292); another
+ * scalar itself. */
 static int storage(int sc)
 {
     unsigned w = width(sc);
-    return sc_is_q(sc) ? SC_I8 + (w > 8u) + (w > 16u) + (w > 32u) : sc;
+    return !sc_is_q(sc) ? sc : w == 128u ? SC_I128 : SC_I8 + (w > 8u) + (w > 16u) + (w > 32u);
 }
 
 /* The type word of scalar sc: its tag, or for fixed point CINT_QT of its storage's and its fraction
@@ -222,17 +231,17 @@ static const char *check_name(char *buf, const char *const *pre, int sc)
     return buf;
 }
 
-/* I128 to I1024 and U128 to U512 (box 15): a value in limbs(sc) cells, limb 0 first
- * (rt/cint_wide.h). */
+/* I128 to I1024 and U128 to U512 (box 15), and fixed point of 128 bits as its storage I128
+ * (OQ-292): a value in limbs(sc) cells, limb 0 first (rt/cint_wide.h). */
 static int is_wide(int sc)
 {
-    return sc >= SC_I128 && sc <= SC_U512;
+    return (sc >= SC_I128 && sc <= SC_U512) || (sc_is_q(sc) && width(sc) == 128u);
 }
 
-/* I128 to I1024, in two's complement; U128 to U512 are in binary. */
+/* I128 to I1024 and fixed point, in two's complement; U128 to U512 are in binary. */
 static bool wsigned(int sc)
 {
-    return sc >= SC_I128 && sc <= SC_I1024;
+    return (sc >= SC_I128 && sc <= SC_I1024) || sc_is_q(sc);
 }
 
 static unsigned limbs(int sc)
@@ -318,10 +327,13 @@ static cint_count count_of(int sc, uint64_t b)
     }
 EX_TYPES(EX_ARITH, 0)
 
-/* as.checked and as.wrap from type F to type D (cint_as_<D>_from_<F>). */
+/* as.checked, as.wrap and as.sat from type F to type D (cint_as_<D>_from_<F>); wrap is the form,
+ * FM_WRAP for as.result. */
 #define EX_FROM(D, SC, T, CT, K)                                                               \
     case SC:                                                                                   \
-        if (wrap) {                                                                            \
+        if (wrap == FM_SAT) {                                                                  \
+            r = cint_as_sat_##D##_from_##T(EX_IN_##K(CT, v));                                  \
+        } else if (wrap) {                                                                     \
             r = cint_as_wrap_##D##_from_##T(EX_IN_##K(CT, v));                                 \
         } else {                                                                               \
             ok = cint_as_##D##_from_##T(ctx, s, EX_IN_##K(CT, v), &r);                         \
@@ -406,7 +418,7 @@ static int arith(cint_ctx *ctx, cint_site s, const si_node *n, const uint64_t *v
 
 static int conv(cint_ctx *ctx, cint_site s, const si_node *n, uint64_t v, uint64_t *out)
 {
-    int from = n->t1 == SC_BOOL ? 0 : n->t1, wrap = n->form != FM_CHECKED;   /* as.result wraps */
+    int from = n->t1 == SC_BOOL ? 0 : n->t1, wrap = n->form == FM_RESULT ? FM_WRAP : n->form;   /* as.result wraps */
     switch (n->t2) {
     case SC_I8: return conv_i8(ctx, s, from, wrap, v, out);
     case SC_I16: return conv_i16(ctx, s, from, wrap, v, out);
@@ -458,14 +470,23 @@ static int compare(const si_node *n, uint64_t a, uint64_t b)
 
 /* A fixed-point operator or built-in (box 15; SPEC-01 IM-60 to IM-67) whose result has storage T:
  * through its rt/cint_fixed.h helper, and `+%`, `+|`, `-%`, `-|`, `min` and `max` through the
- * storage integer's (IM-60), as compiled C calls them (back_c.ci, c_fixed). 1, or 0 when it
- * faulted. */
+ * storage integer's (IM-60), as compiled C calls them (back_c.ci, c_fixed); a result form's tag
+ * into *etag (OQ-273, OQ-278). 1, or 0 when it faulted. */
 #define EX_QARITH(T, CT)                                                                       \
-    static int qarith_##T(cint_ctx *ctx, cint_site s, const si_node *n, const uint64_t *v, uint64_t *out) \
+    static int qarith_##T(cint_ctx *ctx, cint_site s, const si_node *n, const uint64_t *v, uint64_t *out, \
+                          uint64_t *etag)                                                      \
     {                                                                                          \
         CT x = (CT)cint_rt_sext(v[0], 64u), y = (CT)cint_rt_sext(v[1], 64u), r = 0;            \
         unsigned f = sc_qfrac(n->op == OP_BUILTIN ? n->t2 : n->t1);                            \
         bool ok = true;                                                                        \
+        if (n->op == OP_BIN && n->form == FM_RESULT) {                                         \
+            *etag = n->sub == BO_ADD   ? cint_add_result_##T(x, y, &r)                         \
+                    : n->sub == BO_SUB ? cint_sub_result_##T(x, y, &r)                         \
+                    : n->sub == BO_MUL ? cint_q_mul_result_##T(f, n->mode, x, y, &r)           \
+                                       : cint_q_div_result_##T(f, n->mode, x, y, &r);          \
+            *out = EX_OUT_S(r);                                                                \
+            return 1;                                                                          \
+        }                                                                                      \
         switch (n->op == OP_BUILTIN ? 64 + n->sub : n->op == OP_UN ? 63 : n->sub * 3 + n->form) { \
         case 63: ok = cint_q_neg_##T(ctx, s, f, x, &r); break;                                 \
         case 64 + 1: ok = cint_q_abs_##T(ctx, s, f, x, &r); break;                             \
@@ -497,8 +518,8 @@ EX_QARITH(i32, int32_t)
 EX_QARITH(i64, int64_t)
 
 /* A conversion with fixed point on one side (SPEC-01 5.6) into R, the target or its storage:
- * as.checked, as.wrap and as.result through cint_q_as_<R>, cint_q_as_wrap_<R> and
- * cint_q_as_result_<R> on the source's 64-bit pattern. */
+ * as.checked, as.wrap, as.sat and as.result through cint_q_as_<R>, cint_q_as_wrap_<R>,
+ * cint_q_as_sat_<R> and cint_q_as_result_<R> on the source's 64-bit pattern. */
 #define EX_QCONV(D, SC, T, CT, K)                                                              \
     case SC: {                                                                                 \
         CT r = 0;                                                                              \
@@ -506,6 +527,8 @@ EX_QARITH(i64, int64_t)
             ok = cint_q_as_##T(ctx, s, tag_of(n->t1), tag_of(n->t2), n->mode, v[0], &r);       \
         } else if (n->form == FM_WRAP) {                                                       \
             r = cint_q_as_wrap_##T(tag_of(n->t1), tag_of(n->t2), n->mode, v[0]);               \
+        } else if (n->form == FM_SAT) {                                                        \
+            r = cint_q_as_sat_##T(tag_of(n->t1), tag_of(n->t2), n->mode, v[0]);                \
         } else {                                                                               \
             *etag = cint_q_as_result_##T(tag_of(n->t1), tag_of(n->t2), n->mode, v[0], &r);    \
         }                                                                                      \
@@ -520,10 +543,10 @@ static int qnode(cint_ctx *ctx, cint_site s, const si_node *n, const uint64_t *v
     bool ok = true;
     if (n->op != OP_AS) {
         switch (width(n->op == OP_BUILTIN ? n->t2 : n->t1)) {
-        case 8: return qarith_i8(ctx, s, n, v, out);
-        case 16: return qarith_i16(ctx, s, n, v, out);
-        case 32: return qarith_i32(ctx, s, n, v, out);
-        default: return qarith_i64(ctx, s, n, v, out);
+        case 8: return qarith_i8(ctx, s, n, v, out, etag);
+        case 16: return qarith_i16(ctx, s, n, v, out, etag);
+        case 32: return qarith_i32(ctx, s, n, v, out, etag);
+        default: return qarith_i64(ctx, s, n, v, out, etag);
         }
     }
     *out = v[0];
@@ -600,11 +623,13 @@ static int qnode(cint_ctx *ctx, cint_site s, const si_node *n, const uint64_t *v
     }
 EX_WIDES(EX_WARITH, 0)
 
-/* as.checked and as.wrap into wide type D: from narrow type T (its pattern b), from wide type T
- * (its limbs x), or from Bool. */
+/* as.checked, as.wrap and as.sat into wide type D: from narrow type T (its pattern b), from wide
+ * type T (its limbs x), or from Bool. */
 #define EX_WFROM_N(D, SC, T, CT, K)                                                            \
     case SC:                                                                                   \
-        if (wrap) {                                                                            \
+        if (wrap == FM_SAT) {                                                                  \
+            cint_as_sat_##D##_from_##T(EX_IN_##K(CT, b), EX_WP(D, out));                       \
+        } else if (wrap) {                                                                     \
             cint_as_wrap_##D##_from_##T(EX_IN_##K(CT, b), EX_WP(D, out));                      \
         } else {                                                                               \
             ok = cint_as_##D##_from_##T(ctx, s, EX_IN_##K(CT, b), EX_WP(D, out));              \
@@ -612,7 +637,9 @@ EX_WIDES(EX_WARITH, 0)
         break;
 #define EX_WFROM_W(D, SC, T)                                                                   \
     case SC:                                                                                   \
-        if (wrap) {                                                                            \
+        if (wrap == FM_SAT) {                                                                  \
+            cint_as_sat_##D##_from_##T(EX_WC(T, x), EX_WP(D, out));                            \
+        } else if (wrap) {                                                                     \
             cint_as_wrap_##D##_from_##T(EX_WC(T, x), EX_WP(D, out));                           \
         } else {                                                                               \
             ok = cint_as_##D##_from_##T(ctx, s, EX_WC(T, x), EX_WP(D, out));                   \
@@ -634,11 +661,13 @@ EX_WIDES(EX_WARITH, 0)
     }
 EX_WIDES(EX_WCONV, 0)
 
-/* as.checked and as.wrap from wide type F into narrow type T, its pattern into *out. */
+/* as.checked, as.wrap and as.sat from wide type F into narrow type T, its pattern into *out. */
 #define EX_WTO_N(F, SC, T, CT, K)                                                              \
     case SC: {                                                                                 \
         CT r = 0;                                                                              \
-        if (wrap) {                                                                            \
+        if (wrap == FM_SAT) {                                                                  \
+            r = cint_as_sat_##T##_from_##F(EX_WC(F, x));                                       \
+        } else if (wrap) {                                                                     \
             r = cint_as_wrap_##T##_from_##F(EX_WC(F, x));                                      \
         } else {                                                                               \
             ok = cint_as_##T##_from_##F(ctx, s, EX_WC(F, x), &r);                              \
@@ -679,7 +708,7 @@ static int warith(cint_ctx *ctx, cint_site s, const si_node *n, const uint64_t *
 static int wconv(cint_ctx *ctx, cint_site s, const si_node *n, uint64_t b, const uint64_t *x, uint64_t *out,
                  uint64_t *etag)
 {
-    int from = n->t1 == SC_BOOL ? 0 : n->t1, wrap = n->form != FM_CHECKED, ok;
+    int from = n->t1 == SC_BOOL ? 0 : n->t1, wrap = n->form == FM_RESULT ? FM_WRAP : n->form, ok;
     switch (is_wide(n->t2) ? n->t2 : SC_NONE) {
     case SC_I128: ok = wconv_i128(ctx, s, from, wrap, b, x, out); break;
     case SC_I256: ok = wconv_i256(ctx, s, from, wrap, b, x, out); break;
@@ -1079,6 +1108,59 @@ static int call(cint_sir_image *x, cint_ctx *ctx, ex_frame *fr, const si_node *n
     return st;
 }
 
+/* A host.call node (SPEC-09 SIR-09a; rt/OPEN.md RT-OQ-75): row cfn of the module's host import
+ * table, its arguments as compiled C passes them (back_c.ci, host_call): a scalar or a Grants by
+ * its bits, and a view by its elements at their width, staged in a buffer that an `out` view's
+ * cells take back when the call returns. The fuel unit, the staging of `out` and the boundary
+ * faults are cint_rt_host_call's; the call's error tag is the one error.tag reads. */
+static int host_call(cint_sir_image *x, cint_ctx *ctx, ex_frame *fr, const si_node *n, cint_site s)
+{
+    const si_module *m = &x->p->mods[fr->mi];
+    const si_extern *e = &m->externs[n->cfn];
+    const si_opd *o = m->opds + n->opd + 1u;
+    const si_param *ps = m->params + e->param;
+    cint_value hv[16], hr;
+    uint8_t *buf[16] = {NULL};
+    ex_ref ref[16];
+    uint64_t args[3] = {0, 0, 0};
+    int st = 1;
+    for (uint32_t p = 0; p < e->nparam && st == 1; p++) {
+        int sc = ps[p].ty.scalar;
+        unsigned w = elem_bytes(sc);
+        if (ps[p].ty.kind == TK_SCALAR) {
+            cint_rt_arg_scalar(&hv[p], TAGS[sc], vget(fr, o + p));
+            if (p < 3u) args[p] = vget(fr, o + p);
+            continue;
+        }
+        ref[p] = place(x, fr, o + p);
+        if ((buf[p] = malloc((size_t)ref[p].shape[0] * w + 1u)) == NULL) st = -1;
+        for (int64_t k = 0; st == 1 && k < ref[p].shape[0]; k++)
+            state_store(buf[p] + (size_t)k * w, sc, ref[p].base[at1(&ref[p], k)]);
+        cint_rt_arg_view(&hv[p], TAGS[sc], buf[p], 0, ref[p].shape[0], 1, ps[p].ty.out ? CINT_VIEW_WRITE : CINT_VIEW_READ);
+    }
+    uint64_t step = x->step++, r = 0;
+    if (st == 1 && x->trace != NULL)
+        trace(x, CINT_SIR_EV_CALL, step, s, m, n, args, e->nparam < 3u ? e->nparam : 3u, NULL, 0u);
+    cint_rt_result_init(&hr, e->result.kind == TK_SCALAR ? TAGS[e->result.scalar] : 0u);
+    if (st == 1 && !cint_rt_host_call(ctx, s, n->cfn, hv, e->nparam, &hr, e->errors)) st = 0;
+    for (uint32_t p = 0; st == 1 && p < e->nparam; p++) {
+        unsigned w = elem_bytes(ps[p].ty.scalar);
+        for (int64_t k = 0; ps[p].ty.out && k < ref[p].shape[0]; k++)
+            ref[p].base[at1(&ref[p], k)] = state_load(buf[p] + (size_t)k * w, ps[p].ty.scalar);
+    }
+    if (st == 1) {
+        r = e->result.kind == TK_SCALAR ? canon(e->result.scalar, hr.as.u64) : 0u;
+        if (n->dst >= 0) fr->t[n->dst] = r;
+        fr->etag = hr.is_error != 0u ? canon(e->etag, (uint64_t)hr.error) : 0u;
+        if (x->trace != NULL) {
+            trace(x, CINT_SIR_EV_RETURN, step, s, m, n, NULL, 0, n->dst >= 0 && fr->etag == 0u ? &r : NULL,
+                  fr->etag);
+        }
+    }
+    for (uint32_t p = 0; p < e->nparam; p++) free(buf[p]);
+    return st;
+}
+
 /* Before fr's function returns: its run-time storage and its charges are given back. */
 static void frame_return(cint_ctx *ctx, const ex_frame *fr)
 {
@@ -1210,7 +1292,7 @@ static int view_op(cint_sir_image *x, cint_ctx *ctx, ex_frame *fr, const si_node
          * is its limbs, so they count in elements (box 15) */
         int dot = n->sub == CINT_REDUCE_DOT, wide = is_wide(n->t1) || is_wide(n->t2);
         uint64_t q = is_wide(n->t1) ? 1u : n->t1 == SC_BOOL ? 8u : 64u / width(n->t1);
-        uint64_t init = n->form && !wide ? vget(fr, o + 1 + dot) : 0u;
+        uint64_t init = n->form && !is_wide(n->t1) ? vget(fr, o + 1 + dot) : 0u;
         cint_vdesc xv = vdesc(a, q), yv;
         b = dot ? place(x, fr, o + 1) : *a;
         yv = vdesc(&b, q);
@@ -1219,10 +1301,12 @@ static int view_op(cint_sir_image *x, cint_ctx *ctx, ex_frame *fr, const si_node
         if (wide) {   /* cint_rt_reduce_wide (rt/OPEN.md RT-OQ-54); a narrow result is its C object */
             ex_obj u;
             uint64_t *w = n->wide ? fr->w + fr->wat[n->dst] : &u.u64;
+            const void *iv = !n->form ? NULL : is_wide(n->t1) ? (const void *)wget(fr, o + 1 + dot) : &init;
             u.u64 = 0;
-            st = cint_rt_reduce_wide(ctx, s, n->sub, tag_of(n->t1), tag_of(n->t2), &xv, dot ? &yv : NULL,
-                                     n->form ? wget(fr, o + 1 + dot) : NULL, w);
-            r = n->wide ? w[0] : narrow_obj(n->t2, &u);   /* a wide result's low limb, as a trace shows it */
+            st = sc_is_q(n->t2)   /* fixed point of 128 bits (RT-OQ-63), with dot's mode */
+                     ? cint_rt_reduce_q_limbs(ctx, s, n->sub, tag_of(n->t1), tag_of(n->t2), n->mode, &xv, dot ? &yv : NULL, iv, w)
+                     : cint_rt_reduce_wide(ctx, s, n->sub, tag_of(n->t1), tag_of(n->t2), &xv, dot ? &yv : NULL, iv, w);
+            r = n->wide ? w[0] : narrow_obj(storage(n->t2), &u);   /* a wide result's low limb, as a trace shows it */
         } else if (dot && sc_is_q(n->t1)) {   /* rounded once under its mode (box 15; RT-OQ-57) */
             st = cint_rt_dot_fixed(ctx, s, tag_of(n->t1), tag_of(n->t2), n->mode, &xv, &yv, &r);
             r = canon(n->t2, r);
@@ -1430,8 +1514,8 @@ static int kred_wide(cint_ctx *ctx, cint_site s, const ex_frame *fr, const si_no
     unsigned q = limbs(sc);
     int c = 0;
     switch (n->sub) {
-    case CINT_REDUCE_SUM:
-        cint_wzacc_add(&ac->wz, tag_of(n->t1), v);
+    case CINT_REDUCE_SUM:   /* fixed point by its storage's (RT-OQ-63) */
+        cint_wzacc_add(&ac->wz, tag_of(storage(n->t1)), v);
         return 1;
     case CINT_REDUCE_FOLD_ADD:
         return cint_rt_wide_fold_step(ctx, s, CINT_RT_OP_ADD, tag_of(sc), ac->n, ac->wr, v);
@@ -1444,7 +1528,7 @@ static int kred_wide(cint_ctx *ctx, cint_site s, const ex_frame *fr, const si_no
         break;
     }
     int wrap = n->sub == CINT_REDUCE_SUM_WRAP;
-    switch (sc) {
+    switch (storage(sc)) {
         EX_WIDES(EX_KSTEP, 0)
     default:
         break;
@@ -1572,7 +1656,7 @@ static int kernel_op(cint_sir_image *x, cint_ctx *ctx, ex_frame *fr, const si_no
             si_node lt;
             memset(&lt, 0, sizeof lt);
             lt.sub = CM_LT;
-            lt.t1 = (uint8_t)sc;
+            lt.t1 = (uint16_t)sc;
             if (ac->n == 0 || (n->sub == CINT_REDUCE_MIN ? compare(&lt, v, ac->r) : compare(&lt, ac->r, v)))
                 ac->r = v;
         } else if (v != 0u) {   /* count */
@@ -1589,7 +1673,10 @@ static int kernel_op(cint_sir_image *x, cint_ctx *ctx, ex_frame *fr, const si_no
              * object; sum_wrap ran on the running value */
             ex_obj u;
             u.u64 = 0;
-            if (n->sub == CINT_REDUCE_SUM) {
+            if (n->sub == CINT_REDUCE_SUM && sc_is_q(sc)) {   /* fixed point of 128 bits (RT-OQ-63) */
+                st = cint_rt_wzacc_fit_q(ctx, s, tag_of(sc), ac->n, &ac->wz, is_wide(sc) ? (void *)ac->wr : &u);
+                if (st && !is_wide(sc)) ac->r = narrow_obj(storage(sc), &u);
+            } else if (n->sub == CINT_REDUCE_SUM) {
                 st = cint_rt_wzacc_fit(ctx, s, "sum", tag_of(n->t1), tag_of(sc), ac->n, &ac->wz, is_wide(sc) ? (void *)ac->wr : &u);
                 if (st && !is_wide(sc)) ac->r = narrow_obj(sc, &u);
             }
@@ -1689,6 +1776,58 @@ static int mem_op(cint_sir_image *x, cint_ctx *ctx, ex_frame *fr, const si_node 
     }
     if (x->trace != NULL)
         trace(x, CINT_SIR_EV_OP, step, s, m, n, NULL, 0, NULL, n->dst >= 0 ? fr->etag : 0u);
+    return st;
+}
+
+/* Whether node n is fixed point with a side in limbs: of 128 bits, or with a wide integer (games
+ * wave G2b); a comparison is wide_node's. */
+static int q_limbs(const si_node *n)
+{
+    int q = sc_is_q(n->t1) || ((n->op == OP_AS || n->op == OP_BUILTIN) && sc_is_q(n->t2));
+    return q && n->op != OP_CMP && (is_wide(n->t1) || is_wide(n->t2) || (n->op == OP_BUILTIN && is_wide(n->t3)));
+}
+
+/* A q_limbs node, through cint_rt_q_limbs as compiled C calls it (back_c.ci, c_q_limbs; rt/OPEN.md
+ * RT-OQ-63): a narrow operand by its pattern, a narrow result into its C object, the `%` and `|`
+ * forms with no site; min, max and as.raw are the storage integer's (IM-60). One step. 1, or 0
+ * when it faulted. */
+static int qlimbs(cint_sir_image *x, cint_ctx *ctx, ex_frame *fr, const si_node *n, const si_opd *o, cint_site s)
+{
+    int bi = n->op == OP_BUILTIN, two = n->op == OP_BIN || (bi && n->sub != 1 && n->sub != BI_SQRT), st = 1;
+    int tb = !two ? SC_NONE : bi && n->sub >= BI_QMUL ? n->t3 : n->t1, tr = n->op == OP_AS || bi ? n->t2 : n->t1;
+    uint64_t pat[2] = {0u, 0u}, low[2] = {0u, 0u}, r = 0, step = x->step++;
+    const uint64_t *v[2] = {pat, pat + 1};
+    ex_obj u;
+    uint64_t *out = n->wide ? fr->w + fr->wat[n->dst] : &u.u64;
+    u.u64 = 0;
+    for (uint32_t k = 0; k < 1u + (uint32_t)two; k++) {
+        int t = k == 0 ? n->t1 : tb;
+        pat[k] = is_wide(t) ? 0u : vget(fr, o + k);
+        v[k] = is_wide(t) ? wget(fr, o + k) : &pat[k];
+        low[k] = v[k][0];
+    }
+    if (n->op == OP_AS && n->form == FM_RAW) {
+        memcpy(out, v[0], limbs(tr) * sizeof(uint64_t));
+    } else if (bi && (n->sub == 3 || n->sub == 4)) {   /* min and max */
+        int c = cint_w_cmp(v[0], v[1], limbs(tr), true);
+        memcpy(out, (n->sub == 3) == (c <= 0) ? v[0] : v[1], limbs(tr) * sizeof(uint64_t));
+    } else {
+        uint32_t op = n->op == OP_AS   ? CINT_Q_AS
+                      : n->op == OP_UN ? CINT_Q_NEG
+                      : !bi            ? (n->sub == BO_DIV ? CINT_Q_DIV : (uint32_t)n->sub + 1u)
+                      : n->sub == 1    ? CINT_Q_ABS
+                      : n->sub == BI_SQRT ? CINT_Q_SQRT
+                      : n->sub == BI_QMUL ? CINT_Q_QMUL
+                                          : CINT_Q_MUL_INT;
+        uint32_t form = bi ? CINT_Q_CHECKED : n->form;
+        bool ok = cint_rt_q_limbs(ctx, form == CINT_Q_CHECKED ? s : (cint_site){0u, 0u}, op, form, n->mode,
+                                  tag_of(n->t1), tb == SC_NONE ? 0u : tag_of(tb), tag_of(tr), v[0], two ? v[1] : NULL, out);
+        st = ok || form != CINT_Q_CHECKED;
+    }
+    r = n->wide ? out[0] : narrow_obj(storage(tr), &u);   /* a wide result's low limb, as a trace shows it */
+    if (!n->wide) fr->t[n->dst] = r;
+    if (x->trace != NULL)
+        trace(x, CINT_SIR_EV_OP, step, s, &x->p->mods[fr->mi], n, low, 1u + (uint32_t)two, st == 1 ? &r : NULL, 0u);
     return st;
 }
 
@@ -1895,6 +2034,10 @@ static int run_body(cint_sir_image *x, cint_ctx *ctx, ex_frame *fr, uint64_t *re
         case OP_AS:
         case OP_BUILTIN: {
             uint32_t nv = n->nopd < 3u ? n->nopd : 3u;
+            if (q_limbs(n)) {
+                st = qlimbs(x, ctx, fr, n, o, s);
+                break;
+            }
             if (n->wide || is_wide(n->t1)) {
                 st = wide_node(x, ctx, fr, n, o, s);
                 break;
@@ -2050,6 +2193,9 @@ static int run_body(cint_sir_image *x, cint_ctx *ctx, ex_frame *fr, uint64_t *re
         case OP_CALL:
             st = call(x, ctx, fr, n, s);
             break;
+        case OP_HCALL:
+            st = host_call(x, ctx, fr, n, s);
+            break;
         case OP_KCALL:
             st = dispatch(x, ctx, fr, n, s);
             break;
@@ -2112,6 +2258,12 @@ static int run_body(cint_sir_image *x, cint_ctx *ctx, ex_frame *fr, uint64_t *re
             st = cint_rt_print_bytes(ctx, x->mods[fr->mi].bytes + n->jump, (size_t)n->value);
             break;
         case OP_PRINT_VALUE:
+            if (sc_is_q(n->ty.scalar) && is_wide(n->ty.scalar)) {   /* fixed point of 128 bits (RT-OQ-63) */
+                st = cint_rt_print_q_limbs(ctx, tag_of(n->ty.scalar), wget(fr, o), (uint32_t)n->fmt[0],
+                                           n->fmt[0] == 0 ? 32u : (uint32_t)n->fmt[1], (uint64_t)n->fmt[2],
+                                           (uint64_t)n->fmt[3]);
+                break;
+            }
             if (is_wide(n->ty.scalar)) {   /* its decimal or its formatted text, from its limbs (box 15; RT-OQ-55) */
                 st = n->fmt[0] == 0 ? cint_rt_print_wide(ctx, tag_of(n->ty.scalar), wget(fr, o))
                                     : cint_rt_print_format_wide(ctx, tag_of(n->ty.scalar), wget(fr, o), (uint32_t)n->fmt[0],
@@ -2207,10 +2359,23 @@ static cint_status entry(cint_sir_image *x, uint32_t mi, uint32_t fi, cint_ctx *
     if (st != CINT_OK) return st;
     x->step = 0;
     ex_frame *fr = frame_new(x, mi, fi);
-    for (uint32_t p = 0; fr != NULL && p < f->nparam; p++)
-        *fr->par[p].base = canon(m->params[f->param + p].ty.scalar, args[p]);
-    int ok = fr != NULL ? run(x, ctx, fr, &r) : -1;
+    uint64_t *acells = NULL;   /* the program arguments of `main(in U8[_] args)`, one cell per byte */
+    int ok = fr != NULL ? 0 : -1;
+    for (uint32_t p = 0, a = 0; ok == 0 && p < f->nparam; p++) {   /* a Grants: the context's set, 0 */
+        const si_type *t = &m->params[f->param + p].ty;
+        if (t->kind == TK_VIEW) {   /* the program entry's arguments (OQ-306; RT-OQ-76) */
+            size_t n = 0;
+            const uint8_t *b = cint_ctx_args(ctx, &n);
+            if ((acells = malloc((n > 0 ? n : 1) * sizeof *acells)) == NULL) { ok = -1; break; }
+            for (size_t i = 0; i < n; i++) acells[i] = b[i];
+            fr->par[p] = ref1(acells, (int64_t)n);
+        } else {
+            *fr->par[p].base = t->grants ? 0u : canon(t->scalar, args[a++]);
+        }
+    }
+    ok = ok == 0 ? run(x, ctx, fr, &r) : -1;
     uint64_t tag = fr != NULL ? fr->rtag : 0u;
+    free(acells);
     free(fr);
     if (ok == 1 && tag != 0u && f->eset >= 0) {   /* the error the entry leaves with (box 12) */
         cint_rt_error_result(ctx, &x->mods[mi].sets[f->eset], tag);
@@ -2275,7 +2440,7 @@ static int refuse(cint_sir_error *err, const si_module *m, uint32_t line, int st
  * to I512 into the unsigned type of the width, and rotl and rotr one of U128 to U512. */
 static int runs(const si_node *n)
 {
-    if (n->op == OP_BUILTIN && (is_wide(n->t1) || is_wide(n->t2))) {
+    if (n->op == OP_BUILTIN && (is_wide(n->t1) || is_wide(n->t2)) && !sc_is_q(n->t1) && !sc_is_q(n->t2)) {
         switch (n->sub) {
         case 12:
             return (n->t1 == SC_I64 && n->t2 == SC_I128) || (n->t1 == SC_U64 && n->t2 == SC_U128) ||
@@ -2965,6 +3130,40 @@ static int prepare_mod(cint_sir_image *x, uint32_t mi, cint_sir_error *err)
     return CINT_SIR_OK;
 }
 
+/* Module mi's host import table from its extern rows, in their order, as compiled C writes it
+ * (back_c.ci, c_host_table): each row's name, effect, parameter count, Grants included, and
+ * signature bytes, by which context creation resolves it (rt/cint_rt_host.h 6f). */
+static int prepare_hosts(cint_sir_image *x, uint32_t mi, cint_sir_error *err)
+{
+    const si_module *m = &x->p->mods[mi];
+    ex_mod *em = &x->mods[mi];
+    size_t bytes = 1, at = 0;
+    for (uint32_t k = 0; k < m->nextern; k++) bytes += m->externs[k].row.len + m->externs[k].sig.len / 2u;
+    em->hosts = calloc((size_t)m->nextern + 1u, sizeof *em->hosts);
+    em->hbytes = malloc(bytes);
+    if (em->hosts == NULL || em->hbytes == NULL) return refuse(err, m, 0, CINT_SIR_RESOURCE, "out of memory");
+    for (uint32_t k = 0; k < m->nextern; k++) {
+        const si_extern *e = &m->externs[k];
+        cint_host_import *h = &em->hosts[k];
+        h->name.bytes = (const char *)em->hbytes + at;
+        h->name.len = (uint32_t)decode(m->text + e->row.at, em->hbytes + at);
+        at += h->name.len;
+        h->effect = e->effect;
+        h->param_count = e->nparam;
+        h->type_signature = em->hbytes + at;
+        h->type_signature_len = e->sig.len / 2u;
+        for (uint32_t i = 0; i < e->sig.len; i += 2u) {
+            const uint8_t *c = m->text + e->sig.at + i;
+            em->hbytes[at++] = (uint8_t)((c[0] <= '9' ? c[0] - '0' : c[0] - 'a' + 10) * 16 +
+                                         (c[1] <= '9' ? c[1] - '0' : c[1] - 'a' + 10));
+        }
+    }
+    em->host.count = m->nextern;
+    em->host.imports = m->nextern > 0 ? em->hosts : NULL;
+    x->htabs[mi] = &em->host;
+    return CINT_SIR_OK;
+}
+
 /* Whether f takes scalars only, at most 16, and returns a scalar or nothing (CONF-13 X-3); a wide
  * one is not an entry here (box 15). */
 static int observable(const si_module *m, const si_func *f)
@@ -2986,12 +3185,14 @@ int cint_sir_prepare(cint_sir_program *p, cint_sir_image **out, cint_sir_error *
     x->mods = calloc(p->nmod, sizeof *x->mods);
     x->modtab = calloc(p->nmod, sizeof *x->modtab);
     x->states = calloc(p->nmod, sizeof *x->states);
-    if (x->mods == NULL || x->modtab == NULL || x->states == NULL) {
+    x->htabs = calloc(p->nmod, sizeof *x->htabs);
+    if (x->mods == NULL || x->modtab == NULL || x->states == NULL || x->htabs == NULL) {
         cint_sir_release(x);
         return refuse(err, &p->mods[0], 0, CINT_SIR_RESOURCE, "out of memory");
     }
     for (uint32_t i = 0; i < p->nmod; i++) {
         int st = prepare_mod(x, i, err);
+        if (st == CINT_SIR_OK) st = prepare_hosts(x, i, err);
         if (st != CINT_SIR_OK) {
             cint_sir_release(x);
             return st;
@@ -3001,6 +3202,8 @@ int cint_sir_prepare(cint_sir_program *p, cint_sir_image **out, cint_sir_error *
     x->program.module_count = p->nmod;
     x->program.modules = x->modtab;
     x->program.revision = p->revision;
+    x->imports.module_count = p->nmod;
+    x->imports.tables = x->htabs;
     /* state tables: the root module first, then the others in program order (CONF-11 rule
      * 10 as compiled C orders it, compiler/back_c.ci program_state) */
     for (uint32_t q = 0; q < p->nmod; q++) {
@@ -3026,9 +3229,10 @@ int cint_sir_prepare(cint_sir_program *p, cint_sir_image **out, cint_sir_error *
             x->emod = k;
             x->efn[e] = f;
             x->etype[e][0] = tag_of(m->funcs[f].result.kind == TK_SCALAR ? m->funcs[f].result.scalar : 0);
-            x->etype[e][1] = m->funcs[f].nparam;
-            for (uint32_t a = 0; a < m->funcs[f].nparam; a++)
-                x->etype[e][2u + a] = tag_of(m->params[m->funcs[f].param + a].ty.scalar);
+            for (uint32_t a = 0; a < m->funcs[f].nparam; a++) {   /* a Grants is not an argument (back_c.ci) */
+                if (!m->params[m->funcs[f].param + a].ty.grants)
+                    x->etype[e][2u + x->etype[e][1]++] = tag_of(m->params[m->funcs[f].param + a].ty.scalar);
+            }
             x->entries[e].module = k;
             x->entries[e].name_len = m->funcs[f].name.len;
             x->entries[e].name = (const char *)m->text + m->funcs[f].name.at;
@@ -3047,9 +3251,11 @@ int cint_sir_prepare(cint_sir_program *p, cint_sir_image **out, cint_sir_error *
         const si_func *g = &root->funcs[f];
         tests += g->kind == FN_TEST;
         test = g->kind == FN_TEST ? (int32_t)f : test;
-        if (g->kind == FN_SCRIPT || (x->main_fn < 0 && g->kind == FN_FUNC && g->nparam == 0 &&
-                                     g->result.kind == TK_NONE && same(root->text, g->name, (const uint8_t *)"main",
-                                                                       (si_name){0, 4}))) {
+        const si_type *p0 = g->nparam > 0 ? &root->params[g->param].ty : NULL;
+        int bare = g->nparam == 0 || (g->nparam == 1 && (p0->grants || si_args_param(p0))) ||
+                   (g->nparam == 2 && p0->grants && si_args_param(&root->params[g->param + 1].ty));
+        if (g->kind == FN_SCRIPT || (x->main_fn < 0 && g->kind == FN_FUNC && bare && g->result.kind == TK_NONE &&
+                                     same(root->text, g->name, (const uint8_t *)"main", (si_name){0, 4}))) {
             x->main_fn = (int32_t)f;
         }
     }
@@ -3114,10 +3320,13 @@ void cint_sir_release(cint_sir_image *x)
         free(em->memd);
         free(em->vnames);
         free(em->names);
+        free(em->hosts);
+        free(em->hbytes);
     }
     free(x->mods);
     free(x->modtab);
     free(x->states);
+    free(x->htabs);
     if (g_img == x) g_img = NULL;
     free(x);
 }
@@ -3132,6 +3341,11 @@ const cint_observer *cint_sir_observer(const cint_sir_image *x)
     return &x->observer;
 }
 
+const cint_host_desc *cint_sir_imports(const cint_sir_image *x)
+{
+    return &x->imports;
+}
+
 const cint_state_table *cint_sir_state_table(const cint_sir_image *x)
 {
     return x->table.count > 0 || x->table.memory != NULL ? &x->table : NULL;
@@ -3140,6 +3354,13 @@ const cint_state_table *cint_sir_state_table(const cint_sir_image *x)
 cint_main_fn cint_sir_main(const cint_sir_image *x)
 {
     return x->main_fn >= 0 ? main_entry : NULL;
+}
+
+int cint_sir_main_args(const cint_sir_image *x)
+{
+    const si_module *root = &x->p->mods[x->p->nmod - 1u];
+    const si_func *f = x->main_fn >= 0 ? &root->funcs[x->main_fn] : NULL;
+    return f != NULL && f->nparam > 0 && si_args_param(&root->params[f->param + f->nparam - 1].ty);
 }
 
 void cint_sir_trace(cint_sir_image *x, cint_sir_trace_fn fn, void *user)

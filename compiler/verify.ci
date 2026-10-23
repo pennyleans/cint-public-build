@@ -51,8 +51,14 @@ void clear_flag(inout lowering.Sir[_] sir, I64 i, I32 flag) {
     sir[i].op = sir[i].op & ~flag;
 }
 
+// A scalar type: an integer, Bool, or (box 15 unit 4e) a fixed-point type.
 Bool scalar(I32 ty) {
-    return lowering.is_int(ty) || ty == lowering.T_BOOL;
+    return lowering.is_int(ty) || ty == lowering.T_BOOL || lowering.is_q(ty);
+}
+
+// A mode of resolve.round_mode, 1 to 9.
+Bool mode_ok(I64 m) {
+    return m >= 1 && m <= 9;
 }
 
 // Whether node i can fault, so must carry a site (SIR-04).
@@ -178,6 +184,46 @@ Bool container_ok(in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I6
 // SO_MEMBER node i (box 12): member c of container slot a, its argument of the member's type
 // (a count, an element value or its struct slot f, a handle), a handle result for an
 // allocation or an insertion, and the SO_ETAG of a union right after it.
+// A fixed-point built-in, SO_BUILTIN node i (box 15 unit 4e; SPEC-01 IM-63 to IM-67): abs,
+// min and max of values of its type, sqrt with a mode, qmul of two fixed-point values into
+// its type with a mode exactly when the product rounds, and mul_int of a value of its type
+// and an integer.
+Bool q_builtin(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I64 i) {
+    I64[1] ta;
+    I64[1] tb;
+    I32 ty = sir[i].ty;
+    I64 id = sir[i].f as I64;
+    I64 bo = lowering.builtin_opty(sir, i) as I64;
+    I64 mode = sir[i].val & 255;
+    I64 bt = lowering.builtin_btype(sir, i) as I64;
+    if (!lowering.is_q(ty) || sir[i].c != -1 || !operand(sir, funcs, slots, fn, i, sir[i].a as I64, ta) ||
+            ta[0] != bo || (sir[i].val >> 26) != 0) {
+        return false;
+    }
+    if (id == fold.BI_QMUL) {
+        if (!lowering.is_q(bo as I32) || !operand(sir, funcs, slots, fn, i, sir[i].b as I64, tb) ||
+                tb[0] != bt || !lowering.is_q(bt as I32)) {
+            return false;
+        }
+        Bool rounds = fold.q_frac(bo) + fold.q_frac(bt) > fold.q_frac(ty as I64);
+        return mode_ok(mode) == rounds && (rounds || mode == 0);
+    }
+    if (bo != ty as I64 || (id != fold.BI_MUL_INT && bt != 0)) {
+        return false;
+    }
+    if (id == fold.BI_ABS) {
+        return mode == 0;
+    }
+    if (id == fold.BI_SQRT) {
+        return mode_ok(mode);
+    }
+    if (id == fold.BI_MIN || id == fold.BI_MAX) {
+        return mode == 0 && operand(sir, funcs, slots, fn, i, sir[i].b as I64, tb) && tb[0] == bo;
+    }
+    return id == fold.BI_MUL_INT && mode == 0 && operand(sir, funcs, slots, fn, i, sir[i].b as I64, tb) &&
+        tb[0] == bt && lowering.is_int(bt as I32);
+}
+
 Bool check_member(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I64 i) {
     I64 a = sir[i].a as I64;
     I64 b = sir[i].b as I64;
@@ -455,9 +501,18 @@ export I64 check_func[nf](inout lowering.Sir[_] sir, in lowering.SirFunc[nf] fun
                      slots[a].kind == lowering.SK_SPLACE) &&
                     struct_slot(funcs, slots, fn, b) && slots[a].ty == slots[b].ty;
             case lowering.SO_BIN:
-                ok = lowering.is_int(ty) && sir[i].c >= lowering.B_ADD && sir[i].c <= lowering.B_XOR &&
+                ok = (lowering.is_int(ty) || lowering.is_q(ty)) && sir[i].c >= lowering.B_ADD && sir[i].c <= lowering.B_XOR &&
                     operand(sir, funcs, slots, fn, i, a, ta) && operand(sir, funcs, slots, fn, i, b, tb) &&
                     ta[0] == ty as I64 && sir[i].f >= 0 && sir[i].f <= 3;
+                if (ok && lowering.is_q(ty)) {
+                    // Fixed point (box 15 unit 4e): add and sub in every form, mul with a mode
+                    // in those, div checked or result with a mode (SPEC-01 IM-60 to IM-62,
+                    // IM-188; OQ-273, OQ-278).
+                    ok = (sir[i].c == lowering.B_ADD || sir[i].c == lowering.B_SUB || sir[i].c == lowering.B_MUL ||
+                        (sir[i].c == lowering.B_DIV && (sir[i].f == 0 || sir[i].f == 3))) &&
+                        mode_ok(sir[i].val) == (sir[i].c == lowering.B_MUL || sir[i].c == lowering.B_DIV) &&
+                        (sir[i].val == 0 || mode_ok(sir[i].val));
+                }
                 if (ok && (sir[i].c == lowering.B_SHL || sir[i].c == lowering.B_SHR)) {
                     ok = lowering.is_int(tb[0] as I32);
                 } else if (ok) {
@@ -480,7 +535,8 @@ export I64 check_func[nf](inout lowering.Sir[_] sir, in lowering.SirFunc[nf] fun
                 if (ok && sir[i].c == lowering.U_LNOT) {
                     ok = ty == lowering.T_BOOL;
                 } else if (ok) {
-                    ok = lowering.is_int(ty) && (sir[i].c == lowering.U_NEG || sir[i].c == lowering.U_NOT);
+                    ok = (lowering.is_int(ty) && (sir[i].c == lowering.U_NEG || sir[i].c == lowering.U_NOT)) ||
+                        (lowering.is_q(ty) && sir[i].c == lowering.U_NEG);
                 }
             case lowering.SO_CMP:
                 I32 ot = sir[i].f;
@@ -490,11 +546,28 @@ export I64 check_func[nf](inout lowering.Sir[_] sir, in lowering.SirFunc[nf] fun
                 if (ok && ot == lowering.T_BOOL) {
                     ok = sir[i].c == lowering.CMP_EQ || sir[i].c == lowering.CMP_NE;
                 } else if (ok) {
-                    ok = lowering.is_int(ot);
+                    ok = lowering.is_int(ot) || lowering.is_q(ot);
                 }
             case lowering.SO_AS:
-                ok = lowering.is_int(ty) && operand(sir, funcs, slots, fn, i, a, ta) && ta[0] == sir[i].f as I64 &&
-                    scalar(sir[i].f) && sir[i].c >= 0 && sir[i].c <= 2;
+                I32 af = sir[i].f;
+                Bool qs = lowering.is_q(ty) || lowering.is_q(af);
+                ok = (lowering.is_int(ty) || lowering.is_q(ty)) && operand(sir, funcs, slots, fn, i, a, ta) &&
+                    ta[0] == af as I64 && scalar(af) && ((sir[i].c >= 0 && sir[i].c <= 2) || sir[i].c == lowering.AS_SAT ||
+                    sir[i].c == lowering.AS_RAW);
+                if (ok && sir[i].c == lowering.AS_SAT) {
+                    // `as|` (OQ-272): Bool converts only with `as`.
+                    ok = af != lowering.T_BOOL;
+                }
+                if (ok && sir[i].c == lowering.AS_RAW) {
+                    // as.raw (box 15 unit 4e): a fixed-point type and its storage integer.
+                    ok = (lowering.is_q(ty) && af as I64 == fold.q_storage(ty as I64)) ||
+                        (lowering.is_q(af) && ty as I64 == fold.q_storage(af as I64));
+                } else if (ok && qs) {
+                    // With fixed point on one side (IM-68, IM-69): an integer or fixed-point
+                    // other side and a mode exactly when it rounds.
+                    Bool rounds = lowering.q_rounds(af, ty);
+                    ok = af != lowering.T_BOOL && mode_ok(sir[i].val) == rounds && (rounds || sir[i].val == 0);
+                }
                 if (ok && sir[i].c == 2) {
                     // `as?` (box 12): its tag follows.
                     ok = i + 1 < last && kind_of(sir, i + 1) == lowering.SO_ETAG && sir[i + 1].a as I64 == i;
@@ -534,12 +607,17 @@ export I64 check_func[nf](inout lowering.Sir[_] sir, in lowering.SirFunc[nf] fun
                     lowering.is_int(ty) && operand(sir, funcs, slots, fn, i, a, ta) && ta[0] == sir[i].f as I64;
             case lowering.SO_BUILTIN:
                 // An integer built-in (box 07): its values of the operand type, a rotation's
-                // count of any integer type.
+                // count of any integer type; or a fixed-point one (q_builtin).
                 I64 bo = lowering.builtin_opty(sir, i) as I64;
                 I64 nv = lowering.builtin_arity(sir, i);
-                ok = sir[i].f >= 1 && sir[i].f <= 16 && lowering.is_int(ty) && lowering.is_int(bo as I32) &&
-                    operand(sir, funcs, slots, fn, i, a, ta) && ta[0] == bo;
-                if (ok && nv > 1) {
+                Bool qb = lowering.is_q(ty);
+                if (qb) {
+                    ok = q_builtin(sir, funcs, slots, fn, i);
+                } else {
+                    ok = sir[i].f >= 1 && sir[i].f <= 16 && lowering.is_int(ty) && lowering.is_int(bo as I32) &&
+                        operand(sir, funcs, slots, fn, i, a, ta) && ta[0] == bo;
+                }
+                if (ok && !qb && nv > 1) {
                     ok = operand(sir, funcs, slots, fn, i, b, tb) &&
                         (tb[0] == bo || (lowering.builtin_rotates(sir, i) && lowering.is_int(tb[0] as I32)));
                 }
@@ -571,10 +649,27 @@ export I64 check_func[nf](inout lowering.Sir[_] sir, in lowering.SirFunc[nf] fun
                 ok = view_local(funcs, slots, fn, a, ty) && elements_of(funcs, slots, fn, b, ty) && sir[i].dst < 0 &&
                     (sir[i].f as I64) == lowering.slot_rank(slots, a) && sir[i].val >= 0;
             case lowering.SO_REDUCE:
+                I64 rop = (sir[i].f & 15) as I64;
+                I64 rmode = (sir[i].f >> 4) as I64;
                 ok = sir[i].dst >= 0 && scalar(ty) && elements_of(funcs, slots, fn, a, sir[i].val as I32) &&
-                    (b == -1 || elements_of(funcs, slots, fn, b, sir[i].val as I32)) && sir[i].f >= 1 && sir[i].f <= 9 &&
+                    (b == -1 || elements_of(funcs, slots, fn, b, sir[i].val as I32)) && rop >= 1 && rop <= 9 &&
                     ((sir[i].c as I64) == lowering.NO_OPERAND ||
                      (operand(sir, funcs, slots, fn, i, sir[i].c as I64, ta) && ta[0] == sir[i].val));
+                if (ok && (lowering.is_q(ty) || lowering.is_q(sir[i].val as I32))) {
+                    // Fixed point (box 15 unit 4e; RT-OQ-57): the element's format, not count or
+                    // fold_checked(mul); dot into a fixed-point type with a mode, f / 16, when it
+                    // rounds.
+                    I32 qe = sir[i].val as I32;
+                    if (rop == 9) {
+                        ok = lowering.is_q(ty) && lowering.is_q(qe) &&
+                            mode_ok(rmode) == (2 * fold.q_frac(qe as I64) > fold.q_frac(ty as I64)) &&
+                            (rmode == 0 || mode_ok(rmode));
+                    } else {
+                        ok = ty == qe && rop != 5 && rop != 8 && rmode == 0;
+                    }
+                } else if (ok) {
+                    ok = rmode == 0;
+                }
             case lowering.SO_VEXT:
                 ok = sir[i].dst >= 0 && ty == lowering.T_I64 && element_slot(funcs, slots, fn, a) && sir[i].f >= -1 &&
                     (sir[i].f as I64) < lowering.slot_rank(slots, a);
@@ -707,8 +802,11 @@ export I64 check_func[nf](inout lowering.Sir[_] sir, in lowering.SirFunc[nf] fun
             case lowering.SO_PRINT_VALUE:
                 // A format specification (lowering.format_form): a kind from 1 to 6, a fill
                 // that is a scalar value, and a width and a scale that are not negative.
+                // A fixed-point value's form has no kind (box 15 unit 4e).
+                I64 pk = (sir[i].e % 16) as I64;
+                Bool kind_ok = (lowering.is_q(ty) && pk == 0) || (!lowering.is_q(ty) && pk >= 1 && pk <= 6);
                 ok = scalar(ty) && operand(sir, funcs, slots, fn, i, a, ta) && ta[0] == ty as I64 &&
-                    (sir[i].e == 0 || (sir[i].e % 16 >= 1 && sir[i].e % 16 <= 6 && sir[i].e < 4096 &&
+                    (sir[i].e == 0 || (kind_ok && sir[i].e < 16384 &&
                     sir[i].f >= 0 && sir[i].f <= 0x10FFFF && (sir[i].f < 0xD800 || sir[i].f > 0xDFFF) &&
                     sir[i].val >= 0 && sir[i].c >= 0));
             case lowering.SO_IF, lowering.SO_LOOP, lowering.SO_BLOCK:
@@ -1105,8 +1203,9 @@ export void mark_used(in lowering.Sir[_] sir, inout lowering.SirFunc[_] funcs, I
 export I64 verify(inout lowering.Sir[_] sir, inout lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots,
         inout parse.Frame[_] st, in lowering.LState[_] ls) {
     for fn in 0..ls[0].nfunc {
-        if ((funcs[fn].flags & lowering.FN_IMPORT) == 0) {
-            // An import row has no SIR (lowering.FN_IMPORT).
+        if ((funcs[fn].flags & (lowering.FN_IMPORT | lowering.FN_EXTERN)) == 0) {
+            // An import row has no SIR (lowering.FN_IMPORT), nor has an extern row
+            // (lowering.FN_EXTERN).
             I64 bad = check_func(sir, funcs, slots, st, ls[0].cap, fn);
             if (bad >= 0) {
                 return bad;

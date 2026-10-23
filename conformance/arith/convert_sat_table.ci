@@ -1,0 +1,33 @@
+// case: arith/convert_sat_table
+// clause: SPEC-01 IM-50; SPEC-04 LS-133 (`x as| T` is sat(T, x) between the integer types I8 to U64: the value where it fits, else T.min or T.max on its side; OQ-272 A)
+// subset: cint-core-1 (saturating conversion, print statements)
+// entry: run; args: none
+// spec outcome: value I64 254; prints `127 -128 255 0`, `9223372036854775807 4294967295 32767 0 0` and `127 200 0 -32768 42`, each with a line feed; fuel 1. Box 15, OQ-280 group 1
+
+export I64 run() {
+    I64 big = 1000;
+    I64 neg = -1000;
+    U64 top = U64.max;
+    I8 a = big as| I8;
+    I8 b = neg as| I8;
+    U8 c = big as| U8;
+    U8 d = neg as| U8;
+    I64 e = top as| I64;
+    U32 f = top as| U32;
+    I16 g = top as| I16;
+    I8 m8 = I8.min;
+    U8 h = m8 as| U8;
+    U64 i = m8 as| U64;
+    U8 u200 = 200;
+    I8 j = u200 as| I8;
+    I32 k = u200 as| I32;
+    I32 m32 = I32.min;
+    U16 l = m32 as| U16;
+    I16 n = m32 as| I16;
+    I64 small = 42;
+    U16 o = small as| U16;
+    "{a} {b} {c} {d}\n";
+    "{e} {f} {g} {h} {i}\n";
+    "{j} {k} {l} {n} {o}\n";
+    return a as I64 + b as I64 + c as I64 + d as I64;
+}

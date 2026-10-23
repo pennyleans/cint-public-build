@@ -1,0 +1,6 @@
+case services/c5050_struct_param
+clause SPEC-04 LS-323 to LS-328; SPEC-04 LS-324; SPEC-03 H-5
+source compile-error
+outcome compile-error
+diagnostic.code C5050
+diagnostic.position services/c5050_struct_param.ci:9:23

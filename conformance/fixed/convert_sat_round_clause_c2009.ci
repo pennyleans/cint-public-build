@@ -1,0 +1,11 @@
+// case: fixed/convert_sat_round_clause_c2009
+// clause: SPEC-01 IM-68, IM-69; SPEC-04 17.2, LS-133 (an integer converted to fixed point is exact, so a round clause on `as|` is C2009, as on `as`; OQ-272 A)
+// subset: cint-core-1 (fixed point, saturating conversion)
+// entry: run; args: none
+// spec outcome: compile-error C2009 at 9:18 (the `as|`). Box 15, OQ-280 group 1
+
+export I64 run() {
+    I32 n = 70000;
+    Q16.16 y = n as| Q16.16 round floor;
+    return y.raw as I64;
+}

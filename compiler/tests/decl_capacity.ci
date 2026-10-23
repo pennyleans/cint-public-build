@@ -55,7 +55,7 @@ export I64 checked_block(in U8[_] src, in U8[_] path, I64 module, Bool first,
     if (first_struct >= 0) {
         before_struct = sem[first_struct].lit_at;
     }
-    if (decl.write_block(src, toks, nodes, sem, syms, lits, root, module, decls, diag)) {
+    if (decl.write_block(src, toks, nodes, sem, syms, lits, root, module, decls, diag, ps[0].nn)) {
         return 1;
     }
     if (first_struct >= 0 && sem[first_struct].lit_at != before_struct) {

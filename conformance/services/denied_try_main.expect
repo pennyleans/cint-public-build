@@ -1,0 +1,10 @@
+case services/denied_try_main
+clause SPEC-04 LS-323 to LS-328; SPEC-07 SEC-CAP-1, SEC-CAP-13, SEC-OS-1, SEC-OS-12; SPEC-09 CONF-11 rule 12
+format 3
+source reference
+outcome error
+stdout-bytes 0
+fuel-consumed 2
+error.set fs.FsError
+error.value denied
+error.tag U16 2

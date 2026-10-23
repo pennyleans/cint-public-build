@@ -389,6 +389,35 @@ class FuncDecl(Node):
 
 
 @dataclass(eq=False)
+class ExternDecl(Node):
+    """`extern <class> <result> name(<params>);` (SPEC-03 H-1, H-5; SPEC-04 LS-299, Proposed): a
+    function the host program or a service supplies. A service extern carries the `@service`
+    attribute (SPEC-07 SEC-CAP-13): the service name and version, and the capability that covers
+    it with the kinds of the capability's arguments (`path` or `name`), or no capability."""
+    name: str
+    name_pos: Position
+    effect: str                 # `pure`, `observe` or `unrestricted` (SPEC-03 H-1)
+    result: TypeRef | UnionType | None      # None for void
+    params: list                # Param nodes; `out` is admitted (SPEC-03 H-5)
+    exported: bool = False
+    pos: Position = None        # the `extern` keyword
+    service: str | None = None  # `fs/1`: the service that supplies the extern (SEC-OS-10), or None
+    capability: list | None = None          # the segments of the covering capability's name
+    capability_pos: Position | None = None
+    cap_kinds: list = field(default_factory=list)   # `path` or `name`, one per capability argument
+
+
+@dataclass(eq=False)
+class RequiresDecl(Node):
+    """`requires fs.read("/data");` (SPEC-07 SEC-CAP-1, SEC-CAP-3; Proposed): a capability the
+    program may use, with constant arguments."""
+    segments: list              # the identifiers of the capability's name
+    pos: Position               # the `requires` keyword
+    name_pos: Position          # the first identifier
+    args: list                  # argument expressions, in source order
+
+
+@dataclass(eq=False)
 class KernelDecl(Node):
     """A kernel (SPEC-02 K-1, SPEC-04 LS-244): shape symbols, parameters with explicit
     modes, an optional `over` clause ([(name, position, extent)], None for the element
@@ -457,3 +486,5 @@ class Module:
     memories: list = field(default_factory=list)     # module-level arena and pool declarations (VarDecl)
     memory: bool = True                              # parsed with the arena and pool surface
     fixed: bool = True                               # parsed with the box 15 fixed-point surface
+    externs: list = field(default_factory=list)      # ExternDecl nodes (I/O services lane, U1)
+    requires: list = field(default_factory=list)     # RequiresDecl nodes (I/O services lane, U1)

@@ -1,0 +1,9 @@
+case fixed/print_q128
+clause SPEC-04 LS-201 to LS-215 (fixed-point printing at 128 bits: exact text, precision, width, fill, sign, `!raw` and `!bits`)
+format 5
+source reference
+outcome value
+stdout-bytes 170
+stdout-sha256 0109c70e815d011862cf545aff08311a78974f7b5c088f97211ce0967e0c4ef7
+return I64 0
+fuel-consumed 1

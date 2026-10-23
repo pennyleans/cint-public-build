@@ -1,9 +1,10 @@
 import os, sys; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # put ref/ on the path
 """Fixed point in programs (box 15; SPEC-01 section 5, SPEC-04 sections 3.6, 6.6 and 9): every
 expected value is a row or an example of SPEC-01 5.2 to 5.6, SPEC-01 IM-63, IM-64, IM-87 and
-IM-106, or SPEC-04 LS-37 and LS-215, run as a program. What box 15 leaves to defaults not yet
-ruled (`as|`, the result forms, `!ratio`, a fraction literal as a conversion source) is refused; `sqrt_wrap` and `sqrt_sat`, which SPEC-04 LS-145 does not list,
-are undefined names."""
+IM-106, or SPEC-04 LS-37 and LS-215, run as a program. `as|` and the result forms follow the
+rulings on OQ-272, OQ-273 and OQ-278 (SPEC-01 IM-50, IM-68, IM-188). What box 15 leaves to
+defaults not yet ruled (`!ratio`, a fraction literal as a conversion source) is refused;
+`sqrt_wrap` and `sqrt_sat`, which SPEC-04 LS-145 does not list, are undefined names."""
 import unittest
 
 from cint_ref import expect, faults
@@ -240,7 +241,56 @@ class Conversions(unittest.TestCase):                      # SPEC-01 IM-68, IM-6
         self.assertEqual(code(["I32 n = 1;", "Q16.16 y = n as Q16.16 round floor;"]).code, "C2009")
         self.assertEqual(code(["Q16.16 x = 1.0;", "Bool b = x as Bool;"]).code, "C2008")
         self.assertTrue(refused(["Q16.16 y = 1.5 as Q16.16;"]))          # OQ-162, BX15-11
-        self.assertTrue(refused(["Q16.16 x = 1.5;", "Q8.8 y = x as| Q8.8;"]))   # BX15-09
+
+    def test_saturating(self):                             # SPEC-01 IM-68 `as|` (OQ-272)
+        self.assertEqual(raw_of("Q32.32 q = 40000.5;\n    Q16.16 x = q as| Q16.16;"), 2147483647)
+        self.assertEqual(raw_of("Q32.32 q = -40000.5;\n    Q16.16 x = q as| Q16.16 round floor;"), -2147483648)
+        self.assertEqual(raw_of("Q16.16 q = 1.5;\n    Q8.8 x = q as| Q8.8;"), 384)
+        self.assertEqual(raw_of("I64 n = 40000;\n    Q16.16 x = n as| Q16.16;"), 2147483647)
+        self.assertEqual(raw_of("Q16.16 x = -40000 as| Q16.16;"), -2147483648)     # IM-23: a literal, from Z
+        self.assertEqual(value(["Q16.16 q = 1000.5;", "return (q as| I8) as I64;"]).value, 127)
+        self.assertEqual(value(["Q16.16 q = -2.5;", "return (q as| U8 round floor) as I64;"]).value, 0)
+        self.assertEqual(value(["Q16.16 q = 2.5;", "return (q as| I8) as I64;"]).value, 2)
+        self.assertEqual(value(["Q16.16 q = 2.5;", "return (q as| I8 round ceil) as I64;"]).value, 3)
+        self.assertEqual(code(["Q16.16 x = 1.0;", "Q32.32 y = x as| Q32.32 round floor;"]).code, "C2009")
+        self.assertEqual(code(["Q16.16 x = 1.0;", "Bool b = x as| Bool;"]).code, "C2008")
+        self.assertEqual(code(["Bool b = true;", "I64 n = b as| I64;"]).code, "C2008")   # SPEC-04 LS-135
+
+
+def result_raw(expr):
+    """The raw value of `expr`, an `ArithError!Q16.16`, or -1 for `.overflow`, -2 for
+    `.div_zero` and -9 for any other value, with `a` 1.5, `b` 2.25, `z` 0, `big` the maximum,
+    `h` raw 1 and `m` raw 3."""
+    return value(["Q16.16 a = 1.5;", "Q16.16 b = 2.25;", "Q16.16 z = 0.0;", "Q16.16 big = Q16.16.max;",
+                  "Q16.16 h = Q16.16.raw(1);", "Q16.16 m = Q16.16.raw(3);",
+                  "Q16.16 r = %s catch (e) {" % expr, "    if (e == ArithError.overflow) {", "        return -1;",
+                  "    }", "    if (e == ArithError.div_zero) {", "        return -2;", "    }", "    return -9;",
+                  "};", "return r.raw as I64;"]).value
+
+
+class ResultForms(unittest.TestCase):                      # SPEC-01 IM-188 (OQ-273, OQ-278)
+    def test_values_and_errors(self):
+        for expr, want in (("add_result(a, b)", 245760), ("sub_result(a, b)", -49152),
+                           ("add_result(big, h)", -1), ("sub_result(z - big, m)", -1),
+                           ("mul_result(a, b)", 221184), ("mul_result(big, b)", -1),
+                           ("mul_result(m, h)", 0), ("mul_result(m, h, floor)", 0), ("mul_result(m, h, ceil)", 1),
+                           ("div_result(a, b)", 43691), ("div_result(h, b, floor)", 0),
+                           ("div_result(h, b, ceil)", 1), ("div_result(big, h)", -1), ("div_result(a, z)", -2),
+                           ("div_result(z, z, trunc)", -2), ("mul_result(a, 2.0)", 196608)):
+            with self.subTest(expr=expr):
+                self.assertEqual(result_raw(expr), want)
+
+    def test_rules(self):
+        for lines, want in ((["Q16.16 a = 1.5;", "Q16.16 r = rem_result(a, a) catch 0.0;"], "C2103"),
+                            (["Q16.16 a = 1.5;", "Q16.16 r = shl_result(a, 1) catch 0.0;"], "C2103"),
+                            (["I64 n = 1;", "I64 r = mul_result(n, n, floor) catch 0;"], "C2103"),
+                            (["I64 n = 1;", "I64 r = mul_result(n, n, n) catch 0;"], "C3007"),
+                            (["Q16.16 a = 1.5;", "Q16.16 r = mul_result(a, a, nearest) catch 0.0;"], "C3007"),
+                            (["Q16.16 a = 1.5;", "Q16.16 r = add_result(a, a, floor) catch 0.0;"], "C2022"),
+                            (["Q16.16 a = 1.5;", "Q16.16 r = div_result(a) catch 0.0;"], "C2022"),
+                            (["Q16.16 a = 1.5;", "Q8.8 c = 1.0;", "Q16.16 r = mul_result(a, c) catch 0.0;"], "C2001")):
+            with self.subTest(lines=lines):
+                self.assertEqual(code(lines).code, want)
 
 
 class Printing(unittest.TestCase):                         # SPEC-04 LS-201, LS-207, LS-208, LS-215
@@ -328,7 +378,6 @@ class Surface(unittest.TestCase):
 
     def test_left_to_defaults_not_yet_ruled(self):
         self.assertTrue(refused(["Q16.16 a = 1.5;", "a++;"]))
-        self.assertTrue(refused(["Q16.16 a = 1.5;", "Q16.16 c = mul_result(a, a) catch 0.0;"]))
 
     def test_boot_refusal_cases_run(self):
         # SPEC-09 BOOT-01: the spec outcome of each boot/ refusal case under cint-core-1.

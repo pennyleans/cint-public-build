@@ -1,0 +1,9 @@
+case fixed/mul_result_q16_16
+clause SPEC-01 IM-61, IM-62, IM-188; SPEC-04 LS-96, LS-145 (`mul_result(a, b[, mode])` holds the product `mul` rounds by the mode, half_even without one, or .overflow; `try` passes .overflow on from a function of result `ArithError!Q16.16`; OQ-273 A)
+format 5
+source reference
+outcome value
+stdout-bytes 37
+stdout-sha256 2ad508a1dcaf405ba388fae30de78c42ff357f3fa30f84f88e9fde770dd4f1cd
+return I64 -1
+fuel-consumed 7

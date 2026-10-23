@@ -1,0 +1,9 @@
+case arith/convert_sat_literal
+clause SPEC-01 IM-26, IM-50; SPEC-04 LS-54, LS-133 (`as|` of a literal or a constant converts from its value in Z, at compile time, and never faults; OQ-272 A)
+format 5
+source reference
+outcome value
+stdout-bytes 79
+stdout-sha256 b871e6a4530420ef9f8206e1d65114e1474c08a0cb975e26e8c074b42c1178de
+return I64 126
+fuel-consumed 1

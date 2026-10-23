@@ -90,20 +90,16 @@ def outcome(result) -> str:
 def result_form(r) -> str:
     """The result form of an operation whose checked form gives r (SPEC-01 IM-188; decision 2026-10-10
     on OQ-273 and OQ-278): `R 0 <hex>` for its value, or `R <tag>`, the ArithError tag that mirrors its
-    fault. cint_ref's checker refuses the fixed-point result forms yet, so this reads the checked form."""
+    fault, as cint_ref's result forms read it."""
     if isinstance(r, Fault):
         return "R %d" % ARITH_ERROR[r.code]
     return "R 0 %016x" % (r.value & M64)
 
 
 def convert(form: str, source: str, target: str, x: int, mode=None):
-    """fixed.convert, and `as|` (SPEC-01 IM-50, IM-68; decision 2026-10-10 on OQ-272), which cint_ref
-    does not take yet: the checked conversion's value, or the limit of its fault, which is the bound
-    of the target on the exact value's side (IM-106)."""
-    if form != "sat":
-        return fixed.convert(form, source, target, Value(source, x), mode=mode)
-    r = fixed.convert("checked", source, target, Value(source, x), mode=mode)
-    return r.limit if isinstance(r, Fault) else r
+    """fixed.convert in its checked, wrapping and saturating forms (`as|`: SPEC-01 IM-50, IM-68;
+    decision 2026-10-10 on OQ-272)."""
+    return fixed.convert(form, source, target, Value(source, x), mode=mode)
 
 
 def boundaries(t: str) -> list:

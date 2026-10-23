@@ -1,0 +1,11 @@
+// case: fixed/div_overflow_q96_32
+// clause: SPEC-01 IM-65, IM-106 (Q96.32.min / -1.0 is 2^95, outside Q96.32; exact is the raw value 2^127)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 10:14 (the `/`), operation div.checked.q96_32.half_even, operands Q96.32 raw -2^127 and Q96.32 raw -4294967296, exact 2^127, limit Q96.32 raw 2^127 - 1; stack depth 0; fuel 1. Games wave G2a (OQ-292)
+
+export Bool run() {
+    Q96.32 a = Q96.32.min;
+    Q96.32 b = -1.0;
+    return a / b != 0.0;
+}

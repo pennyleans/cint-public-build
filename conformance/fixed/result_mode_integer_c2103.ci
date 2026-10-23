@@ -1,0 +1,12 @@
+// case: fixed/result_mode_integer_c2103
+// clause: SPEC-01 IM-188; SPEC-04 LS-145 (a rounding mode argument of `mul_result` or `div_result` is defined on fixed point only, so `div_result(a, b, floor)` of I32 is C2103; OQ-273 A)
+// subset: cint-core-1 (error unions)
+// entry: run; args: none
+// spec outcome: compile-error C2103 at 10:13 (the call of `div_result`). Box 15, OQ-280 group 1
+
+export I64 run() {
+    I32 a = 7;
+    I32 b = 2;
+    I32 q = div_result(a, b, floor) catch 0;
+    return q as I64;
+}

@@ -37,6 +37,9 @@ import sys
 import tempfile
 import unittest
 
+# Apple Clang's AddressSanitizer has no leak checker and aborts when asked for one.
+LEAK_CHECK = "0" if sys.platform == "darwin" else "1"
+
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SEED = ROOT / "seed"
 RT = ROOT / "rt"
@@ -78,6 +81,10 @@ def available_memory() -> int:
         if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(s)):
             raise OSError("GlobalMemoryStatusEx failed")
         return int(s.ap)
+    if sys.platform == "darwin":
+        # macOS has no /proc; its physical memory stands in for what is available.
+        return int(subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True,
+                                  check=True).stdout)
     with open("/proc/meminfo", encoding="ascii") as f:
         for line in f:
             if line.startswith("MemAvailable:"):
@@ -127,7 +134,7 @@ def c_compile(sources, output: pathlib.Path, objects=(), obj_only=False, defines
 
 def run_seed(args, cwd, stdin=None):
     env = dict(STATE["env"])
-    env["ASAN_OPTIONS"] = "detect_leaks=1"
+    env["ASAN_OPTIONS"] = "detect_leaks=" + LEAK_CHECK
     r = subprocess.run([str(STATE["seed"]), *map(str, args)], cwd=cwd, env=env,
                        capture_output=True, input=stdin)
     return r.returncode, r.stdout.decode("ascii", "replace"), r.stderr.decode("ascii", "replace")
@@ -377,7 +384,7 @@ def run_entry(exe: pathlib.Path, entry: str, fuel: int, args):
     for t, v in args:
         argv += [v, t]
     env = dict(STATE["env"])
-    env["ASAN_OPTIONS"] = "detect_leaks=1"
+    env["ASAN_OPTIONS"] = "detect_leaks=" + LEAK_CHECK
     r = subprocess.run(argv, capture_output=True, text=True, env=env, timeout=120)
     return r.returncode, r.stdout.splitlines(), r.stderr
 
@@ -1806,7 +1813,7 @@ class SeedLeg(unittest.TestCase):
         ok, diags = c_compile([tmp / "wrap.c", host], exe, objects=[STATE["rt_obj"]])
         self.assertTrue(ok, diags)
         env = dict(STATE["env"])
-        env["ASAN_OPTIONS"] = "detect_leaks=1"
+        env["ASAN_OPTIONS"] = "detect_leaks=" + LEAK_CHECK
         r = subprocess.run([str(exe)], capture_output=True, text=True, env=env, timeout=120)
         failed = [l for l in r.stdout.splitlines() if not l.endswith(": ok")]
         print("[seed %s] cx wrappers: %s" % (STATE["leg"], r.stdout.splitlines()[-1] if r.stdout else r.stderr[-300:]))

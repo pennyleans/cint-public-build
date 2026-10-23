@@ -1,0 +1,7 @@
+case fixed/literal_out_of_range_c2003_q80_48
+clause SPEC-04 LS-37; SPEC-01 IM-54 (2^79 is one past the largest Q80.48 value)
+format 5
+source compile-error
+outcome compile-error
+diagnostic.code C2003
+diagnostic.position fixed/literal_out_of_range_c2003_q80_48.ci:8:16

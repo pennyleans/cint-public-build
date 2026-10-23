@@ -7,9 +7,10 @@ mirrors the structures of `rt/cint_state.h`, which governs, binds its
 functions for one loaded library (`StateApi`), and gives the read-only
 typed view of a checkpoint (`read_checkpoint`, BX13-11). A checkpoint and a
 recording are untrusted bytes: only the runtime's decoders read them, never
-Python (H-19a). The mirrors take the layouts of ABI 3.2, whose tagged value
-holds a `Z` of fault record version 3 (OQ-263), so `StateApi` reads them from
-ABI 3.2 libraries only (`stale`).
+Python (H-19a). The mirrors take the layouts of ABI 3.3, whose tagged value
+holds a `Z` of fault record version 3 (OQ-263) and whose recording event
+carries a host call's response (RT-OQ-70), so `StateApi` reads them from
+ABI 3.3 libraries only (`stale`).
 """
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ from . import _abi, _record
 from ._elem import SIGNED_TAGS, TAG_BOOL, TAG_FIXED, TAG_T1, TAG_T27, UNSIGNED_TAGS
 from ._errors import CINT_OK, CINT_RESOURCE
 
-ABI_STATE = 0x00030002    # ABI 3.2: the tagged value holds a Z of fault record version 3 (OQ-263)
+ABI_STATE = 0x00030003    # ABI 3.3: cint_recording_event carries a host call's response (RT-OQ-70)
 
 RECORD_MODES = {"full": 0, "digest": 1}              # CINT_RECORD_FULL, CINT_RECORD_DIGEST (H-18)
 DEPTH_FROM_CONFIG = 0                                # CINT_DEPTH_FROM_CONFIG (rt/cint_rt.h)
@@ -90,7 +91,7 @@ class RecordingEvent(ctypes.Structure):
                 ("has_result", _u32), ("has_error", _u32), ("has_hash", _u32), ("reason", _u32),
                 ("result", TValue), ("error_set", _abi.CintName), ("error_tag", _u64), ("hash", _u8 * 32),
                 ("next_buffer", _u64), ("next_arena", _u64), ("next_pool", _u64), ("revision", _u8 * 32),
-                ("args_at", _size)]
+                ("args_at", _size), ("response", _p), ("response_len", _size)]
 
 
 class ReplayConfig(ctypes.Structure):
@@ -111,7 +112,7 @@ class Observer(ctypes.Structure):
 
 
 SIZES = {TValue: 272, Site: 8, Sink: 16, CodeModule: 48, CheckpointInfo: 192, CheckpointGlobal: 304,
-         CheckpointBuffer: 48, RecordingInfo: 208, RecordingEvent: 560, ReplayConfig: 48, ReplayReport: 56,
+         CheckpointBuffer: 48, RecordingInfo: 208, RecordingEvent: 576, ReplayConfig: 48, ReplayReport: 56,
          ObserverEntry: 32, Observer: 24}
 
 
@@ -175,7 +176,7 @@ class StateApi:
     (SPEC-03 5.3, H-14b, H-17a). `missing` names the first function the
     library lacks, when it was built without `rt/cint_state.c` and
     `rt/cint_rec.c`, and `stale` the ABI version of a library older than
-    the ABI 3.2 layouts these mirrors hold (SPEC-03 A-5); the other
+    the ABI 3.3 layouts these mirrors hold (SPEC-03 A-5); the other
     attributes are then absent."""
 
     def __init__(self, lib):

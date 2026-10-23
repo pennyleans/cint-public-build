@@ -4,16 +4,21 @@
  * 10.2), call depth, canonical fault records (SPEC-01 9.2, 11.1, 11.2), site
  * resolution (SPEC-09 EMIT-23), the rendering of tagged values, the minimal
  * buffer registry and view binding (SPEC-03 A-8, A-12), staged print output
- * (SPEC-04 LS-193 to LS-197), error results (SPEC-03 A-18), and
- * cint_program_run (SPEC-06 3.4a).
+ * (SPEC-04 LS-193 to LS-197), error results (SPEC-03 A-18),
+ * cint_program_run (SPEC-06 3.4a) and the width report (RT-OQ-64).
  *
  * Every integer computation here is on unsigned 64-bit limbs or on signed
  * values proven in range; no binary floating-point type appears (SPEC-09
  * EMIT-01). The busy flag (SPEC-03 A-11) is confined to this file: it uses
  * _InterlockedExchange on MSVC and C17 atomic_exchange elsewhere.
- * cint_program_run is the only code here that calls the host's file API; it
- * runs in a program process, never in generated code (SPEC-03 A-3).
+ * cint_program_run and the fs/1 service (rt/cint_fs.c, called only through a
+ * resolved service row under a grant) are the only code here that calls the
+ * host's file API; cint_program_run runs in a program process, never in
+ * generated code (SPEC-03 A-3).
  */
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE 1 /* Apple <sys/fcntl.h> hides O_NOFOLLOW (rt/cint_fs.c) under _POSIX_C_SOURCE */
+#endif
 #if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L /* open, write, close, O_CLOEXEC */
 #endif
@@ -256,6 +261,7 @@ cint_fault_record *cint_rt_record_begin(cint_ctx *ctx, cint_site site, uint16_t 
     rec->stack_count = ctx->head.stack_count;
     memcpy(rec->stack, ctx->stack, (size_t)ctx->head.stack_count * sizeof ctx->stack[0]);
     ctx->head.faulted = 1u;
+    cint_rt_console_fault(ctx);   /* a raw terminal is restored when the context faults (RT-OQ-73) */
     return rec;
 }
 
@@ -863,6 +869,7 @@ cint_status cint_ctx_create(const cint_ctx_config *config, cint_ctx **out)
     ctx->module = config->module;
     ctx->device_record = config->device_count != 0u ? config->devices[0] : NULL;
     ctx->program = config->program;
+    ctx->head.module_count = config->program->module_count;
     ctx->allocator = a;
     ctx->config_depth = config->depth_limit != 0 ? config->depth_limit : CINT_DEFAULT_DEPTH;
     ctx->frame_arena_bytes =
@@ -871,11 +878,23 @@ cint_status cint_ctx_create(const cint_ctx_config *config, cint_ctx **out)
     ctx->output_user = config->output_user;
     ctx->head.fuel_limit = CINT_FUEL_UNBOUNDED;
     ctx->head.stack = ctx->stack;
+    {
+        /* The host table (SPEC-03 A-10; rt/cint_host.c): a function that is missing or
+         * disagrees refuses creation, and the allocator's failure fails it. */
+        cint_status st = cint_rt_host_resolve(ctx, config);
+        if (st != CINT_OK) {
+            cint_ctx_destroy(ctx);
+            return st;
+        }
+    }
     *out = ctx;
     return CINT_OK;
 }
 
 #include "cint_mem.c"  /* arenas and pools (OQ-212), counted in their own 4.2 row */
+#include "cint_host.c" /* the host table and the extern call (RT-OQ-70), counted in their own 4.2 row */
+#include "cint_fs.c"   /* the fs/1 service of the standard service table (RT-OQ-72), counted in its own 4.2 row */
+#include "cint_console.c" /* the console/1 service and the service table's lookup (RT-OQ-73), counted in its own 4.2 row */
 void cint_ctx_destroy(cint_ctx *ctx)
 {
     cint_allocator a;
@@ -894,20 +913,21 @@ void cint_ctx_destroy(cint_ctx *ctx)
     }
     a.release(a.user, ctx->buffers, ctx->buffer_cap * sizeof(buffer_slot), _Alignof(buffer_slot));
     a.release(a.user, ctx->leases, ctx->buffer_cap * sizeof(lease_slot), _Alignof(lease_slot));
-    if (ctx->state != NULL) {
+    if (ctx->head.state != NULL) {
         uint32_t n = ctx->program->module_count;
         for (uint32_t m = 0u; m < n; m++) {
-            if (ctx->state[m] != NULL)
-                a.release(a.user, ctx->state[m], ((const cint_state *)ctx->state[n + m])->bytes, 8u);
+            if (ctx->head.state[m] != NULL)
+                a.release(a.user, ctx->head.state[m], ((const cint_state *)ctx->head.state[n + m])->bytes, 8u);
         }
-        a.release(a.user, (void *)ctx->state, 2u * n * sizeof(void *), _Alignof(void *));
+        a.release(a.user, (void *)ctx->head.state, 2u * n * sizeof(void *), _Alignof(void *));
     }
+    cint_rt_host_release(ctx);
     a.release(a.user, ctx, sizeof *ctx, _Alignof(struct cint_ctx));
 }
 
 /* Module state (cint_rt.h): the context's block of module s->module, created
  * from the module's initial image at its first access. */
-void *cint_rt_state(cint_ctx *ctx, const cint_state *s)
+void *cint_rt_state_slow(cint_ctx *ctx, const cint_state *s)
 {
     uint32_t n = ctx->program->module_count, m = s->module;
     cint_site none = {m, 0u};
@@ -915,25 +935,25 @@ void *cint_rt_state(cint_ctx *ctx, const cint_state *s)
         (void)fault_refused(ctx, none);
         return NULL;
     }
-    if (ctx->state == NULL) {
-        ctx->state = (void **)ctx->allocator.alloc(ctx->allocator.user, 2u * n * sizeof(void *), _Alignof(void *));
-        if (ctx->state == NULL) {
+    if (ctx->head.state == NULL) {
+        ctx->head.state = (void **)ctx->allocator.alloc(ctx->allocator.user, 2u * n * sizeof(void *), _Alignof(void *));
+        if (ctx->head.state == NULL) {
             (void)fault_host(ctx, none, "host.resource", false, CINT_OK);
             return NULL;
         }
-        for (uint32_t k = 0u; k < 2u * n; k++) ctx->state[k] = NULL;
+        for (uint32_t k = 0u; k < 2u * n; k++) ctx->head.state[k] = NULL;
     }
-    if (ctx->state[m] == NULL) {
+    if (ctx->head.state[m] == NULL) {
         void *b = ctx->allocator.alloc(ctx->allocator.user, s->bytes, 8u);
         if (b == NULL) {
             (void)fault_host(ctx, none, "host.resource", false, CINT_OK);
             return NULL;
         }
         memcpy(b, s->init, s->bytes);
-        ctx->state[m] = b;
-        ctx->state[n + m] = (void *)(uintptr_t)s;
+        ctx->head.state[m] = b;
+        ctx->head.state[n + m] = (void *)(uintptr_t)s;
     }
-    return ctx->state[m];
+    return ctx->head.state[m];
 }
 
 /* CONF-11 rule 10: one `state.global` line per variable of each table. */
@@ -943,8 +963,8 @@ size_t cint_state_render(const cint_ctx *ctx, const cint_state_table *t, char *o
     for (uint32_t i = 0u; i < t->count; i++) {
         const cint_state *s = t->states[i];
         const cint_module *mod = s->module < ctx->program->module_count ? ctx->program->modules[s->module] : NULL;
-        const uint8_t *b = ctx->state != NULL && mod != NULL && ctx->state[s->module] != NULL
-                               ? (const uint8_t *)ctx->state[s->module] : (const uint8_t *)s->init;
+        const uint8_t *b = ctx->head.state != NULL && mod != NULL && ctx->head.state[s->module] != NULL
+                               ? (const uint8_t *)ctx->head.state[s->module] : (const uint8_t *)s->init;
         for (uint32_t j = 0u; mod != NULL && j < s->var_count; j++) {
             const cint_state_var *v = &s->vars[j];
             size_t w = v->tag == CINT_TAG_BOOL ? 1u : cint_rt_tag_width(v->tag) / 8u, n;
@@ -963,9 +983,18 @@ size_t cint_state_render(const cint_ctx *ctx, const cint_state_table *t, char *o
             memcpy(out + at, v->name, v->name_len);
             at += v->name_len;
             out[at++] = ' ';
-            tv.len = (uint16_t)(1u + w);
-            tv.bytes[0] = (uint8_t)v->tag;
-            memcpy(tv.bytes + 1, b + v->offset, w);  /* little-endian hosts (SPEC-01 IM-146) */
+            if (cint_q_is(v->tag)) {  /* fixed point (IM-146 tag 31): the storage tag, f as U16, the raw integer */
+                tv.len = (uint16_t)(4u + w);
+                tv.bytes[0] = (uint8_t)CINT_TAG_Q;
+                tv.bytes[1] = (uint8_t)v->tag;
+                tv.bytes[2] = (uint8_t)(cint_q_frac(v->tag) & 0xFFu);
+                tv.bytes[3] = (uint8_t)(cint_q_frac(v->tag) >> 8);
+                memcpy(tv.bytes + 4, b + v->offset, w);
+            } else {
+                tv.len = (uint16_t)(1u + w);
+                tv.bytes[0] = (uint8_t)v->tag;
+                memcpy(tv.bytes + 1, b + v->offset, w);  /* little-endian hosts (SPEC-01 IM-146) */
+            }
             n = cint_tvalue_render(&tv, out + at, cap - at);
             if (n == 0u || n >= cap - at) return SIZE_MAX;
             at += n;
@@ -2112,7 +2141,7 @@ static bool print_format_limbs(cint_ctx *ctx, uint32_t tag, const uint64_t *limb
         return fault_refused(ctx, ctx->print_site);
     }
     if (cint_q_is(tag)) {
-        fq_print_text(tag, limb[0], form, scale, head, &nhead, text, &ntext, &zeros);
+        fq_print_text(tag, limb, form, scale, head, &nhead, text, &ntext, &zeros);
     } else if (tag == CINT_TAG_BOOL) {
         memcpy(text, limb[0] != 0u ? "true" : "false", limb[0] != 0u ? 4u : 5u);
         ntext = limb[0] != 0u ? 4u : 5u;
@@ -2225,255 +2254,7 @@ bool cint_rt_print_end(cint_ctx *ctx)
     return true;
 }
 
-/* ------------------------------------------------------------------------- */
-/* Program processes (SPEC-06 3.2, 3.4a; D-19).                               */
-
-static cint_status write_stdout(void *user, const uint8_t *bytes, size_t len)
-{
-    if (len > 0u && fwrite(bytes, 1u, len, stdout) != len) {
-        *(bool *)user = true;
-        return CINT_RESOURCE;
-    }
-    return CINT_OK;
-}
-
-/* "handle:<N>" sets *handle and returns 1; a nonempty path returns 2; NULL
- * returns 0; anything else -1. */
-static int fault_dest_kind(const char *dest, uint64_t *handle)
-{
-    static const char prefix[] = "handle:";
-    const char *p;
-    uint64_t v = 0u;
-#if defined(_WIN32)
-    const uint64_t max = (uint64_t)INTPTR_MAX;
-#else
-    const uint64_t max = (uint64_t)INT_MAX;
-#endif
-    if (dest == NULL) return 0;
-    if (strncmp(dest, prefix, sizeof prefix - 1u) != 0) return dest[0] != '\0' ? 2 : -1;
-    p = dest + (sizeof prefix - 1u);
-    if (*p == '\0') return -1;
-    for (; *p != '\0'; p++) {
-        if (*p < '0' || *p > '9' || v > (max - (uint64_t)(*p - '0')) / 10u) return -1;
-        v = v * 10u + (uint64_t)(*p - '0');
-    }
-    *handle = v;
-    return 1;
-}
-
-#if defined(_WIN32)
-static bool write_handle(HANDLE h, const uint8_t *p, size_t n)
-{
-    while (n > 0u) {
-        DWORD chunk = n > 0x40000000u ? 0x40000000u : (DWORD)n, done = 0;
-        if (!WriteFile(h, p, chunk, &done, NULL) || done == 0u) return false;
-        p += done;
-        n -= done;
-    }
-    return true;
-}
-
-static bool write_record(int kind, const char *path, uint64_t handle, const uint8_t *bytes, size_t len)
-{
-    HANDLE h;
-    wchar_t *wide;
-    int wn;
-    bool ok;
-    if (kind == 1) return write_handle((HANDLE)(uintptr_t)handle, bytes, len);
-    wn = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, NULL, 0);
-    if (wn <= 0) return false;
-    wide = (wchar_t *)malloc((size_t)wn * sizeof *wide);
-    if (wide == NULL) return false;
-    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide, wn) != wn) {
-        free(wide);
-        return false;
-    }
-    h = CreateFileW(wide, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    free(wide);
-    if (h == INVALID_HANDLE_VALUE) return false;
-    ok = write_handle(h, bytes, len);
-    return CloseHandle(h) != 0 && ok;
-}
-#else
-static bool write_fd(int fd, const uint8_t *p, size_t n)
-{
-    while (n > 0u) {
-        ssize_t done = write(fd, p, n);
-        if (done < 0 && errno == EINTR) continue;
-        if (done <= 0) return false;
-        p += done;
-        n -= (size_t)done;
-    }
-    return true;
-}
-
-static bool write_record(int kind, const char *path, uint64_t handle, const uint8_t *bytes, size_t len)
-{
-    int fd;
-    bool ok;
-    if (kind == 1) return write_fd((int)handle, bytes, len);
-    fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0666);
-    if (fd < 0) return false;
-    ok = write_fd(fd, bytes, len);
-    return close(fd) == 0 && ok;
-}
-#endif
-
-static int report_fault(const cint_ctx *ctx, int kind, const char *dest, uint64_t handle)
-{
-    size_t len = cint_fault_encode(&ctx->fault, NULL, 0u);
-    uint8_t *bytes;
-    bool ok;
-    if (len == 0u) return CINT_EXIT_INTERNAL;
-    if (kind == 0) return CINT_EXIT_FAULT;
-    bytes = (uint8_t *)malloc(len);
-    if (bytes == NULL) return CINT_EXIT_ENVIRONMENT;
-    (void)cint_fault_encode(&ctx->fault, bytes, len);
-    ok = write_record(kind, dest, handle, bytes, len);
-    free(bytes);
-    return ok ? CINT_EXIT_FAULT : CINT_EXIT_ENVIRONMENT;
-}
-
-/* The fuel record (CINT_FUEL_RECORD_DOMAIN, then fuel consumed as I64,
- * little-endian, SPEC-01 IM-144) to the destination of kind `kind`. */
-static bool report_fuel(const cint_ctx *ctx, int kind, const char *dest, uint64_t handle)
-{
-    static const char domain[] = CINT_FUEL_RECORD_DOMAIN;
-    uint8_t bytes[CINT_FUEL_RECORD_BYTES];
-    uint64_t used = (uint64_t)ctx->head.fuel_used, n = sizeof domain - 1u;
-    size_t i;
-    /* Shift the value itself: MSVC /O2 vectorized `x >> (8u * i)` with pooled
-     * __xmm@ constants, which the EMIT-31 audit of the runtime object rejects. */
-    for (i = 0; i < 4u; i++, n >>= 8u) bytes[i] = (uint8_t)n;
-    memcpy(bytes + 4, domain, sizeof domain - 1u);
-    for (i = 0; i < 8u; i++, used >>= 8u) bytes[4u + (sizeof domain - 1u) + i] = (uint8_t)used;
-    return write_record(kind, dest, handle, bytes, sizeof bytes);
-}
-
-/* n little-endian bytes of v at p; returns p + n. The value itself is shifted,
- * as in report_fuel. */
-static uint8_t *put_u(uint8_t *p, uint64_t v, unsigned n)
-{
-    unsigned i;
-    for (i = 0; i < n; i++, v >>= 8u) p[i] = (uint8_t)v;
-    return p + n;
-}
-
-/* The error record (cint_rt.h 6d; RT-OQ-33) of the context's error result. */
-static int report_error(const cint_ctx *ctx, int kind, const char *dest, uint64_t handle)
-{
-    static const char domain[] = CINT_ERROR_RECORD_DOMAIN;
-    const cint_error_set *s = ctx->error_set;
-    const char *value = s->values != NULL ? s->values[ctx->error_tag - 1u] : NULL;
-    size_t nlen = s->name != NULL ? strlen(s->name) : 0u, vlen = value != NULL ? strlen(value) : 0u, len;
-    uint8_t *bytes, *p;
-    bool ok;
-    if (nlen == 0u || vlen == 0u || nlen > UINT32_MAX || vlen > UINT32_MAX || s->tag < CINT_TAG_U8 ||
-        s->tag > CINT_TAG_U64 || ctx->error_tag > cint_rt_mask(cint_rt_tag_width(s->tag))) {
-        return CINT_EXIT_INTERNAL;
-    }
-    if (kind == 0) return CINT_EXIT_ERROR_VALUE;
-    len = 4u + (sizeof domain - 1u) + 4u + nlen + 4u + vlen + 4u + 8u;
-    bytes = (uint8_t *)malloc(len);
-    if (bytes == NULL) return CINT_EXIT_ENVIRONMENT;
-    p = put_u(bytes, sizeof domain - 1u, 4u);
-    memcpy(p, domain, sizeof domain - 1u);
-    p = put_u(p + (sizeof domain - 1u), nlen, 4u);
-    memcpy(p, s->name, nlen);
-    p = put_u(p + nlen, vlen, 4u);
-    memcpy(p, value, vlen);
-    p = put_u(p + vlen, s->tag, 4u);
-    (void)put_u(p, ctx->error_tag, 8u);
-    ok = write_record(kind, dest, handle, bytes, len);
-    free(bytes);
-    return ok ? CINT_EXIT_ERROR_VALUE : CINT_EXIT_ENVIRONMENT;
-}
-
-/* The `state.global` lines of `t` (cint_state_render) to the destination of
- * kind `kind`: CINT_EXIT_OK, CINT_EXIT_ENVIRONMENT when they cannot be
- * written, or CINT_EXIT_INTERNAL for a malformed table. */
-static int report_state(const cint_ctx *ctx, const cint_state_table *t, int kind, const char *dest,
-                        uint64_t handle)
-{
-    uint64_t cap = 1u;
-    size_t n;
-    char *text;
-    bool ok;
-    for (uint32_t i = 0u; i < t->count; i++) {
-        const cint_state *s = t->states != NULL ? t->states[i] : NULL;
-        if (s == NULL || (s->var_count > 0u && s->vars == NULL)) return CINT_EXIT_INTERNAL;
-        for (uint32_t j = 0u; j < s->var_count; j++) {
-            /* A line is at most 48 bytes besides its module path and name. */
-            cap += 48u + CINT_FAULT_MAX_PATH + s->vars[j].name_len;
-            if (cap > PRINT_MAX) return CINT_EXIT_INTERNAL;
-        }
-    }
-    text = (char *)malloc((size_t)cap);
-    if (text == NULL) return CINT_EXIT_ENVIRONMENT;
-    n = cint_state_render(ctx, t, text, (size_t)cap);
-    ok = n != SIZE_MAX && write_record(kind, dest, handle, (const uint8_t *)text, n);
-    free(text);
-    return n == SIZE_MAX ? CINT_EXIT_INTERNAL : ok ? CINT_EXIT_OK : CINT_EXIT_ENVIRONMENT;
-}
-
-int cint_program_run(const cint_program *program, cint_main_fn main_fn, int64_t fuel, const char *fault_dest)
-{
-    return cint_program_run_state(program, main_fn, fuel, fault_dest, NULL, NULL, NULL);
-}
-
-int cint_program_run_fuel(const cint_program *program, cint_main_fn main_fn, int64_t fuel, const char *fault_dest,
-                          const char *fuel_dest)
-{
-    return cint_program_run_state(program, main_fn, fuel, fault_dest, fuel_dest, NULL, NULL);
-}
-
-int cint_program_run_state(const cint_program *program, cint_main_fn main_fn, int64_t fuel, const char *fault_dest,
-                           const char *fuel_dest, const char *state_dest, const cint_state_table *state)
-{
-    cint_ctx_config cfg;
-    cint_ctx *ctx = NULL;
-    cint_status st;
-    uint64_t handle = 0u, fuel_handle = 0u, state_handle = 0u;
-    bool out_failed = false, ran;
-    int kind = fault_dest_kind(fault_dest, &handle), fuel_kind = fault_dest_kind(fuel_dest, &fuel_handle);
-    int state_kind = fault_dest_kind(state_dest, &state_handle), status = CINT_EXIT_OK;
-    if (kind < 0 || fuel_kind < 0 || state_kind < 0) return CINT_EXIT_USAGE;
-    if (program == NULL || main_fn == NULL) return CINT_EXIT_INTERNAL;
-#if defined(_WIN32)
-    if (_setmode(_fileno(stdout), _O_BINARY) == -1) return CINT_EXIT_ENVIRONMENT;
-#endif
-    memset(&cfg, 0, sizeof cfg);
-    cfg.size = (uint32_t)sizeof cfg;
-    cfg.program = program;
-    cfg.output = write_stdout;
-    cfg.output_user = &out_failed;
-    st = cint_ctx_create(&cfg, &ctx);
-    if (st != CINT_OK) return st == CINT_RESOURCE ? CINT_EXIT_ENVIRONMENT : CINT_EXIT_INTERNAL;
-    st = main_fn(ctx, fuel);
-    /* stdout is flushed before a fault is reported and before exit (3.4a). */
-    if (fflush(stdout) != 0 || ferror(stdout) != 0) out_failed = true;
-    ran = st == CINT_OK || (st == CINT_FAULT && ctx->head.faulted != 0u);
-    if (!out_failed && ran && fuel_kind != 0 && !report_fuel(ctx, fuel_kind, fuel_dest, fuel_handle)) {
-        out_failed = true;  /* the fuel record could not be written: an environment failure */
-    }
-    if (!out_failed && ran && state_kind != 0 && state != NULL) {
-        status = report_state(ctx, state, state_kind, state_dest, state_handle);
-        out_failed = status == CINT_EXIT_ENVIRONMENT;
-    }
-    if (out_failed) {
-        status = CINT_EXIT_ENVIRONMENT;
-    } else if (status != CINT_EXIT_OK) {
-        /* the state table is malformed: CINT_EXIT_INTERNAL */
-    } else if (st == CINT_OK) {
-        status = ctx->error_set != NULL ? report_error(ctx, kind, fault_dest, handle) : CINT_EXIT_OK;
-    } else if (st == CINT_FAULT && ctx->head.faulted != 0u) {
-        status = report_fault(ctx, kind, fault_dest, handle);
-    } else {
-        status = CINT_EXIT_INTERNAL;
-    }
-    cint_ctx_destroy(ctx);
-    return status;
-}
+#include "cint_program.c" /* program processes and cint_program_run_args (RT-OQ-74), counted in its own 4.2 row */
 
 /* ------------------------------------------------------------------------- */
 /* SHA-256 (FIPS 180-4), for the bridge's MANIFEST and receipts.              */
@@ -2538,7 +2319,7 @@ bool cint_site_resolve(const cint_program *program, cint_site site, cint_positio
 {
     const cint_module *m;
     const cint_site_info *s;
-    if (program == NULL || program->modules == NULL || site.module >= program->module_count) return false;
+    if (program == NULL || out == NULL || program->modules == NULL || site.module >= program->module_count) return false;
     m = program->modules[site.module];
     if (m == NULL || m->sites == NULL || site.index == 0u || site.index >= m->site_count) return false;
     s = &m->sites[site.index];
@@ -2740,7 +2521,8 @@ static size_t render(const cint_tvalue *v, bool with_type, char *text)
     }
     if (tag == CINT_TAG_Q) {  /* the storage tag, f as U16, the raw integer: "Q16.16 raw 98304" (BX15-03 A) */
         unsigned st = v->len > 4u ? v->bytes[1] : 0u, f = v->len > 4u ? v->bytes[2] | (unsigned)v->bytes[3] << 8 : 0u;
-        if (st < CINT_TAG_I8 || st > CINT_TAG_I64 || f >= cint_rt_tag_width(st) || v->len != 4u + cint_rt_tag_width(st) / 8u)
+        if (st < CINT_TAG_I8 || (st > CINT_TAG_I64 && st != CINT_TAG_I128) || f >= cint_rt_tag_width(st) ||
+            v->len != 4u + cint_rt_tag_width(st) / 8u)
             return 0u;
         if (with_type) {
             uint8_t i_bits = (uint8_t)(cint_rt_tag_width(st) - f), f_bits = (uint8_t)f;
@@ -3225,7 +3007,7 @@ bool cint_rt_fold_step(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t tag,
 bool cint_rt_fault_reduce_empty(cint_ctx *ctx, cint_site site, bool max, uint32_t tag)
 {
     cint_fault_record *rec;
-    if (!fq_type_ok(tag) && cint_wide_limbs(tag) == 0u) return fault_refused(ctx, site);
+    if (!fq_type_ok(tag) && !fq_limbs_ok(tag)) return fault_refused(ctx, site);
     rec = record_reduce(ctx, site, (uint16_t)CINT_E_SHAPE, max ? "reduce_max" : "reduce_min", "checked", tag, 0u, 0u);
     if (rec != NULL) cint_rt_record_operand(rec, CINT_TAG_I64, 0u);
     return false;

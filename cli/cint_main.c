@@ -2,9 +2,9 @@
  * (task 2.15), `cint emit-c` (task 2.12a), and `cint <name>`, which runs `cint-<name>` from this
  * executable's directory (SPEC-06 3.1, BX13-15; handoff below).
  *
- *   cint run [--json] [--receipt PATH] [--root DIR] [--toolchain FILE] [--cache DIR] FILE.ci
- *   cint build [--json] [--receipt PATH] [--root DIR] [--out DIR] [--toolchain FILE] [--cache DIR] [FILE.ci | DIR]
- *   cint test [--json] [--receipt PATH] [--root DIR] [--toolchain FILE] [--cache DIR] [FILE.ci | DIR]
+ *   cint run [--json] [--receipt PATH | --width-report PATH] [--root DIR] [--stdlib DIR] [--toolchain FILE] [--cache DIR] [--grant LINE]... FILE.ci
+ *   cint build [--json] [--receipt PATH | --width-report] [--root DIR] [--out DIR] [--stdlib DIR] [--toolchain FILE] [--cache DIR] [FILE.ci | DIR]
+ *   cint test [--json] [--receipt PATH] [--root DIR] [--stdlib DIR] [--toolchain FILE] [--cache DIR] [--grant LINE]... [FILE.ci | DIR]
  *
  * Each reads FILE.ci through the bridge reader (rt/cint_bridge.h; the identity comes from the
  * reading handle) and, breadth first, every module its imports name (SPEC-06 3.3): an import
@@ -45,13 +45,35 @@
  * Without --root, FILE's directory is the project root and its name the module path; with
  * --root DIR, FILE is the module path under DIR (CINTC-12). The toolchain file (default:
  * cint.toolchain beside this executable) is written by tools/cint_bootstrap.py.
+ * An import of one segment (`import fs;`) whose path is absent under the source root is probed
+ * under the standard library root, --stdlib DIR or by default `lib` beside this executable,
+ * where tools/cint_bootstrap.py copies the repository's lib/ (SPEC-07 SEC-CAP-13, ruling
+ * OQ-303; rt/OPEN.md RT-OQ-71). A project module of that name shadows it. The receipt records
+ * both probes (SPEC-09 RCPT-07): `identity.lookups` holds `<path>: false` beside
+ * `stdlib:<path>: true` and `identity.source.files` the module under `stdlib:<path>`, so a
+ * receipt identity names no host directory. Multi-segment imports and the root module never
+ * probe it; without a standard library root each import probes one path, as before.
  * `cint emit-c [--json] --root DIR --out DIR [--toolchain FILE] MODULE.ci...` (task 2.12a) builds
  * the modules, given in dependency order (D-13; the root last), through cint_build and commits
  * the output set under --out (C per module, the D-2 program file, MANIFEST; <out>/MANIFEST.ref).
  * No stdout; each diagnostic names its module. Exit 0, 2, 4, 5 or 7 as above.
  *
- * Receipt and JSON writing live in cli/cint_receipt.c, the state both share in cli/cint_receipt.h
- * (decision 26). */
+ * --width-report (games G3, rt/OPEN.md RT-OQ-64) compiles the program's C with CINT_WIDTH_REPORT
+ * and cint_program_run_args renamed (rt/cint_wide.h section 2), so that the program writes its
+ * CINT-WIDTH-1 report (rt/cint_wide.h section 2) to stderr when it ends; `run` moves it to PATH.
+ * It takes no --receipt or --lib.
+ *
+ * --grant LINE (SPEC-06 3.2, ruling OQ-300; I/O services lane U5, rt/OPEN.md RT-OQ-74), on run
+ * and test, repeated for each grant: the canonical capability text of SPEC-07 SEC-CAP-6 and,
+ * for a path capability, `=` and the host directory its root maps to (`fs.read:/data=/tmp/d`).
+ * Each is passed to the program (or the test driver) as `--grant LINE` after its record
+ * destinations, and the runtime grants it at context creation; a line the runtime refuses ends
+ * the program with exit status 4. When a line names `console.input`, the program inherits this
+ * process's stdin in place of the null device. A built executable takes the same arguments.
+ *
+ * Receipt and JSON writing live in cli/cint_receipt.c, module discovery (the import scan, the
+ * standard library root, the source snapshot) in cli/cint_discover.c, and the state all three
+ * share in cli/cint_receipt.h (decision 26; SPEC-09 4.2 rows). */
 #define _CRT_SECURE_NO_WARNINGS 1
 #if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L
@@ -102,10 +124,10 @@ static void free_diag_paths(void)
 }
 
 static const char USAGE[] =
-    "usage: cint [--json] run [--receipt PATH] [--root DIR] [--toolchain FILE] [--cache DIR] FILE.ci\n"
-    "       cint [--json] build [--receipt PATH] [--root DIR] [--out DIR] [--lib] [--toolchain FILE] [--cache DIR] [FILE.ci | DIR]\n"
-    "       cint [--json] test [--receipt PATH] [--root DIR] [--toolchain FILE] [--cache DIR] [FILE.ci | DIR]\n"
-    "       cint [--json] emit-c --root DIR --out DIR [--toolchain FILE] MODULE.ci...\n"
+    "usage: cint [--json] run [--receipt PATH | --width-report PATH] [--root DIR] [--stdlib DIR] [--toolchain FILE] [--cache DIR] [--grant LINE]... FILE.ci [-- ARG...]\n"
+    "       cint [--json] build [--receipt PATH | --width-report] [--root DIR] [--out DIR] [--lib] [--stdlib DIR] [--toolchain FILE] [--cache DIR] [FILE.ci | DIR]\n"
+    "       cint [--json] test [--receipt PATH] [--root DIR] [--stdlib DIR] [--toolchain FILE] [--cache DIR] [--grant LINE]... [FILE.ci | DIR]\n"
+    "       cint [--json] emit-c --root DIR --out DIR [--stdlib DIR] [--toolchain FILE] MODULE.ci...\n"
     "       cint [--json] NAME [ARG...]: runs cint-NAME from cint's directory, as cint debug or cint workbench\n";
 
 static int usage(const char *why)
@@ -131,7 +153,7 @@ int read_file(const char *path, uint8_t **bytes, size_t *len)
     return 0;
 }
 
-static char *dup_s(const char *s)
+char *dup_s(const char *s)
 {
     size_t n = strlen(s) + 1u;
     char *d = malloc(n);
@@ -250,7 +272,7 @@ int digest_file(const char *path, char hex[65])
 /* Discovery by imports (SPEC-06 3.3, SPEC-09 RCPT-07).                       */
 
 /* Blanks and comments from s[i] (block comments nest, SPEC-04 LS-14). */
-static size_t blank(const uint8_t *s, size_t n, size_t i)
+size_t blank(const uint8_t *s, size_t n, size_t i)
 {
     for (;;) {
         if (i < n && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r')) {
@@ -272,129 +294,16 @@ static size_t blank(const uint8_t *s, size_t n, size_t i)
 }
 
 /* The length of the ASCII identifier at s[i]; 0 for none, and when a non-ASCII byte continues it. */
-static size_t ident(const uint8_t *s, size_t n, size_t i)
+size_t ident(const uint8_t *s, size_t n, size_t i)
 {
     size_t k = i;
     while (k < n && (s[k] == '_' || ((s[k] | 32u) >= 'a' && (s[k] | 32u) <= 'z') || (k > i && s[k] >= '0' && s[k] <= '9'))) k++;
     return k < n && s[k] >= 0x80u ? 0u : k - i;
 }
 
-static int word(const uint8_t *s, size_t n, size_t i, const char *w)
+int word(const uint8_t *s, size_t n, size_t i, const char *w)
 {
     return ident(s, n, i) == strlen(w) && memcmp(s + i, w, strlen(w)) == 0;
-}
-
-/* The module at `rel`, read under `root` when first named; -1 when it cannot be recorded. */
-static int module_at(cint_bridge_root *root, const char *rel)
-{
-    cli_module *m;
-    for (int k = 0; k < g.nmods; k++) {
-        if (strcmp(g.mods[k].rel, rel) == 0) return k;
-    }
-    if (g.nmods == 2048 || (m = realloc(g.mods, (size_t)(g.nmods + 1) * sizeof *m)) == NULL) return -1;
-    g.mods = m;
-    m += g.nmods;
-    memset(m, 0, sizeof *m);
-    if ((m->rel = dup_s(rel)) == NULL) return -1;
-    if (cint_bridge_read_input(root, rel, 4194304u, &m->src, &m->len) && digest(m->src, m->len, m->hex) != 0) return -1;
-    return g.nmods++;
-}
-
-/* Follows the imports of module m: an optional profile line, then the imports, before any
- * other item (SPEC-04 18.3). `import a.b` names a/b.ci. The scan stops at the first other
- * token; an import it does not follow is the compiler's to report (C3009, C3030). */
-static int follow_imports(cint_bridge_root *root, int m)
-{
-    const uint8_t *s = g.mods[m].src;
-    size_t n = g.mods[m].len, i = blank(s, n, 0u), k;
-    if (word(s, n, i, "profile")) {
-        i = blank(s, n, i + 7u);
-        if (i >= n || s[i] != '"') return 0;
-        for (i++; i < n && s[i] != '"'; i++) i += (size_t)(s[i] == '\\');
-        i = blank(s, n, i + 1u);
-        if (i >= n || s[i] != ';') return 0;
-        i = blank(s, n, i + 1u);
-    }
-    while (word(s, n, i, "import")) {
-        sbuf p = {0};
-        int t, *deps;
-        for (i = blank(s, n, i + 6u); (k = ident(s, n, i)) > 0u;) {
-            sb_put(&p, s + i, k);
-            i = blank(s, n, i + k);
-            size_t j = i < n && s[i] == '.' ? blank(s, n, i + 1u) : n;
-            if (ident(s, n, j) == 0u) break;
-            sb_s(&p, "/");
-            i = j;
-        }
-        while (i < n && s[i] != ';') i = blank(s, n, i + 1u);
-        i = blank(s, n, i + 1u);
-        if (p.n == 0u) return 0;
-        sb_s(&p, ".ci");
-        t = module_at(root, p.p);
-        free(p.p);
-        if (t < 0 || (deps = realloc(g.mods[m].deps, (size_t)(g.mods[m].ndeps + 1) * sizeof *deps)) == NULL) return -1;
-        g.mods[m].deps = deps;
-        deps[g.mods[m].ndeps++] = t;
-    }
-    return 0;
-}
-
-/* Dependency order (D-13): each module after the modules its imports name, in source order.
- * A cycle is left in place for the compiler to report (C3003). */
-static void place(int m)
-{
-    if (g.mods[m].mark != 0 || g.mods[m].src == NULL) return;
-    g.mods[m].mark = 1;
-    for (int k = 0; k < g.mods[m].ndeps; k++) place(g.mods[m].deps[k]);
-    g.mods[m].mark = 2;
-    g.order[g.norder++] = g.mods[m].rel;
-}
-
-/* The root module and, breadth first, every module its imports name. 1: the root is
- * unreadable; -1: a module cannot be recorded. */
-static int discover(cint_bridge_root *root)
-{
-    if (module_at(root, g.rel) != 0) return -1;
-    if (g.mods[0].src == NULL) return 1;
-    for (int m = 0; m < g.nmods; m++) {
-        if (g.mods[m].src != NULL && follow_imports(root, m) != 0) return -1;
-    }
-    if ((g.order = malloc((size_t)g.nmods * sizeof *g.order)) == NULL) return -1;
-    place(0);
-    g.src = g.mods[0].src;
-    g.src_len = g.mods[0].len;
-    return 0;
-}
-
-/* Whether every module discovery read reads back through `root` with the same bytes. */
-static int same_inputs(cint_bridge_root *root)
-{
-    for (int k = 0; k < g.nmods; k++) {
-        uint8_t *again = NULL;
-        size_t n = 0u;
-        int same = g.mods[k].src == NULL || (cint_bridge_read_input(root, g.mods[k].rel, 4194304u, &again, &n) &&
-                                            n == g.mods[k].len && memcmp(again, g.mods[k].src, n) == 0);
-        cint_bridge_free_input(again);
-        if (!same) return 0;
-    }
-    return 1;
-}
-
-static int by_rel(const void *a, const void *b)
-{
-    return strcmp((*(const cli_module *const *)a)->rel, (*(const cli_module *const *)b)->rel);
-}
-
-/* The modules read (with `all`, also the absent lookups) in path byte order (SPEC-04 LS-234). */
-cli_module **sorted_modules(int all, int *count)
-{
-    cli_module **v = malloc((size_t)g.nmods * sizeof *v + 1u);
-    *count = 0;
-    for (int k = 0; v != NULL && k < g.nmods; k++) {
-        if (all || g.mods[k].src != NULL) v[(*count)++] = &g.mods[k];
-    }
-    if (v != NULL) qsort(v, (size_t)*count, sizeof *v, by_rel);
-    return v;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -457,6 +366,10 @@ static void rd_value(rd *r, fvalue *v, unsigned zmax)
                (tag >= 0x21u && tag <= 0x28u)) {
         const uint8_t *p = rd_take(r, tag == CINT_TAG_BOOL ? 1u : 1u << ((tag & 0x0Fu) - 1u));
         if (p != NULL && tag == CINT_TAG_BOOL && *p > 1u) r->bad = 1;
+    } else if (tag == 0x31u) {   /* fixed point (IM-146 tag 31): the storage tag, f as U16, the raw integer */
+        unsigned st = (unsigned)rd_u(r, 1), f = (unsigned)rd_u(r, 2);
+        if (st < 0x11u || st > 0x15u || f >= 8u << ((st & 0x0Fu) - 1u)) r->bad = 1;
+        else (void)rd_take(r, (uint64_t)1u << ((st & 0x0Fu) - 1u));
     } else r->bad = 1;
     if (!r->bad) {
         v->len = (uint16_t)(r->at - start);
@@ -536,7 +449,7 @@ int decode_fault(const uint8_t *data, size_t n, frec *f, int trailing)
     if ((f->nop = (uint32_t)rd_u(&r, 4)) > CINT_FAULT_MAX_OPERANDS) return -1;
     for (uint32_t i = 0; i < f->nop; i++) rd_value(&r, &f->opnd[i], trailing ? 513u : zmax);
     if ((f->has_exact = rd_flag(&r)) != 0) {
-        rd_value(&r, &f->exact, trailing ? 520u : zmax);
+        rd_value(&r, &f->exact, trailing ? 528u : zmax);
         if (f->exact.bytes[0] != CINT_TAG_Z) r.bad = 1;
     }
     if ((f->has_limit = rd_flag(&r)) != 0) rd_value(&r, &f->limit, zmax);
@@ -569,7 +482,7 @@ size_t value_text(const fvalue *v, char text[1700], int with_type)
 {
     unsigned tag = v->bytes[0];
     size_t n = v->len - 1u, off = 1u, at = 0u, nd = 0u;
-    uint8_t mag[520];
+    uint8_t mag[528];
     char digits[1600];
     int negative;
     if (tag == CINT_TAG_BOOL) {
@@ -583,11 +496,18 @@ size_t value_text(const fvalue *v, char text[1700], int with_type)
             memcpy(text, "Z ", 2u);
             at = 2u;
         }
+    } else if (tag == 0x31u) {   /* "Q16.16 raw 98304" (BX15-03 A): the raw integer of the storage */
+        unsigned f = (unsigned)v->bytes[2] | (unsigned)v->bytes[3] << 8;
+        n = v->len - 4u;
+        off = 4u;
+        if (with_type) at = (size_t)snprintf(text, 1700, "Q%u.%u ", (unsigned)(8u * n) - f, f);
+        memcpy(text + at, "raw ", 4u);
+        at += 4u;
     } else if (with_type) {
         int k = snprintf(text, 1700, "%c%u ", tag < 0x20u ? 'I' : 'U', 8u << ((tag & 15u) - 1u));
         at = (size_t)k;
     }
-    negative = n > 0u && (tag == CINT_TAG_Z || tag < 0x20u) && (v->bytes[off + n - 1u] & 0x80u) != 0u;
+    negative = n > 0u && (tag == CINT_TAG_Z || tag < 0x20u || tag == 0x31u) && (v->bytes[off + n - 1u] & 0x80u) != 0u;
     memcpy(mag, v->bytes + off, n);
     for (unsigned i = 0, carry = 1u; negative && i < n; i++) {   /* the magnitude of a negative value */
         unsigned u = (unsigned)(uint8_t)~mag[i] + carry;
@@ -700,7 +620,8 @@ static const struct {
     {2103, 2103, "operator not defined for the operand type"}, {2000, 2999, "type rule"},
     {3001, 3001, "duplicate name"}, {3004, 3004, "script local used in a function or test"},
     {3005, 3008, "undefined or unusable name"}, {3009, 3009, "module file unreadable"},
-    {3010, 3011, "script rule"}, {3012, 3012, "`import` after other items"}, {3000, 3999, "name or module rule"},
+    {3010, 3011, "script rule"}, {3012, 3012, "`import` after other items"},
+    {3044, 3044, "`main` parameter list"}, {3000, 3999, "name or module rule"},
     {4001, 4001, "missing return"}, {4012, 4012, "statement form not permitted"},
     {4020, 4026, "`switch` rule"}, {4040, 4040, "recursion in `cint-boot-1`"}, {4000, 4999, "control-flow rule"},
     {5000, 5999, "parameter mode, alias, or ABI rule"}, {6001, 6001, "fault during constant evaluation"},
@@ -1005,8 +926,9 @@ static int read_tests(const outset *set, cli_module *m, sbuf *decl, sbuf *table)
 }
 
 /* The test driver (cint-test.c): the program file with its C main renamed, then a main that
- * runs test argv[1] through cint_program_run_fuel with fuel 1,000,000,000 (SPEC-06 1.4) and
- * the fault and fuel destinations that follow. NULL when a test cannot be read. */
+ * runs test argv[1] through cint_program_run_args with fuel 1,000,000,000 (SPEC-06 1.4), the
+ * fault and fuel destinations and the `--grant` lines that follow (rt/OPEN.md RT-OQ-74) and the
+ * program's host import tables. NULL when a test cannot be read. */
 static char *write_driver(const outset *set, const char *cache)
 {
     sbuf decl = {0}, table = {0}, d = {0};
@@ -1022,9 +944,10 @@ static char *write_driver(const outset *set, const char *cache)
              "#include \"cint-program.c\"\n#undef main\n");
     sb_put(&d, decl.p, decl.n);
     sb_f(&d, "static const cint_main_fn cint_tests[%d] = {%s};\n\nint main(int argc, char **argv)\n{\n"
-             "    unsigned long k = 0u;\n    if (argc != 4) return CINT_EXIT_USAGE;\n"
+             "    unsigned long k = 0u;\n    if (argc < 2) return CINT_EXIT_USAGE;\n"
              "    for (const char *p = argv[1]; *p >= '0' && *p <= '9'; p++) k = k * 10u + (unsigned long)(*p - '0');\n"
-             "    return k < %du ? cint_program_run_fuel(&cg_program, cint_tests[k], INT64_C(1000000000), argv[2], argv[3])\n"
+             "    return k < %du ? cint_program_run_args(&cg_program, cint_tests[k], INT64_C(1000000000), argc - 1, argv + 1,\n"
+             "                                          &cint_imports_desc, NULL)\n"
              "                  : CINT_EXIT_USAGE;\n}\n", g.ntests, table.p, g.ntests);
     char *path = join(cache, "cint-test.c");
     int ok = cint_commit_output(path, (const uint8_t *)d.p, d.n, (size_t)1 << 30);
@@ -1034,20 +957,61 @@ static char *write_driver(const outset *set, const char *cache)
     return ok ? path : NULL;
 }
 
-/* Runs the program or a test: stdin is the null device, stdout goes to `sink` (NULL: drained),
- * and the fault or error record and the fuel record go through inherited handles (SPEC-06
- * 3.4a). Zero with *st its exit status, or a tool error's status: `what` (the program, the test
- * program) could not start, or wrote to stderr. */
+/* Runs the program or a test: stdin is the null device (this process's stdin when a grant names
+ * console.input), stdout goes to `sink` (NULL: drained), and the fault or error record and the
+ * fuel record go through inherited handles (SPEC-06 3.4a). Zero with *st its exit status, or a
+ * tool error's status: `what` (the program, the test program) could not start, or wrote to
+ * stderr. */
+/* argv for the program or the test driver: `head` (NULL-terminated), then `--grant LINE` for
+ * each grant (SPEC-06 3.2) and `--arg ARG` for each program argument after `--` (SPEC-06 3.1;
+ * cint_program_run_argv, OQ-306); the record destinations follow, appended by cli_proc_run. The
+ * array is static: one child runs at a time. */
+static const char **child_argv(const char *const *head)
+{
+    static const char **argv;
+    size_t n = 0, nhead = 0;
+    while (head[nhead] != NULL) nhead++;
+    free((void *)argv);
+    argv = malloc((nhead + 2u * (size_t)g.ngrants + 2u * (size_t)g.nargs + 1u) * sizeof *argv);
+    if (argv == NULL) abort();
+    while (n < nhead) { argv[n] = head[n]; n++; }
+    for (int k = 0; k < g.ngrants; k++) {
+        argv[n++] = "--grant";
+        argv[n++] = g.grants[k];
+    }
+    for (int k = 0; k < g.nargs; k++) {
+        argv[n++] = "--arg";
+        argv[n++] = g.args[k];
+    }
+    argv[n] = NULL;
+    return argv;
+}
+
 static int start_child(const char *what, const char *const *argv, cli_sink sink, void *user, int *st)
 {
-    cli_proc pr = {.argv = argv, .err_path = epath, .fault_path = fpath, .fuel_path = upath, .sink = sink, .user = user};
+    cli_proc pr = {.argv = argv, .err_path = epath, .fault_path = fpath, .fuel_path = upath, .sink = sink, .user = user,
+                   .inherit_stdin = g.stdin_inherit};
     uint8_t *bytes = NULL;
     size_t len = 0u;
     if (cli_proc_run(&pr, st) != 0) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot start %s %s", what, argv[0]);
-    int bad = read_file(epath, &bytes, &len) != 0 || len != 0u;
+    int unread = read_file(epath, &bytes, &len) != 0, bad = unread || len != 0u;
+    if (!unread && g.width != NULL) {   /* stderr holds the width report alone, which goes to PATH */
+        bad = len < 17u || memcmp(bytes, "CINT-WIDTH-1\n", 13u) != 0 || memcmp(bytes + len - 4u, "end\n", 4u) != 0 ||
+              memchr(bytes, '\0', len) != NULL;
+        if (!bad && !cint_commit_output(g.width, bytes, len, (size_t)1 << 30)) {
+            free(bytes);
+            return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot write the width report %s", g.width);
+        }
+    }
     free(bytes);
     if (!bad) return 0;
-    return tool_error(CINT_EXIT_INTERNAL, argv[0], *st, epath, "%s wrote to stderr (a sanitizer or runtime report); see %s", what, epath);
+    if (*st == CINT_EXIT_USAGE && (g.ngrants > 0 || g.nargs > 0)) {   /* the runtime's one usage line (cint_program_run_args; RT-OQ-74) */
+        return tool_error(CINT_EXIT_USAGE, argv[0], *st, epath, g.nargs > 0 && g.ngrants == 0
+                          ? "the program's main takes no arguments, so none may follow `--` (SPEC-04 LS-221); see %s"
+                          : "a --grant line is one the runtime does not take, or names a directory it cannot open, or the program's main takes no arguments; see %s", epath);
+    }
+    return tool_error(CINT_EXIT_INTERNAL, argv[0], *st, epath, g.width != NULL ? "%s wrote no width report, or more than one, to stderr; see %s"
+                      : "%s wrote to stderr (a sanitizer or runtime report); see %s", what, epath);
 }
 
 /* The fault record (exit 1) or the error record (exit 6) at fpath. A decoded record points into
@@ -1098,10 +1062,10 @@ static int run_tests(outcome *oc, const char *exe, const char *src_hex)
     for (int k = 0; k < g.ntests; k++) {
         cli_test *t = &g.tests[k];
         char index[24];
-        const char *pargv[3] = {exe, index, NULL};
+        const char *head[3] = {exe, index, NULL};
         int st = 0, ok;
         (void)snprintf(index, sizeof index, "%d", k);
-        if ((ok = start_child("the test program", pargv, NULL, NULL, &st)) != 0) return ok;
+        if ((ok = start_child("the test program", child_argv(head), NULL, NULL, &st)) != 0) return ok;
         if (st != CINT_EXIT_OK && st != CINT_EXIT_FAULT && st != CINT_EXIT_ERROR_VALUE) {
             return tool_error(st == CINT_EXIT_ENVIRONMENT ? st : CINT_EXIT_INTERNAL, exe, st, NULL,
                               "test %d ended without a CINT status (exit status %d)", k, st);
@@ -1182,7 +1146,7 @@ static int git_query(const char *gitdir, const char *worktree, int status_query,
          * by the M1 review): a receipt written into the tree, or any unrelated file, leaves it unchanged. */
         args[n++] = "--";
         for (int k = 0; k < g.nmods; k++) {
-            if (g.mods[k].src != NULL) args[n++] = g.mods[k].rel;
+            if (g.mods[k].src != NULL && g.mods[k].where != 2) args[n++] = g.mods[k].rel;
         }
     }
     args[n] = NULL;
@@ -1310,28 +1274,12 @@ static int ready(void)
 
 /* Copies every module discovery read into `dir`, so the source digests name the bytes the
  * build reads, and opens it as the build's root. Zero on success. */
-static int snapshot_inputs(const char *dir, cint_bridge_root **snap)
-{
-    int ok = 1;
-    for (int k = 0; ok && k < g.nmods; k++) {
-        if (g.mods[k].src == NULL) continue;
-        char *file = join(dir, g.mods[k].rel), *parent = dup_s(file);
-        char *slash = strrchr(parent, SEP[0]), *forward = strrchr(parent, '/');
-        if (forward != NULL && (slash == NULL || forward > slash)) slash = forward;
-        *slash = '\0';
-        ok = cli_mkdirs(parent) == 0 && cint_commit_output(file, g.mods[k].src, g.mods[k].len, 4194304u);
-        free(file);
-        free(parent);
-    }
-    return ok && cint_bridge_root_open(dir, snap) && same_inputs(*snap) ? 0 : -1;
-}
-
 /* The host C compiler, with the EMIT-26 flags (SPEC-09 7.7); its output goes to the log. A
  * test build compiles the driver, which includes the program file, in its place. */
 static int compile_c(outcome *oc, const outset *set, const char *driver, const char *bin, const char *log)
 {
-    const char **argv = malloc((g.tc.nflags + set->n + 12u) * sizeof *argv);
-    sbuf inc = {0}, stage = {0}, fe = {0}, fo = {0};
+    const char **argv = malloc((g.tc.nflags + set->n + 17u) * sizeof *argv);
+    sbuf inc = {0}, stage = {0}, fe = {0}, fo = {0}, install = {0};
     int msvc = strcmp(g.tc.leg, "msvc") == 0, st = 0;
     size_t na = 0u;
     FILE *lf = cli_fopen(log, "wb");
@@ -1341,7 +1289,16 @@ static int compile_c(outcome *oc, const outset *set, const char *driver, const c
     fclose(lf);
     argv[na++] = g.tc.cc;
     if (g.lib) argv[na++] = msvc ? "/LD" : "-shared";   /* one shared library (SPEC-06 3.1) */
+    if (g.lib && strcmp(CLI_LIB_SUFFIX, ".dylib") == 0) {   /* the published name, not the run directory's path, so one source gives one LC_UUID */
+        sb_f(&install, "-Wl,-install_name,@rpath/" CLI_LIB_PREFIX "%.*s" CLI_LIB_SUFFIX, (int)strlen(basename_utf8(g.rel)) - 3, basename_utf8(g.rel));
+        argv[na++] = install.p;
+    }
     for (size_t i = 0; i < g.tc.nflags; i++) argv[na++] = g.tc.flags[i];
+    if (g.width != NULL) {   /* the width report's hooks and its program run (RT-OQ-64) */
+        argv[na++] = msvc ? "/DCINT_WIDTH_REPORT" : "-DCINT_WIDTH_REPORT";
+        argv[na++] = msvc ? "/Dcint_program_run_args=cint_program_run_width_args" : "-Dcint_program_run_args=cint_program_run_width_args";
+        argv[na++] = msvc ? "/Dcint_program_run_argv=cint_program_run_width_argv" : "-Dcint_program_run_argv=cint_program_run_width_argv";
+    }
     sb_s(&inc, msvc ? "/I" : "-I");
     sb_s(&inc, g.tc.include);
     argv[na++] = inc.p;
@@ -1359,13 +1316,11 @@ static int compile_c(outcome *oc, const outset *set, const char *driver, const c
     if (driver != NULL) argv[na++] = driver;
     argv[na++] = g.tc.runtime_object;
     if (msvc) {
-        sb_s(&fe, "/Fe");
-        sb_s(&fe, oc->exe);
-        sb_s(&fo, "/Fo");
-        sb_s(&fo, bin);
-        sb_s(&fo, SEP);
+        sb_f(&fe, "/Fe%s", oc->exe);
+        sb_f(&fo, "/Fo%s" SEP, bin);
         argv[na++] = fe.p;
         argv[na++] = fo.p;
+        if (g.lib) { argv[na++] = "/link"; argv[na++] = "/Brepro"; }   /* no link time, so one source gives one DLL */
     } else {
         argv[na++] = "-o";
         argv[na++] = oc->exe;
@@ -1400,21 +1355,110 @@ static int compile_c(outcome *oc, const outset *set, const char *driver, const c
     return 0;
 }
 
-/* `cint build`: the program goes to --out as the root module's name without .ci (with --lib, lib<name>.so or <name>.dll). */
+/* The export a symbol cx<P><name> or cm<P> names, as `shapes.twice` or `util.math`: each part
+ * is `_<n>_` and n bytes, with `_xHH` for a byte that is not a letter or digit (EMIT-22). */
+static void export_name(sbuf *b, const char *sym, size_t len)
+{
+    size_t i = 2u;
+    while (i < len && sym[i] == '_') {
+        size_t n = 0u, at = ++i;
+        while (i < len && sym[i] >= '0' && sym[i] <= '9' && n < len) n = n * 10u + (size_t)(sym[i++] - '0');
+        if (i == at || i >= len || sym[i++] != '_' || n > len - i) return;
+        if (at > 3u) sb_put(b, ".", 1u);
+        for (size_t end = i + n; i < end;) {
+            char c = sym[i++];
+            if (c == '_' && i + 3u <= end && sym[i] == 'x') {
+                char hex[3] = {sym[i + 1], sym[i + 2], '\0'};
+                c = (char)strtoul(hex, NULL, 16);
+                i += 3u;
+            }
+            sb_put(b, c == '/' ? "." : &c, 1u);
+        }
+    }
+}
+
+/* `cint build --lib` writes <name>.h beside the library (rt/OPEN.md RT-OQ-65): a declaration of
+ * each CINT_RT_EXPORT definition of the output set, the modules' before cint-program.c's, with
+ * the export a cx wrapper or cm descriptor names, for a C or C++ host. 0 when written. */
+static int lib_header(const outset *set, const char *stem, size_t n)
+{
+    sbuf h = {0}, guard = {0};
+    for (size_t i = 0; i < n; i++) {
+        char c = stem[i] >= 'a' && stem[i] <= 'z' ? (char)(stem[i] - 32) : stem[i];
+        sb_put(&guard, (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ? &c : "_", 1u);
+    }
+    sb_s(&h, "/* ");
+    sb_put(&h, stem, n);
+    sb_f(&h, ".h: the exports of the library `cint build --lib` wrote beside it, for a C or C++\n"
+             " * host, which puts the directory of rt/cint_rt.h on its include path. cint_rt.h declares the\n"
+             " * runtime's host functions; each comment below names the export a symbol enters or describes. */\n"
+             "#ifndef CINT_LIB_%s_H\n#define CINT_LIB_%s_H\n\n#include \"cint_rt.h\"\n\n"
+             "/* A Windows host imports these from the DLL; define CINT_LIB_IMPORT first to declare them otherwise. */\n"
+             "#ifndef CINT_LIB_IMPORT\n#ifdef _WIN32\n#define CINT_LIB_IMPORT __declspec(dllimport)\n#else\n"
+             "#define CINT_LIB_IMPORT\n#endif\n#endif\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n", guard.p, guard.p);
+    free(guard.p);
+    for (int last = 0; last < 2; last++) {
+        for (size_t f = 0; f < set->n; f++) {
+            size_t k = strlen(set->rel[f]);
+            uint8_t *text = NULL;
+            size_t len;
+            if (k < 3u || strcmp(set->rel[f] + k - 2u, ".c") != 0 ||
+                (strcmp(set->rel[f], "cint-program.c") == 0) != last) {
+                continue;
+            }
+            char *path = join(set->stage, set->rel[f]);
+            int bad = read_file(path, &text, &len);
+            free(path);
+            if (bad != 0) { free(h.p); return -1; }
+            for (char *line = (char *)text, *next; *line != '\0'; line = next) {
+                if ((next = strchr(line, '\n')) == NULL) next = line + strlen(line);
+                else *next++ = '\0';
+                if (strncmp(line, "CINT_RT_EXPORT ", 15u) != 0) continue;
+                char *decl = line + 15, *open = strchr(decl, '('), *eq = strstr(decl, " = ");
+                int fn = open != NULL && (eq == NULL || open < eq);
+                char *end = fn ? open : eq != NULL ? eq : decl + strlen(decl), *sym = end;
+                while (sym > decl && sym[-1] != ' ') sym--;
+                if (strncmp(sym, "cx_", 3u) == 0 || strncmp(sym, "cm_", 3u) == 0) {
+                    sb_s(&h, "/* ");
+                    export_name(&h, sym, (size_t)(end - sym));
+                    sb_s(&h, " */\n");
+                }
+                sb_s(&h, fn ? "CINT_LIB_IMPORT " : "extern CINT_LIB_IMPORT ");
+                sb_put(&h, decl, fn ? strlen(decl) : (size_t)(end - decl));
+                sb_s(&h, ";\n");
+            }
+            free(text);
+        }
+    }
+    sb_s(&h, "\n#ifdef __cplusplus\n}\n#endif\n\n#endif\n");
+    sbuf name = {0};
+    sb_put(&name, stem, n);
+    sb_s(&name, ".h");
+    char *out = join(g.out, name.p);
+    int ok = cint_commit_output(out, (const uint8_t *)h.p, h.n, (size_t)1 << 30);
+    free(name.p);
+    free(out);
+    free(h.p);
+    return ok ? 0 : -1;
+}
+
+/* `cint build`: the program goes to --out as the root module's name without .ci (with --lib, lib<name>.so or <name>.dll,
+ * and the header lib_header writes). */
 static int publish(outcome *oc, const char *src_hex)
 {
     const char *stem = basename_utf8(g.rel);
     sbuf name = {0};
     uint8_t *bytes = NULL;
     size_t len = 0u;
-    sb_s(&name, g.lib ? CLI_LIB_PREFIX : "");
-    sb_put(&name, stem, strlen(stem) - 3u);
-    sb_s(&name, g.lib ? CLI_LIB_SUFFIX : strcmp(g.tc.leg, "msvc") == 0 ? ".exe" : "");
+    sb_f(&name, "%s%.*s%s", g.lib ? CLI_LIB_PREFIX : "", (int)strlen(stem) - 3, stem, g.lib ? CLI_LIB_SUFFIX : strcmp(g.tc.leg, "msvc") == 0 ? ".exe" : "");
     char *path = join(g.out, name.p);
     free(name.p);
     if (cli_mkdirs(g.out) != 0 || read_file(oc->exe, &bytes, &len) != 0 ||
         !cint_commit_output(path, bytes, len, (size_t)1 << 31) || cli_executable(path) != 0) {
         return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot write the program %s", path);
+    }
+    if (g.lib && lib_header(oc->set, stem, strlen(stem) - 3u) != 0) {
+        return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot write the header of the library %s", path);
     }
     free(bytes);
     oc->exe = path;
@@ -1443,6 +1487,7 @@ static int run(void)
     if (locate() != 0) return usage(g.root != NULL ? "a project directory takes no --root; give FILE.ci" : "the file path is too long");
     /* The sources, through the bridge reader: identity from the reading handle (D-3). */
     if (!cint_bridge_root_open(g.dir, &root)) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot open the directory %s", g.dir);
+    if ((st = open_stdlib()) != 0) return st;
     if ((found = discover(root)) > 0) {
         return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot read %s under %s: it is missing, unreadable, a link, "
                           "larger than 4 MiB, or a path the bridge reader refuses (SPEC-09 CINTC-12)", g.rel, g.dir);
@@ -1488,8 +1533,10 @@ static int run(void)
         cint_bridge_root_close(root);
         return internal_compiler_fault(src_hex);
     }
-    found = same_inputs(root);
+    found = same_inputs(root, lib_root);
     cint_bridge_root_close(root);
+    cint_bridge_root_close(lib_root);
+    lib_root = NULL;
     if (!found) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "a module under %s changed while it was compiled", g.dir);
     if (built == CINT_BUILD_DIAG) {
         oc.status = CINT_EXIT_COMPILE;
@@ -1524,12 +1571,12 @@ static int run(void)
     if (g.mode == MODE_BUILD) return publish(&oc, src_hex);
     if (g.mode == MODE_TEST) return run_tests(&oc, exe, src_hex);
     /* The program, with stdout relayed byte for byte. */
-    const char *pargv[2] = {exe, NULL};
+    const char *head[2] = {exe, NULL};
     oc.t_run = now_ns();
-    if ((found = start_child("the program", pargv, relay, &out, &st)) != 0) return found;
+    if ((found = start_child("the program", child_argv(head), relay, &out, &st)) != 0) return found;
     oc.t_run = now_ns() - oc.t_run;
     if (fflush(stdout) != 0 || out.failed) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot write to stdout");
-    /* The fuel record, written before exit by cint_program_run_fuel (SPEC-06 3.4a). Without it, a
+    /* The fuel record, written before exit by the runtime (cint_program_run_args; SPEC-06 3.4a). Without it, a
      * fault or an error is reported after its record, which is checked first. */
     if ((st == CINT_EXIT_OK || st == CINT_EXIT_FAULT || st == CINT_EXIT_ERROR_VALUE) && !read_fuel(&oc.fuel)) oc.fuel = -2;
     if (st == CINT_EXIT_OK && oc.fuel < 0) {
@@ -1576,14 +1623,32 @@ static int emit_c(void)
     if (!cint_bridge_root_open(g.root, &root) || cli_mkdirs(g.out) != 0) {
         return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot open %s or create %s", g.root, g.out);
     }
+    if ((st = open_stdlib()) != 0) return st;
     for (int i = 0; i < g.nfiles; i++) {
-        int m = module_at(root, g.files[i]);
+        int m = module_at(root, g.files[i], 0);
         if (m < 0) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot record %s", g.files[i]);
         if (i == g.nfiles - 1) memcpy(src_hex, g.mods[m].hex, sizeof src_hex);
     }
-    built = cint_build_with_paths(g.ctx, root, (const char *const *)g.files, g.nfiles, g.out, g_diag, g_faults,
-                                 keep_diag_path, g_diag_paths);
+    /* The standard library modules the listed ones import go first in the manifest, in path
+     * byte order (they import nothing of the program); the bridge reads them under the chained
+     * root. A project module the list omits is left to the compiler to report (C3009). */
+    int nlisted = g.nfiles, nmanifest = 0;
+    for (int m = 0; m < g.nmods; m++) {
+        if (g.mods[m].src != NULL && follow_imports(root, m) != 0) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot record the imports of %s", g.mods[m].rel);
+    }
+    const char **manifest = calloc((size_t)(g.nmods + nlisted), sizeof *manifest);
+    cli_module **v = manifest != NULL ? sorted_modules(0, &nmanifest) : NULL;
+    if (v == NULL) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "out of memory");
+    int n = 0;
+    for (int k = 0; k < nmanifest; k++) if (v[k]->where == 2) manifest[n++] = v[k]->rel;
+    for (int i = 0; i < nlisted; i++) manifest[n++] = g.files[i];
+    free(v);
+    cint_bridge_root_chain(root, lib_root);
+    built = cint_build_with_paths(g.ctx, root, manifest, n, g.out, g_diag, g_faults, keep_diag_path, g_diag_paths);
+    free(manifest);
     cint_bridge_root_close(root);
+    cint_bridge_root_close(lib_root);
+    lib_root = NULL;
     if (built == CINT_BUILD_FAULT) return internal_compiler_fault(src_hex);
     if (built == CINT_BUILD_DIAG) report_diags(NULL);
     return built == CINT_BUILD_OK ? CINT_EXIT_OK : built == CINT_BUILD_DIAG ? CINT_EXIT_COMPILE
@@ -1644,13 +1709,34 @@ int main(int argc, char **argv)
     g.emit = g.mode == 3;
     for (i = sub + 1; i < argc; i++) {
         const char *a = argv[i];
+        if (strcmp(a, "--") == 0 && g.mode == MODE_RUN) {   /* the program arguments of `main` (SPEC-06 3.1; OQ-306) */
+            g.args = (const char *const *)argv + i + 1;
+            g.nargs = argc - i - 1;
+            break;
+        }
         const char **slot = strcmp(a, "--receipt") == 0     ? &g.receipt
                             : strcmp(a, "--root") == 0      ? &g.root
                             : strcmp(a, "--toolchain") == 0 ? &g.toolchain
+                            : strcmp(a, "--stdlib") == 0    ? &g.stdlib
                             : strcmp(a, "--cache") == 0     ? &g.cache
                             : strcmp(a, "--out") == 0 && (g.emit || g.mode == MODE_BUILD) ? &g.out
+                            : strcmp(a, "--width-report") == 0 && g.mode == MODE_RUN ? &g.width
                                                             : NULL;
         if (strcmp(a, "--json") == 0 || (strcmp(a, "--lib") == 0 && g.mode == MODE_BUILD && (g.lib = 1) != 0)) {
+            continue;
+        }
+        if (strcmp(a, "--width-report") == 0 && g.mode == MODE_BUILD) {
+            if (g.width != NULL) return usage("an option needs one value and is given at most once");
+            g.width = "";
+            continue;
+        }
+        if (strcmp(a, "--grant") == 0 && (g.mode == MODE_RUN || g.mode == MODE_TEST)) {
+            if (i + 1 >= argc || argv[i + 1][0] == '\0') return usage("--grant needs a grant line");
+            if (g.ngrants == 64) return usage("at most 64 --grant lines");
+            g.grants[g.ngrants++] = argv[++i];
+            if (strncmp(argv[i], "console.input", 13u) == 0 && (argv[i][13] == '\0' || argv[i][13] == ':' || argv[i][13] == '=')) {
+                g.stdin_inherit = 1;
+            }
             continue;
         }
         if (slot != NULL) {
@@ -1659,7 +1745,7 @@ int main(int argc, char **argv)
         } else if (a[0] == '-' && a[1] != '\0') {
             return usage("unknown option (of the options of cint run, only --receipt is provided yet)");
         } else if ((g.file != NULL && !g.emit) || g.nfiles == 64) {
-            return usage(g.mode == MODE_RUN ? "program arguments are not supported; give one FILE.ci" : "give one FILE.ci or project directory");
+            return usage(g.mode == MODE_RUN ? "give one FILE.ci; the program's arguments follow `--`" : "give one FILE.ci or project directory");
         } else {
             g.file = a;
             g.files[g.nfiles++] = argv[i];
@@ -1668,6 +1754,9 @@ int main(int argc, char **argv)
     if (g.file == NULL && (g.mode == MODE_BUILD || g.mode == MODE_TEST)) g.file = ".";
     if (g.file == NULL) return usage("no FILE.ci given");
     if (g.receipt != NULL && g.receipt[0] == '\0' && !g.emit) return usage("--receipt needs a path");
+    if (g.width != NULL && (g.receipt != NULL || g.lib || (g.mode == MODE_RUN && g.width[0] == '\0'))) {
+        return usage("--width-report takes no --receipt or --lib, and on run a path");
+    }
     int status = !g.emit ? run() : g.receipt != NULL || g.cache != NULL ? usage("emit-c takes no --receipt or --cache") : emit_c();
     free_diag_paths();
     return status;

@@ -294,3 +294,5 @@ static const cint_export cg_11_nest_x5Fcap_exports[1] = {
 };
 
 CINT_RT_INTERNAL const cint_module_table cg_11_nest_x5Fcap_table = {&cm_11_nest_x5Fcap, 0u, 1u, cg_11_nest_x5Fcap_exports, NULL};
+
+CINT_RT_INTERNAL const cint_host_table cg_11_nest_x5Fcap_host = {0u, 0u, NULL};

@@ -1,0 +1,7 @@
+case services/main_args_none
+clause SPEC-04 LS-221; SPEC-03 5.3; SPEC-06 3.1
+source reference
+outcome value
+stdout-bytes 2
+stdout-sha256 9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa
+fuel-consumed 1

@@ -1,0 +1,19 @@
+// case: fixed/literal_grid_q80_48
+// clause: SPEC-04 LS-35, LS-37; SPEC-01 IM-27, IM-54 (literals on the grid of 128-bit formats, a hex fraction, the extremes, and round clauses)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 140737488355328; prints `140737488355328 -170141183460469231731687303715884105728 422212465065984 28147497671066 -28147497671065` and `1 39614081257132168796771975167.0 -170141183460469231731687303715884105728` (0.5, -2^79, 0x1.8, 0.1 rounded half_even and -0.1 rounded ceil in Q80.48; 2^-64 in Q64.64; 2^95 - 1 in Q96.32; -1.0 in Q1.127); fuel 1. Games wave G2a (OQ-292)
+
+export I64 run() {
+    Q80.48 a = 0.5;
+    Q80.48 b = -604462909807314587353088.0;
+    Q80.48 c = 0x1.8;
+    Q80.48 d = 0.1 round half_even;
+    Q80.48 e = -0.1 round ceil;
+    Q64.64 f = 0x0.0000000000000001;
+    Q96.32 g = 39614081257132168796771975167.0;
+    Q1.127 h = -1.0;
+    "{a!raw} {b!raw} {c!raw} {d!raw} {e!raw}\n";
+    "{f!raw} {g} {h!raw}\n";
+    return a.raw as I64;
+}

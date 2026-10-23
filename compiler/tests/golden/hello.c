@@ -50,6 +50,8 @@ fault:
 
 CINT_RT_INTERNAL const cint_module_table cg_5_hello_table = {&cm_5_hello, 0u, 0u, NULL, NULL};
 
+CINT_RT_INTERNAL const cint_host_table cg_5_hello_host = {0u, 0u, NULL};
+
 CINT_RT_INTERNAL cint_status cg_5_hello_run(cint_ctx *ctx, int64_t fuel)
 {
     cint_status st = cint_rt_entry_begin(ctx, (cint_site){0u, 1u}, fuel, CINT_DEPTH_FROM_CONFIG);

@@ -13,8 +13,9 @@
  * steps (the 64-bit product and the normalized 2-by-1 quotient) are checked
  * against cint_rt.h's portable ones on boundary values and on `pairs` seeded
  * pseudo-random pairs (default 1,000,000), which is SPEC-09 EMIT-05's agreement
- * test of the builtin bodies (EMIT-12). Prints the helper mode and the counts,
- * and exits 1 on any failure.
+ * test of the builtin bodies (EMIT-12). First, test_wide_calls.c calls the
+ * built-ins as emitted code does (RT-OQ-60). Prints the helper mode and the
+ * counts, and exits 1 on any failure.
  *
  * Usage: test_wide <cases> [pairs].
  */
@@ -42,6 +43,9 @@ static const cint_program w_program = {1u, 0u, w_modules, NULL};
 static const cint_site W_SITE = {0u, 1u};
 
 #define SENTINEL 0xA5A5A5A5A5A5A5A5u
+
+/* test_wide_calls.c: the built-ins called as emitted code calls them; returns its failures. */
+int test_wide_calls(cint_ctx *ctx, cint_site site);
 
 typedef struct warg {
     uint32_t tag;
@@ -1050,6 +1054,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "FAIL cint_ctx_create\n");
         return 1;
     }
+    if (test_wide_calls(ctx, W_SITE) != 0) g_fail++;
     f = fopen(argv[1], "rb");
     if (f == NULL) {
         fprintf(stderr, "FAIL cannot open %s\n", argv[1]);

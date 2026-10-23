@@ -20,6 +20,28 @@ import parity
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CONFIG = None
 
+# What cli/tests/fixtures/extern_host.c prints against a library built from
+# compiler/tests/golden/externs.ci (test_build_lib_externs): each export's status and result,
+# the fault of a host refusal (host.error.pull, status CINT_BUSY 3) and of a result outside
+# the declared type (host.result.pull), the host's own output, two refused tables, and the
+# fault of an unresolved call (host.call) when no descriptor is passed.
+EXTERN_HOST_STDOUT = (b"imports 5 modules 1\n"
+                      b"total 5: 0 24\n"
+                      b"pulled 4: 0 41\n"
+                      b"pulled 0: 0 -1\n"
+                      b"pulled -1: 1\n"
+                      b"fault 10 host.error.pull 3\n"
+                      b"pulled -2: 1\n"
+                      b"fault 10 host.result.pull\n"
+                      b"put done\n"
+                      b"sync\n"
+                      b"flush: 0 pulls 4\n"
+                      b"short table: 2\n"
+                      b"other class: 2\n"
+                      b"no imports: 0\n"
+                      b"unresolved total: 1\n"
+                      b"fault 10 host.call\n")
+
 
 def canonical(value):
     return json.dumps(value, sort_keys=True, ensure_ascii=True,
@@ -1154,16 +1176,16 @@ class RunTests(unittest.TestCase):
     def test_compile_fault_decoder_large_z_bounds(self):
         path = self.out / "compile-record.bin"
         operand = b"\x0f" + struct.pack("<I", 513) + b"\xff" * 512 + b"\x00"
-        exact = b"\x0f" + struct.pack("<I", 520) + b"\x00" * 519 + b"\x01"
+        exact = b"\x0f" + struct.pack("<I", 528) + b"\x00" * 527 + b"\x01"
         path.write_bytes(self.fault_record([operand], exact=exact) + b"\x00" * 32)
         result = self.unit_invoke(["--decode", path, "1"])
         self.assertEqual(result.returncode, 0, result.stderr)
         record = json.loads(result.stdout)
         self.assertEqual(record["operands"], [{"t": "Z", "v": str((1 << 4096) - 1)}])
-        self.assertEqual(record["exact"], {"t": "Z", "v": str(1 << 4152)})
+        self.assertEqual(record["exact"], {"t": "Z", "v": str(1 << 4216)})
         self.assertEqual(self.unit_invoke(["--decode", path, "0"]).returncode, 7)
         bad_operand = b"\x0f" + struct.pack("<I", 514) + b"\x00" * 513 + b"\x01"
-        bad_exact = b"\x0f" + struct.pack("<I", 521) + b"\x00" * 520 + b"\x01"
+        bad_exact = b"\x0f" + struct.pack("<I", 529) + b"\x00" * 528 + b"\x01"
         for data in (self.fault_record([bad_operand]), self.fault_record(exact=bad_exact)):
             path.write_bytes(data)
             self.assertEqual(self.unit_invoke(["--decode", path, "1"]).returncode, 7)
@@ -1374,6 +1396,48 @@ class RunTests(unittest.TestCase):
         self.assertEqual(receipt["identity"]["lookups"], {"util/gone.ci": False, "util/math.ci": True})
         self.assertFalse((self.out / "build-out").exists())
 
+    def test_build_stdlib_lookups(self):
+        # SPEC-09 RCPT-07 and SPEC-07 SEC-CAP-13 (ruling OQ-303; rt/OPEN.md RT-OQ-71): an import of
+        # one segment absent under the source root is read from the standard library root, `lib`
+        # beside cint (tools/cint_bootstrap.py copies the repository's lib/ there) or --stdlib DIR,
+        # and the receipt records both probes, the second under `stdlib:<path>`.
+        root = self.project("stdlib-default", {"main.ci": b'import fs;\n\nvoid main() {\n    "ok\\n";\n}\n'})
+        receipt_path = self.out / "stdlib.json"
+        result = self.command("build", ["--receipt", receipt_path, root])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        receipt = self.receipt_of(receipt_path, "build")
+        self.assertEqual(receipt["identity"]["lookups"], {"fs.ci": False, "stdlib:fs.ci": True})
+        self.assertEqual(receipt["identity"]["source"]["files"]["stdlib:fs.ci"], sha((ROOT / "lib/fs.ci").read_bytes()))
+        self.assertEqual(receipt["identity"]["source"]["files"]["stdlib:fs.ci"],
+                         sha((self.exe.parent / "lib/fs.ci").read_bytes()))
+        stdlib = self.project("stdlib-root", {"util.ci": b"export I64 twice(I64 x) {\n    return x * 2;\n}\n",
+                                              "a/util.ci": b"export I64 twice(I64 x) {\n    return x * 4;\n}\n"})
+        root = self.project("stdlib-flag", {
+            "main.ci": b'import util;\nimport zz;\n\nvoid main() {\n    I64 v = util.twice(21);\n    "{v}\\n";\n}\n'})
+        result = self.command("build", ["--json", "--stdlib", stdlib, "--receipt", receipt_path, root])
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertEqual([(r["code"], r["file"], r["line"]) for r in map(json.loads, result.stderr.splitlines())],
+                         [("C3009", "main.ci", 2)])
+        receipt = self.receipt_of(receipt_path, "build")
+        self.assertEqual(receipt["identity"]["lookups"],
+                         {"stdlib:util.ci": True, "stdlib:zz.ci": False, "util.ci": False, "zz.ci": False})
+        (root / "main.ci").write_bytes(b'import util;\n\nvoid main() {\n    I64 v = util.twice(21);\n    "{v}\\n";\n}\n')
+        result = self.command("run", ["--stdlib", stdlib, root / "main.ci"])
+        self.assertEqual((result.returncode, result.stdout), (0, b"42\n"), result.stderr)
+        # A project module of the name shadows the standard library's; a multi-segment import never probes it.
+        (root / "util.ci").write_bytes(b"export I64 twice(I64 x) {\n    return x * 3;\n}\n")
+        (root / "main.ci").write_bytes(b'import util;\nimport a.util;\n\nvoid main() {\n    I64 v = util.twice(21);\n    "{v}\\n";\n}\n')
+        result = self.command("build", ["--json", "--stdlib", stdlib, "--receipt", receipt_path, root])
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertEqual([(r["code"], r["line"]) for r in map(json.loads, result.stderr.splitlines())], [("C3009", 2)])
+        self.assertEqual(self.receipt_of(receipt_path, "build")["identity"]["lookups"], {"a/util.ci": False, "util.ci": True})
+        (root / "main.ci").write_bytes(b'import util;\n\nvoid main() {\n    I64 v = util.twice(21);\n    "{v}\\n";\n}\n')
+        result = self.command("run", ["--stdlib", stdlib, root / "main.ci"])
+        self.assertEqual((result.returncode, result.stdout), (0, b"63\n"), result.stderr)
+        result = self.command("build", ["--stdlib", self.out / "no-such-dir", root])
+        self.assertEqual(result.returncode, 5, result.stderr)
+        self.assertIn(b"cannot open the standard library root", result.stderr)
+
     def test_build_library(self):
         # `cint build --lib` (SPEC-06 3.1; box 10 default BX10-07): one shared library per program,
         # exporting the cx wrappers, the cm descriptors, the library descriptor (SPEC-03 A-19),
@@ -1400,8 +1464,13 @@ class RunTests(unittest.TestCase):
         exports = tool.exports(library)
         self.assertEqual(exports - host, {"cx_6_shapes_5_twice", "cx_6_shapes_5_first", "cm_6_shapes",
                                           "cm_12_util_x2Fmath", "cint_library_desc", "cint_program_abi",
-                                          "cint_observer_desc"})
+                                          "cint_observer_desc", "cint_imports_desc"})
         self.assertEqual(host - exports, set())
+        # A second build of the same source runs in another run directory and gives the same bytes:
+        # no build path, link time or random UUID enters the library.
+        result = self.command("build", ["--lib", "--out", self.out / "build-lib-again", "shapes.ci"], cwd=root)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.out / "build-lib-again" / library.name).read_bytes(), library.read_bytes())
         self.tool_error(self.command("build", ["--json", "--lib", "main.ci"], cwd=root), 4)
         # A view of rank 2 and an exported kernel have wrappers since box 10 unit 3 (compiler/OPEN.md
         # CINTC-OQ-58 item 8; rt/OPEN.md RT-OQ-38, RT-OQ-40).
@@ -1411,8 +1480,91 @@ class RunTests(unittest.TestCase):
             CONFIG.leg, "libgrid" + (".dylib" if sys.platform == "darwin" else ".so"))
         self.assertEqual(tool.exports(library) - host, {"cx_4_grid_6_corner", "cx_4_grid_5_scale", "cm_4_grid",
                                                         "cint_library_desc", "cint_program_abi",
-                                                        "cint_observer_desc"})
+                                                        "cint_observer_desc", "cint_imports_desc"})
         self.tool_error(self.command("run", ["--json", "--lib", root / "shapes.ci"]), 4)
+
+    def test_build_library_header(self):
+        # `cint build --lib` writes <name>.h beside the library (rt/OPEN.md RT-OQ-65): a declaration
+        # of each symbol the library exports besides the runtime's, with the export it names, under
+        # extern "C". A C and a C++ host compile it with this leg's flags; on Linux both run, and
+        # cint_site_resolve, a host function since then, turns the fault's sites into positions.
+        sys.path.insert(0, str(ROOT / "tools"))
+        import cint_check as cc
+        root = self.project("build-lib-header", {
+            "shapes.ci": b'import util.math;\n\nexport I64 twice(I64 x) {\n    return math.twice(x);\n}\n',
+            "util/math.ci": b'export I64 twice(I64 x) {\n    return x * 2;\n}\n'})
+        out = self.out / "build-lib-header-out"
+        result = self.command("build", ["--lib", "--out", out, "shapes.ci"], cwd=root)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        msvc = CONFIG.leg == "msvc"
+        library = out / ("shapes.dll" if msvc else "libshapes" + (".dylib" if sys.platform == "darwin" else ".so"))
+        header = (out / "shapes.h").read_text(encoding="utf-8")
+        declared = re.findall(r"^(?:extern )?CINT_LIB_IMPORT .*?(\w+)(?:\(.*\))?;$", header, re.M)
+        self.assertIn('#ifdef __cplusplus\nextern "C" {\n#endif\n', header)
+        self.assertIn("/* shapes.twice */\nCINT_LIB_IMPORT cint_status cx_6_shapes_5_twice(cint_ctx *ctx, "
+                      "int64_t fuel, int64_t p_x, int64_t *result);\n", header)
+        self.assertIn("/* util.math */\nextern CINT_LIB_IMPORT const cint_module_info cm_12_util_x2Fmath;\n", header)
+        rt = "".join((ROOT / "rt" / name).read_text(encoding="utf-8") for name in ("cint_rt.h", "cint_rt_host.h"))
+        host = set(re.findall(r"^CINT_RT_API [^(]*?\b(cint_\w+)\(", rt, re.M))
+        self.assertIn("cint_site_resolve", host)
+        tool = cc.Toolchain(CONFIG.leg, "0", "portable", False)
+        self.assertEqual(sorted(declared), sorted(tool.exports(library) - host))
+        flags = [value for key, value in self.rows if key == "flag"]
+        cxx = [f for f in flags if not f.startswith(("/std:", "-std="))] + (
+            ["/TP", "/std:c++17"] if msvc else ["-x", "c++", "-std=c++17"])
+        include = [("/I" if msvc else "-I") + str(p) for p in (self.values["include"], out)]
+        expect = (b"twice 21: 0 42\ntwice max: 1\ncode 1\nat: util/math.ci:2:14 mul.checked.i64\n"
+                  b"call: shapes.ci:4:17 call.enter\nno site: 0 0\n")
+        for lang, options in (("c", flags), ("cxx", cxx)):
+            with self.subTest(lang=lang):
+                obj = self.out / ("lib_host_%s%s" % (lang, ".obj" if msvc else ".o"))
+                command = [self.values["cc"], *options, *include, "/c" if msvc else "-c",
+                           str(ROOT / "cli/tests/fixtures/lib_host.c"), *(["/Fo" + str(obj)] if msvc else ["-o", str(obj)])]
+                build = subprocess.run(command, cwd=self.out, env=self.env, capture_output=True, check=False, timeout=60)
+                self.assertEqual(build.returncode, 0, (build.stdout + build.stderr).decode("utf-8", "replace"))
+                if not sys.platform.startswith("linux"):
+                    continue
+                exe = self.out / ("lib_host_" + lang)
+                command = [self.values["cc"], *flags, str(obj), "-L" + str(out), "-lshapes", "-Wl,-rpath," + str(out),
+                           "-o", str(exe)]
+                build = subprocess.run(command, cwd=self.out, env=self.env, capture_output=True, check=False, timeout=60)
+                self.assertEqual(build.returncode, 0, (build.stdout + build.stderr).decode("utf-8", "replace"))
+                ran = subprocess.run([str(exe)], cwd=self.out, env=self.env, capture_output=True, check=False, timeout=60)
+                self.assertEqual((ran.returncode, ran.stdout), (0, expect), ran.stderr)
+
+    def test_build_lib_externs(self):
+        # I/O services lane U2 (SPEC-03 A-10, A-15; rt/OPEN.md RT-OQ-70; compiler/OPEN.md CINTC-OQ-66):
+        # a program with externs builds as a library whose header declares the import descriptor
+        # cint_imports_desc; a host (cli/tests/fixtures/extern_host.c) fills its host table from
+        # the descriptor's rows, enters the exports, and sees the host's refusal and a result
+        # outside the declared type as faults, a table that lacks a function or declares another
+        # class refused at context creation, and an unresolved call faulted when it passes no
+        # descriptor. On Linux the host runs; elsewhere it compiles.
+        root = self.project("build-lib-externs", {
+            "externs.ci": (ROOT / "compiler/tests/golden/externs.ci").read_bytes()})
+        out = self.out / "build-lib-externs-out"
+        result = self.command("build", ["--lib", "--out", out, "externs.ci"], cwd=root)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        msvc = CONFIG.leg == "msvc"
+        header = (out / "externs.h").read_text(encoding="utf-8")
+        self.assertIn("extern CINT_LIB_IMPORT const cint_host_desc cint_imports_desc;\n", header)
+        self.assertIn("CINT_LIB_IMPORT cint_status cx_7_externs_5_flush(cint_ctx *ctx, int64_t fuel);\n", header)
+        flags = [value for key, value in self.rows if key == "flag"]
+        include = [("/I" if msvc else "-I") + str(p) for p in (self.values["include"], out)]
+        obj = self.out / ("extern_host" + (".obj" if msvc else ".o"))
+        command = [self.values["cc"], *flags, *include, "/c" if msvc else "-c",
+                   str(ROOT / "cli/tests/fixtures/extern_host.c"), *(["/Fo" + str(obj)] if msvc else ["-o", str(obj)])]
+        build = subprocess.run(command, cwd=self.out, env=self.env, capture_output=True, check=False, timeout=60)
+        self.assertEqual(build.returncode, 0, (build.stdout + build.stderr).decode("utf-8", "replace"))
+        if not sys.platform.startswith("linux"):
+            return
+        exe = self.out / "extern_host"
+        command = [self.values["cc"], *flags, str(obj), "-L" + str(out), "-lexterns", "-Wl,-rpath," + str(out),
+                   "-o", str(exe)]
+        build = subprocess.run(command, cwd=self.out, env=self.env, capture_output=True, check=False, timeout=60)
+        self.assertEqual(build.returncode, 0, (build.stdout + build.stderr).decode("utf-8", "replace"))
+        ran = subprocess.run([str(exe)], cwd=self.out, env=self.env, capture_output=True, check=False, timeout=60)
+        self.assertEqual((ran.returncode, ran.stdout), (0, EXTERN_HOST_STDOUT), ran.stderr)
 
     def test_imported_module_variables(self):
         # G-C2 review COR-2 and COR-6: `alias.x` reads and writes an exported module-level
@@ -1444,6 +1596,64 @@ class RunTests(unittest.TestCase):
                                  ("run", [ROOT / "cli/tests/fixtures/three_tests.ci"])):
             with self.subTest(subcommand=subcommand, args=args):
                 self.tool_error(self.command(subcommand, ["--json", *args]), 4)
+
+    WIDTH_PROJECT = {
+        "main.ci": b'import util.wmath;\n\nvoid main() {\n    I1024 a = 1000000007 as I1024;\n'
+                   b'    I1024 b = wmath.sq(a);\n    I1024 c = wmath.sq(b);\n    if (c < a) {\n'
+                   b'        I1024 d = c - a;\n        "{d}\\n";\n    }\n    I128 n = (c / a) as I128;\n'
+                   b'    "{n}\\n";\n    U128 u = n as U128;\n    U256 m = (u as U256) << 130;\n}\n',
+        "util/wmath.ci": b'export I1024 sq(I1024 x) {\n    return x * x;\n}\n'}
+
+    def width_lines(self):
+        # The signed width of a value, sign bit included, is its bit length plus 1 when it is not
+        # negative; an unsigned site counts the bit length alone (rt/OPEN.md RT-OQ-64).
+        a = 1000000007
+        sw = lambda v: v.bit_length() + 1
+        return [b"CINT-WIDTH-1",
+                b"site util/wmath.ci:2:14 mul.checked.i1024 hits 2 bits %d of 1024 fits I128" % sw(a ** 4),
+                b"unreached main.ci:8:21 sub.checked.i1024",
+                b"site main.ci:11:17 div.checked.i1024 hits 1 bits %d of 1024 fits I128" % sw(a ** 4),
+                b"site main.ci:11:22 as.checked.i1024.i128 hits 1 bits %d of 1024 fits I128" % sw(a ** 3),
+                b"site main.ci:13:16 as.checked.i128.u128 hits 1 bits %d of 128 fits I128" % sw(a ** 3),
+                b"site main.ci:14:17 as.checked.u128.u256 hits 1 bits %d of 128 fits U128" % (a ** 3).bit_length(),
+                b"site main.ci:14:26 shl.checked.u256 hits 1 bits %d of 256 fits U256" % (a ** 3 << 130).bit_length(),
+                b"end"]
+
+    def test_width_report_run(self):
+        # Games G3 (rt/OPEN.md RT-OQ-64): `run --width-report PATH` writes the largest width each
+        # wide site reached, every site the hooks see that was not reached, and changes nothing else.
+        root = self.project("width-run", self.WIDTH_PROJECT)
+        plain = self.invoke([root / "main.ci"])
+        report = self.out / "width-run.txt"
+        result = self.invoke(["--width-report", report, root / "main.ci"])
+        self.assertEqual((result.returncode, result.stderr), (0, b""))
+        self.assertEqual(result.stdout, plain.stdout)
+        self.assertEqual(result.stdout, b"%d\n" % 1000000007 ** 3)
+        self.assertEqual(report.read_bytes().split(b"\n"), self.width_lines() + [b""])
+        # A fault past a site's reach still faults, and the report is written first.
+        root = self.project("width-fault", {"main.ci": b'void main() {\n    I128 a = 1 as I128;\n    a = a << 100;\n'
+                                                       b'    I128 b = a * a;\n    "{b}\\n";\n}\n'})
+        report = self.out / "width-fault.txt"
+        fault = self.one_json(self.invoke(["--json", "--width-report", report, root / "main.ci"]), "CINT-FAULT-1", 1)
+        self.assertEqual((fault["code"], fault["operation"]), ("E_OVERFLOW", "mul.checked.i128"))
+        self.assertEqual(report.read_bytes().split(b"\n"), [
+            b"CINT-WIDTH-1", b"site main.ci:3:11 shl.checked.i128 hits 1 bits 102 of 128 fits I128",
+            b"site main.ci:4:16 mul.checked.i128 hits 1 bits 102 of 128 fits I128", b"end", b""])
+
+    def test_width_report_build(self):
+        # `build --width-report`: the program writes its report to stderr when it ends.
+        root = self.project("width-build", self.WIDTH_PROJECT)
+        result = self.command("build", ["--width-report", "--out", self.out / "width-build-out", root / "main.ci"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        program = self.out / "width-build-out" / ("main.exe" if CONFIG.leg == "msvc" else "main")
+        ran = subprocess.run([str(program)], capture_output=True, check=False, timeout=60)
+        self.assertEqual((ran.returncode, ran.stdout), (0, b"%d\n" % 1000000007 ** 3))
+        self.assertEqual(ran.stderr.split(b"\n"), self.width_lines() + [b""])
+        for subcommand, args in (("run", ["--width-report"]), ("run", ["--width-report", "w.txt", "--receipt", "r.json"]),
+                                 ("build", ["--width-report", "--lib"]), ("build", ["--width-report", "--width-report"]),
+                                 ("test", ["--width-report"]), ("emit-c", ["--width-report", "--root", root, "--out", "x"])):
+            with self.subTest(subcommand=subcommand, args=args):
+                self.tool_error(self.command(subcommand, ["--json", *args, root / "main.ci"]), 4)
 
     # `cint <name>` (SPEC-06 3.1, BX13-15): cint-<name> from cint's directory, here a copy of cint
     # beside a stand-in tool, on cint's own stdin, stdout and stderr, with the tool's exit status.

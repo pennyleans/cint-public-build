@@ -1,0 +1,9 @@
+case arith/convert_sat_table
+clause SPEC-01 IM-50; SPEC-04 LS-133 (`x as| T` is sat(T, x) between the integer types I8 to U64: the value where it fits, else T.min or T.max on its side; OQ-272 A)
+format 5
+source reference
+outcome value
+stdout-bytes 76
+stdout-sha256 0d5db0408339e172088fb567384c201b8f3941fcfb95d39e563eec133890de13
+return I64 254
+fuel-consumed 1

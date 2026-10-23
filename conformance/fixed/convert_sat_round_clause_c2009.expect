@@ -1,0 +1,7 @@
+case fixed/convert_sat_round_clause_c2009
+clause SPEC-01 IM-68, IM-69; SPEC-04 17.2, LS-133 (an integer converted to fixed point is exact, so a round clause on `as|` is C2009, as on `as`; OQ-272 A)
+format 5
+source compile-error
+outcome compile-error
+diagnostic.code C2009
+diagnostic.position fixed/convert_sat_round_clause_c2009.ci:9:18

@@ -1,0 +1,31 @@
+// lib/console.ci: the `console/1` service module (SPEC-07 SEC-CAP-13, SEC-OS-10; SPEC-03 H-7, H-8a).
+// Proposed, I/O services lane U1 (docs/design/notes/2026-10-21-io-services.md, U3 names the
+// externs; OQ-299 rules on the byte-level console and the `console.raw` capability; OQ-303
+// places the module). `denied` is the result of a call that no grant covers (SPEC-03 A-10;
+// SEC-OS-1); `closed` is a console that has gone away; `unavailable` is a terminal that has no
+// raw mode or no size.
+
+export error ConsoleError { denied, closed, unavailable }
+
+// Raw mode on or off: no echo, no canonical mode, no signals, no output processing. The
+// runtime restores the terminal when the context ends, faults, or the process is ended.
+@service("console/1", console.raw)
+export extern observe ConsoleError!void raw(Grants g, Bool on);
+
+// The bytes that arrived within `wait_ms` (0 polls), at most the extent of `buf`; returns the
+// count, and 0 on a timeout.
+@service("console/1", console.input)
+export extern observe ConsoleError!I64 read(Grants g, out U8[] buf, I64 wait_ms);
+
+// Writes every byte or fails. An output-only effect: recorded, not re-performed on replay (H-7).
+@service("console/1")
+export extern observe ConsoleError!void write(Grants g, in U8[] bytes);
+
+// Rows in the high 32 bits, columns in the low 32 bits, read fresh on each call. Named `window`
+// because `size` is a built-in name that no module may declare (SPEC-04 LS-112).
+@service("console/1", console.input)
+export extern observe ConsoleError!I64 window(Grants g);
+
+// One line without its line end, for shells and tests; returns the count of bytes.
+@service("console/1", console.input)
+export extern observe ConsoleError!I64 read_line(Grants g, out U8[] buf);

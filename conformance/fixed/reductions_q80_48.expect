@@ -1,0 +1,9 @@
+case fixed/reductions_q80_48
+clause SPEC-02 R-4, R-5; SPEC-01 IM-77, IM-79 (the reductions act on the stored integers of a 128-bit format and keep it)
+format 5
+source reference
+outcome value
+stdout-bytes 165
+stdout-sha256 ed0e9b465d1af5c9fe576a8d661fd4667319e5181f4ec280b864443825f4b220
+return I64 949978046398464
+fuel-consumed 9

@@ -1,0 +1,9 @@
+case fixed/convert_table_q128
+clause SPEC-01 IM-68, IM-69 (conversions between the 64-bit and 128-bit formats and I128, with round clauses, `as%` and `as|`)
+format 5
+source reference
+outcome value
+stdout-bytes 172
+stdout-sha256 e0228f791fca40cba7299a864a199d74b967d5f640ad60ace1c5091b8f877689
+return I64 0
+fuel-consumed 1

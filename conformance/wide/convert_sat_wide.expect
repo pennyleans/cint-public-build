@@ -1,0 +1,9 @@
+case wide/convert_sat_wide
+clause SPEC-01 IM-6, IM-50; SPEC-04 LS-133 (`as|` between the wide types I128 to I1024 and U128 to U512 and the narrow ones, both ways; OQ-272 A)
+format 5
+source reference
+outcome value
+stdout-bytes 406
+stdout-sha256 13fbd6334bc1eec34d896485bf71f61b289a9e08f6210b2d06f3cb171cd98419
+return I64 0
+fuel-consumed 1

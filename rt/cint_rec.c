@@ -30,8 +30,20 @@
  *               limit and the frame-arena capacity, I64 each; a U32 count of input records (0:
  *               no borrowed inputs before box 13 unit 7)
  *   2 effect    the ordinal I64 (the effect-log position); the site, module U32 and index U32;
- *               the name "print"; the status I32 the host returned; the request bytes (a U64
- *               length and the bytes)
+ *               the name; the status I32 the host returned; the request bytes (a U64 length and
+ *               the bytes); and, for an extern call (the name is the extern's, not "print";
+ *               SPEC-03 A-15, H-14; SEC-OS-11; RT-OQ-70), the response bytes (a U64 length and
+ *               the bytes). The request block of a call is a U32 argument count, then each
+ *               argument in declaration order: a scalar as its tagged value (SPEC-01 11.1); a
+ *               view as 0x52, its element tag U8, its permission U8 (0 in, 1 out) and its extent
+ *               U64, then for an `in` view its elements in index order, each its width in
+ *               little-endian bytes, in full mode, or their SHA-256 in digest mode. The response
+ *               block is empty unless the status is CINT_OK; then a U8, 1 for the error
+ *               alternative, followed by its tag U64, or 0 for the value alternative, followed
+ *               by the result's tagged value unless the result is void, then each `out` view's
+ *               elements, or their SHA-256, as the request writes an `in` view's
+ *   10 unrestricted  an `unrestricted` extern called: the ordinal I64, the site and the name, as
+ *               an effect; the end event follows at once, with reason 2 (H-14)
  *   3 outcome   the status I32; the fault record (a presence byte, then a U32 length and the
  *               IM-149 bytes); the fuel consumed I64, 0 when the entry did not run; the result
  *               (a presence byte and the tagged value); the error result (a presence byte, then
@@ -44,8 +56,9 @@
  *               after the restore, U64 each; the U64 length and bytes of the checkpoint
  *   7 revision  the new revision identity; its source-map digest as in the header; the code of
  *               that revision
- *   8 end       the reason U8 (0 closed by the host, 1 CINT_RESOURCE); the head of the digest
- *               chain of SPEC-06 10.5 (32 bytes); the U64 count of the events before it
+ *   8 end       the reason U8 (0 closed by the host, 1 CINT_RESOURCE, 2 an unrestricted
+ *               occurrence); the head of the digest chain of SPEC-06 10.5 (32 bytes); the U64
+ *               count of the events before it
  *   9 dispatch  at dispatch density, between an entry and its outcome: the dispatch number I64
  *               and the state hash after its publication (cint_rt_dispatch_end; RT-OQ-48)
  *
@@ -81,6 +94,7 @@ struct cint_recorder {
     cint_status failed;     /* the first status other than CINT_OK the sink returned */
     bool ended;
     bool is_case;
+    bool digest;            /* CINT_RECORD_DIGEST: view contents and results as their SHA-256 */
     bool pending;           /* a dispatch event whose boundary waits for the next event */
     int64_t number;         /* its dispatch number */
     uint8_t hash[32];       /* and its state hash */
@@ -405,6 +419,9 @@ static cint_status rec_output(void *user, const uint8_t *bytes, size_t len)
     cint_recorder *r = (cint_recorder *)user;
     cint_ctx *ctx = r->ctx;
     cint_status st = r->output != NULL ? r->output(r->output_user, bytes, len) : CINT_OK;
+    if (r->ended) {
+        return st;  /* after an `unrestricted` call: delivered, not recorded */
+    }
     r_settle(r);
     r_le(r, CINT_EVENT_EFFECT, 1u);
     r_le(r, (uint64_t)ctx->effects, 8u);
@@ -418,6 +435,10 @@ static cint_status rec_output(void *user, const uint8_t *bytes, size_t len)
     r->events++;
     return st;
 }
+
+/* rt/cint_rec_host.c: the hooks an extern call reaches while a recorder records, or during replay. */
+static cint_status rec_host(cint_ctx *ctx, cint_rt_host_frame *c);
+static cint_status replay_host(cint_ctx *ctx, cint_rt_host_frame *c);
 
 cint_status cint_rec_begin(cint_ctx *ctx, const cint_observer *entries, const cint_code_module *code,
                            uint32_t code_count, uint32_t mode, cint_sink *sink, cint_recorder **out)
@@ -451,6 +472,7 @@ cint_status cint_rec_begin(cint_ctx *ctx, const cint_observer *entries, const ci
         r->output = ctx->output;
         r->output_user = ctx->output_user;
         r->is_case = mode == CINT_RECORD_CASE;
+        r->digest = mode == CINT_RECORD_DIGEST;
         if (r->is_case) {
             r_str(r, CINT_STATE_LIT(CASE_DOMAIN));
         } else {
@@ -476,6 +498,8 @@ cint_status cint_rec_begin(cint_ctx *ctx, const cint_observer *entries, const ci
             ctx->output_user = r;
             ctx->boundary = dispatch ? rec_dispatch : NULL;
             ctx->boundary_user = r;
+            ctx->host_hook = rec_host;
+            ctx->host_user = r;
             *out = r;
         }
     }
@@ -496,6 +520,9 @@ static void r_outcome(cint_recorder *r, uint64_t index, cint_status st, uint32_t
     size_t flen = 0u;
     cint_tvalue v;
     bool merged;
+    if (r->ended) {
+        return;  /* an `unrestricted` call ended the recording inside this entry (H-14) */
+    }
     memset(hash, 0, sizeof hash);
     if ((st == CINT_FAULT || st == CINT_RESOURCE) && ctx->head.faulted != 0u &&
         ((flen = cint_fault_encode(&ctx->fault, NULL, 0u)) == 0u || (fault = (uint8_t *)malloc(flen)) == NULL ||
@@ -567,7 +594,28 @@ static uint64_t r_entry(cint_recorder *r, uint32_t form, const cint_observer_ent
     r_le(r, (uint64_t)fuel, 8u);
     r_le(r, (uint64_t)depth, 8u);
     r_le(r, (uint64_t)ctx->frame_arena_bytes, 8u);
-    r_le(r, 0u, 4u);  /* no input records before box 13 unit 7 */
+    if (form == 1u && ctx->args != NULL) {
+        /* The program arguments as the program entry's one input record (OQ-306; RT-OQ-76): the
+         * view form of an effect's request (H-14), `0x52`, the element tag U8, permission 0, the
+         * extent, then a U64 byte count and the bytes, the arguments in full, or their SHA-256 in
+         * digest mode. Other input records wait (RT-OQ-44). */
+        uint8_t d[32];
+        r_le(r, 1u, 4u);
+        r_le(r, 0x52u, 1u);
+        r_le(r, CINT_TAG_U8, 1u);
+        r_le(r, 0u, 1u);
+        r_le(r, (uint64_t)ctx->args_length, 8u);
+        if (r->digest) {
+            cint_sha256(ctx->args, ctx->args_length, d);
+            r_le(r, 32u, 8u);
+            r_put(r, d, 32u);
+        } else {
+            r_le(r, (uint64_t)ctx->args_length, 8u);
+            r_put(r, ctx->args, ctx->args_length);
+        }
+    } else {
+        r_le(r, 0u, 4u);  /* no input records */
+    }
     r_flush(r);
     r->entry = r->events;
     return r->events++;
@@ -725,6 +773,8 @@ cint_status cint_rec_end(cint_recorder *r)
     ctx->output_user = r->output_user;
     ctx->boundary = NULL;
     ctx->boundary_user = NULL;
+    ctx->host_hook = NULL;
+    ctx->host_user = NULL;
     st = r->failed;
     cint_state_mem_free(ctx, r, sizeof *r, _Alignof(cint_recorder));
     cint_rt_busy_give(ctx);
@@ -774,6 +824,44 @@ static void rd_hash(cint_state_rd *r, uint8_t out[32])
     }
 }
 
+/* The one input record a program entry may carry (RT-OQ-76): the program arguments, a U8 view
+ * of `extent` bytes, held in full (`len` == extent) or as their SHA-256 (`len` 32). */
+static void rd_input(cint_state_rd *r, const uint8_t **bytes, size_t *len, uint64_t *extent)
+{
+    uint64_t n, k;
+    const uint8_t *p;
+    r->bad = r->bad || cint_state_rd_u(r, 1u) != 0x52u || cint_state_rd_u(r, 1u) != CINT_TAG_U8 ||
+             cint_state_rd_u(r, 1u) != 0u;
+    n = cint_state_rd_u(r, 8u);
+    k = cint_state_rd_u(r, 8u);
+    p = cint_state_rd_take(r, k);
+    r->bad = r->bad || p == NULL || n == 0u || (k != n && k != 32u) || (k == n && p[k - 1u] != 0u);
+    if (bytes != NULL) *bytes = p;
+    if (len != NULL) *len = (size_t)k;
+    if (extent != NULL) *extent = n;
+}
+
+/* The input record of program entry event e, or none: *bytes NULL. */
+static void entry_input(const cint_recording_info *info, const cint_recording_event *e, const uint8_t **bytes,
+                        size_t *len, uint64_t *extent)
+{
+    cint_state_rd r = cint_state_rd_of(info->bytes, info->len);
+    *bytes = NULL;
+    *len = 0u;
+    *extent = 0u;
+    r.at = e->args_at;
+    for (uint32_t i = 0u; i < e->arg_count; i++) {
+        cint_state_rd_value(&r, NULL, true);
+    }
+    (void)cint_state_rd_take(&r, 24u);  /* fuel, depth, frame-arena capacity */
+    if (cint_state_rd_u(&r, 4u) == 1u) {
+        rd_input(&r, bytes, len, extent);
+    }
+    if (r.bad) {
+        *bytes = NULL;
+    }
+}
+
 /* One event, its fields checked alone. */
 static void rd_event(cint_state_rd *r, cint_recording_event *e)
 {
@@ -798,8 +886,12 @@ static void rd_event(cint_state_rd *r, cint_recording_event *e)
         e->depth = cint_state_as_i64(cint_state_rd_u(r, 8u));
         e->arena = cint_state_as_i64(cint_state_rd_u(r, 8u));
         r->bad = r->bad || e->form > 1u || n > 16u || (e->form == 1u && (e->module.len > 0u || e->name.len > 0u || n > 0u)) ||
-                 e->sequence == 0u || e->fuel < CINT_FUEL_UNBOUNDED || e->depth < 1 || e->arena < 0 ||
-                 cint_state_rd_u(r, 4u) != 0u;
+                 e->sequence == 0u || e->fuel < CINT_FUEL_UNBOUNDED || e->depth < 1 || e->arena < 0;
+        n = cint_state_rd_u(r, 4u);  /* input records: none, or the program entry's arguments (RT-OQ-76) */
+        r->bad = r->bad || n > 1u || (n == 1u && e->form != 1u);
+        if (n == 1u && !r->bad) {
+            rd_input(r, NULL, NULL, NULL);
+        }
     } else if (e->kind == CINT_EVENT_EFFECT) {
         e->ordinal = cint_state_as_i64(cint_state_rd_u(r, 8u));
         e->site.module = (uint32_t)cint_state_rd_u(r, 4u);
@@ -809,8 +901,21 @@ static void rd_event(cint_state_rd *r, cint_recording_event *e)
         n = cint_state_rd_u(r, 8u);
         e->data = cint_state_rd_take(r, n);
         e->data_len = (size_t)n;
-        r->bad = r->bad || e->ordinal < 0 || e->name.len != sizeof PRINT_NAME - 1u ||
-                 memcmp(e->name.bytes, PRINT_NAME, e->name.len) != 0;
+        if (r->bad || (e->name.len == sizeof PRINT_NAME - 1u && memcmp(e->name.bytes, PRINT_NAME, e->name.len) == 0)) {
+            r->bad = r->bad || e->ordinal < 0;
+        } else {
+            /* An extern call: its response block; the request block holds at least the count. */
+            n = cint_state_rd_u(r, 8u);
+            e->response = cint_state_rd_take(r, n);
+            e->response_len = (size_t)n;
+            r->bad = r->bad || e->ordinal < 0 || e->data_len < 4u || (e->status != CINT_OK && e->response_len != 0u);
+        }
+    } else if (e->kind == CINT_EVENT_UNRESTRICTED) {
+        e->ordinal = cint_state_as_i64(cint_state_rd_u(r, 8u));
+        e->site.module = (uint32_t)cint_state_rd_u(r, 4u);
+        e->site.index = (uint32_t)cint_state_rd_u(r, 4u);
+        rd_name(r, &e->name, 255u, true);
+        r->bad = r->bad || e->ordinal < 0;
     } else if (e->kind == CINT_EVENT_OUTCOME) {
         e->status = as_i32(cint_state_rd_u(r, 4u));
         if (cint_state_rd_flag(r)) {
@@ -868,7 +973,7 @@ static void rd_event(cint_state_rd *r, cint_recording_event *e)
         e->reason = (uint32_t)cint_state_rd_u(r, 1u);
         rd_hash(r, e->hash);
         e->sequence = cint_state_rd_u(r, 8u);
-        r->bad = r->bad || e->reason > 1u;
+        r->bad = r->bad || e->reason > 2u;
     } else if (e->kind == CINT_EVENT_DISPATCH) {
         e->ordinal = cint_state_as_i64(cint_state_rd_u(r, 8u));
         rd_hash(r, e->hash);
@@ -987,12 +1092,19 @@ cint_status cint_recording_decode(const uint8_t *bytes, size_t len, cint_recordi
             return CINT_REFUSED;  /* incomplete: no end event (box 13 default BX13-12) */
         }
         rd_event(&r, &e);
-        if (r.bad || resource != (e.kind == CINT_EVENT_END && e.reason == 1u && !in_entry)) {
-            return CINT_REFUSED;  /* after CINT_RESOURCE only the end, with reason 1 */
+        if (r.bad) {
+            return CINT_REFUSED;
         }
-        if (in_entry !=
-                (e.kind == CINT_EVENT_EFFECT || e.kind == CINT_EVENT_OUTCOME || e.kind == CINT_EVENT_DISPATCH) ||
-            (e.kind == CINT_EVENT_DISPATCH && c.density == 0u)) {
+        if (e.kind == CINT_EVENT_END) {
+            /* After CINT_RESOURCE only the end, with reason 1; after an `unrestricted` event,
+             * inside its entry, only the end, with reason 2 (H-14). */
+            if (in_entry ? e.reason != 2u || last.kind != CINT_EVENT_UNRESTRICTED : e.reason != (resource ? 1u : 0u)) {
+                return CINT_REFUSED;
+            }
+        } else if (resource || last.kind == CINT_EVENT_UNRESTRICTED ||
+                   in_entry != (e.kind == CINT_EVENT_EFFECT || e.kind == CINT_EVENT_OUTCOME ||
+                                e.kind == CINT_EVENT_DISPATCH || e.kind == CINT_EVENT_UNRESTRICTED) ||
+                   (e.kind == CINT_EVENT_DISPATCH && c.density == 0u)) {
             return CINT_REFUSED;
         }
         /* A dispatch event is a boundary of its own unless its entry's outcome follows at its state. */
@@ -1137,6 +1249,7 @@ typedef struct replay_run {
     uint64_t stop;              /* cint_replay_config.stop */
     bool stopped;               /* at a dispatch boundary, the stop, whose state is kept */
     bool resource;
+    bool unreplayable;          /* an `unrestricted` event: replay stops before it (H-17) */
     uint8_t *kept;              /* that state's CINT-CKPT-1 */
     size_t kept_len;
 } replay_run;
@@ -1170,6 +1283,8 @@ static cint_status replay_output(void *user, const uint8_t *bytes, size_t len)
     }
     return e.status;
 }
+
+#include "cint_rec_host.c"  /* extern calls (RT-OQ-70), counted in their own 4.2 row */
 
 /* cint_rt_dispatch_end in a replayed entry: compared with the next recorded event, a `dispatch`
  * event, and a boundary of its own unless the entry's outcome follows it at its state. At the
@@ -1247,10 +1362,11 @@ static cint_status replay_entry(replay_run *x, const cint_observer *obs, cint_ma
     uint32_t effects = 0u;
     int64_t fuel, used = 0, merged;
     uint8_t hash[32], *fault = NULL;
-    size_t flen = 0u;
+    size_t flen = 0u, given_len = 0u;
+    const uint8_t *given_args = NULL;
     cint_tvalue v;
     cint_status st;
-    bool ok;
+    bool ok, has_outcome, gave_args = false;
     memset(&v, 0, sizeof v);
     memset(hash, 0, sizeof hash);
     ok = e->arena == ctx->frame_arena_bytes &&
@@ -1261,31 +1377,66 @@ static cint_status replay_entry(replay_run *x, const cint_observer *obs, cint_ma
         ok = cint_recording_arg(x->rec, e, i, &v) == CINT_OK && v.bytes[0] == f->types[2u + i];
         args[i] = bits_of(&v);
     }
+    if (ok && e->form == 1u) {
+        /* The program arguments (RT-OQ-76): a full recording gives the context the recorded
+         * bytes; a digest recording needs the context's own to have the recorded SHA-256. */
+        const uint8_t *in = NULL;
+        size_t len = 0u;
+        uint64_t extent = 0u;
+        entry_input(x->rec, e, &in, &len, &extent);
+        if (in == NULL || len == extent) {   /* none recorded, or recorded in full: the entry sees those */
+            given_args = ctx->args;
+            given_len = ctx->args_length;
+            gave_args = true;
+            ctx->args = in;
+            ctx->args_length = in != NULL ? (size_t)extent : 0u;
+        } else {
+            uint8_t d[32];
+            cint_sha256(ctx->args != NULL ? ctx->args : hash, ctx->args_length, d);
+            ok = ctx->args_length == extent && memcmp(d, in, 32u) == 0;
+        }
+    }
     while (cint_recording_next(x->rec, &o) == CINT_OK &&
-           (o.kind == CINT_EVENT_EFFECT || o.kind == CINT_EVENT_DISPATCH)) {
+           (o.kind == CINT_EVENT_EFFECT || o.kind == CINT_EVENT_DISPATCH || o.kind == CINT_EVENT_UNRESTRICTED)) {
         effects++;
     }
     if (!ok) {
         diverge(rep, CINT_REPLAY_ENTRY, e->index);
         return CINT_OK;
     }
-    if (o.status == CINT_RESOURCE) {
+    /* An entry that an `unrestricted` call ended has no outcome: the end event follows it. */
+    has_outcome = o.kind == CINT_EVENT_OUTCOME;
+    if (has_outcome && o.status == CINT_RESOURCE) {
         rep->status = CINT_UNREPLAYABLE;  /* it depends on the machine (A-6) */
         rep->event = e->index;
         return CINT_OK;
     }
-    fuel = ran(o.status) ? o.allowance : e->fuel;  /* an interrupt lowered it (box 13 default BX13-09) */
+    fuel = has_outcome && ran(o.status) ? o.allowance : e->fuel;  /* an interrupt lowered it (box 13 default BX13-09) */
     x->last = *e;
     x->left = effects;
     x->diverged = false;
+    x->unreplayable = false;
     x->entry = e->index;
     st = f != NULL ? f->call(ctx, fuel, e->depth, args, &res) : main_fn(ctx, fuel);
+    if (gave_args) {   /* the host's arguments come back after the entry */
+        ctx->args = given_args;
+        ctx->args_length = given_len;
+    }
     *e = o;
     if (x->resource || x->stopped) {  /* the stop was a dispatch boundary: its state comes back */
         st = x->resource ? CINT_RESOURCE : cint_ctx_restore(ctx, x->kept, x->kept_len);
         free(x->kept);
         x->kept = NULL;
         return st;
+    }
+    if (x->unreplayable) {  /* stopped before the `unrestricted` call (H-17); the state before it is verified */
+        rep->status = CINT_UNREPLAYABLE;
+        rep->event = x->at;
+        return CINT_OK;
+    }
+    if (!has_outcome) {  /* the live entry did not reach the recorded `unrestricted` call */
+        diverge(rep, CINT_REPLAY_EFFECT, x->diverged ? x->at : x->last.index + 1u);
+        return CINT_OK;
     }
     if (x->diverged || x->left > 0u) {
         cint_recording_event u = x->last;
@@ -1386,6 +1537,8 @@ cint_status cint_replay(cint_ctx *ctx, const cint_recording_info *rec, const cin
     ctx->output_user = &x;
     ctx->boundary = rec->density == 1u ? replay_dispatch : NULL;
     ctx->boundary_user = &x;
+    ctx->host_hook = replay_host;
+    ctx->host_user = &x;
     obs = cfg->entries;
     main_fn = cfg->main_fn;
     memset(&e, 0, sizeof e);
@@ -1447,6 +1600,8 @@ cint_status cint_replay(cint_ctx *ctx, const cint_recording_info *rec, const cin
     ctx->output_user = x.output_user;
     ctx->boundary = NULL;
     ctx->boundary_user = NULL;
+    ctx->host_hook = NULL;
+    ctx->host_user = NULL;
     if (st == CINT_OK) {
         *out = rep;
     }
@@ -1502,6 +1657,21 @@ static void t_code(cint_state_tx *t, const cint_recording_info *c, const cint_re
     }
 }
 
+/* A request or response block of an extern call: its bytes in hex up to 64 of them, else its
+ * length and SHA-256. */
+static void t_block(cint_state_tx *t, const uint8_t *p, size_t n)
+{
+    uint8_t d[32];
+    if (n <= 64u) {
+        cint_state_t_hex(t, p, n);
+        return;
+    }
+    cint_state_t_u64(t, n);
+    cint_state_t_str(t, " bytes sha256 ");
+    cint_sha256(p, n, d);
+    cint_state_t_hex(t, d, 32u);
+}
+
 size_t cint_recording_render(const cint_recording_info *c, char *out, size_t cap)
 {
     static const char *const statuses[] = {"ok", "fault", "refused", "busy", "faulted", "resource"};
@@ -1555,23 +1725,48 @@ size_t cint_recording_render(const cint_recording_info *c, char *out, size_t cap
                 cint_state_t_value(&t, "", &v);
                 t.len--;  /* t_value ends the line */
             }
+            if (e.form == 1u) {   /* the program arguments (RT-OQ-76): their byte count, and `digest` */
+                const uint8_t *in = NULL;
+                size_t len = 0u;
+                uint64_t extent = 0u;
+                entry_input(c, &e, &in, &len, &extent);
+                if (in != NULL) {
+                    cint_state_t_str(&t, " args ");
+                    cint_state_t_u64(&t, extent);
+                    cint_state_t_str(&t, len == extent ? " bytes" : " bytes digest");
+                }
+            }
             cint_state_t_str(&t, e.arg_count > 0u ? ") fuel " : " fuel ");
             cint_state_t_i64(&t, e.fuel);
             cint_state_t_str(&t, " depth ");
             cint_state_t_i64(&t, e.depth);
             cint_state_t_str(&t, " frame-arena ");
             cint_state_t_i64(&t, e.arena);
-        } else if (e.kind == CINT_EVENT_EFFECT) {
-            cint_state_t_str(&t, " effect ");
+        } else if (e.kind == CINT_EVENT_EFFECT || e.kind == CINT_EVENT_UNRESTRICTED) {
+            cint_state_t_str(&t, e.kind == CINT_EVENT_EFFECT ? " effect " : " unrestricted ");
             cint_state_t_i64(&t, e.ordinal);
             cint_state_t_str(&t, " site ");
             cint_state_t_u64(&t, e.site.module);
             cint_state_t_str(&t, ".");
             cint_state_t_u64(&t, e.site.index);
-            cint_state_t_str(&t, " print status ");
-            cint_state_t_i64(&t, e.status);
             cint_state_t_str(&t, " ");
-            t_quoted(&t, e.data, e.data_len);
+            cint_state_t_put(&t, e.name.bytes, e.name.len);
+            if (e.kind == CINT_EVENT_UNRESTRICTED) {
+                /* nothing more: the end event follows */
+            } else if (e.response == NULL && e.name.len == sizeof PRINT_NAME - 1u &&
+                       memcmp(e.name.bytes, PRINT_NAME, e.name.len) == 0) {
+                cint_state_t_str(&t, " status ");
+                cint_state_t_i64(&t, e.status);
+                cint_state_t_str(&t, " ");
+                t_quoted(&t, e.data, e.data_len);
+            } else {
+                cint_state_t_str(&t, " status ");
+                cint_state_t_i64(&t, e.status);
+                cint_state_t_str(&t, " request ");
+                t_block(&t, e.data, e.data_len);
+                cint_state_t_str(&t, " response ");
+                t_block(&t, e.response, e.response_len);
+            }
         } else if (e.kind == CINT_EVENT_OUTCOME) {
             cint_state_t_str(&t, " outcome ");
             cint_state_t_str(&t, statuses[e.status]);
@@ -1622,7 +1817,9 @@ size_t cint_recording_render(const cint_recording_info *c, char *out, size_t cap
             cint_state_t_str(&t, " state ");
             cint_state_t_hex(&t, e.hash, 32u);
         } else {
-            cint_state_t_str(&t, e.reason == 0u ? " end host chain " : " end resource chain ");
+            cint_state_t_str(&t, e.reason == 0u   ? " end host chain "
+                                 : e.reason == 1u ? " end resource chain "
+                                                  : " end unrestricted chain ");
             cint_state_t_hex(&t, e.hash, 32u);
             cint_state_t_str(&t, " events ");
             cint_state_t_u64(&t, e.sequence);

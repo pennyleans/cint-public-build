@@ -2,6 +2,7 @@
 #define main cint_cli_entry
 #include "../../cint_main.c"
 #include "../../cint_receipt.c"
+#include "../../cint_discover.c"
 #undef main
 
 static const cint_site_info unit_sites[2] = {{0u, 0u, ""}, {3u, 13u, "add.checked.i64"}};

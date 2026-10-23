@@ -41,7 +41,8 @@ class Bootstrap(unittest.TestCase):
             root, dest = pathlib.Path(temp) / "repo", pathlib.Path(temp) / "inputs"
             for name, data in (("compiler/main.ci", b"source\r\n"), ("seed/seed_main.c", b"seed"),
                                ("rt/cint_rt.c", b"runtime"), ("rt/cint_rt.h", b"header"),
-                               ("cli/cint_main.c", b"cli"), ("compiler/tests/golden_host.c", b"host")):
+                               ("cli/cint_main.c", b"cli"), ("compiler/tests/golden_host.c", b"host"),
+                               ("lib/fs.ci", b"lib")):
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(data)
@@ -52,6 +53,7 @@ class Bootstrap(unittest.TestCase):
             self.assertEqual(groups["compiler"], {"compiler/main.ci": b"source\r\n"})
             self.assertEqual(groups["runtime"], {"rt/cint_rt.c": b"runtime", "rt/cint_rt.h": b"header"})
             self.assertEqual(groups["host"], {"compiler/tests/golden_host.c": b"host"})
+            self.assertEqual(groups["lib"], {"lib/fs.ci": b"lib"})
             self.assertFalse((dest / "compiler" / "OPEN.md").exists())
 
     def test_snapshot_refuses_linked_build_inputs(self):

@@ -21,7 +21,11 @@ device, a `cint_cuda_device`, and registers CUDA memory as placement device(1),
 and its `cint_ctx_device_stream` gives the context's stream (SPEC-03 A-16a,
 P-10). `Runtime.config` and `Runtime.register` are the only places that differ.
 ABI 3.2 widens `cint_tvalue` to a `Z` of fault record version 3 (OQ-263), which
-changes no structure here; `_state` reads its structures from ABI 3.2 libraries only.
+changes no structure here. ABI 3.3 (RT-OQ-70) appends the host functions, the
+host import descriptor and the grants to a 136-byte `cint_ctx_config`:
+`Runtime.config` passes none, so a library whose code calls an extern faults
+the call (SPEC-03 A-10 resolves imports the host passes). `_state` reads its structures from ABI 3.3
+libraries only.
 """
 from __future__ import annotations
 
@@ -58,6 +62,8 @@ MEM_HOST = 1
 MEM_CUDA = 2
 PLACEMENT_DEVICE = 1          # cint_buffer_desc.device of CUDA memory: device(1) (SPEC-03 A-16a)
 ABI_DEVICES = 0x00030001      # ABI 3.1: cint_ctx_config.devices (OQ-216)
+ABI_HOST = 0x00030003         # ABI 3.3: cint_ctx_config.host and grants, cint_program.host (RT-OQ-70)
+ABI_ARGS = 0x00030004         # ABI 3.4: cint_ctx_config.args, the program arguments of `main` (RT-OQ-76)
 PUBLISH_NONE = 0
 PUBLISH_COPY = 1
 
@@ -109,6 +115,22 @@ class CintCtxConfig31(ctypes.Structure):
     that lives as long as the context (OQ-216)."""
     _fields_ = CintCtxConfig3._fields_ + [("device_count", ctypes.c_uint32), ("reserved", ctypes.c_uint32),
                                           ("devices", ctypes.c_void_p)]
+
+
+class CintCtxConfig33(ctypes.Structure):
+    """`cint_ctx_config` of ABI 3.3: `host_count` host functions at `host`
+    (`cint_host_fn` rows, none here), the program's host import descriptor
+    `imports` (its library's `cint_host_desc`, none here), and the `grants`
+    bytes the services of later units read (RT-OQ-70)."""
+    _fields_ = CintCtxConfig31._fields_ + [("host_count", ctypes.c_uint32), ("reserved2", ctypes.c_uint32),
+                                           ("host", ctypes.c_void_p), ("imports", ctypes.c_void_p),
+                                           ("grants", ctypes.c_void_p), ("grants_length", ctypes.c_size_t)]
+
+
+class CintCtxConfig34(ctypes.Structure):
+    """`cint_ctx_config` of ABI 3.4: the program arguments of `main`, `args_length` bytes at
+    `args`, each argument its bytes and one NUL (none here; RT-OQ-76, OQ-306)."""
+    _fields_ = CintCtxConfig33._fields_ + [("args", ctypes.c_void_p), ("args_length", ctypes.c_size_t)]
 
 
 class CintCudaDevice(ctypes.Structure):
@@ -163,13 +185,13 @@ class CintProgram(ctypes.Structure):
 
 
 SIZES = {CintType: 16, CintView: 144, CintAllocator: 24, CintCtxConfig: 72, CintCtxConfig3: 80, CintCtxConfig31: 96,
-         CintCudaDevice: 8, CintMem: 40, CintSync: 32, CintBufferDesc: 112, CintName: 16, CintExport: 72,
+         CintCtxConfig33: 136, CintCtxConfig34: 152, CintCudaDevice: 8, CintMem: 40, CintSync: 32, CintBufferDesc: 112, CintName: 16, CintExport: 72,
          CintModuleTable: 32, CintLibrary: 16, CintModuleInfo: 24, CintProgram: 24}
 
 
 def layout_problem() -> str | None:
     """Why this host cannot use the ABI's structures, or None: the layouts
-    of `rt/cint_rt.h` assume 8-byte pointers (its _Static_assert lines)."""
+    of `rt/cint_rt.h` assume 8-byte pointers (its CINT_RT_STATIC_ASSERT lines)."""
     if ctypes.sizeof(ctypes.c_void_p) != 8:
         return "cint libraries need a 64-bit host: the ABI's structures assume 8-byte pointers"
     for cls, size in SIZES.items():
@@ -309,7 +331,10 @@ class Runtime:
         self.abi = _bind(lib, "cint_abi_version", u32)()
         self.major = self.abi >> 16
         self.devices = self.abi >= ABI_DEVICES
-        config = CintCtxConfig31 if self.devices else CintCtxConfig3 if self.major >= 3 else CintCtxConfig
+        self.host = self.abi >= ABI_HOST
+        self.args = self.abi >= ABI_ARGS
+        config = (CintCtxConfig34 if self.args else CintCtxConfig33 if self.host else CintCtxConfig31 if self.devices else
+                  CintCtxConfig3 if self.major >= 3 else CintCtxConfig)
         self.ctx_create = _bind(lib, "cint_ctx_create", i32, ctypes.POINTER(config), ctypes.POINTER(p))
         self.ctx_destroy = _bind(lib, "cint_ctx_destroy", None, p)
         self.fault_get = _bind(lib, "cint_fault_get", i32, p, p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t))
@@ -379,7 +404,8 @@ class Runtime:
         allocator, no output (prints are discarded), and the root module's
         descriptor where the contract has the field."""
         if self.major >= 3:
-            kind = CintCtxConfig31 if self.devices else CintCtxConfig3
+            kind = (CintCtxConfig34 if self.args else CintCtxConfig33 if self.host else CintCtxConfig31 if self.devices
+                    else CintCtxConfig3)
             c = kind(size=ctypes.sizeof(kind), program=program, module=module)
         else:
             c = CintCtxConfig(size=ctypes.sizeof(CintCtxConfig), program=program)

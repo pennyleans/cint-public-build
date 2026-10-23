@@ -1,0 +1,8 @@
+module services.main_grants_print
+sites services/main_grants_print.ci 1:8:13:fuel.charge 2:9:5:print
+export func @services.main_grants_print.main(%g: Grants) {
+  fuel.charge 1                                  #1 @services/main_grants_print.ci:8:13
+  print.begin                                    #2 @services/main_grants_print.ci:9:5
+  print.bytes "hi\n"
+  print.end
+}

@@ -1,0 +1,9 @@
+case fixed/sqrt_table_q64_64
+clause SPEC-01 IM-67 (sqrt in Q64.64 with a 256-bit intermediate; for i >= 2 the root is always in range)
+format 5
+source reference
+outcome value
+stdout-bytes 238
+stdout-sha256 cc3c9c001e5215cb90ca6711bafe4e8f45be8bdbea576ced2592f5856c6fb0dc
+return I64 0
+fuel-consumed 1

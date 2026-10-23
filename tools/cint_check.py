@@ -86,7 +86,8 @@ One run:
 5. Symbol audit (SPEC-09 EMIT-31 and SPEC-03 A-3 as amended by slice 2 patch
    D-2; `dumpbin /symbols` or `nm`): the runtime object defines only `cint_`
    symbols; a program object defines only `cx_*`, `cm_*`, `ci_*` and `cg_*`
-   symbols and `cint_program_abi` and `cint_observer_desc`, and refers only to
+   symbols, `cint_program_abi`, `cint_observer_desc`, `cint_library_desc` and
+   `cint_imports_desc`, and refers only to
    the runtime object's `cint_` functions, the EMIT-31 support list with the
    rows of its own target (on `apple-clang` only, `__chkstk_darwin`, decision
    25, its x86-64 spelling `___chkstk_darwin`, OQ-219, and `bzero`, ruling
@@ -210,8 +211,12 @@ EMIT31_SUPPORT = {"memcpy", "memset", "memmove", "memcmp", "__chkstk", "__securi
 # guards the zero store of B1's loop `l[z] = 0;` into a local array of 1-byte elements with its
 # /GS range check, `__report_rangecheckfailure` (OQ-211). MSVC at /O2 refers to its C runtime's
 # CPU feature level `__isa_available` from the object of box 09's reduce/dot_value (OQ-215).
+# GCC and Clang on x86-64 Linux take the runtime fast path's 128-by-64 quotient through
+# `__udivti3`; GCC also leaves an undefined `__divti3` with no relocation against it (OQ-271).
 EMIT31_TARGET = {"apple-clang": frozenset({"__chkstk_darwin", "___chkstk_darwin", "bzero"}),
-                 "msvc": frozenset({"__report_rangecheckfailure", "__isa_available"})}
+                 "msvc": frozenset({"__report_rangecheckfailure", "__isa_available"}),
+                 "gcc": frozenset({"__udivti3", "__divti3"}),
+                 "clang": frozenset({"__udivti3", "__divti3"})}
 # The operator spelling per (op, form) of SPEC-01 4.1 for the cint-boot-1 binary forms.
 BOOT_BINARY = {("add", "checked"): "+", ("sub", "checked"): "-", ("mul", "checked"): "*",
                ("div", "checked"): "/", ("rem", "checked"): "%", ("shl", "checked"): "<<",
@@ -231,7 +236,8 @@ MSVC_NAMES = frozenset({"__isa_available_default"})
 # SPEC-09 EMIT-22, EMIT-31 and CONF-13 X-2: the program-level observer symbols and the
 # library descriptor of the reflection table (SPEC-03 A-19), the public families
 # (cint-abi-1, SPEC-03 A-12, A-14), and the internal families of per-module output.
-OBSERVER_SYMBOLS = {"cint_program_abi", "cint_observer_desc", "cint_observer_state", "cint_library_desc"}
+OBSERVER_SYMBOLS = {"cint_program_abi", "cint_observer_desc", "cint_observer_state", "cint_library_desc",
+                    "cint_imports_desc"}
 PUBLIC_PREFIXES = ("cx_", "cm_")
 INTERNAL_PREFIXES = ("ci_", "cg_")
 ELF_LINKER_SYMBOLS = {"_init", "_fini", "__bss_start", "_edata", "_end"}
@@ -877,6 +883,7 @@ class Program:
         self.expected = None      # list of expected bodies, or a callable that computes them
         self.fuel = None
         self.depth = DEFAULT_DEPTH
+        self.argv = []            # program cases: the `// argv:` program arguments of `main` (OQ-306)
         self.subset = "cint-boot-1"
         self.frozen_body = None   # program cases: the first entry's frozen `.expect` body
         self.format = 1           # program cases: the CONF-11 format of the frozen files
@@ -964,6 +971,7 @@ def inventory_program_cases(only, cats, ref_problems, lists):
                 continue
             p.fuel = int(h["fuel"]) if h["fuel"] is not None else None
             p.depth = int(h["depth"]) if h["depth"] is not None else DEFAULT_DEPTH
+            p.argv = list(h["argv"])
             args = [typed_arg(a) for a in h["args"]]
             bodies = []
             formats = {gen_expect.expect_format(str(f)) for f in paths}
@@ -977,7 +985,8 @@ def inventory_program_cases(only, cats, ref_problems, lists):
                 # not cint_ref's, so it is not compared with cint_ref here.
                 ref_out = None
                 if h["case"] is not None and (cintc_file or gen_expect.seed_expect(text, h, case_id) is None):
-                    o = run_program(data, rel, entry, p.fuel, p.depth, args=args, root=str(CONF))
+                    o = run_program(data, rel, entry, p.fuel, p.depth, args=args, root=str(CONF),
+                                    program_args=p.argv)
                     ref_out = o.stdout
                     got = expect_lines(expect.from_outcome(o, h["case"] + suffix, h["clause"], None,
                                                            p.format))
@@ -1219,7 +1228,9 @@ class EmitCache:
         path.mkdir(parents=True, exist_ok=True)
 
     def modules(self, root: pathlib.Path) -> dict:
-        """{path: sha256} of every .ci file under root, which B1 may read (once per root)."""
+        """{path: sha256} of every .ci file under root, and under `stdlib:` of every standard
+        library module (the repository's lib/, which the bootstrap copies beside cint), which B1
+        may read (once per root; SPEC-09 RCPT-07)."""
         with self.lock:
             found = self.roots.get(str(root))
         if found is None:
@@ -1229,6 +1240,8 @@ class EmitCache:
                     if name.endswith(".ci"):
                         f = pathlib.Path(d) / name
                         found[f.relative_to(root).as_posix()] = sha256(f.read_bytes())
+            for f in sorted((ROOT / "lib").glob("*.ci")):
+                found["stdlib:" + f.name] = sha256(f.read_bytes())
             with self.lock:
                 self.roots[str(root)] = found
         return found
@@ -1430,6 +1443,8 @@ def ref_check(p: Program, observed, work: pathlib.Path) -> list:
             cmd += ["--fuel", str(p.fuel)]
         for v in args:
             cmd += ["--arg", render_arg(v)]
+        if p.argv:
+            cmd += ["--"] + p.argv
         r = subprocess.run(cmd, cwd=REF, capture_output=True, text=True,
                            env=dict(os.environ, PYTHONPATH=str(REF)))
         problems.append(None if r.returncode == 0 else {"case": frozen.stem, "cint_ref_check": " ".join(
@@ -1755,7 +1770,7 @@ def decode_error_record(data: bytes) -> list:
 
 def state_lines(path: pathlib.Path) -> list:
     """The `state.global` lines a program with module state writes to its third destination
-    (cint_program_run_state, rt/cint_rt.h 6d); none when it wrote no file."""
+    (cint_program_run_args, rt/cint_rt_host.h 6d); none when it wrote no file."""
     if not path.is_file():
         return []
     text = path.read_bytes().decode("ascii")
@@ -1781,7 +1796,7 @@ def run_program_entry(p: Program, tc: Toolchain, tools: dict, work: pathlib.Path
     linked with the runtime into an executable whose C `main` (CINTC-OQ-36) runs the entry with
     unbounded fuel and writes the fault or error record and the fuel record to the paths it is
     given (SPEC-06 3.4a, D-19), and in format 2 and later the module state to a third path
-    (cint_program_run_state; a main without module state refuses a third path with status 4 and
+    (cint_program_run_args; a main without module state refuses a third path with status 4 and
     is run again without it). The observed body holds the stdout bytes, the fuel consumed, the
     decoded fault record (cint_ref's IM-148 reader) or error record (exit status 6, format 3),
     and the state lines, in the case's format. The program-level C `main` is outside the EMIT-31
@@ -1806,6 +1821,10 @@ def run_program_entry(p: Program, tc: Toolchain, tools: dict, work: pathlib.Path
     env = dict(tc.env, ASAN_OPTIONS="detect_leaks=1:abort_on_error=0",
                UBSAN_OPTIONS="print_stacktrace=1:halt_on_error=1")
     dests = [fault_path, fuel_path] + ([state_path] if p.format >= 2 else [])
+    # The program arguments of the case's `// argv:` line, as `--arg` pairs before the
+    # destinations (cint_program_run_argv, CINT_PROGRAM_ARGS; OQ-306, rt/OPEN.md RT-OQ-76).
+    for a in p.argv:
+        cmd += ["--arg", a]
     while True:
         for f in (fault_path, fuel_path, state_path):
             f.unlink(missing_ok=True)
@@ -2329,7 +2348,7 @@ def main(argv=None) -> int:
         "runtime_contract_version": runtime_contract(),
         "runtime_header_sha256": runtime_header_digest(),
         "runtime_library_sha256": files_digest([RT / "cint_rt.c", RT / "cint_rt_internal.h",
-                                                 RT / "cint_mem.c", RT / "cint_mem.h",
+                                                 RT / "cint_host.c", RT / "cint_fs.c", RT / "cint_console.c", RT / "cint_program.c", RT / "cint_mem.c", RT / "cint_mem.h",
                                                  RT / "cint_wide.c", RT / "cint_wide.h",
                                                  RT / "cint_fixed.c", RT / "cint_fixed.h"]),
         "schema": "cint-conformance-receipt-2",
@@ -2411,7 +2430,8 @@ def main(argv=None) -> int:
             "method": "defined externals and undefined references of the runtime object and of "
                       "each program object, and the export table of each program library (EMIT-31 "
                       "and SPEC-03 A-3 as amended by slice 2 patch D-2: a program defines cx_, cm_, "
-                      "ci_, cg_, cint_program_abi and cint_observer_desc; refers to the runtime's "
+                      "ci_, cg_, cint_program_abi, cint_observer_desc, cint_library_desc and "
+                      "cint_imports_desc; refers to the runtime's "
                       "cint_ functions, the support list (on apple-clang also __chkstk_darwin, "
                       "___chkstk_darwin and bzero, on msvc also __report_rangecheckfailure and "
                       "__isa_available), and "

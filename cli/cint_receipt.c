@@ -19,7 +19,7 @@
 #include "cint_proc.h"
 #include "cint_receipt.h"
 
-#define TOOL_VERSION "0.2.0"
+#define TOOL_VERSION "0.2.3"
 #define RUNTIME_CONTRACT "cint-rt-3"
 
 /* ------------------------------------------------------------------------- */
@@ -292,6 +292,19 @@ static void utc(char out[24], int64_t ns)
 
 static const char *const KINDS[3] = {"run", "build", "test"};
 
+/* One probed path of `identity.lookups` (SPEC-09 RCPT-07). */
+typedef struct lookup { const char *key; int present, owned; } lookup;
+
+static int by_key(const void *a, const void *b) { return strcmp(((const lookup *)a)->key, ((const lookup *)b)->key); }
+
+static char *module_key_dup(const cli_module *m)
+{
+    size_t n = strlen(m->rel) + 8u;
+    char *key = malloc(n);
+    if (key != NULL) (void)snprintf(key, n, "stdlib:%s", m->rel);
+    return key;
+}
+
 static int write_identity(sbuf *b, const char *source_hex, outset *set)
 {
     char hex[65];
@@ -313,19 +326,35 @@ static int write_identity(sbuf *b, const char *source_hex, outset *set)
     sb_f(b, ",\"identities\":{\"build\":null,\"execution\":null,\"meaning\":null,\"revision\":null,\"source_map\":null},"
             "\"kind\":\"%s\"", KINDS[g.mode]);
     if (g.mode != MODE_RUN) {
-        /* Every import lookup, present or absent (SPEC-09 RCPT-07); one source root, so one probe each. */
+        /* Every import lookup, present or absent (SPEC-09 RCPT-07): one probe under the source
+         * root, and for an import of one segment absent there, one under the standard library
+         * root as `stdlib:<path>`; the keys in byte order. */
         int n;
         cli_module **v = sorted_modules(1, &n);
         if (v == NULL) return -1;
-        sb_s(b, ",\"lookups\":{");
-        for (int k = 0, first = 1; k < n; k++) {
+        lookup *l = calloc((size_t)n * 2u + 1u, sizeof *l);
+        int nl = 0;
+        for (int k = 0; l != NULL && k < n; k++) {
             if (v[k] == &g.mods[0]) continue;
-            sb_s(b, first ? "" : ",");
-            sb_jz(b, v[k]->rel);
-            sb_s(b, v[k]->src != NULL ? ":true" : ":false");
-            first = 0;
+            l[nl].key = v[k]->rel;
+            l[nl++].present = v[k]->src != NULL && v[k]->where != 2;
+            if (v[k]->where != 0) {
+                l[nl].key = module_key_dup(v[k]);
+                l[nl].owned = 1;
+                l[nl++].present = v[k]->where == 2;
+            }
+        }
+        if (l == NULL) { free(v); return -1; }
+        qsort(l, (size_t)nl, sizeof *l, by_key);
+        sb_s(b, ",\"lookups\":{");
+        for (int k = 0; k < nl; k++) {
+            sb_s(b, k > 0 ? "," : "");
+            sb_jz(b, l[k].key);
+            sb_s(b, l[k].present ? ":true" : ":false");
+            if (l[k].owned) free((char *)l[k].key);
         }
         sb_s(b, "}");
+        free(l);
         free(v);
     }
     if (g.mode == MODE_BUILD) sb_s(b, ",\"method\":null");
@@ -346,8 +375,9 @@ static int write_identity(sbuf *b, const char *source_hex, outset *set)
         cli_module **v = sorted_modules(0, &n);
         if (v == NULL) return -1;
         for (int k = 0; k < n; k++) {
+            char key[1200];
             sb_s(b, k > 0 ? "," : "");
-            sb_jz(b, v[k]->rel);
+            sb_jz(b, module_key(v[k], key, sizeof key));
             sb_f(b, ":\"%s\"", v[k] == &g.mods[0] ? source_hex : v[k]->hex);
         }
         free(v);

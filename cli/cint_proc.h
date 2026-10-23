@@ -62,9 +62,12 @@ typedef struct cli_proc {
                                  the fuel record's destination (cint_program_run_fuel) */
     cli_sink sink;            /* without log_path: the child's stdout */
     void *user;
+    int inherit_stdin;        /* the child reads this process's stdin, not the null device: a
+                                 program granted console.input (SPEC-06 3.2 `--grant`) */
 } cli_proc;
 
-/* Runs the child with the null device as stdin and waits for it. Returns 0 and sets
+/* Runs the child with the null device as stdin (this process's with inherit_stdin) and waits
+ * for it. Returns 0 and sets
  * *status to its exit status, or to -1 when it ended without one (a signal or a crash on
  * POSIX); returns -1 when it could not be started (the executable is missing). */
 int cli_proc_run(const cli_proc *p, int *status);

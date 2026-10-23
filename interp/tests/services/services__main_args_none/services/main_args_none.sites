@@ -1,0 +1,10 @@
+module services.main_args_none
+sites services/main_args_none.ci 1:6:13:fuel.charge 2:7:5:print
+export func @services.main_args_none.main(%args: U8[_]) {
+  fuel.charge 1                                  #1 @services/main_args_none.ci:6:13
+  %t0 = view.extent %args, 0
+  print.begin                                    #2 @services/main_args_none.ci:7:5
+  print.value I64 %t0
+  print.bytes "\n"
+  print.end
+}

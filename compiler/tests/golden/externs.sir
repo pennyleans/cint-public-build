@@ -1,0 +1,67 @@
+module externs
+sites externs.ci 1:14:12:fuel.charge 2:17:13:host.call 3:18:19:index.checked.i64 4:18:14:add.checked.i64 5:18:28:index.checked.i64 6:18:23:add.checked.i64 7:18:34:host.call 8:18:32:add.checked.i64 9:21:12:fuel.charge 10:22:13:host.call 11:26:13:fuel.charge 12:27:5:host.call 13:28:5:host.call
+error E4: externs.IoError U16 closed, refused
+extern @externs.fetch(I64, I64[_], out I64[_]) -> I64 observe "fetch" signature 1d00000063696e742d636f72652d312f747970652d7369676e61747572652f763100000000000000000300000000140052140100025214010014
+extern @externs.square(I64) -> I64 pure "square" signature 1d00000063696e742d636f72652d312f747970652d7369676e61747572652f7631000000000000000001000000001414
+extern @externs.sync() unrestricted "sync" signature 1d00000063696e742d636f72652d312f747970652d7369676e61747572652f763100000000000000000000000000
+extern @externs.pull(I64, Bool) -> U16!I64 errors 2 observe "pull" signature 1d00000063696e742d636f72652d312f747970652d7369676e61747572652f763101000000730f00000065787465726e732e496f4572726f7222000200000006000000636c6f7365640700000072656675736564000000000200000000140001740000000014
+extern @externs.put(U8[_]) observe "put" signature 1d00000063696e742d636f72652d312f747970652d7369676e61747572652f7631000000000000000001000000005221010000
+export func @externs.total(%key: I64) -> I64 {
+  fuel.charge 1                                  #1 @externs.ci:14:12
+  local $keys.0: I64[2]
+  %t0 = const I64 1
+  array.init $keys.0, %t0, 0, 0
+  %t1 = const I64 2
+  array.init $keys.0, %t1, 0, 1
+  local $buf.1: I64[2]
+  %t2 = const I64 0
+  array.init $buf.1, %t2, 0, 0
+  %t3 = const I64 0
+  array.init $buf.1, %t3, 0, 1
+  %t4 = host.call @externs.fetch(%key, $keys.0, $buf.1) #2 @externs.ci:17:13
+  local $n.2: I64
+  store.local $n.2, %t4
+  %t5 = load.local $n.2
+  %t6 = const I64 0
+  index.checked.i64 $buf.1, %t6                  #3 @externs.ci:18:19
+  %t7 = index.load $buf.1, %t6
+  %t8 = add.checked.i64 %t5, %t7                 #4 @externs.ci:18:14
+  %t9 = const I64 1
+  index.checked.i64 $buf.1, %t9                  #5 @externs.ci:18:28
+  %t10 = index.load $buf.1, %t9
+  %t11 = add.checked.i64 %t8, %t10               #6 @externs.ci:18:23
+  %t12 = const I64 3
+  %t13 = host.call @externs.square(%t12)         #7 @externs.ci:18:34
+  %t14 = add.checked.i64 %t11, %t13              #8 @externs.ci:18:32
+  return %t14
+}
+export func @externs.pulled(%n: I64) -> I64 {
+  fuel.charge 1                                  #9 @externs.ci:21:12
+  %t0 = const Bool true
+  %t1 = host.call @externs.pull(%n, %t0)         #10 @externs.ci:22:13
+  %t2 = error.tag
+  local $sc.0: I64
+  %t3 = const U16 0
+  %t4 = cmp.ne.u16 %t2, %t3
+  if {
+    arm {
+    } then %t4 {
+      %t5 = const I64 -1
+      store.local $sc.0, %t5
+    }
+    else {
+      store.local $sc.0, %t1
+    }
+  }
+  %t6 = load.local $sc.0
+  local $v.1: I64
+  store.local $v.1, %t6
+  %t7 = load.local $v.1
+  return %t7
+}
+export func @externs.flush() {
+  fuel.charge 1                                  #11 @externs.ci:26:13
+  %s59 = data U8[5] 100, 111, 110, 101, 10
+  host.call @externs.put(%s59)                   #12 @externs.ci:27:5
+  host.call @externs.sync()                      #13 @externs.ci:28:5
+}

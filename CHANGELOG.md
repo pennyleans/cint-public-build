@@ -2,6 +2,48 @@
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), with one section added: **Compiler coverage**, the conformance counts for the release and the cases that moved from unsupported to compared. Versions follow [Semantic Versioning](https://semver.org/); before 1.0, a minor version may break anything.
 
+## [0.2.3] - 2026-10-23
+
+0.2.3 takes in 0.2.1 and 0.2.2, which were not published on their own; 0.2.3 is 0.2.2 with one fix.
+
+### Added
+
+- The standard library has its first services, `fs` and `console`. `import fs;` reads a file, writes a file in one step and reports its size; `import console;` writes to the terminal, reads lines or bytes, reports the window size and switches raw mode. The option `--stdlib DIR` names the standard library root, by default the directory `lib` beside `cint`.
+- A service call works only under a grant given with `cint run --grant LINE`, such as `--grant fs.read:/data=data`; a call that no grant covers returns `denied`. `main` receives the grant set as a parameter of type `Grants`.
+- `main` can take the program arguments, the words after `--` in `cint run FILE.ci -- ARG...`, as `in U8[_] args`, each word's bytes followed by a NUL byte. A built executable takes them the same way, and a recording holds them.
+- `extern` declares a function that the host supplies, with its effect class. A host passes its functions when it creates a context; the C interface is version 3.4 (SPEC-03P.2 7.2, 7.6). A recording keeps the results of `observe` calls, and replay can give them back without calling the host.
+- `cint build --lib` writes a header that declares the library's exports, which compiles as C17, C++17 and C++20, and builds the same library bytes every time. `cint_site_resolve` gives the source position of a fault's site.
+- `cintc` compiles fixed point, and fixed-point storage may be 128 bits in the reference, `cintc` and the interpreter.
+- The reference, `cintc` and the interpreter implement the saturating conversion `as|` and the result forms of fixed-point operations.
+- A module-level array may hold up to 65,536 elements of any type.
+- `cint run --width-report PATH` and `cint build --width-report` report the bits each wide operation used.
+- The release publishes seven specification editions: SPEC-01P.3, SPEC-02P.2, SPEC-03P.2, SPEC-04P.3, SPEC-06P.2, SPEC-09P.2 and GLOSSARY-P.3. SPEC-00P.2 and REFERENCES-P.2 stay in force.
+
+### Fixed
+
+- The C that `cintc` writes for a function that uses a field or an element of a struct as a place no longer reads through a null pointer when the function starts. Clang's UndefinedBehaviorSanitizer reported the read; GCC and Clang without the sanitizer did not.
+
+### Changed
+
+- `cint` itself is built with the release compiler flags.
+- The runtime's wide arithmetic takes shorter paths for small operands, and on x86-64 under GCC and Clang divides with the hardware instruction that takes a 128-bit dividend.
+- A fault with no destination prints one line on standard error.
+- The workbench times builds, replays and comparisons on a monotonic clock.
+
+### Compiler coverage
+
+`cintc` refuses the forms that SPEC-09P.2 clause 12 lists with C9102, among them several forms on the wide types and an export or extern with a wide or fixed-point parameter or result. `gpu-cuda` refuses fixed point in a kernel and `as|` in a kernel. The records of the 47 fixed-point cases that 0.2.0 left unsupported are now compared with the reference.
+
+`cpu-c17` compiles 732 programs, compares 1,867,975 of their records with the reference with no disagreement and refuses the other 191, with GCC 16.2.1, Clang 23.1.3, MSVC 19.44 and Apple Clang 21; `cpu-sir-interp` compares 1,868,166 records with no disagreement. The counts were measured on the 0.2.2 sources and hold for 0.2.3.
+
+### Known issues
+
+- The workbench, `cint repl` and `cint debug` refuse a module that declares an extern or a `requires` (C4012).
+- A receipt records neither the grants of a run nor its program arguments.
+- `cint test` takes `--grant` lines, but a test holds no `Grants` value, so they grant no call.
+- `cintc` refuses with C9102 an element of a module-level array of rank 2 to 4 that a function reads only inside a hole of a print string.
+- `fs` does not list, create, remove or rename; a grant set cannot be narrowed.
+
 ## [0.2.0] - 2026-10-11
 
 ### Added

@@ -25,7 +25,7 @@ RUN_TIME = "run-time"             # a record from cint_fault_get, or embedded in
 COMPILE_TIME = "compile-time"     # a record from a compiler's diagnostic carrier (SPEC-09 CINTC-14)
 Z_MAX = 257                       # IM-108 item 1, and every Z of a version 1 record
 Z_MAX_OPERAND = 513               # IM-108 item 2: an operand of a compile-time version 2 record
-Z_MAX_EXACT = 520                 # IM-108 item 3: `exact` of a compile-time version 2 record
+Z_MAX_EXACT = 528                 # IM-108 item 3: `exact` of a compile-time version 2 record (520 before OQ-292)
 Z_MAX_V3 = 264                    # IM-108 item 4: every Z of a version 3 record
 MAX_OPERANDS = 8                  # IM-106
 MAX_OPERATION = 64                # IM-106
@@ -172,10 +172,14 @@ def _scalar_desc(rd: _Reader, tag: int, where: str) -> Elem | None:
         return parse_elem("U%d" % _UNSIGNED[tag])
     if tag == TAG_FIXED:
         storage, f = rd.u(1), rd.u(2)
-        if storage not in (0x11, 0x12, 0x13, 0x14) or f > _SIGNED[storage] - 1:
+        if storage not in (0x11, 0x12, 0x13, 0x14, 0x15) or f > _SIGNED[storage] - 1:
             raise ValueError("%s: a Q descriptor with storage %02x and f %d (SPEC-01 IM-146, IM-148)"
                              % (where, storage, f))
         w = _SIGNED[storage]
+        if w == 128:
+            # Storage of 128 bits (decision 2026-10-15 on OQ-292) reaches records; the binding's
+            # own fixed-point types stay at 64 bits, as no root export takes a 128-bit Q yet.
+            return Elem("Q%d.%d" % (w - f, f), TAG_FIXED, storage, f, 16, True, -(1 << 127), (1 << 127) - 1, "fixed")
         return parse_elem("Q%d.%d" % (w - f, f))
     if tag == TAG_T1:
         return parse_elem("T1")

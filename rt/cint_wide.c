@@ -113,6 +113,54 @@ void cint_rt_wide_udivrem(uint64_t *q, uint64_t *r, const uint64_t *u, unsigned 
     }
 }
 
+/* The kinds of cint_w_divide at 4 limbs from the quotient and remainder
+ * magnitudes qm and rm of |a| / |b| (mb = |b|). */
+static void divide_signs(uint64_t *q, uint64_t *r, uint64_t *qm, uint64_t *rm, const uint64_t *mb, unsigned kind,
+                         bool an, bool bn)
+{
+    if (!cint_w_is_zero(rm, 4u) && ((kind == 0u && an != bn) || (kind == 2u && an))) {
+        /* One step further from zero, the remainder taken from the divisor's side. */
+        uint64_t one[4] = {1u, 0u, 0u, 0u};
+        (void)cint_w_addc(qm, qm, one, 4u);
+        (void)cint_w_subb(rm, mb, rm, 4u);
+        cint_w_cneg(rm, rm, 4u, kind == 0u && bn);  /* floor: the divisor's sign */
+    } else {
+        cint_w_cneg(rm, rm, 4u, an && kind != 2u);  /* truncating, or floor with equal signs: the dividend's */
+    }
+    cint_w_cneg(q, qm, 4u, an != bn);
+    cint_w_copy(r, rm, 4u);
+}
+
+bool cint_rt_wide_mul4(uint64_t *r, const uint64_t *a, const uint64_t *b, bool s)
+{
+    uint64_t ma[4], mb[4], p[8] = {0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u};
+    bool an = s && (a[3] >> 63) != 0u, bn = s && (b[3] >> 63) != 0u, negative = an != bn;
+    unsigned la, lb;
+    cint_w4_cneg(ma, a, cint_w_mask(an));
+    cint_w4_cneg(mb, b, cint_w_mask(bn));
+    la = cint_w_len(ma, 4u);
+    lb = cint_w_len(mb, 4u);
+    if (la != 0u && lb != 0u) {
+        if (la + lb > 5u) return true;
+        cint_w_umul_len(p, ma, la, mb, lb);
+        if (p[4] != 0u) return true;
+    }
+    /* p = |a| * |b| < 2^256: up to 2^255 - 1, or 2^255 when negative, if signed */
+    if (s && (p[3] >> 63) != 0u && !(negative && p[3] == (uint64_t)1 << 63 && (p[0] | p[1] | p[2]) == 0u)) return true;
+    cint_w4_cneg(r, p, cint_w_mask(negative));
+    return false;
+}
+
+void cint_rt_wide_divide4(uint64_t *q, uint64_t *r, const uint64_t *a, const uint64_t *b, unsigned kind, bool s)
+{
+    uint64_t ma[4], mb[4], qm[4], rm[4];
+    bool an = s && (a[3] >> 63) != 0u, bn = s && (b[3] >> 63) != 0u;
+    cint_w4_cneg(ma, a, cint_w_mask(an));
+    cint_w4_cneg(mb, b, cint_w_mask(bn));
+    cint_rt_wide_udivmod(qm, rm, ma, 4u, mb, 4u);
+    divide_signs(q, r, qm, rm, mb, kind, an, bn);
+}
+
 void cint_rt_wide_isqrt(uint64_t *root, const uint64_t *x, unsigned n)
 {
     uint64_t r[17], next[17], quo[16], rem[16], t, seed;
@@ -530,6 +578,62 @@ static void put_result(uint32_t rtag, const uint64_t *v, unsigned len, void *out
     }
 }
 
+#if CINT_W_FAST
+/* The magnitude of the n-limb value a (n = 2 or 4) in 2 limbs and its sign
+ * mask: whether a lies in 128 bits. */
+static bool mag2(uint64_t *m, uint64_t *sign, const uint64_t *a, unsigned n, bool s)
+{
+    if (n == 4u) return cint_w4_small(m, a, s, sign);
+    *sign = s ? (uint64_t)0 - (a[1] >> 63) : 0u;
+    cint_w2_cneg(m, a, *sign);
+    return true;
+}
+
+/* muldiv at 2 and 4 limbs for operands in 128 bits, a nonzero divisor and a
+ * result of at most 256 bits (rt/OPEN.md RT-OQ-62): the 4-limb product of the
+ * magnitudes divided limb by limb by a 1-limb divisor, and by cint_w2_udivmod
+ * or algorithm D by a 2-limb one.
+ * Whether it wrote the result; otherwise the general path below decides. */
+static bool muldiv_small(uint32_t tag, uint32_t rtag, uint32_t mode, const uint64_t *a, const uint64_t *b,
+                         const uint64_t *c, void *out)
+{
+    unsigned n = cint_wide_limbs(tag), wr = cint_rt_tag_width(rtag), bits = 0u, i;
+    uint64_t ma[2] = {0u, 0u}, mb[2] = {0u, 0u}, mc[2] = {0u, 0u}, p[4], q[4] = {0u, 0u, 0u, 0u}, rem[2] = {0u, 0u};
+    uint64_t sa = 0u, sb = 0u, sc = 0u, neg;
+    bool s = cint_rt_tag_signed(tag), fits;
+    if ((n != 2u && n != 4u) || wr > 256u) return false;
+    if (!(mag2(ma, &sa, a, n, s) && mag2(mb, &sb, b, n, s) && mag2(mc, &sc, c, n, s))) return false;
+    if ((mc[0] | mc[1]) == 0u) return false;
+    cint_w2_umul(p, ma, mb);
+    if (mc[1] == 0u) {
+        for (i = cint_w_len(p, 4u); i > 0u; i--) q[i - 1u] = cint_w_div21_any(rem[0], p[i - 1u], mc[0], &rem[0]);
+    } else if ((p[2] | p[3]) == 0u) {
+        cint_w2_udivmod(q, rem, p, mc);
+    } else {
+        cint_rt_wide_udivmod(q, rem, p, 4u, mc, 2u);
+    }
+    neg = sa ^ sb ^ sc;
+    if ((rem[0] | rem[1]) != 0u && cint_w_round_up(q, rem, mc, 2u, neg != 0u, mode)) {
+        uint64_t one[4] = {1u, 0u, 0u, 0u};
+        (void)cint_w_addc(q, q, one, 4u);  /* q < 2^256 - 1: a remainder means a divisor of 2 or more */
+    }
+    for (i = 4u; i > 0u && bits == 0u; i--) {
+        if (q[i - 1u] != 0u) bits = 64u * i - cint_rt_clz64(q[i - 1u]);
+    }
+    if (bits == 0u) neg = 0u;
+    if (!cint_rt_tag_signed(rtag)) {
+        fits = neg != 0u ? bits == 0u : bits <= wr;
+    } else {  /* as below */
+        fits = bits <= wr - 1u || (neg != 0u && bits == wr && q[(wr - 1u) / 64u] == (uint64_t)1 << ((wr - 1u) % 64u) &&
+                                   cint_w_is_zero(q, (wr - 1u) / 64u));
+    }
+    if (!fits) return false;
+    cint_w4_cneg(q, q, neg);
+    put_result(rtag, q, 4u, out);
+    return true;
+}
+#endif
+
 bool cint_rt_wide_muldiv(cint_ctx *ctx, cint_site site, uint32_t tag, uint32_t rtag, uint32_t mode,
                          const uint64_t *a, const uint64_t *b, const uint64_t *c, void *out)
 {
@@ -538,6 +642,9 @@ bool cint_rt_wide_muldiv(cint_ctx *ctx, cint_site site, uint32_t tag, uint32_t r
     bool negative, fits, s = cint_rt_tag_signed(tag);
     if (cint_rt_faulted(ctx)) return false;
     if (n == 0u || !any_int_tag(rtag) || mode < 1u || mode > 9u || out == NULL) return fault_refused(ctx, site);
+#if CINT_W_FAST
+    if (muldiv_small(tag, rtag, mode, a, b, c, out)) return true;
+#endif
     negative = cint_w_magnitude(ma, a, n, s) != cint_w_magnitude(mb, b, n, s);
     negative = cint_w_magnitude(mc, c, n, s) != negative;
     if (cint_w_is_zero(mc, n)) return cint_rt_wide_fault(ctx, site, CINT_W_BUILTIN + 11u, tag, mode, rtag, a, b, c);

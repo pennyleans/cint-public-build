@@ -269,3 +269,75 @@ Status: Proposed.
 ### RT-OQ-59. The fixed-point result forms
 
 Status: Proposed.
+
+### RT-OQ-60. gcc refuses a clone of `cint_builtin_<t>` with a NULL operand
+
+Status: Closed, 2026-10-15.
+
+### RT-OQ-61. Module-level arrays of 8-bit or `Bool` elements stop at 65,534 elements
+
+Status: Closed, 2026-10-19.
+
+### RT-OQ-62. Two- and four-limb paths of the wide helpers
+
+Status: Proposed.
+
+### RT-OQ-63. Fixed point with a side held in limbs
+
+Status: Proposed.
+
+### RT-OQ-64. The width report
+
+Status: Proposed.
+
+### RT-OQ-65. The header of a library build, C++ hosts and `cint_site_resolve`
+
+Status: Proposed.
+
+### RT-OQ-66. Wide products of small operands
+
+Status: Proposed.
+
+### RT-OQ-67. Rotations on the inline path of the built-ins
+
+Status: Proposed.
+
+### RT-OQ-68. Module state on the inline path
+
+Status: Proposed.
+
+### RT-OQ-69. Wide quotients of small operands
+
+Status: Proposed.
+
+### RT-OQ-70. Extern calls: the host import table, the host call and its events
+
+Status: Proposed.
+
+### RT-OQ-71. The standard library root in the bridge: `cint_bridge_input_absent` and `cint_bridge_root_chain`
+
+Status: Proposed.
+
+### RT-OQ-72. The `fs/1` service of the standard service table: grant lines, service rows and `rt/cint_fs.c`
+
+Status: Proposed.
+
+### RT-OQ-73. The `console/1` service of the standard service table: `rt/cint_console.c`
+
+Status: Proposed.
+
+### RT-OQ-74. The entry of a generated `main`: `cint_program_run_args` and `rt/cint_program.c`
+
+Status: Proposed.
+
+### RT-OQ-75. `cpu-sir-interp` runs `Grants` parameters and service calls
+
+Status: Proposed.
+
+### RT-OQ-76. The program arguments of `main`: `config.args`, `cint_program_run_argv` and the entry's input record
+
+Status: Proposed.
+
+### RT-OQ-77. stdout flushed before a `console/1` wait and after a `console/1` write
+
+Status: Decided, 2026-10-22.

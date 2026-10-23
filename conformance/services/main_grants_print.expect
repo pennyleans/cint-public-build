@@ -1,0 +1,7 @@
+case services/main_grants_print
+clause SPEC-04 LS-323 to LS-328; SPEC-04 LS-221; SPEC-07 SEC-CAP-1
+source reference
+outcome value
+stdout-bytes 3
+stdout-sha256 98ea6e4f216f2fb4b69fff9b3a44842c38686ca685f3f55dc48c5d3fb1107be4
+fuel-consumed 1

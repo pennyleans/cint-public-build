@@ -1,0 +1,10 @@
+// case: fixed/sum_overflow_q80_48
+// clause: SPEC-02 R-4; SPEC-01 IM-77 (a sum of Q80.48 values whose exact total is outside I128 faults E_OVERFLOW)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 9:12 (the `sum`), operation sum.checked.q80_48.q80_48, operand I64 2, exact 2^127, limit Q80.48 raw 2^127 - 1; stack depth 0; fuel 2. Games wave G2a (OQ-292)
+
+export Bool run() {
+    Q80.48[2] a = [Q80.48.max, Q80.48.epsilon];
+    return sum(a) != 0.0;
+}

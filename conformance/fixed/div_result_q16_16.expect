@@ -1,0 +1,9 @@
+case fixed/div_result_q16_16
+clause SPEC-01 IM-63 to IM-65, IM-188; SPEC-04 LS-96, LS-145 (`div_result(a, b[, mode])` holds the quotient `div` rounds by the mode, half_even without one, .div_zero for a zero divisor before any other check, or .overflow; OQ-273 A)
+format 5
+source reference
+outcome value
+stdout-bytes 42
+stdout-sha256 6440d60ba1f643a1dd099b489f93e9491ffed3f4620ed3c1b09f6f5c56e0aef6
+return I64 -21
+fuel-consumed 13

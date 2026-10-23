@@ -6,6 +6,7 @@
  * (SPEC-03 H-16, H-17): every boundary, the stop boundary, the interrupt's allowance, a change
  * of revision, the comparisons that make it diverge, CINT_RESOURCE, the text of `show`, and a
  * deterministic fuzz target over the decoder and replay whose seed and count the output names. */
+#include "cint_fixed.h"
 #include "cint_state.h"
 
 #include <stdio.h>
@@ -119,6 +120,20 @@ static cint_status f_close(cint_ctx *ctx, int64_t fuel, int64_t depth, const uin
     return cint_rt_entry_end(ctx);
 }
 
+/* The program entry of a `main(in U8[_] args)`: prints the program arguments' bytes (OQ-306). */
+static cint_status f_args_main(cint_ctx *ctx, int64_t fuel)
+{
+    size_t n = 0u;
+    const uint8_t *a;
+    cint_status st = cint_rt_entry_begin(ctx, S_ENTRY, fuel, CINT_DEPTH_FROM_CONFIG);
+    if (st != CINT_OK) {
+        return st;
+    }
+    a = cint_ctx_args(ctx, &n);
+    (void)(cint_rt_print_begin(ctx, S_PRINT) && cint_rt_print_bytes(ctx, (const char *)a, n) && cint_rt_print_end(ctx));
+    return cint_rt_entry_end(ctx);
+}
+
 /* The program entry: prints "main\n". */
 static cint_status f_main(cint_ctx *ctx, int64_t fuel)
 {
@@ -127,6 +142,22 @@ static cint_status f_main(cint_ctx *ctx, int64_t fuel)
         return st;
     }
     (void)(cint_rt_print_begin(ctx, S_PRINT) && cint_rt_print_bytes(ctx, "main\n", 5u) && cint_rt_print_end(ctx));
+    return cint_rt_entry_end(ctx);
+}
+
+/* The program entry that faults: Q80.48.max + 1.0 overflows (E_OVERFLOW add.checked.q80_48), and the
+ * record's operands are fixed point of storage I128 (OQ-292), storage tag 15. */
+static cint_status f_qfault(cint_ctx *ctx, int64_t fuel)
+{
+    static const cint_i128 a = {{UINT64_C(0xffffffffffffffff), UINT64_C(0x7fffffffffffffff)}};
+    static const cint_i128 b = {{UINT64_C(0x0001000000000000), UINT64_C(0)}};
+    cint_i128 out = {{0u, 0u}};
+    cint_status st = cint_rt_entry_begin(ctx, S_ENTRY, fuel, CINT_DEPTH_FROM_CONFIG);
+    if (st != CINT_OK) {
+        return st;
+    }
+    (void)cint_rt_q_limbs(ctx, S_LOOP, 1u, 0u, 0u, CINT_QT(CINT_TAG_I128, 48u), CINT_QT(CINT_TAG_I128, 48u),
+                          CINT_QT(CINT_TAG_I128, 48u), &a, &b, &out);
     return cint_rt_entry_end(ctx);
 }
 
@@ -226,7 +257,7 @@ static cint_status out_write(void *user, const uint8_t *p, size_t n)
     return b_write(user, p, n);
 }
 
-static cint_ctx *r_ctx(bytes *out, int64_t arena)
+static cint_ctx *r_ctx_args(bytes *out, int64_t arena, const uint8_t *args, size_t args_length)
 {
     cint_ctx_config cfg;
     cint_ctx *ctx = NULL;
@@ -234,6 +265,8 @@ static cint_ctx *r_ctx(bytes *out, int64_t arena)
     cfg.size = (uint32_t)sizeof cfg;
     cfg.program = &r_prog;
     cfg.frame_arena_bytes = arena;
+    cfg.args = args;
+    cfg.args_length = args_length;
     if (out != NULL) {
         cfg.output = out_write;
         cfg.output_user = out;
@@ -246,6 +279,11 @@ static cint_ctx *r_ctx(bytes *out, int64_t arena)
         return NULL;
     }
     return ctx;
+}
+
+static cint_ctx *r_ctx(bytes *out, int64_t arena)
+{
+    return r_ctx_args(out, arena, NULL, 0u);
 }
 
 static void hash_of(cint_ctx *ctx, uint8_t out[32])
@@ -864,6 +902,349 @@ static void record_resource(void)
     free(ck.b);
 }
 
+/* ------------------------------------------------------------------------- */
+/* Extern calls (SPEC-03 A-15, H-14, H-17; SPEC-07 SEC-OS-11; rt/cint_rec_host.c; RT-OQ-70).
+ * app/probe.ci imports `observe I64 get(I64 key, in I64[] keys, out I64[] buf)`, the pure
+ * `I64 sq(I64 x)` and `unrestricted void sync()`; site 1 is an entry's charge, 2 the call. */
+static const cint_site_info p_sites[] = {{0u, 0u, NULL}, {3u, 1u, "fuel.charge"}, {4u, 5u, "host.call"}};
+static const cint_module p_mod = {"app/probe.ci", 12u, 3u, p_sites};
+static const cint_module *const p_mods[] = {&p_mod};
+static const uint8_t p_rev[32] = {0x71, 0x72, 0x73};
+static const cint_program p_prog = {1u, 0u, p_mods, p_rev};
+static const cint_site P_ENTRY = {0u, 1u};
+static const cint_site P_CALL = {0u, 2u};
+static const uint8_t p_sig[] = {1u, 2u, 3u};
+static const cint_host_import p_imports[] = {
+    {{"get", 3u, 0u}, CINT_OBSERVE, 3u, p_sig, 3u}, {{"sq", 2u, 0u}, CINT_PURE, 1u, p_sig, 2u},
+    {{"sync", 4u, 0u}, CINT_UNRESTRICTED, 0u, NULL, 0u}};
+static const cint_host_table p_table = {3u, 0u, p_imports};
+static const cint_host_table *const p_tables[1] = {&p_table};
+static const cint_host_desc p_desc = {1u, 0u, p_tables};
+static const char p_sir[] = "module app.probe\nsites app/probe.ci\n";
+
+static int g_host_live;       /* live calls of get and sync: replay in full mode makes none */
+static int64_t g_host_shift;  /* what get adds to each element: another host, for digest replay */
+static int64_t g_key_shift;   /* what fetch adds to its key: another request, for replay */
+
+/* get: buf[i] = keys[i] + key + g_host_shift; returns the sum of buf. */
+static cint_status p_get(void *user, const cint_value *args, uint32_t nargs, cint_value *result)
+{
+    const cint_arg_view *keys = &args[1].as.view, *buf = &args[2].as.view;
+    int64_t sum = 0;
+    (void)user;
+    g_host_live++;
+    if (nargs != 3u || keys->shape[0] != buf->shape[0]) {
+        return CINT_REFUSED;
+    }
+    for (int64_t i = 0; i < buf->shape[0]; i++) {
+        int64_t k, v;
+        memcpy(&k, (const uint8_t *)keys->mem.u.host.ptr + i * keys->byte_stride[0], 8u);
+        v = k + args[0].as.i64 + g_host_shift;
+        memcpy((uint8_t *)buf->mem.u.host.ptr + i * buf->byte_stride[0], &v, 8u);
+        sum += v;
+    }
+    result->as.i64 = sum;
+    return CINT_OK;
+}
+
+static cint_status p_sq(void *user, const cint_value *args, uint32_t nargs, cint_value *result)
+{
+    (void)user;
+    result->as.i64 = nargs == 1u ? args[0].as.i64 * args[0].as.i64 : 0;
+    return CINT_OK;
+}
+
+static cint_status p_sync(void *user, const cint_value *args, uint32_t nargs, cint_value *result)
+{
+    (void)user;
+    (void)args;
+    (void)nargs;
+    (void)result;
+    g_host_live++;
+    return CINT_OK;
+}
+
+static cint_host_fn p_fns[3];
+
+static void p_fns_init(void)
+{
+    static const char *const names[3] = {"get", "sq", "sync"};
+    static cint_status (*const calls[3])(void *, const cint_value *, uint32_t, cint_value *) = {p_get, p_sq, p_sync};
+    memset(p_fns, 0, sizeof p_fns);
+    for (unsigned i = 0u; i < 3u; i++) {
+        p_fns[i].name = names[i];
+        p_fns[i].effect = p_imports[i].effect;
+        cint_sha256(p_imports[i].type_signature, (size_t)p_imports[i].type_signature_len, p_fns[i].signature);
+        p_fns[i].call = calls[i];
+    }
+}
+
+static void p_scalar(cint_value *v, int64_t x)
+{
+    memset(v, 0, sizeof *v);
+    v->type.code = CINT_TAG_I64;
+    v->kind = CINT_VAL_SCALAR;
+    v->as.i64 = x;
+}
+
+/* I64 fetch(I64 key): get(key + g_key_shift, {1, 2}, buf), adds buf's elements to total, returns get's result. */
+static cint_status f_fetch(cint_ctx *ctx, int64_t fuel, int64_t depth, const uint64_t *args, uint64_t *result)
+{
+    int64_t keys[2] = {1, 2}, buf[2] = {0, 0}, key, *total;
+    cint_value hv[3], hr;
+    cint_status st = cint_rt_entry_begin(ctx, P_ENTRY, fuel, depth);
+    if (st != CINT_OK) {
+        return st;
+    }
+    memcpy(&key, &args[0], sizeof key);
+    p_scalar(&hv[0], key + g_key_shift);
+    cint_rt_arg_view(&hv[1], CINT_TAG_I64, keys, 0, 2, 1, CINT_VIEW_READ);
+    cint_rt_arg_view(&hv[2], CINT_TAG_I64, buf, 0, 2, 1, CINT_VIEW_WRITE);
+    p_scalar(&hr, 0);
+    if (cint_rt_host_call(ctx, P_CALL, 0u, hv, 3u, &hr, 0u) && (total = total_of(ctx)) != NULL) {
+        *total += buf[0] + buf[1];
+        memcpy(result, &hr.as.i64, sizeof *result);
+    }
+    return cint_rt_entry_end(ctx);
+}
+
+/* I64 twice(I64 x): sq(x). */
+static cint_status f_twice(cint_ctx *ctx, int64_t fuel, int64_t depth, const uint64_t *args, uint64_t *result)
+{
+    cint_value hv[1], hr;
+    int64_t x;
+    cint_status st = cint_rt_entry_begin(ctx, P_ENTRY, fuel, depth);
+    if (st != CINT_OK) {
+        return st;
+    }
+    memcpy(&x, &args[0], sizeof x);
+    p_scalar(&hv[0], x);
+    p_scalar(&hr, 0);
+    if (cint_rt_host_call(ctx, P_CALL, 1u, hv, 1u, &hr, 0u)) {
+        memcpy(result, &hr.as.i64, sizeof *result);
+    }
+    return cint_rt_entry_end(ctx);
+}
+
+/* Bool flush(): sync(), then prints "flushed\n"; true. */
+static cint_status f_flush(cint_ctx *ctx, int64_t fuel, int64_t depth, const uint64_t *args, uint64_t *result)
+{
+    cint_value hr;
+    cint_status st = cint_rt_entry_begin(ctx, P_ENTRY, fuel, depth);
+    (void)args;
+    if (st != CINT_OK) {
+        return st;
+    }
+    memset(&hr, 0, sizeof hr);
+    if (cint_rt_host_call(ctx, P_CALL, 2u, NULL, 0u, &hr, 0u) && cint_rt_print_begin(ctx, P_CALL) &&
+        cint_rt_print_bytes(ctx, "flushed\n", 8u) && cint_rt_print_end(ctx)) {
+        *result = 1u;
+    }
+    return cint_rt_entry_end(ctx);
+}
+
+static const uint32_t t_flush[] = {CINT_TAG_BOOL, 0u};
+static const cint_observer_entry p_entries[] = {
+    {0u, 5u, "fetch", t_deposit, f_fetch}, {0u, 5u, "twice", t_deposit, f_twice}, {0u, 5u, "flush", t_flush, f_flush}};
+static const cint_observer p_obs = {3u, 0u, &p_prog, p_entries};
+#define E_FETCH 0u
+#define E_TWICE 1u
+#define E_FLUSH 2u
+
+static cint_ctx *p_ctx(bytes *out)
+{
+    cint_ctx_config cfg;
+    cint_ctx *ctx = NULL;
+    memset(&cfg, 0, sizeof cfg);
+    cfg.size = (uint32_t)sizeof cfg;
+    cfg.program = &p_prog;
+    cfg.frame_arena_bytes = 4096;
+    cfg.host_count = 3u;
+    cfg.host = p_fns;
+    cfg.imports = &p_desc;
+    if (out != NULL) {
+        cfg.output = out_write;
+        cfg.output_user = out;
+    }
+    if (cint_ctx_create(&cfg, &ctx) != CINT_OK) {
+        return NULL;
+    }
+    if (cint_ctx_bind_state(ctx, &r_table) != CINT_OK) {
+        cint_ctx_destroy(ctx);
+        return NULL;
+    }
+    return ctx;
+}
+
+/* Records twice 6 and fetch 10 in `mode`, then flush when `flush` is set, into rec. */
+static void p_record(bytes *rec, uint32_t mode, int flush)
+{
+    static const cint_code_module code = {{"app/probe.ci", 12u, 0u}, (const uint8_t *)p_sir, sizeof p_sir - 1u, NULL, 0u};
+    cint_recorder *r = NULL;
+    cint_sink sink;
+    cint_ctx *ctx = p_ctx(NULL);
+    uint64_t a = 6u, res = 0u;
+    sink_of(rec, &sink);
+    rec->n = 0u;
+    CHECK(ctx != NULL && cint_rec_begin(ctx, &p_obs, &code, 1u, mode, &sink, &r) == CINT_OK, "begin");
+    if (ctx == NULL) {
+        return;
+    }
+    CHECK(cint_rec_entry(r, E_TWICE, &a, 50, 8, &res) == CINT_OK && res == 36u, "twice 6 is 36, through a pure extern");
+    a = 10u;
+    CHECK(cint_rec_entry(r, E_FETCH, &a, 50, 8, &res) == CINT_OK && res == 23u && *total_of(ctx) == 123,
+          "fetch 10: get writes 11 and 12, and returns 23");
+    if (flush) {
+        g_host_live = 0;
+        CHECK(cint_rec_entry(r, E_FLUSH, NULL, 50, 8, &res) == CINT_OK && res == 1u && g_host_live == 1,
+              "flush: the unrestricted call is made");
+        CHECK(cint_rec_entry(r, E_TWICE, &a, 50, 8, &res) == CINT_REFUSED, "the recording ended");
+    }
+    CHECK(cint_rec_end(r) == CINT_OK, "end");
+    cint_ctx_destroy(ctx);
+}
+
+static void record_host(void)
+{
+    bytes rec, want, out;
+    cint_recording_info info;
+    cint_recording_event e;
+    cint_replay_config cfg;
+    cint_replay_report rep;
+    cint_ctx *fresh;
+    uint8_t d[32];
+    size_t n;
+    char *text;
+    p_fns_init();
+    b_init(&rec, 1u << 14);
+    b_init(&want, 256u);
+    b_init(&out, 256u);
+    memset(&cfg, 0, sizeof cfg);
+    cfg.size = (uint32_t)sizeof cfg;
+    cfg.entries = &p_obs;
+
+    /* Full mode: the effect event of get, byte by byte from the header comment of rt/cint_rec.c. */
+    p_record(&rec, CINT_RECORD_FULL, 0);
+    CHECK(cint_recording_decode(rec.b, rec.n, &info) == CINT_OK && info.event_count == 5u && info.boundaries == 2u &&
+              info.end_reason == 0u,
+          "entry, outcome, entry, effect, outcome, end: a pure call leaves no event");
+    memset(&e, 0, sizeof e);
+    while (cint_recording_next(&info, &e) == CINT_OK && e.kind != CINT_EVENT_EFFECT) {
+    }
+    b_u(&want, 3u, 4u);
+    b_u(&want, CINT_TAG_I64, 1u);
+    b_u(&want, 10u, 8u);
+    b_u(&want, 0x52u, 1u);
+    b_u(&want, CINT_TAG_I64, 1u);
+    b_u(&want, CINT_VIEW_READ, 1u);
+    b_u(&want, 2u, 8u);
+    b_u(&want, 1u, 8u);
+    b_u(&want, 2u, 8u);
+    b_u(&want, 0x52u, 1u);
+    b_u(&want, CINT_TAG_I64, 1u);
+    b_u(&want, CINT_VIEW_WRITE, 1u);
+    b_u(&want, 2u, 8u);
+    CHECK(e.kind == CINT_EVENT_EFFECT && e.index == 3u && e.ordinal == 0 && e.site.module == 0u && e.site.index == 2u &&
+              e.name.len == 3u && memcmp(e.name.bytes, "get", 3u) == 0 && e.status == CINT_OK && e.data_len == want.n &&
+              memcmp(e.data, want.b, want.n) == 0,
+          "the request block: the count, the key, the in view with its elements, the out view");
+    want.n = 0u;
+    b_u(&want, 0u, 1u);
+    b_u(&want, CINT_TAG_I64, 1u);
+    b_u(&want, 23u, 8u);
+    b_u(&want, 11u, 8u);
+    b_u(&want, 12u, 8u);
+    CHECK(e.response_len == want.n && memcmp(e.response, want.b, want.n) == 0,
+          "the response block: the value alternative, the result, the out view's elements");
+    n = cint_recording_render(&info, NULL, 0u);
+    text = (char *)malloc(n + 1u);
+    if (text != NULL) {
+        CHECK(cint_recording_render(&info, text, n) == n, "the text");
+        text[n] = '\0';
+        CHECK(strstr(text, "event 3 effect 0 site 0.2 get status 0 request 03000000") != NULL &&
+                  strstr(text, " response 00") != NULL && strstr(text, "0b000000000000000c00000000000000\n") != NULL,
+              "the text of an extern call's effect");
+        free(text);
+    }
+
+    /* Replay in full mode: the recorded response, and no live call. */
+    g_host_live = 0;
+    fresh = p_ctx(NULL);
+    CHECK(fresh != NULL && cint_replay(fresh, &info, &cfg, &rep) == CINT_OK && rep.status == CINT_OK && rep.boundaries == 2u &&
+              g_host_live == 0 && *total_of(fresh) == 123,
+          "replay feeds the recorded response back and makes no live call");
+    cint_ctx_destroy(fresh);
+    fresh = p_ctx(NULL);
+    g_key_shift = 1;
+    CHECK(fresh != NULL && cint_replay(fresh, &info, &cfg, &rep) == CINT_OK && rep.status == CINT_DIVERGED &&
+              rep.what == CINT_REPLAY_EFFECT && rep.event == 3u && rep.boundaries == 1u,
+          "another request diverges at the effect");
+    g_key_shift = 0;
+    cint_ctx_destroy(fresh);
+
+    /* Digest mode: the in view's elements and the response as their SHA-256; replay calls live. */
+    p_record(&rec, CINT_RECORD_DIGEST, 0);
+    CHECK(cint_recording_decode(rec.b, rec.n, &info) == CINT_OK && info.mode == CINT_RECORD_DIGEST, "a digest recording");
+    memset(&e, 0, sizeof e);
+    while (cint_recording_next(&info, &e) == CINT_OK && e.kind != CINT_EVENT_EFFECT) {
+    }
+    want.n = 0u;
+    b_u(&want, 1u, 8u);
+    b_u(&want, 2u, 8u);
+    cint_sha256(want.b, 16u, d);
+    CHECK(e.kind == CINT_EVENT_EFFECT && e.data_len == 4u + 9u + 11u + 32u + 11u && memcmp(e.data + 24u, d, 32u) == 0,
+          "the in view's elements as their SHA-256");
+    want.n = 0u;
+    b_u(&want, 11u, 8u);
+    b_u(&want, 12u, 8u);
+    cint_sha256(want.b, 16u, d);
+    CHECK(e.response_len == 1u + 9u + 32u && memcmp(e.response + 10u, d, 32u) == 0, "the out view's elements as their SHA-256");
+    g_host_live = 0;
+    fresh = p_ctx(NULL);
+    CHECK(fresh != NULL && cint_replay(fresh, &info, &cfg, &rep) == CINT_OK && rep.status == CINT_OK && rep.boundaries == 2u &&
+              g_host_live == 1,
+          "replay in digest mode calls live and compares the digests");
+    cint_ctx_destroy(fresh);
+    fresh = p_ctx(NULL);
+    g_host_shift = 1;
+    CHECK(fresh != NULL && cint_replay(fresh, &info, &cfg, &rep) == CINT_OK && rep.status == CINT_DIVERGED &&
+              rep.what == CINT_REPLAY_EFFECT && rep.event == 3u,
+          "another host's response diverges");
+    g_host_shift = 0;
+    cint_ctx_destroy(fresh);
+
+    /* An unrestricted call: its event, the end with reason 2, nothing after; replay stops before it. */
+    p_record(&rec, CINT_RECORD_FULL, 1);
+    CHECK(cint_recording_decode(rec.b, rec.n, &info) == CINT_OK && info.event_count == 7u && info.end_reason == 2u &&
+              info.boundaries == 2u,
+          "entry, unrestricted, end: no outcome, and the print after the call is not recorded");
+    memset(&e, 0, sizeof e);
+    while (cint_recording_next(&info, &e) == CINT_OK && e.kind != CINT_EVENT_UNRESTRICTED) {
+    }
+    CHECK(e.kind == CINT_EVENT_UNRESTRICTED && e.index == 6u && e.ordinal == 1 && e.site.index == 2u && e.name.len == 4u &&
+              memcmp(e.name.bytes, "sync", 4u) == 0 && cint_recording_next(&info, &e) == CINT_OK && e.kind == CINT_EVENT_END &&
+              e.reason == 2u && e.sequence == 7u,
+          "the unrestricted event and the end");
+    n = cint_recording_render(&info, NULL, 0u);
+    text = (char *)malloc(n + 1u);
+    if (text != NULL) {
+        CHECK(cint_recording_render(&info, text, n) == n, "the text");
+        text[n] = '\0';
+        CHECK(strstr(text, "event 6 unrestricted 1 site 0.2 sync\n") != NULL && strstr(text, " end unrestricted chain ") != NULL,
+              "the text of an unrestricted call");
+        free(text);
+    }
+    g_host_live = 0;
+    fresh = p_ctx(&out);
+    CHECK(fresh != NULL && cint_replay(fresh, &info, &cfg, &rep) == CINT_OK && rep.status == CINT_UNREPLAYABLE && rep.event == 6u &&
+              rep.boundaries == 2u && g_host_live == 0 && out.n == 0u && *total_of(fresh) == 123,
+          "replay stops before the unrestricted call, which is not made");
+    cint_ctx_destroy(fresh);
+    free(rec.b);
+    free(want.b);
+    free(out.b);
+}
+
 /* rt/tests/test_rt.c: a fuzz target's input digest and receipt line (test_rt.py --fuzz-receipt). */
 void test_fuzz_input(uint8_t digest[32], const uint8_t *p, size_t n);
 void test_fuzz_line(const char *target, uint64_t seed, unsigned count, unsigned accepted, unsigned rejected,
@@ -940,15 +1321,146 @@ static void fuzz(void)
     free(copy.b);
 }
 
+/* A fault record whose operands are fixed point of storage I128 (OQ-292; SPEC-01 11.1 row 31 admits
+ * storage tags 11 to 15) decodes and replays: the decoder once stopped at I64, so a program that
+ * faulted on a Q80.48 operation was recorded but "not a complete recording" (RT-OQ-44). */
+static void record_fixed_fault(void)
+{
+    bytes rec;
+    cint_sink sink;
+    cint_recorder *r = NULL;
+    cint_recording_info info;
+    cint_recording_event e;
+    cint_replay_config cfg;
+    cint_replay_report rep;
+    cint_ctx *ctx = r_ctx(NULL, 4096), *fresh;
+    bool seen = false;
+    b_init(&rec, 1u << 14);
+    sink_of(&rec, &sink);
+    CHECK(ctx != NULL && cint_rec_begin(ctx, &r_obs, NULL, 0u, CINT_RECORD_FULL, &sink, &r) == CINT_OK, "begin");
+    CHECK(cint_rec_main(r, f_qfault, 50) == CINT_FAULT, "Q80.48.max + 1.0 faults");
+    CHECK(cint_rec_end(r) == CINT_OK, "end");
+    CHECK(cint_recording_decode(rec.b, rec.n, &info) == CINT_OK && info.boundaries == 1u,
+          "a recording with a Q80.48 fault record is complete");
+    memset(&e, 0, sizeof e);
+    while (cint_recording_next(&info, &e) == CINT_OK) {
+        seen = seen || (e.kind == CINT_EVENT_OUTCOME && e.status == CINT_FAULT);
+    }
+    CHECK(seen, "the outcome is the fault");
+    fresh = r_ctx(NULL, 4096);
+    memset(&cfg, 0, sizeof cfg);
+    cfg.size = (uint32_t)sizeof cfg;
+    cfg.entries = &r_obs;
+    cfg.main_fn = f_qfault;
+    CHECK(fresh != NULL && cint_replay(fresh, &info, &cfg, &rep) == CINT_OK && rep.status == CINT_OK &&
+              rep.boundaries == 1u && memcmp(rep.chain, info.chain, 32u) == 0,
+          "replay reproduces the fault");
+    cint_ctx_destroy(fresh);
+    cint_ctx_destroy(ctx);
+    free(rec.b);
+}
+
+/* The program arguments in the program entry's input record (RT-OQ-76; OQ-306): in full mode
+ * replay gives them to the entry, in digest mode it compares them with the context's. */
+static void record_args(void)
+{
+    static const uint8_t args[] = "a\0bc\0", other[] = "a\0bd\0";
+    bytes rec, out;
+    cint_recording_info info;
+    cint_recording_event e;
+    cint_replay_config cfg;
+    cint_replay_report rep;
+    cint_recorder *r = NULL;
+    cint_sink sink;
+    cint_ctx *ctx, *fresh;
+    size_t n;
+    char *text;
+    uint32_t mode;
+    memset(&cfg, 0, sizeof cfg);
+    cfg.size = (uint32_t)sizeof cfg;
+    cfg.entries = &r_obs;
+    cfg.main_fn = f_args_main;
+    for (mode = CINT_RECORD_FULL; mode <= CINT_RECORD_DIGEST; mode++) {
+        b_init(&rec, 1u << 14);
+        b_init(&out, 256u);
+        sink_of(&rec, &sink);
+        ctx = r_ctx_args(&out, 4096, args, sizeof args);
+        CHECK(ctx != NULL && cint_rec_begin(ctx, &r_obs, NULL, 0u, mode, &sink, &r) == CINT_OK &&
+                  cint_rec_main(r, f_args_main, 50) == CINT_OK && cint_rec_end(r) == CINT_OK,
+              "a program entry with arguments is recorded");
+        CHECK(out.n == sizeof args && memcmp(out.b, args, sizeof args) == 0, "the entry read the arguments");
+        cint_ctx_destroy(ctx);
+        CHECK(cint_recording_decode(rec.b, rec.n, &info) == CINT_OK && info.boundaries == 1u, "it decodes");
+        memset(&e, 0, sizeof e);
+        CHECK(cint_recording_next(&info, &e) == CINT_OK && e.kind == CINT_EVENT_ENTRY && e.index == 0u,
+              "the entry event");
+        n = cint_recording_render(&info, NULL, 0u);
+        text = (char *)malloc(n + 1u);
+        if (text != NULL) {
+            CHECK(cint_recording_render(&info, text, n) == n, "the text");
+            text[n] = '\0';
+            CHECK(strstr(text, mode == CINT_RECORD_FULL ? " args 6 bytes fuel " : " args 6 bytes digest fuel ") != NULL,
+                  "the text names the arguments' extent, and the digest mode");
+            free(text);
+        }
+        /* Replay: full mode gives the recorded bytes to the entry; digest mode wants the same
+         * bytes in the context, and another extent or content diverges at the entry. The
+         * entry's print is compared with the recorded effect, so other bytes would diverge there. */
+        fresh = r_ctx_args(NULL, 4096, mode == CINT_RECORD_FULL ? NULL : args, mode == CINT_RECORD_FULL ? 0u : sizeof args);
+        CHECK(fresh != NULL && cint_replay(fresh, &info, &cfg, &rep) == CINT_OK && rep.status == CINT_OK && rep.boundaries == 1u,
+              "replay runs the entry over the recorded arguments");
+        CHECK(cint_ctx_args(fresh, &n) == (mode == CINT_RECORD_FULL ? NULL : args), "the context's own arguments after replay");
+        cint_ctx_destroy(fresh);
+        if (mode == CINT_RECORD_DIGEST) {
+            fresh = r_ctx_args(NULL, 4096, other, sizeof other);
+            CHECK(fresh != NULL && cint_replay(fresh, &info, &cfg, &rep) == CINT_OK && rep.status == CINT_DIVERGED &&
+                      rep.what == CINT_REPLAY_ENTRY && rep.boundaries == 0u,
+                  "other arguments diverge at the entry");
+            cint_ctx_destroy(fresh);
+            fresh = r_ctx(NULL, 4096);
+            CHECK(fresh != NULL && cint_replay(fresh, &info, &cfg, &rep) == CINT_OK && rep.status == CINT_DIVERGED &&
+                      rep.what == CINT_REPLAY_ENTRY,
+                  "no arguments diverge at the entry");
+            cint_ctx_destroy(fresh);
+        }
+        free(rec.b);
+        free(out.b);
+    }
+    /* A recording of a main without arguments replays on a context with them: the entry sees
+     * none, as it was recorded, and its empty print matches the recorded effect. */
+    b_init(&rec, 1u << 14);
+    b_init(&out, 256u);
+    sink_of(&rec, &sink);
+    ctx = r_ctx(&out, 4096);
+    CHECK(ctx != NULL && cint_rec_begin(ctx, &r_obs, NULL, 0u, CINT_RECORD_FULL, &sink, &r) == CINT_OK &&
+              cint_rec_main(r, f_args_main, 50) == CINT_OK && cint_rec_end(r) == CINT_OK && out.n == 0u,
+          "a program entry without arguments");
+    cint_ctx_destroy(ctx);
+    CHECK(cint_recording_decode(rec.b, rec.n, &info) == CINT_OK, "it decodes");
+    fresh = r_ctx_args(NULL, 4096, args, sizeof args);
+    CHECK(fresh != NULL && cint_replay(fresh, &info, &cfg, &rep) == CINT_OK && rep.status == CINT_OK && rep.boundaries == 1u,
+          "replay runs the entry over no arguments");
+    cint_ctx_destroy(fresh);
+    fresh = r_ctx(NULL, 4096);
+    CHECK(fresh != NULL && cint_replay(fresh, &info, &cfg, &rep) == CINT_OK && rep.status == CINT_OK && rep.boundaries == 1u,
+          "and on a context without them");
+    cint_ctx_destroy(fresh);
+    free(rec.b);
+    free(out.b);
+}
+
 void test_record(long *pass, long *fail)
 {
     s_pass = 0;
     s_fail = 0;
     record_and_replay();
+    record_args();
     record_revision();
+    record_fixed_fault();
     source_maps();
     record_case();
     record_resource();
+    record_host();
     fuzz();
     *pass += s_pass;
     *fail += s_fail;

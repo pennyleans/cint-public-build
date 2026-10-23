@@ -24,7 +24,8 @@ which call cint_program_run (SPEC-06 3.4a; slice 2 decision patch D-19), and
 checks stdout byte for byte (no CR on Windows), stderr empty, the exit status,
 and the canonical fault record bytes at the destination (a file path, including
 a non-ASCII one, and an inherited handle) against the record the same scenario
-leaves in process (`--record`). macOS has no /dev/full, so the scenario
+leaves in process (`--record`). Without a destination, stderr holds the one line
+of OQ-289 A in place of the record. macOS has no /dev/full, so the scenario
 "stdout not writable" runs on Linux only; on macOS it is omitted, not skipped.
 The error scenarios check exit status 6 and the error record bytes, built here
 from rt/cint_rt.h section 6d (rt/OPEN.md RT-OQ-33); with three destinations
@@ -35,6 +36,13 @@ checked too.
 The seeded fuzz targets of test_state.c (checkpoint), test_record.c (recording) and
 test_density.c (density) each print one line, `fuzz <target>: seed S, count N, accepted A,
 rejected R, failures F, inputs-sha256 H`, the form of conformance/tools/fuzz_decoders.py.
+test_wide_fast.c, the differential test of the 2- and 4-limb paths of rt/cint_wide.h and
+rt/cint_wide.c (rt/OPEN.md RT-OQ-62) and of the I512, U512 and I1024 products (RT-OQ-66) and
+quotients (RT-OQ-69), is built in every configuration twice, as is and with CINT_W_GENERIC, which
+keeps the limb loops for every width; the two builds must print the same digest lines, which every configuration with the
+same pair count shares. `--quick` lowers its pairs per operation from 2^20 to 2^12 in the -O2
+builds without sanitizers, where the others run 2^12 always.
+
 `--fuzz-receipt FILE` checks that every build of the leg printed the same three lines and
 writes them as a cint-fuzz-1 receipt with the leg, its build configurations and the SHA-256 of
 the sources and headers built (OQ-14).
@@ -63,6 +71,12 @@ SOURCES = [RT / "cint_rt.c", RT / "cint_state.c", RT / "cint_rec.c", RT / "tests
 # The headers SOURCES include, which a fuzz receipt pins with them.
 HEADERS = [RT / name for name in ("cint_fixed.h", "cint_mem.h", "cint_rt.h", "cint_rt_host.h", "cint_rt_internal.h",
                                   "cint_state.h", "cint_state_internal.h", "cint_wide.h")]
+# test_wide_fast.c, the differential test of the 2- and 4-limb paths (rt/OPEN.md RT-OQ-62) and of the
+# wider products (RT-OQ-66) and quotients (RT-OQ-69), with the runtime as is and with CINT_W_GENERIC,
+# which keeps the limb loops for every width; its seeded pairs per operation in the -O2 builds without sanitizers (2^20, or 2^12 with
+# --quick) and in the others, which run the same paths for the sanitizers and at -O0.
+FAST_SOURCES = [RT / "cint_rt.c", RT / "cint_state.c", RT / "cint_rec.c", RT / "tests" / "test_wide_fast.c"]
+FAST_PAIRS, FAST_PAIRS_OTHER = 1 << 20, 1 << 12
 FUZZ_TARGETS = ["checkpoint", "recording", "density"]
 FUZZ_LINE = re.compile(r"fuzz (\S+): seed (\d+), count (\d+), accepted (\d+), rejected (\d+), failures (\d+), "
                        r"inputs-sha256 ([0-9a-f]{64})")
@@ -102,6 +116,19 @@ def fuel_record(fuel: int) -> bytes:
 
 def state_text(count: int) -> bytes:
     return b"state.global rt.program count I64 %d\nstate.global rt.program flag Bool true\n" % count
+
+
+# What a program writes to stderr for `big + 1` at site 2 of rt/program.ci when it has no fault
+# destination (rt/cint_rt_host.h section 6d; SPEC-06 3.4a, OQ-289 A).
+NO_DEST_FAULT = (b"fault[E_OVERFLOW]: add.checked.i64 at rt/program.ci:3:13 "
+                 b"(pass a file path as argv[1] for the full fault record)\n")
+
+
+def lf(data: bytes) -> bytes:
+    """stderr with CR LF read as LF: stderr is in text mode on Windows."""
+    return data.replace(b"\r\n", b"\n")
+
+
 ENV_CL = ["cl"]  # full path of cl.exe, set from the vcvars64.bat environment
 
 
@@ -184,17 +211,18 @@ def compiler(leg: str) -> str:
     return "clang"
 
 
-def compile_command(leg: str, opt: str, mode: str, sanitized: bool, outdir: pathlib.Path):
-    define = "CINT_RT_HELPERS_" + mode.upper()
+def compile_command(leg: str, opt: str, mode: str, sanitized: bool, outdir: pathlib.Path, sources=SOURCES,
+                    name="test_rt", defines=()):
+    defines = ["CINT_RT_HELPERS_" + mode.upper(), *defines]
     if leg == "msvc":
-        exe = outdir / "test_rt.exe"
+        exe = outdir / (name + ".exe")
         cmd = [ENV_CL[0], "/nologo", "/std:c17", "/W4", "/WX", "/Od" if opt == "0" else "/O2",
-               f"/D{define}", f"/I{RT}", *map(str, SOURCES), f"/Fo{outdir}{os.sep}",
+               *(f"/D{d}" for d in defines), f"/I{RT}", *map(str, sources), f"/Fo{outdir}{os.sep}",
                f"/Fe{exe}"]
         return cmd, exe
-    exe = outdir / "test_rt"
+    exe = outdir / name
     cmd = [compiler(leg), *GNU_WARNINGS, *(CLANG_EXTRA if leg != "gcc" else []), f"-O{opt}",
-           f"-D{define}", f"-I{RT}", *(SANITIZE if sanitized else []), *map(str, SOURCES),
+           *(f"-D{d}" for d in defines), f"-I{RT}", *(SANITIZE if sanitized else []), *map(str, sources),
            "-o", str(exe)]
     return cmd, exe
 
@@ -284,6 +312,49 @@ class RuntimeLeg(unittest.TestCase):
         if ARGS.fuzz_receipt:
             self.write_fuzz_receipt(fuzz)
 
+    def test_wide_fast_paths(self):
+        # Each configuration's two builds print the same lines, one process for each width, and every
+        # configuration with the same pair count prints the lines of the first.
+        seen = {}
+        for name, opt, mode, sanitized in configurations(self.leg):
+            with self.subTest(config=name):
+                pairs = FAST_PAIRS if opt == "2" and not sanitized and not ARGS.quick else FAST_PAIRS_OTHER
+                exes = {}
+                for paths in ("fast", "generic"):
+                    outdir = self.out / "wide-fast" / f"{name}-{paths}"
+                    outdir.mkdir(parents=True, exist_ok=True)
+                    cmd, exe = compile_command(self.leg, opt, mode, sanitized, outdir, FAST_SOURCES, "test_wide_fast",
+                                               ["CINT_W_GENERIC"] if paths == "generic" else [])
+                    build = subprocess.run(cmd, cwd=outdir, env=self.env, capture_output=True, text=True)
+                    self.assertEqual(build.returncode, 0,
+                                     f"{name} {paths} build failed:\n{build.stdout}\n{build.stderr}")
+                    if self.leg != "msvc":
+                        self.assertEqual(build.stderr.strip(), "", f"{name} {paths} build printed diagnostics")
+                    exes[paths] = exe
+                run_env = dict(self.env)
+                run_env["ASAN_OPTIONS"] = "detect_leaks=1:abort_on_error=0"
+                run_env["UBSAN_OPTIONS"] = "print_stacktrace=1:halt_on_error=1"
+                procs = {(paths, width): subprocess.Popen([str(exe), str(pairs), width], cwd=exe.parent, env=run_env,
+                                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                         for paths, exe in exes.items() for width in ("128", "256", "1024")}
+                out = {}
+                for (paths, width), proc in procs.items():
+                    stdout, stderr = proc.communicate()
+                    self.assertEqual(proc.returncode, 0, f"{name} {paths} {width}-bit run failed:\n{stdout}\n{stderr}")
+                    self.assertNotIn("runtime error", stderr)
+                    self.assertNotIn("AddressSanitizer", stderr)
+                    lines = stdout.splitlines()
+                    self.assertEqual(lines[:2], [f"helper mode: {mode}", f"paths: {paths}"])
+                    out[paths, width] = lines[2:]
+                for width in ("128", "256", "1024"):
+                    self.assertEqual(out["fast", width], out["generic", width],
+                                     f"{name}: the {width}-bit paths differ from the limb loops")
+                lines = out["fast", "128"] + out["fast", "256"] + out["fast", "1024"]
+                print(f"[{self.leg} {name}] wide fast paths: "
+                      + " | ".join(l for l in lines if l.startswith(("operands", "digest", "checks"))), flush=True)
+                first, first_lines = seen.setdefault(pairs, (name, lines))
+                self.assertEqual(lines, first_lines, f"{name} printed other lines than {first}")
+
     def write_fuzz_receipt(self, fuzz):
         """The cint-fuzz-1 receipt of the seeded targets: the rows every build printed alike."""
         names = [config[0] for config in configurations(self.leg)]
@@ -347,13 +418,17 @@ class RuntimeLeg(unittest.TestCase):
                     self.assertEqual(dest.read_bytes(), writes, scenario)
                 checked += 1
         with self.subTest(scenario="error without a destination"):
+            # One line on stderr in place of the record, the line `cint run` prints (OQ-289 A).
             run = self.run_scenario(exe, env, "error", "-")
-            self.assertEqual((run.returncode, run.stdout, run.stderr), (6, b"partial\n", b""))
+            self.assertEqual((run.returncode, run.stdout, lf(run.stderr)),
+                             (6, b"partial\n", b"error: rt.program.IoError.full (tag 2)\n"))
             checked += 1
         checked += self.check_program_state(exe, outdir, env, hello, io_full)
+        checked += self.check_program_args(exe, outdir, env, hello)
         with self.subTest(scenario="no destination"):
+            # One line on stderr naming the code, the operation and the position (OQ-289 A).
             run = self.run_scenario(exe, env, "print_then_fault", "-")
-            self.assertEqual((run.returncode, run.stdout, run.stderr), (1, partial, b""))
+            self.assertEqual((run.returncode, run.stdout, lf(run.stderr)), (1, partial, NO_DEST_FAULT))
             checked += 1
         with self.subTest(scenario="inherited handle"):
             r, w = os.pipe()
@@ -398,6 +473,71 @@ class RuntimeLeg(unittest.TestCase):
                 checked += 1
         return checked
 
+    def check_program_args(self, exe, outdir: pathlib.Path, env, hello: bytes) -> int:
+        """cint_program_run_args (rt/OPEN.md RT-OQ-74): the destinations and `--grant` lines of a
+        generated main's argv, through `test_rt --args <scenario> ARG...`."""
+        def run_args(scenario, *args):
+            run = subprocess.run([str(exe), "--args", scenario, *args], env=env, capture_output=True)
+            self.assertNotIn("Sanitizer", run.stderr.decode("utf-8", "replace"))
+            return run
+        dests = [outdir / "args-fault.bin", outdir / "args-fuel.bin", outdir / "args-state.txt"]
+        checked = 0
+        with self.subTest(scenario="args: destinations and grants"):
+            for d in dests:
+                d.unlink(missing_ok=True)
+            run = run_args("hello", str(dests[0]), "--grant", "console.input", str(dests[1]), "--grant",
+                           "console.raw:x", "-")
+            self.assertEqual((run.returncode, run.stdout, run.stderr), (0, hello, b""))
+            self.assertEqual((dests[0].exists(), dests[1].read_bytes(), dests[2].exists()),
+                             (False, fuel_record(1), False))
+            run = run_args("state_error", str(dests[0]), "-", str(dests[2]), "--grant", "fs.read:/d=" + str(outdir))
+            self.assertEqual((run.returncode, run.stdout, run.stderr), (6, b"", b""))
+            self.assertEqual((dests[0].read_bytes(), dests[2].read_bytes()),
+                             (error_record("rt.program.IoError", "closed", 0x22, 1), state_text(6)))
+            run = run_args("hello")  # no destination and no grant
+            self.assertEqual((run.returncode, run.stdout, run.stderr), (0, hello, b""))
+            checked += 1
+        with self.subTest(scenario="args: usage errors"):
+            for args in (("--grant",), (str(dests[0]), "--grant"), ("a", "b", "c", "d"), ("--grant", "", "-")):
+                run = run_args("hello", *args)
+                self.assertEqual((run.returncode, run.stdout), (4, b""), args)
+            # A program without module state takes two destinations.
+            run = run_args("print_then_fault", "-", "-", "-")
+            self.assertEqual((run.returncode, run.stdout), (4, b""))
+            checked += 1
+        with self.subTest(scenario="args: a grant line the runtime refuses"):
+            for line in ("fs.read:/d", "fs.read:/d=" + str(outdir / "absent"), "fs.read", "=x"):
+                run = run_args("hello", "--grant", line)
+                self.assertEqual((run.returncode, run.stdout), (4, b""), line)
+                self.assertIn(b"--grant", run.stderr, line)
+            checked += 1
+        with self.subTest(scenario="args: the program arguments of main"):
+            # cint_program_run_argv with CINT_PROGRAM_ARGS (rt/OPEN.md RT-OQ-76; OQ-306): `--arg ARG`
+            # pairs anywhere and every word after `--`, each its bytes and one NUL, in order.
+            for d in dests:
+                d.unlink(missing_ok=True)
+            run = run_args("args", "--arg", "a", str(dests[0]), "--grant", "console.raw:x", str(dests[1]), "--", "bc", "")
+            self.assertEqual((run.returncode, run.stdout, run.stderr), (0, b"a\0bc\0\0", b""))
+            self.assertEqual((dests[0].exists(), dests[1].read_bytes()), (False, fuel_record(1)))
+            run = run_args("args", "-", "-", "--", "--grant", "-")
+            self.assertEqual((run.returncode, run.stdout, run.stderr), (0, b"--grant\0-\0", b""))
+            run = run_args("args")
+            self.assertEqual((run.returncode, run.stdout, run.stderr), (0, b"", b""))
+            run = run_args("args", "--")
+            self.assertEqual((run.returncode, run.stdout, run.stderr), (0, b"", b""))
+            # A main that takes no arguments refuses any, with the one usage line (status 4).
+            for args in (("--arg", "x"), ("--", "x"), ("-", "--arg", "x", "-")):
+                run = run_args("hello", *args)
+                self.assertEqual((run.returncode, run.stdout), (4, b""), args)
+                self.assertIn(b"LS-221", run.stderr, args)
+            run = run_args("hello", "--")
+            self.assertEqual((run.returncode, run.stdout), (0, hello), "an empty tail is no argument")
+            for args in (("--arg",), ("-", "-", "--arg")):
+                run = run_args("args", *args)
+                self.assertEqual((run.returncode, run.stdout), (4, b""), args)
+            checked += 1
+        return checked
+
     def check_program_state(self, exe, outdir: pathlib.Path, env, hello: bytes, io_full: bytes) -> int:
         """cint_program_run_state: the fault or error record, the fuel record, and the
         `state.global` lines, each at its own destination (rt/OPEN.md RT-OQ-33)."""
@@ -430,6 +570,15 @@ class RuntimeLeg(unittest.TestCase):
             self.assertEqual((run.returncode, run.stdout, run.stderr), (4, b"", b""))
             run = self.run_scenario(exe, env, "state_error", str(dests[0]), str(dests[1]), str(outdir))
             self.assertEqual((run.returncode, run.stdout, run.stderr), (5, b"", b""))
+            checked += 1
+        with self.subTest(scenario="state without a fault destination"):
+            for d in dests:
+                if d.exists():
+                    d.unlink()
+            run = self.run_scenario(exe, env, "state_fault", "-", str(dests[1]), str(dests[2]))
+            self.assertEqual((run.returncode, run.stdout, lf(run.stderr)), (1, b"", NO_DEST_FAULT))
+            self.assertEqual((dests[0].exists(), dests[1].read_bytes(), dests[2].read_bytes()),
+                             (False, fuel_record(1), state_text(6)))
             checked += 1
         with self.subTest(scenario="state without fuel or state destination"):
             for d in dests:

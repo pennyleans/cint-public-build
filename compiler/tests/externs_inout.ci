@@ -1,0 +1,9 @@
+// compiler/tests/externs_inout.ci: an extern with an `inout` view is C9102 at the parameter
+// (I/O services lane U2; compiler/OPEN.md CINTC-OQ-66 item 1): the runtime passes a view as read
+// or write.
+extern observe void scale(inout I64[_] cells);
+
+export void run() {
+    I64[2] a = [1, 2];
+    scale(a);
+}

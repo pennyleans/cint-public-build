@@ -176,6 +176,9 @@ export const I32 KW_WHILE = 42;
 export const I32 KW_DISTINCT = 43;
 export const I32 KW_SECRET = 44;
 export const I32 KW_ERRDEFER = 45;
+// I/O services lane U1 (SPEC-04 LS-18, LS-323, LS-327): `extern` and `requires`.
+export const I32 KW_EXTERN = 46;
+export const I32 KW_REQUIRES = 47;
 
 // Identifier classes (Token.aux of TK_IDENT, low byte); IDC_RESERVED_BIT is set when the
 // name has the form [IUQT][0-9]+, which a declaration may not use (C1010, SPEC-04 LS-17).
@@ -786,6 +789,7 @@ export I32 keyword[n](in U8[n] src, I64 s, I64 blen) {
         case 6:
             if (spells(src, s, blen, "assert")) { return KW_ASSERT; }
             if (spells(src, s, blen, "export")) { return KW_EXPORT; }
+            if (spells(src, s, blen, "extern")) { return KW_EXTERN; }
             if (spells(src, s, blen, "import")) { return KW_IMPORT; }
             if (spells(src, s, blen, "kernel")) { return KW_KERNEL; }
             if (spells(src, s, blen, "reduce")) { return KW_REDUCE; }
@@ -802,6 +806,7 @@ export I32 keyword[n](in U8[n] src, I64 s, I64 blen) {
             if (spells(src, s, blen, "in_place")) { return KW_IN_PLACE; }
             if (spells(src, s, blen, "schedule")) { return KW_SCHEDULE; }
             if (spells(src, s, blen, "errdefer")) { return KW_ERRDEFER; }
+            if (spells(src, s, blen, "requires")) { return KW_REQUIRES; }
         case 11:
             if (spells(src, s, blen, "fallthrough")) { return KW_FALLTHROUGH; }
         case 12:
@@ -944,6 +949,40 @@ I64 operator_at[n](in U8[n] src, in Lex[_] lx) {
 
 // ---------------------------------------------------------------- tokens
 
+// The fixed-point type that `Q<i>.<f>` in src[start..end) names (box 15 unit 4e; SPEC-04 LS-36),
+// fold.ci's TY_Q + w - 8 + f for w = i + f in {8, 16, 32, 64, 128} (128 since OQ-292, games
+// wave G2b), i >= 1, with neither number written with a leading zero; 0 for a spelling that
+// names none (C2005 where a type is checked). A token TK_FIXED keeps it in sub.
+I64 fixed_type[n](in U8[n] src, I64 start, I64 end) {
+    I64 i = 0;
+    I64 f = 0;
+    I64 j = start + 1;
+    if (src[j] == '0') {
+        return 0;
+    }
+    while (j < end && src[j] != '.') {
+        if (i < 1000) {
+            i = 10 * i + (src[j] - '0') as I64;
+        }
+        j += 1;
+    }
+    j += 1;
+    if (end - j > 1 && src[j] == '0') {
+        return 0;
+    }
+    while (j < end) {
+        if (f < 1000) {
+            f = 10 * f + (src[j] - '0') as I64;
+        }
+        j += 1;
+    }
+    I64 w = i + f;
+    if (i < 1 || (w != 8 && w != 16 && w != 32 && w != 64 && w != 128)) {
+        return 0;
+    }
+    return 0x80 + w - 8 + f;
+}
+
 void set_token[t](inout Token[t] toks, I64 k, I32 kind, I64 sub, I64 start, I64 end, I64 line, I64 col) {
     toks[k].kind = kind;
     toks[k].sub = sub as I32;
@@ -1077,7 +1116,7 @@ I64 next_token[n, t](in U8[n] src, inout Lex[_] lx, inout Token[t] toks, I64 k) 
                 while (is_digit(at(src, lx, 0))) {
                     adv(src, lx);
                 }
-                set_token(toks, k, TK_FIXED, 0, start, lx[0].i, line, col);
+                set_token(toks, k, TK_FIXED, fixed_type(src, start, lx[0].i), start, lx[0].i, line, col);
                 return 0;
             }
         }

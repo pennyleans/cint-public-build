@@ -54,6 +54,7 @@
 //   cmp.eq to cmp.ge                      -                    Bool, I8 to U64    native
 //   as                                    checked              Bool, I8 to U64    native
 //   as                                    as%, as?             I8 to U64          unsupported (as.wrap)
+//   as                                    as|                  I8 to U64          unsupported (sat)
 //   div_round                             every rounding mode  I8 to U64          native
 //   other built-ins                       every                every              unsupported (builtin)
 //   if, arm, then, else, loop, while,     -                    -                  native
@@ -116,6 +117,9 @@ export const I64 CAP_OUTER = 19;
 export const I64 CAP_PARAMS = 20;
 export const I64 CAP_NODE = 21;
 export const I64 CAP_WIDE = 22;
+// Fixed point (box 15 unit 4e): the cuda profile refuses a kernel with a Q<i>.<f> value or
+// view until back_ptx emits its operations.
+export const I64 CAP_FIXED = 23;
 
 // The rows of `why` that check_ptx fills when it refuses: the capability, the node, its
 // site (lowering.KSITE when none), the kernel function, and the line and column of the
@@ -154,6 +158,7 @@ export void cap_name[b](inout emit.Writer[_] w, inout U8[b] dst, I64 cap) {
         case CAP_OUTER: w_str(w, dst, "outer.write");
         case CAP_PARAMS: w_str(w, dst, "params");
         case CAP_WIDE: w_str(w, dst, "wide");
+        case CAP_FIXED: w_str(w, dst, "fixed");
         default: w_str(w, dst, "node");
     }
 }
@@ -316,6 +321,12 @@ Bool wide_slot(in lowering.SirSlot[_] slots, I64 k) {
         (slots[k].kind == lowering.SK_NVIEW && lowering.is_wide(lowering.array_elem(slots[k].ty)));
 }
 
+// Whether slot k holds a fixed-point value or is a view of fixed-point elements (CAP_FIXED).
+Bool fixed_slot(in lowering.SirSlot[_] slots, I64 k) {
+    return lowering.is_q(slots[k].ty) ||
+        (slots[k].kind == lowering.SK_NVIEW && lowering.is_q(lowering.array_elem(slots[k].ty)));
+}
+
 // A slot whose value lives in a register: a parameter, a local, or a hidden Bool.
 Bool scalar_slot(in lowering.SirSlot[_] slots, I64 k) {
     I32 kind = slots[k].kind;
@@ -344,10 +355,16 @@ I64 cap_of(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.Sir
     if (lowering.is_wide(sir[i].ty)) {
         return CAP_WIDE;
     }
+    if (lowering.is_q(sir[i].ty)) {
+        return CAP_FIXED;
+    }
     for j in 0..noperands(sir, i) {
         I64 v = operand(sir, i, j);
         if (v >= 0 && lowering.is_wide(lowering.value_type(sir, funcs, slots, fn, v))) {
             return CAP_WIDE;
+        }
+        if (v >= 0 && lowering.is_q(lowering.value_type(sir, funcs, slots, fn, v))) {
+            return CAP_FIXED;
         }
     }
     for j in 0..noperands(sir, i) {
@@ -389,6 +406,7 @@ I64 cap_of(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.Sir
             if (scalar_type(lowering.value_type(sir, funcs, slots, fn, a))) { return CAP_NATIVE; }
             return CAP_NODE;
         case lowering.SO_AS:
+            if (sir[i].c == lowering.AS_SAT) { return CAP_SAT; }   // `as|` (OQ-272)
             if (sir[i].c != 0) { return CAP_AS; }
             if (lowering.is_int(sir[i].ty) && scalar_type(sir[i].f)) { return CAP_NATIVE; }
             return CAP_NODE;
@@ -474,6 +492,9 @@ I64 check_kernel(in scan.Token[_] toks, in lowering.Sir[_] sir, in lowering.SirF
     for k in funcs[fn].pslot0 as I64..funcs[fn].lslot_end as I64 {
         if (wide_slot(slots, k)) {
             return refuse(sir, toks, fn, ki, CAP_WIDE, why);
+        }
+        if (fixed_slot(slots, k)) {
+            return refuse(sir, toks, fn, ki, CAP_FIXED, why);
         }
     }
     for i in ki + 1..ke {

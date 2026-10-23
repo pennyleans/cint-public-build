@@ -1,0 +1,9 @@
+case fixed/kernel_scale_reduce_q80_48
+clause SPEC-04 LS-246; SPEC-02 R-4, K-9 (Q80.48 kernel parameters, a Q80.48 product per work-item, and a Q80.48 sum reduction)
+format 5
+source reference
+outcome value
+stdout-bytes 68
+stdout-sha256 aa55b8fb558b78575109919f51175502301d2c38636b3571ca14e15bb6c709c4
+return I64 9007199254740992
+fuel-consumed 4

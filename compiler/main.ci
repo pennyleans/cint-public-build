@@ -714,7 +714,12 @@ export I64 compile[n, p, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, 
     // The module's exports, for the modules that import it (CINTC-16 invariant 4), struct
     // rows with their LS-73 layout (check.record_layout).
     if (!check.record_layout(toks, nodes, sem, syms, diag, rs, root)) { return 1; }
-    if (!decl.write_block(source, toks, nodes, sem, syms, lits, root, mi, decls, diag)) {
+    if (!decl.write_block(source, toks, nodes, sem, syms, lits, root, mi, decls, diag, ps[0].nn)) {
+        return 1;
+    }
+    if (mi == a0 - 2 && check.capabilities(decls, diag, mi) != 0) {
+        // The program's capability check once every block is written (SPEC-07 SEC-CAP-1;
+        // I/O services lane U1): C3040 or C3041, in the module of the row.
         return 1;
     }
     // The root module is the last of the build (back_c.ci, CINTC-OQ-39).
@@ -750,7 +755,12 @@ export I64 compile[n, p, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, 
     }
     pm[mi + 1].nobs = nobs;
     if (ls[0].entry >= 0) {
+        // 2 when `main` takes the program arguments (lowering.FN_ARGS; OQ-306), so that the
+        // program's C main calls cint_program_run_argv.
         pm[mi + 1].entry = 1;
+        if ((funcs[ls[0].entry].flags & lowering.FN_ARGS) != 0) {
+            pm[mi + 1].entry = 2;
+        }
     }
     pm[mi + 1].nsites = ls[0].sites;
     if (back_c.has_state(slots, ls)) {

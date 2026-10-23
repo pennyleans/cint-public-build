@@ -42,8 +42,10 @@ void wb_hex(wb_buf *b, const uint8_t *p, size_t n);
  * lowercase hexadecimal, and U+FFFD for bytes that are not UTF-8. */
 void wb_jstr(wb_buf *b, const char *s, size_t n);
 void wb_free(wb_buf *b);
-/* The time of day in nanoseconds, for timings, which stay outside state and identities; 0 without one. */
+/* A monotonic clock in nanoseconds, for timings, which stay outside state and identities; 0 without one. */
 long long wb_now_ns(void);
+/* The nanoseconds from `from` to `to`, two readings of wb_now_ns; 0 when `to` is not later. */
+long long wb_elapsed_ns(long long from, long long to);
 /* 1 when the n bytes at s are UTF-8 (no surrogates, no overlong forms). */
 int wb_utf8(const char *s, size_t n);
 
@@ -86,7 +88,7 @@ void wb_source_sizes(const struct cint_sir_program *p, const char *root, int64_t
 /* Exact integers of display (wb_num.c; BX14-02 B, BX14-11).                  */
 
 /* Sign and magnitude, in little-endian 32-bit limbs. 136 limbs (4,352 bits) hold the widest
- * tagged value of a record, a 520-byte compile-time `exact` (SPEC-01 IM-108), and every sum
+ * tagged value of a record, a 528-byte compile-time `exact` (SPEC-01 IM-108), and every sum
  * that /stats shows: at most w + 63 bits for elements of w bits (SPEC-01 IM-80). */
 #define WB_NUM_LIMBS 136u
 
@@ -121,10 +123,10 @@ int wb_num_dec_over(wb_buf *b, const wb_num *x, uint64_t d, int group);
 
 /* A tagged value (SPEC-01 IM-149): the tag byte, then the little-endian two's-complement bytes,
  * with a U32 length before them for `Z`. A compile-time record allows a 513-byte operand and a
- * 520-byte `exact` (IM-108). */
+ * 528-byte `exact` (IM-108; 520 before OQ-292 admitted `Q1.127`). */
 typedef struct wb_tval {
     uint16_t len;
-    uint8_t bytes[525];
+    uint8_t bytes[533];
 } wb_tval;
 
 typedef struct wb_pos {

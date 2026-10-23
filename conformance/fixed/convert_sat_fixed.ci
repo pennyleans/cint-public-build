@@ -1,0 +1,36 @@
+// case: fixed/convert_sat_fixed
+// clause: SPEC-01 IM-68, IM-69; SPEC-04 LS-133 (`as|` with fixed point on either side rounds the exact value once by its `round` clause, half_even without one, then clamps to T.min or T.max; OQ-272 A)
+// subset: cint-core-1 (fixed point, saturating conversion)
+// entry: run; args: none
+// spec outcome: value I64 127; prints `127 -128 25792`, `256 257 -257`, `101 127 0`, `2147483647 -2147483648 32767 -32768` and `432717955072 127 9223372036854775807`, each with a line feed; fuel 1. Box 15, OQ-280 group 1
+
+export I64 run() {
+    Q16.16 x = 100.75;
+    Q16.16 nx = -100.75;
+    Q4.4 a = x as| Q4.4;
+    Q4.4 b = nx as| Q4.4;
+    Q8.8 c = x as| Q8.8;
+    Q16.16 y = 1.001953125;
+    Q16.16 ny = -1.001953125;
+    Q8.8 d = y as| Q8.8;
+    Q8.8 e = y as| Q8.8 round half_up;
+    Q8.8 g = ny as| Q8.8 round floor;
+    I8 h = x as| I8;
+    I8 i = (x * 2.0) as| I8 round ceil;
+    U8 j = nx as| U8;
+    I64 big = 9000000;
+    Q16.16 k = big as| Q16.16;
+    Q16.16 l = (0 - big) as| Q16.16;
+    Q8.8 m = 300 as| Q8.8;
+    Q8.8 n = -300 as| Q8.8;
+    Q32.32 o = x as| Q32.32;
+    Q1.7 p = x as| Q1.7;
+    U64 top = U64.max;
+    Q32.32 q = top as| Q32.32;
+    "{a!raw} {b!raw} {c!raw}\n";
+    "{d!raw} {e!raw} {g!raw}\n";
+    "{h} {i} {j}\n";
+    "{k!raw} {l!raw} {m!raw} {n!raw}\n";
+    "{o!raw} {p!raw} {q!raw}\n";
+    return a.raw as I64;
+}

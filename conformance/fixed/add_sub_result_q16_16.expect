@@ -1,0 +1,9 @@
+case fixed/add_sub_result_q16_16
+clause SPEC-01 IM-30, IM-60, IM-188; SPEC-04 LS-145 (on one Q<i>.<f>, `add_result` and `sub_result` act on the raw values and hold .overflow where `+` or `-` faults; OQ-278 A)
+format 5
+source reference
+outcome value
+stdout-bytes 30
+stdout-sha256 6ca0488abc0d22b247cd6caefb912beb32e869f290bb44a3024a975f7bb1defe
+return I64 -2
+fuel-consumed 7

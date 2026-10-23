@@ -1,0 +1,15 @@
+// case: fixed/div_table_q96_32
+// clause: SPEC-01 IM-65, IM-66 (the 5.4 table in Q96.32, and a quotient whose intermediate needs more than 128 bits)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 0; prints `1431655765 2863311531 -1431655765 -1431655766 2863311530` (the 5.4 table in Q96.32, then 2/3 with trunc) and `56713727820156410577229101238628035242 85070591730234615865843651857942052864 1.0`; fuel 1. Games wave G2a (OQ-292)
+
+export I64 run() {
+    Q96.32 one = 1.0;
+    Q96.32 two = 2.0;
+    Q96.32 three = 3.0;
+    Q96.32 top = Q96.32.max;
+    "{(one / three)!raw} {(two / three)!raw} {(-one / three)!raw} {div(-one, three, floor)!raw} {div(two, three, trunc)!raw}\n";
+    "{(top / three)!raw} {div(top, two, ceil)!raw} {(top / top)}\n";
+    return 0;
+}

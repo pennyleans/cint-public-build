@@ -177,8 +177,13 @@ class Driver:
             argv += ["-f", str(fail)]
         return self.run(*argv)
 
-    def read(self, root, rel, limit=1 << 20) -> int:
-        return self.run("read", hexpath(root), rel.encode("utf-8").hex(), str(limit))
+    def read(self, root, rel, limit=1 << 20, next=None) -> int:
+        chain = [hexpath(next)] if next is not None else []
+        return self.run("read", hexpath(root), rel.encode("utf-8").hex(), str(limit), *chain)
+
+    def probe(self, root, rel) -> int:
+        """0 absent, 1 present (cint_bridge_input_absent)."""
+        return self.run("probe", hexpath(root), rel.encode("utf-8").hex())
 
     def build(self, root, out, *rels, flags=()) -> int:
         return self.run("build", hexpath(root), hexpath(out), *flags, *rels)
@@ -372,6 +377,40 @@ class CommitCases:
                 for tail in (b"\xff", b"\xc0\xaf", b"\xed\xa0\x80", b"\xf4\x90\x80\x80", b"\xe2\x82"):
                     self.assertEqual(drv.run("commit", (bad + tail).hex(), "hex:00", "1"), 1)
                 self.assertOnly(d, [])
+
+    def test_standard_library_chain(self):
+        # rt/OPEN.md RT-OQ-71: a path absent under the root (no entry spelled so at some
+        # segment, or a regular file on the way) reads under the chained root; an entry that
+        # exists and is refused (a directory, a link) is not absent, so the chain hides no refusal.
+        for d, drv in self.builds():
+            with self.subTest(build=d.name):
+                src, lib = d / "src", d / "lib"
+                (src / "a").mkdir(parents=True)
+                lib.mkdir()
+                (src / "a" / "here.ci").write_bytes(b"here")
+                (src / "own.ci").write_bytes(b"own")
+                (src / "plain").write_bytes(b"not a directory")
+                (src / "dir.ci").mkdir()
+                for name, data in (("fs.ci", b"lib fs"), ("own.ci", b"lib own"), ("dir.ci", b"lib dir")):
+                    (lib / name).write_bytes(data)
+                self.assertEqual(drv.read(src, "fs.ci"), 1)
+                self.assertEqual(drv.read(src, "fs.ci", next=lib), 0)
+                self.assertEqual(drv.stdout, "read 6 %s\n" % hashlib.sha256(b"lib fs").hexdigest())
+                self.assertEqual(drv.read(src, "own.ci", next=lib), 0)
+                self.assertEqual(drv.stdout, "read 3 %s\n" % hashlib.sha256(b"own").hexdigest())
+                self.assertEqual(drv.read(src, "zz.ci", next=lib), 1)
+                self.assertEqual(drv.read(src, "dir.ci", next=lib), 1)
+                for rel, absent in (("fs.ci", True), ("own.ci", False), ("Own.ci", True), ("a/here.ci", False),
+                                    ("a/x.ci", True), ("plain/x.ci", True), ("dir.ci", False), ("b/x.ci", True),
+                                    ("A/here.ci", True)):
+                    self.assertEqual(drv.probe(src, rel), 0 if absent else 1, rel)
+                    self.assertEqual(drv.stdout, ("absent" if absent else "present") + "\n", rel)
+                if os.name != "nt":
+                    os.symlink(lib / "fs.ci", src / "link.ci")
+                    os.symlink(lib, src / "linkdir")
+                    self.assertEqual(drv.probe(src, "link.ci"), 1)
+                    self.assertEqual(drv.read(src, "link.ci", next=lib), 1)
+                    self.assertEqual(drv.probe(src, "linkdir/fs.ci"), 1)
 
     def test_read_of_missing_input_fails(self):
         for d, drv in self.builds():

@@ -22,12 +22,12 @@ CINT_RT_EXPORT const cint_observer cint_observer_desc = {0u, 0u, &cg_program, NU
 CINT_RT_EXPORT const uint32_t cint_program_abi = CINT_ABI_VERSION;
 static const cint_module_table *const cg_tables[1] = {&cg_5_hello_table};
 CINT_RT_EXPORT const cint_library cint_library_desc = {CINT_ABI_VERSION, 1u, cg_tables};
+CINT_RT_INTERNAL extern const cint_host_table cg_5_hello_host;
+static const cint_host_table *const cg_host[1] = {&cg_5_hello_host};
+CINT_RT_EXPORT const cint_host_desc cint_imports_desc = {1u, 0u, cg_host};
 
 int main(int argc, char **argv)
 {
-    if (argc > 3) {
-        return CINT_EXIT_USAGE;
-    }
-    return cint_program_run_fuel(&cg_program, cg_5_hello_run, CINT_FUEL_UNBOUNDED, argc >= 2 ? argv[1] : NULL,
-                                 argc == 3 ? argv[2] : NULL);
+    return cint_program_run_args(&cg_program, cg_5_hello_run, CINT_FUEL_UNBOUNDED, argc, argv, &cint_imports_desc,
+                                 NULL);
 }

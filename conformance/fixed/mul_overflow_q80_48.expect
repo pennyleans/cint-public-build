@@ -1,0 +1,18 @@
+case fixed/mul_overflow_q80_48
+clause SPEC-01 IM-61, IM-106 (Q80.48.max squared: the 256-bit intermediate is exact, and its rounded raw value is outside I128)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_OVERFLOW
+fault.operation mul.checked.q80_48.half_even
+fault.operand Q80.48 raw 170141183460469231731687303715884105727
+fault.operand Q80.48 raw 170141183460469231731687303715884105727
+fault.exact 102844034832575377634685573909834406560212065782484112284581888
+fault.limit Q80.48 raw 170141183460469231731687303715884105727
+fault.position fixed/mul_overflow_q80_48.ci:10:14
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

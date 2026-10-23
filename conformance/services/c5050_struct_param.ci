@@ -1,0 +1,13 @@
+// case: services/c5050_struct_param
+// clause: SPEC-04 LS-323 to LS-328; SPEC-04 LS-324; SPEC-03 H-5
+// subset: cint-core-1 (an extern with a struct parameter)
+// entry: run; args: none
+// spec outcome: compile error C5050 at 9:23, the parameter `S s`: an extern's parameters are integers, `Bool`, fixed point, `Grants` or rank-1 views
+
+struct S { I64 a; }
+
+extern observe void f(S s);
+
+export I64 run() {
+    return 1;
+}

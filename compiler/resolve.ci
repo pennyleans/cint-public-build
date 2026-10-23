@@ -105,6 +105,9 @@ export const I64 NAME_BYTES = 40;
 // void function, and (box 12) an error value `.name` before its context gives its set.
 export const I64 TY_NONE = 0;
 export const I64 TY_VOID = 2;
+// `Grants`, the opaque grant set (SPEC-07 SEC-OS-2; SPEC-03 H-8a): a parameter type only
+// (I/O services lane U1; named_type).
+export const I64 TY_GRANTS = 3;
 export const I64 TY_DOTNAME = 0x0E;
 
 // Sem.flags.
@@ -147,6 +150,12 @@ export const I64 SEM_TOP = 16384;
 export const I64 SEM_MEM_OK = 8388608;
 export const I64 SEM_MEMBER = 16777216;
 export const I64 SEM_DEREF = 33554432;
+// Box 15 unit 4e. SEM_RAW: `x.raw` of a fixed-point value, its storage integer, and the call
+// `Q<i>.<f>.raw(n)`, the value whose storage integer is n (SPEC-01 IM-57, SPEC-04 LS-38).
+export const I64 SEM_RAW = 67108864;
+// SEM_SAT_BOUND: `L as| T` of a literal L outside the wide type T, whose value is T's minimum
+// for a negative literal and its maximum otherwise (SPEC-01 IM-50; OQ-272).
+export const I64 SEM_SAT_BOUND = 134217728;
 
 // Symbol kinds and flags.
 export const I64 SK_FUNC = 1;
@@ -196,6 +205,9 @@ export const I64 NOTE_MODULE = 2;
 export const I64 C_TYPE_MISMATCH = 2001;
 export const I64 C_NOT_BOOL = 2002;
 export const I64 C_LITERAL_RANGE = 2003;
+export const I64 C_FRACTION_INT = 2004;
+export const I64 C_FIXED_NAME = 2005;
+export const I64 C_OFF_GRID = 2006;
 export const I64 C_NO_CONTEXT = 2007;
 export const I64 C_ROUND_CLAUSE = 2009;
 export const I64 C_ARG_COUNT = 2022;
@@ -245,6 +257,16 @@ export const I64 C_CONST_REQUIRED = 6004;
 export const I64 C_SELF_DEPENDENT = 6005;
 export const I64 C_STATIC_ASSERT = 6010;
 export const I64 C_UNSUPPORTED = 9102;
+// I/O services lane U1 (SPEC-07 SEC-CAP-1, SEC-CAP-13; SPEC-03 A-10, H-5): a call of a service
+// extern that no `requires` of the program covers; a `requires` that names no capability of
+// the program or has the wrong arguments; `Grants` outside a parameter type; a service
+// extern without `denied` in its result; a type an extern's signature does not admit.
+export const I64 C_NO_REQUIRES = 3040;
+export const I64 C_BAD_REQUIRES = 3041;
+export const I64 C_GRANTS_PLACE = 3042;
+export const I64 C_SERVICE_FORM = 3043;
+export const I64 C_MAIN_PARAMS = 3044;
+export const I64 C_EXTERN_TYPE = 5050;
 
 // ---------------------------------------------------------------- diagnostics
 
@@ -302,7 +324,8 @@ Bool spells[n, k](in U8[n] src, I64 s, I64 blen, in U8[k] word) {
 }
 
 // The built-in functions of the prelude (SPEC-04 LS-145, the 57 names of `cint_ref`'s
-// PRELUDE with box 09's four), which no declaration may take (LS-22, LS-112).
+// PRELUDE with box 09's four and box 15's `qmul` and `mul_int`), which no declaration may
+// take (LS-22, LS-112).
 Bool prelude_name[n](in U8[n] src, I64 s, I64 blen) {
     if (blen < 3 || blen > 12) {
         return false;
@@ -319,7 +342,8 @@ Bool prelude_name[n](in U8[n] src, I64 s, I64 blen) {
         spells(src, s, blen, "div_result") || spells(src, s, blen, "rem_result") ||
         spells(src, s, blen, "shl_result") || spells(src, s, blen, "rotl") || spells(src, s, blen, "rotr") ||
         spells(src, s, blen, "mul") || spells(src, s, blen, "div") || spells(src, s, blen, "mul_wrap") ||
-        spells(src, s, blen, "mul_sat") || spells(src, s, blen, "sqrt") || spells(src, s, blen, "sum") ||
+        spells(src, s, blen, "mul_sat") || spells(src, s, blen, "sqrt") || spells(src, s, blen, "qmul") ||
+        spells(src, s, blen, "mul_int") || spells(src, s, blen, "sum") ||
         spells(src, s, blen, "fold_checked") || spells(src, s, blen, "sum_wrap") || spells(src, s, blen, "sum_sat") ||
         spells(src, s, blen, "count") || spells(src, s, blen, "wrap_bits") || spells(src, s, blen, "rescale3") ||
         spells(src, s, blen, "rescale3_rem") || spells(src, s, blen, "shl3") || spells(src, s, blen, "sign") ||
@@ -373,7 +397,8 @@ export I64 array_builtin[n](in U8[n] src, I64 s, I64 blen) {
     return 0;
 }
 
-// The integer built-in (fold.BI_*) that src[s..s + blen) names, or 0.
+// The scalar built-in (fold.BI_*) that src[s..s + blen) names, or 0: the integer built-ins
+// and (box 15 unit 4e) those of fixed point.
 export I64 builtin_id[n](in U8[n] src, I64 s, I64 blen) {
     if (blen < 3 || blen > 11) {
         return 0;
@@ -400,6 +425,13 @@ export I64 builtin_id[n](in U8[n] src, I64 s, I64 blen) {
     if (spells(src, s, blen, "div_result")) { return fold.BI_DIV_RESULT; }
     if (spells(src, s, blen, "rem_result")) { return fold.BI_REM_RESULT; }
     if (spells(src, s, blen, "shl_result")) { return fold.BI_SHL_RESULT; }
+    if (spells(src, s, blen, "sqrt")) { return fold.BI_SQRT; }
+    if (spells(src, s, blen, "qmul")) { return fold.BI_QMUL; }
+    if (spells(src, s, blen, "mul_int")) { return fold.BI_MUL_INT; }
+    if (spells(src, s, blen, "mul")) { return fold.BI_QMUL_OP; }
+    if (spells(src, s, blen, "div")) { return fold.BI_QDIV; }
+    if (spells(src, s, blen, "mul_wrap")) { return fold.BI_QMUL_WRAP; }
+    if (spells(src, s, blen, "mul_sat")) { return fold.BI_QMUL_SAT; }
     return 0;
 }
 
@@ -663,7 +695,8 @@ export void import_bind[q, k](in scan.Token[_] toks, inout Name[q] names, in lim
     I64 row = block + 1;
     while (row < end && rs[0].err == 0) {
         U8 kd = d[row].kind;
-        if (kd == limits.DK_CONST || kd == limits.DK_VAR || kd == limits.DK_FUNC || kd == limits.DK_STRUCT) {
+        if (kd == limits.DK_CONST || kd == limits.DK_VAR || kd == limits.DK_FUNC || kd == limits.DK_STRUCT ||
+                kd == limits.DK_ERRSET) {
             I64 nb = d[row].name_len as I64;
             if (!import_record(d, row) || (nb + 31) / 32 > end - row) {
                 fail(toks, diag, rs, C_UNSUPPORTED, tk); break;
@@ -678,7 +711,11 @@ export void import_bind[q, k](in scan.Token[_] toks, inout Name[q] names, in lim
             } else if (next == -2) { fail(toks, diag, rs, C_UNSUPPORTED, tk); }
             else { root = next; }
             top += 1;
-        } else if (kd != limits.DK_FIELD && kd != limits.DK_PARAM && kd != limits.DK_NAME && kd != limits.DK_LIMBS) {
+        } else if (kd != limits.DK_FIELD && kd != limits.DK_PARAM && kd != limits.DK_NAME && kd != limits.DK_LIMBS &&
+                kd != limits.DK_CAP && kd != limits.DK_REQ && kd != limits.DK_ARG && kd != limits.DK_NEED &&
+                kd != limits.DK_EVALUE && kd != limits.DK_SERVICE) {
+            // The capability, value and service rows of the I/O services lane are no records
+            // (CINTC-16, editions 34 and 40).
             fail(toks, diag, rs, C_UNSUPPORTED, tk);
         }
         row += 1;
@@ -835,6 +872,21 @@ export Bool is_int(I64 ty) {
     return (ty >= fold.TY_I8 && ty <= fold.TY_I1024) || (ty >= fold.TY_U8 && ty <= fold.TY_U512);
 }
 
+// Box 15 unit 4e: the fixed-point type that the TK_FIXED token tok names (scan.fixed_type), or
+// 0 after C2005 at it when `Q<i>.<f>` names none (SPEC-04 LS-36).
+export I64 fixed_type[t, r](in scan.Token[t] toks, inout limits.CompilerDiag[r] diag, inout RState[_] rs, I64 tok) {
+    if (toks[tok].sub == 0) {
+        fail(toks, diag, rs, C_FIXED_NAME, tok);
+        return 0;
+    }
+    return toks[tok].sub as I64;
+}
+
+// Whether ty is a numeric scalar type: an integer type or (box 15 unit 4e) a fixed-point one.
+export Bool is_num(I64 ty) {
+    return is_int(ty) || fold.ty_q(ty);
+}
+
 // The type an N_TYPE node names: an integer type of int_class, or Bool; C3006 at its name
 // for a name that is not a type, C9102 for a type outside the subset compiler/check.ci
 // implements. 0 after an error.
@@ -842,6 +894,9 @@ export I64 type_of[t, r](in scan.Token[t] toks, in parse.Node[_] nodes, inout li
         inout RState[_] rs, I64 x) {
     I64 tok = nodes[x].tok as I64;
     I32 cls = toks[tok].aux & 255;
+    if (toks[tok].kind == scan.TK_FIXED && nodes[x].op == 1 && nodes[x].a < 0 && nodes[x].b < 0) {
+        return fixed_type(toks, diag, rs, tok);
+    }
     if (toks[tok].kind == scan.TK_IDENT && nodes[x].op == 1 && nodes[x].a < 0 && nodes[x].b < 0) {
         if (int_class(cls) != 0) {
             return int_class(cls);
@@ -866,11 +921,15 @@ export I64 type_of[t, r](in scan.Token[t] toks, in parse.Node[_] nodes, inout li
 // extent plus 1 for an extent written as a decimal literal, and 0 for `_` (known at run
 // time). Other extents, size parameters among them, are C9102 (compiler/OPEN.md
 // CINTC-OQ-15). A local array's static extent v above ARRAY_EXTENT_MAX has the code
-// BIG_CODE + v, up to BIG_EXTENT_MAX (check.ci h_type; decision 2026-10-06 on OQ-213).
+// BIG_CODE + v, up to BIG_EXTENT_MAX (check.ci h_type; decision 2026-10-06 on OQ-213), and
+// so has a module-level array's above ARRAY_EXTENT_MAX, which holds at most MODULE_ARRAY_MAX
+// elements whatever its rank (shape_type, lowering.declare_array_global; decision
+// 2026-10-19 on OQ-297).
 export const I64 TY_ARRAY = 1099511627776;
 export const I64 ARRAY_EXTENT_MAX = 65534;
 export const I64 BIG_CODE = 4294967296;
 export const I64 BIG_EXTENT_MAX = 4294967296;
+export const I64 MODULE_ARRAY_MAX = 65536;
 
 // Box 09: arrays and views of rank 2 to 4 (SPEC-02 V-2; SPEC-04 LS-62 to LS-67). A type of
 // rank r is TY_NARRAY + (r - 2) * 2^60 + elem * 2^48 plus, for each dimension d, its extent
@@ -897,7 +956,7 @@ export Bool is_array(I64 ty) {
 export Bool modvar_type_ok(I64 ty) {
     if (is_array(ty)) {
         I64 e = array_elem(ty);
-        return is_int(e) || e == fold.TY_BOOL;
+        return is_num(e) || e == fold.TY_BOOL;
     }
     return true;
 }
@@ -1021,9 +1080,11 @@ export I64 with_dim(I64 ty, I64 d, I64 g) {
 }
 
 // Task 2.14: the element code of a struct element type TY_STRUCT + s is ELEM_STRUCT + s,
-// for a struct symbol s below ELEM_STRUCT_MAX (C9102 above it, compiler/OPEN.md CINTC-OQ-15).
-export const I64 ELEM_STRUCT = 256;
-export const I64 ELEM_STRUCT_MAX = 65280;
+// for a struct symbol s below ELEM_STRUCT_MAX (C9102 above it, compiler/OPEN.md CINTC-OQ-15):
+// above every scalar's tag (to 0x177, fixed point of 128 bits; games wave G2b) and below
+// ELEM_SET.
+export const I64 ELEM_STRUCT = 512;
+export const I64 ELEM_STRUCT_MAX = 64768;
 
 // The static extent of rank-1 array type ty, or -1 when it is known at run time (or ty has
 // a higher rank).
@@ -1098,6 +1159,14 @@ export I64 param_type_of[n, t, r](in U8[n] src, in scan.Token[t] toks, in parse.
         inout limits.CompilerDiag[r] diag, inout RState[_] rs, I64 x, I64 f, I64 checked_extent) {
     I64 tok = nodes[x].tok as I64;
     I32 cls = toks[tok].aux & 255;
+    if (toks[tok].kind == scan.TK_FIXED && nodes[x].op == 1 && nodes[x].a >= 0 && nodes[x].b < 0) {
+        // An array or a view of fixed-point elements (box 15 unit 4e).
+        I64 q = fixed_type(toks, diag, rs, tok);
+        if (q == 0) {
+            return 0;
+        }
+        return shape_type(src, toks, nodes, diag, rs, x, f, q, checked_extent);
+    }
     if (toks[tok].kind != scan.TK_IDENT || nodes[x].op != 1 || nodes[x].a < 0 || nodes[x].b >= 0 ||
             (int_class(cls) == 0 && cls != scan.IDC_BOOL)) {
         return type_of(toks, nodes, diag, rs, x);
@@ -1165,6 +1234,18 @@ I64 shape_type[n, t, r](in U8[n] src, in scan.Token[t] toks, in parse.Node[_] no
         if (j >= 0) {
             return TY_ARRAY + (SIZE_CODE + j) * 65536 + elem;
         }
+    }
+    if (checked_extent == MODULE_EXTENTS) {
+        // A module-level array of rank 1: at most MODULE_ARRAY_MAX elements, in BIG_CODE's
+        // form above ARRAY_EXTENT_MAX (decision 2026-10-19 on OQ-297).
+        I64 m = lit_extent(src, toks, nodes, diag, rs, e, MODULE_ARRAY_MAX);
+        if (m < 0) {
+            return 0;
+        }
+        if (m > ARRAY_EXTENT_MAX) {
+            return TY_ARRAY + (BIG_CODE + m) * 65536 + elem;
+        }
+        return TY_ARRAY + (m + 1) * 65536 + elem;
     }
     I64 v = lit_extent(src, toks, nodes, diag, rs, e, ARRAY_EXTENT_MAX);
     if (v < 0) {
@@ -1294,6 +1375,18 @@ export I64 named_type[n, t, y, q, r](in U8[n] src, in scan.Token[t] toks, in par
         inout Name[q] names, inout limits.CompilerDiag[r] diag, inout RState[_] rs, I64 x, I64 f, I64 checked_extent) {
     I64 tok = nodes[x].tok as I64;
     if (toks[tok].kind == scan.TK_IDENT && scan.ordinary_name_class(toks[tok].aux & 255) && nodes[x].op == 1 &&
+            nodes[x].b < 0 && spells(src, toks[tok].start as I64, toks[tok].len as I64, "Grants")) {
+        // `Grants` (SPEC-07 SEC-OS-2; SPEC-03 H-8a; I/O services lane U1): a value received as a
+        // parameter and passed on, not stored, returned or held in an array, so a parameter
+        // type of function f with no shape, and C3042 at the name elsewhere (`cint_ref`
+        // resolve_type).
+        if (f < 0 || nodes[x].a >= 0) {
+            fail(toks, diag, rs, C_GRANTS_PLACE, tok);
+            return 0;
+        }
+        return TY_GRANTS;
+    }
+    if (toks[tok].kind == scan.TK_IDENT && scan.ordinary_name_class(toks[tok].aux & 255) && nodes[x].op == 1 &&
             nodes[x].b < 0) {
         I64 id = intern(src, toks, names, diag, rs, tok);
         if (id < 0) {
@@ -1331,7 +1424,8 @@ export I64 named_type[n, t, y, q, r](in U8[n] src, in scan.Token[t] toks, in par
             return syms[bound].ty;
         }
     }
-    if (checked_extent >= -1 && nodes[x].a >= 0 && scan.ordinary_name_class(toks[tok].aux & 255)) {
+    if (checked_extent >= -1 && nodes[x].a >= 0 && toks[tok].kind == scan.TK_IDENT &&
+            scan.ordinary_name_class(toks[tok].aux & 255)) {
         fail(toks, diag, rs, C_UNKNOWN_TYPE, tok);
         return 0;
     }
@@ -1349,6 +1443,29 @@ export I64 import_struct_ty[y](in scan.Token[_] toks, inout Sym[y] syms, inout l
     I64 s = new_sym(toks, syms, diag, rs, SK_STRUCT, 0, -1, tok, 0);
     if (s < 0) { return 0; }
     syms[s].ty = TY_STRUCT + s;
+    syms[s].value = row as% U64;
+    return syms[s].ty;
+}
+
+// One checker symbol per imported set record row (I/O services lane U5): an SK_ERRSET
+// symbol with no node whose value is the row and whose type is the set type of IMPORT_SET +
+// row with the row's underlying type. A row at or past IMPORT_ROWS_MAX, or a combined set's
+// record, is C9102 at tok.
+export I64 import_set_ty[y](in scan.Token[_] toks, inout Sym[y] syms, inout limits.CompilerDiag[_] diag,
+        inout RState[_] rs, in limits.Decl[_] decls, I64 row, I64 tok) {
+    for k in 0..rs[0].nsym {
+        if (syms[k].kind == SK_ERRSET && syms[k].node < 0 && (syms[k].value as% I64) == row) {
+            return syms[k].ty;
+        }
+    }
+    if (row < 1 || row >= IMPORT_ROWS_MAX || decls[row].a < 0) {
+        // A combined set of another module (`a` -1; compiler/OPEN.md CINTC-OQ-68).
+        fail(toks, diag, rs, C_UNSUPPORTED, tok);
+        return 0;
+    }
+    I64 s = new_sym(toks, syms, diag, rs, SK_ERRSET, 0, -1, tok, 0);
+    if (s < 0) { return 0; }
+    syms[s].ty = TY_ERRSET + 256 * (IMPORT_SET + row) + (decls[row].tag as I64);
     syms[s].value = row as% U64;
     return syms[s].ty;
 }
@@ -1383,6 +1500,18 @@ export I64 type_ref[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nod
     if (decls[row].vis == 0) {
         fail(toks, diag, rs, C_PRIVATE, tk);
         return 0;
+    }
+    if (decls[row].kind == limits.DK_ERRSET) {
+        // An imported error set (I/O services lane U5): a scalar of it only, since the
+        // element codes stop at ELEM_SETS sets (errset_elem).
+        if (nodes[x].a >= 0) {
+            fail(toks, diag, rs, C_UNSUPPORTED, tk);
+            return 0;
+        }
+        sem[x].lit_at = row;
+        sem[x].opty = syms[al].ty;
+        sem[x].flags = sem[x].flags | SEM_IMPORT;
+        return import_set_ty(toks, syms, diag, rs, decls, row, tk);
     }
     if (decls[row].kind != limits.DK_STRUCT) {
         fail(toks, diag, rs, C_WRONG_KIND, tk);
@@ -1585,6 +1714,31 @@ export const I64 ARITH_BASE = -2;
 export const I64 ALLOC_SET = 1048574;
 export const I64 TY_ALLOC = 275146341922;
 export const I64 ALLOC_BASE = -3;
+// An imported set (I/O services lane U5; compiler/OPEN.md CINTC-OQ-68): set IMPORT_SET + r
+// for its declaration-table row r, below ALLOC_SET (so r < IMPORT_ROWS_MAX; a later row is
+// C9102 at its name, import_set_ty), and its own only base, -4 - r among the bases of a set
+// (IMPORT_BASE_MAX). Its values are its DK_EVALUE rows, which the helpers that take the
+// table read (base_size_d, errset_size_d, errset_find_d, errset_named_d); without the table
+// the base has no values, which the callers that never meet one (a combined set's operands,
+// a conversion between sets) rely on. A combined set names no imported set (errset_operand).
+export const I64 IMPORT_SET = 524288;
+export const I64 IMPORT_ROWS_MAX = 524286;
+export const I64 IMPORT_BASE_MAX = -4;
+
+export Bool is_import_set(I64 ty) {
+    I64 k = errset_index(ty);
+    return k >= IMPORT_SET && k < ALLOC_SET;
+}
+
+// The declaration-table row of imported set type ty.
+export I64 import_set_row(I64 ty) {
+    return errset_index(ty) - IMPORT_SET;
+}
+
+// The row of import base b (b at most IMPORT_BASE_MAX).
+export I64 import_base_row(I64 b) {
+    return IMPORT_BASE_MAX - b;
+}
 // The error union of a handle (`AllocError!Handle(T)`, `AllocError!Handle(T[])`): TY_ERRUNION
 // + UNION_MEM + (h - TY_MEM) for handle type h, above every union of a scalar value; its set
 // is AllocError.
@@ -1652,8 +1806,9 @@ export I64 errset_elem(I64 ty) {
     return ELEM_SET + 4 * k + errset_under(ty) - fold.TY_U8;
 }
 
-// The N_ERROR_DECL node of set type ty, ARITH_BASE for ArithError, or ALLOC_BASE for
-// AllocError. Node 0 is the N_MODULE node (parse.parse makes it first).
+// The N_ERROR_DECL node of set type ty, ARITH_BASE for ArithError, ALLOC_BASE for
+// AllocError, or IMPORT_BASE_MAX - r for an imported set of row r. Node 0 is the N_MODULE
+// node (parse.parse makes it first).
 export I64 errset_node(in parse.Node[_] nodes, I64 ty) {
     I64 k = errset_index(ty);
     if (k == ARITH_SET) {
@@ -1661,6 +1816,9 @@ export I64 errset_node(in parse.Node[_] nodes, I64 ty) {
     }
     if (k == ALLOC_SET) {
         return ALLOC_BASE;
+    }
+    if (k >= IMPORT_SET) {
+        return IMPORT_BASE_MAX - (k - IMPORT_SET);
     }
     I64 j = 0;
     I64 x = nodes[0].a as I64;
@@ -1685,13 +1843,17 @@ export I64 errset_decl_under(in scan.Token[_] toks, in parse.Node[_] nodes, I64 
     return int_class(toks[c].aux & 255);
 }
 
-// The number of values base b declares: ArithError has four (IM-188), AllocError one.
+// The number of values base b declares: ArithError has four (IM-188), AllocError one, and
+// an import base none without the table (base_size_d).
 export I64 base_size(in parse.Node[_] nodes, I64 b) {
     if (b == ARITH_BASE) {
         return 4;
     }
     if (b == ALLOC_BASE) {
         return 1;
+    }
+    if (b <= IMPORT_BASE_MAX) {
+        return 0;
     }
     I64 n = 0;
     I64 v = nodes[b].a as I64;
@@ -1702,10 +1864,22 @@ export I64 base_size(in parse.Node[_] nodes, I64 b) {
     return n;
 }
 
-// The index from 1 in base b of the value named by token tok, or 0.
+// base_size with the declaration table: an import base declares its record's `a` values.
+export I64 base_size_d(in parse.Node[_] nodes, in limits.Decl[_] d, I64 b) {
+    if (b <= IMPORT_BASE_MAX) {
+        return d[import_base_row(b)].a;
+    }
+    return base_size(nodes, b);
+}
+
+// The index from 1 in base b of the value named by token tok, or 0 (an import base's values
+// need the table, base_value_d).
 export I64 base_value[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, I64 b, I64 tok) {
     I64 s = toks[tok].start as I64;
     I64 l = toks[tok].len as I64;
+    if (b <= IMPORT_BASE_MAX) {
+        return 0;
+    }
     if (b == ARITH_BASE) {
         if (spells(src, s, l, "overflow")) { return 1; }
         if (spells(src, s, l, "div_zero")) { return 2; }
@@ -1730,6 +1904,38 @@ export I64 base_value[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] n
     return 0;
 }
 
+// base_value with the declaration table: the tag of the DK_EVALUE row of import base b
+// spelled as token tok, or 0.
+export I64 base_value_d[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, in limits.Decl[_] d, I64 b,
+        I64 tok) {
+    if (b > IMPORT_BASE_MAX) {
+        return base_value(src, toks, nodes, b, tok);
+    }
+    I64 set = import_base_row(b);
+    I64 r = set + ((d[set].name_len as I64) + 31) / 32;
+    for j in 0..d[set].a {
+        if (decl_name_is(d, r, src, toks[tok].start as I64, toks[tok].len as I64)) {
+            return d[r].a;
+        }
+        r += ((d[r].name_len as I64) + 31) / 32;
+    }
+    return 0;
+}
+
+// Whether row r of the table is named src[s, s + nb) (decl.name_equals, which this module
+// cannot import).
+Bool decl_name_is[n](in limits.Decl[_] d, I64 r, in U8[n] src, I64 s, I64 nb) {
+    if ((d[r].name_len as I64) != nb) {
+        return false;
+    }
+    for i in 0..nb {
+        if (d[r + i / 32].name[i % 32] != src[s + i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
 // Writes the bases of set type ty in order to bases[0..count) and returns count. A
 // combined set reached a second time adds nothing. Returns -1 when an operand names a
 // combined set whose bases are being expanded (a cycle), and -2 beyond BASES_MAX bases or
@@ -1743,7 +1949,7 @@ export I64 errset_bases(in parse.Node[_] nodes, in Sem[_] sem, I64 ty, inout I64
     I64 d = errset_node(nodes, ty);
     I64 at = -1;
     while (true) {
-        if (d == ARITH_BASE || d == ALLOC_BASE || (d >= 0 && nodes[d].op != 1)) {
+        if (d == ARITH_BASE || d == ALLOC_BASE || d <= IMPORT_BASE_MAX || (d >= 0 && nodes[d].op != 1)) {
             Bool seen = false;
             for i in 0..nbase {
                 if (bases[i] == d) {
@@ -1814,6 +2020,40 @@ export I64 errset_size(in parse.Node[_] nodes, in Sem[_] sem, I64 ty) {
     return n;
 }
 
+// errset_size with the declaration table, for an imported set.
+export I64 errset_size_d(in parse.Node[_] nodes, in Sem[_] sem, in limits.Decl[_] d, I64 ty) {
+    if (is_import_set(ty)) {
+        return d[import_set_row(ty)].a;
+    }
+    return errset_size(nodes, sem, ty);
+}
+
+// errset_find with the declaration table, for an imported set.
+export I64 errset_find_d[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, in Sem[_] sem,
+        in limits.Decl[_] d, I64 ty, I64 tok) {
+    if (is_import_set(ty)) {
+        return base_value_d(src, toks, nodes, d, errset_node(nodes, ty), tok);
+    }
+    return errset_find(src, toks, nodes, sem, ty, tok);
+}
+
+// errset_named with the declaration table, for an imported set.
+export Bool errset_named_d[n, w](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, in Sem[_] sem,
+        in limits.Decl[_] d, I64 ty, in U8[w] word) {
+    if (!is_import_set(ty)) {
+        return errset_named(src, toks, nodes, sem, ty, word);
+    }
+    I64 set = import_set_row(ty);
+    I64 r = set + ((d[set].name_len as I64) + 31) / 32;
+    for j in 0..d[set].a {
+        if ((d[r].name_len as I64) == w && decl_name_is(d, r, word, 0, w)) {
+            return true;
+        }
+        r += ((d[r].name_len as I64) + 31) / 32;
+    }
+    return false;
+}
+
 // The tag in set type ty of the value named by token tok: 0 when no base of ty declares the
 // name, -1 when several do (C2044, LS-97).
 export I64 errset_find[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, in Sem[_] sem, I64 ty,
@@ -1833,6 +2073,31 @@ export I64 errset_find[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] 
         off += base_size(nodes, bases[i]);
     }
     return tag;
+}
+
+// Whether set type ty declares, in one of its bases, a value spelled word (I/O services lane
+// U1: the `denied` of a service extern's result, SPEC-03 A-10).
+export Bool errset_named[n, w](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, in Sem[_] sem, I64 ty,
+        in U8[w] word) {
+    I64[256] bases;
+    I64 nb = errset_bases(nodes, sem, ty, bases);
+    I64 i = 0;
+    while (i < nb) {
+        I64 b = bases[i];
+        i += 1;
+        if (b < 0) {
+            continue;
+        }
+        I64 v = nodes[b].a as I64;
+        while (v >= 0) {
+            I64 vt = nodes[v].tok as I64;
+            if (spells(src, toks[vt].start as I64, toks[vt].len as I64, word)) {
+                return true;
+            }
+            v = nodes[v].next as I64;
+        }
+    }
+    return false;
 }
 
 // The base of the value whose tag in set type ty is t, with its index there in got[0], or
@@ -2024,6 +2289,9 @@ export const I64 MK_POOL = 2;
 export const I64 MK_HANDLE = 3;
 export const I64 MK_SPAN = 4;
 export const I64 SK_MEMORY = 12;
+// An extern declaration (I/O services lane U1; SPEC-03 H-1): node its N_EXTERN, called as a
+// function is.
+export const I64 SK_EXTERN = 13;
 // Where a memory type is written (`cint_ref` memory_type's `where`): a parameter, a local
 // variable, a module-level declaration with a capacity, or elsewhere (a field, a result, a
 // module-level variable, the T of another memory type).
@@ -2219,8 +2487,8 @@ export Bool is_memory_decl(in parse.Node[_] nodes, I64 x) {
 }
 
 // Whether item x of the module is a statement (a top-level statement or variable; not a
-// function, constant, struct, test, static_assert, import, profile line or (box 12) arena or
-// pool declaration).
+// function, constant, struct, test, static_assert, import, profile line, (box 12) arena or
+// pool declaration, or (I/O services lane U1) extern or `requires` declaration).
 export Bool is_statement(in parse.Node[_] nodes, I64 x) {
     I32 k = nodes[x].kind;
     if (k == parse.N_VAR) {
@@ -2228,7 +2496,8 @@ export Bool is_statement(in parse.Node[_] nodes, I64 x) {
     }
     return k != parse.N_FUNC && k != parse.N_STRUCT && k != parse.N_TEST && k != parse.N_STATIC_ASSERT &&
         k != parse.N_IMPORT && k != parse.N_PROFILE && k != parse.N_ENUM && k != parse.N_ERROR_DECL &&
-        k != parse.N_TYPE_DECL && k != parse.N_KERNEL && k != parse.N_SCHEDULE;
+        k != parse.N_TYPE_DECL && k != parse.N_KERNEL && k != parse.N_SCHEDULE && k != parse.N_EXTERN &&
+        k != parse.N_REQUIRES;
 }
 
 // Whether the identifier at token tok spells `main`.
@@ -2328,6 +2597,11 @@ export I64 resolve_globals[n, t, y, q, r](in U8[n] src, in scan.Token[t] toks, i
             // A kernel (box 09; SPEC-04 LS-244), registered as `cint_ref` registers it.
             s = global(src, toks, syms, names, diag, rs, SK_KERNEL, x, nodes[x].tok as I64);
             if (s >= 0) { syms[s].state = CS_NEW; }
+        } else if (k == parse.N_EXTERN) {
+            // An extern (I/O services lane U1; SPEC-03 H-1): a callable, typed on demand as a
+            // function is (check.h_signature).
+            s = global(src, toks, syms, names, diag, rs, SK_EXTERN, x, nodes[x].tok as I64);
+            if (s >= 0) { syms[s].state = CS_NEW; }
         } else if (k == parse.N_VAR && (nodes[x].flags & parse.F_CONST) != 0) {
             s = global(src, toks, syms, names, diag, rs, SK_CONST, x, nodes[x].tok as I64);
             if (s >= 0) {
@@ -2393,6 +2667,31 @@ export I64 resolve_remainder(in U8[_] src, in scan.Token[_] toks, in parse.Node[
             }
         } else if (a >= 0) {
             fail(toks, diag, rs, C_RETURN_VALUE, nodes[a].tok as I64);
+        }
+    }
+    if (rs[0].err == 0 && rs[0].main >= 0) {
+        // `main` takes nothing, `Grants g`, `in U8[_] args` (the program arguments, OQ-306),
+        // or both in that order (SPEC-04 LS-221; SPEC-07 SEC-CAP-1): C3044 at the first
+        // parameter outside those forms, so that no program reaches the runtime with a
+        // `main` it cannot call.
+        I64 p = nodes[syms[rs[0].main].node].b as I64;
+        I64 at = 0;
+        Bool grants = false;
+        while (p >= 0 && rs[0].err == 0) {
+            Bool ok = false;
+            if (nodes[p].b < 0 && sem[p].ty == TY_GRANTS) {
+                ok = at == 0;
+                grants = true;
+            } else if (nodes[p].b < 0 && nodes[p].op == scan.KW_IN && is_array(sem[p].ty) &&
+                    array_rank(sem[p].ty) == 1 && array_elem(sem[p].ty) == fold.TY_U8 &&
+                    array_extent(sem[p].ty) < 0 && array_size(sem[p].ty) < 0) {
+                ok = at == 0 || (at == 1 && grants);
+            }
+            if (!ok) {
+                fail(toks, diag, rs, C_MAIN_PARAMS, nodes[p].start as I64);
+            }
+            at += 1;
+            p = nodes[p].next as I64;
         }
     }
     return rs[0].err;

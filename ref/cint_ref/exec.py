@@ -72,11 +72,11 @@ import sys
 import threading
 from dataclasses import dataclass, field
 
-from . import arith, fixed, fmt, views
+from . import arith, fixed, fmt, services, views
 from . import check as _check
 from . import parser as P
 from . import reduce as red
-from .check import (ALLOC_ERROR, ARITH_ERROR, ARITH_VALUES, BIN_OPS, SHIFTS, Z, ArrayType, ErrorSet, ErrorUnion,
+from .check import (ALLOC_ERROR, ARITH_ERROR, ARITH_VALUES, BIN_OPS, GRANTS, SHIFTS, Z, ArrayType, ErrorSet, ErrorUnion,
                     HandleType, MemType, StructType, check_module, elem_ident, is_aggregate, is_q, shape_key)
 from .faults import (UNASSIGNED, Address, CompileError, Descriptor, Diagnostic, Fault, FaultRecord,
                      FaultSignal, Position, Refused)
@@ -93,6 +93,8 @@ REASONS = {"null": 1, "retired": 2, "generation": 3, "extent": 4, "vacant": 5, "
 FUEL_BLOCK = 64              # SPEC-01 IM-139: a reduction over n elements charges ceil(n / 64)
 # The arithmetic operations that count as steps (SPEC-01 IM-113); `& | ^ ~` do not.
 COUNTED = frozenset({"add", "sub", "mul", "div", "rem", "shl", "shr"})
+# The form of each conversion operator (SPEC-01 IM-50); `as?` returns a result (IM-188).
+CONV_FORMS = {"as": "checked", "as%": "wrap", "as|": "sat"}
 # The scalar built-ins on fixed point and the operation and form of each (SPEC-01 IM-60 to IM-67).
 Q_CALLS = {"abs": ("abs", "checked"), "min": ("min", "checked"), "max": ("max", "checked"),
            "mul": ("mul", "checked"), "div": ("div", "checked"), "mul_wrap": ("mul", "wrap"),
@@ -355,6 +357,22 @@ class Failure:
 NARROW = Failure(ARITH_VALUES["E_NARROW"], ARITH_ERROR)      # the failure of `as?` (SPEC-01 IM-188)
 
 
+class GrantSet:
+    """A `Grants` value (SPEC-07 SEC-OS-2): the run's grant set as canonical capability texts
+    (SEC-CAP-6), each with the host directory a path root maps to (`fs.read:/data=dir`;
+    services.parse_grants, which raises ValueError for a line the runtime refuses at context
+    creation). cint_ref passes the host's set unchanged; it has no narrowing."""
+    __slots__ = ("texts", "fs")
+
+    def __init__(self, texts=()):
+        canonical, self.fs = services.parse_grants(texts)
+        self.texts = frozenset(canonical)
+
+    def covers(self, name: str) -> bool:
+        """Whether a grant of the capability `name` is held, whatever its arguments."""
+        return any(t == name or t.startswith(name + ":") for t in self.texts)
+
+
 class _Dispatch:
     """The dispatch that is running (SPEC-02 F-8): the kernel's qualified name, the dispatch
     number, the dispatch site, the phase (0 entry, 1 work-item, 2 epilogue), the work-item
@@ -577,7 +595,7 @@ class Machine:
     def _convert(self, e):
         if e.op == "as?":
             return self._convert_result(e)
-        form = "checked" if e.op == "as" else "wrap"
+        form = CONV_FORMS[e.op]
         target = e.ty
         if e.src_type == Z:
             v = e.operand.value
@@ -587,6 +605,8 @@ class Machine:
             t = fixed.q_type(target).storage if is_q(target) else int_type(target)
             if form == "wrap":
                 r = t.wrap(x)
+            elif form == "sat":
+                r = t.sat(x)
             elif t.contains(x):
                 r = x
             else:
@@ -784,6 +804,8 @@ class Machine:
         for idx, a in e.order:
             values[idx] = self.eval(a)
         args = [values[i] for i in range(len(values))]
+        if kind == "extern":
+            return self.extern_call(e, args)
         if kind == "struct":
             names = list(e.struct.fields)
             for i, t in enumerate(e.struct.fields.values()):
@@ -792,14 +814,47 @@ class Machine:
             return StructVal(e.struct, {n: _copy(args[i]) for i, n in enumerate(names)})
         return self.call(e.func, args, e.pos)
 
+    def extern_call(self, e, args):
+        """A call of a service extern (SPEC-03 H-8a; SPEC-07 SEC-CAP-13). Without a grant of the
+        covering capability the service returns `denied` (SPEC-03 A-10; SEC-OS-1). With one, the
+        `fs/1` operations run over the host directory the grant maps and the `console/1`
+        operations over the run's output and the process's standard input (services.py, as
+        rt/cint_fs.c and rt/cint_console.c build them; ref/OPEN.md REF-OQ-48). A non-service
+        extern never gets here: `_run` refuses the program (A-10)."""
+        x = e.func
+        self.charge(e.pos)
+        grants = next((a for a, t in zip(args, x.param_types) if t == GRANTS), None)
+        s = x.result_type.set
+        if x.capability is not None:
+            name = ".".join(x.capability)
+            if grants is None or not grants.covers(name):
+                return Failure(s.named("denied")[0], s)
+        rest = [a for a, t in zip(args, x.param_types) if t != GRANTS]
+        try:
+            if x.service == "fs/1":
+                return services.fs_call(x.name, grants, rest)
+            if x.service == "console/1":
+                return services.console_call(x.name, rest, self.out)
+        except services.ServiceStatus as st:
+            return Failure(s.named(st.name)[0], s)
+        except services.HostError as h:
+            raise Refused("`%s` of service %s: the host reports %s, which no value of its error set names; the "
+                          "runtime faults host.error.%s.%s (SPEC-03 A-6)" % (x.name, x.service, h, x.service, x.name),
+                          e.pos) from None
+        raise Refused("`%s` of service %s: cint_ref implements no such service (ref/OPEN.md REF-OQ-48)"
+                      % (x.name, x.service), e.pos)
+
     def result_builtin(self, e):
         """`add_result(a, b)` and the other result-returning forms (SPEC-01 IM-30): the value of
-        the checked form, or the `ArithError` value that mirrors its fault code (IM-188)."""
+        the checked form, or the `ArithError` value that mirrors its fault code (IM-188); on
+        fixed point, the checked form of `fixed.op` with the call's mode (OQ-273, OQ-278)."""
         t = e.operand_type
-        a = self.eval(e.values[0])
-        b = self.eval(e.values[1])
-        bt = e.values[1].ty if e.op == "shl" else t
-        r = arith.op(e.op, "checked", t, Value(t, a), Value(bt, b))
+        vals = [self.eval(v) for v in e.values]
+        if is_q(t):
+            r = fixed.op(e.op, "checked", t, *(Value(t, v) for v in vals), mode=e.mode)
+        else:
+            bt = e.values[1].ty if e.op == "shl" else t
+            r = arith.op(e.op, "checked", t, Value(t, vals[0]), Value(bt, vals[1]))
         self.step()
         if isinstance(r, Fault):
             return Failure(ARITH_VALUES[r.code], ARITH_ERROR)
@@ -1597,11 +1652,24 @@ def _select_entry(prog, entry, test):
     raise Refused("no entry: name a function with --entry or a test with --test")
 
 
-def _check_args(f, args):
-    if len(args) != len(f.params):
-        raise Refused("`%s` takes %d arguments, %d given" % (f.name, len(f.params), len(args)))
+def _check_args(f, args, grants=None, pargs=None):
+    """The entry's argument values from the host's typed values; a `Grants` parameter takes the
+    run's grant set, a GrantSet, and no host value (SPEC-07 SEC-HOST-3); with `pargs`, the bytes of
+    the program arguments, `main`'s `in U8[_] args` takes them as a read-only view (OQ-306)."""
+    given = [t for (p, t) in zip(f.params, f.param_types)
+             if t != GRANTS and not (pargs is not None and _check.is_program_args(p, t))]
+    if len(args) != len(given):
+        raise Refused("`%s` takes %d arguments, %d given" % (f.name, len(given), len(args)))
     out = []
-    for p, t, a in zip(f.params, f.param_types, args):
+    args = iter(args)
+    for p, t in zip(f.params, f.param_types):
+        if t == GRANTS:
+            out.append(grants if grants is not None else GrantSet())
+            continue
+        if pargs is not None and _check.is_program_args(p, t):
+            out.append(ArrayVal.owned("U8", (len(pargs),), list(pargs), False))
+            continue
+        a = next(args)
         if not isinstance(a, Value) or a.type != (t.name if isinstance(t, (StructType, ArrayType)) else t):
             raise Refused("argument `%s` must be a %s value" % (p.name, t))
         if is_aggregate(t):
@@ -1626,7 +1694,22 @@ def _state(m, prog):
                        if not is_aggregate(t) and not isinstance(t, HandleType))
 
 
+SERVICES = ("fs/1", "console/1")  # the service tables cint_ref supplies (services.py; REF-OQ-48)
+
+
 def _run(prog, kind, target, args, fuel, depth) -> Outcome:
+    if prog.host_imports:
+        # Context creation resolves every non-service extern against the host table, and cint_ref
+        # has none (SPEC-03 A-10; ref/OPEN.md REF-OQ-48).
+        name, _ = prog.host_imports[0]
+        return Outcome("refused", message="the program declares the extern `%s`, which no host supplies: cint_ref "
+                                          "has no host table (SPEC-03 A-10)" % name)
+    for module, x in prog.externs:
+        if x.service is not None and x.service not in SERVICES:
+            # A service row the host's tables do not supply refuses context creation too (A-10), so
+            # the program does not run to `denied` (REF-OQ-48, amended 2026-10-22).
+            return Outcome("refused", message="the program declares the service extern `%s.%s` of `%s`, which no "
+                                              "service table supplies (SPEC-03 A-10)" % (module, x.name, x.service))
     m = Machine(fuel, depth)
     state = prog.state or [((prog.name, name), t, v) for name, t, v in prog.module_vars]
     m.globals = {key: (zero_value(t) if v is None else _copy(v)) for key, t, v in state}
@@ -1707,39 +1790,52 @@ def _with_large_stack(fn):
     return box["value"]
 
 
+STD_LIB = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "lib")
+
+
 def loader(root: str | None):
     """`load(rel)` for check_module: parses the module at `root/rel`, or returns None when the
     file cannot be read (C3009). Every module of a program is read from one source root. Each
     segment must match its directory entry byte for byte, so a name that differs only in case
     is C3009 on every host, whether or not the file system folds case (SPEC-09 CINTC-12)."""
-    def load(rel):
-        if root is None:
-            return None
-        d = root
+    def read(base, rel):
+        d = base
         try:
             for seg in rel.split("/"):
                 if seg not in os.listdir(d):
                     return None
                 d = os.path.join(d, seg)
             with open(d, "rb") as f:
-                data = f.read()
+                return f.read()
         except OSError:
+            return None
+
+    def load(rel):
+        data = read(root, rel) if root is not None else None
+        if data is None and "/" not in rel:
+            # The standard service modules (`import fs;`, `import console;`) are read from the
+            # repository's `lib/` when the source root has no module of that name (I/O services
+            # lane, OQ-303; ref/OPEN.md REF-OQ-48).
+            data = read(STD_LIB, rel)
+        if data is None:
             return None
         return P.parse_module(decode_source(data, rel), rel)
     return load
 
 
 def run_program(source: bytes, path: str, entry: str | None = None, fuel: int | None = None,
-                depth: int = DEFAULT_DEPTH, args=(), test: str | None = None, root: str | None = None) -> Outcome:
+                depth: int = DEFAULT_DEPTH, args=(), test: str | None = None, root: str | None = None,
+                grants=(), program_args=()) -> Outcome:
     """Compile and run one module. Parsing, checking and execution all run on a
     thread with a large stack, so that nesting up to the SPEC-04 20 minimum (256)
     and well beyond never meets Python's recursion limit; nesting beyond the
     parser's limits is C9004 (parser.MAX_BLOCK_NESTING, parser.MAX_NESTING)."""
 
-    return _with_large_stack(lambda: _compile_and_run(source, path, entry, fuel, depth, args, test, root))
+    return _with_large_stack(lambda: _compile_and_run(source, path, entry, fuel, depth, args, test, root, grants,
+                                                      program_args))
 
 
-def _compile_and_run(source, path, entry, fuel, depth, args, test, root=None) -> Outcome:
+def _compile_and_run(source, path, entry, fuel, depth, args, test, root=None, grants=(), program_args=()) -> Outcome:
     try:
         if path.endswith(".cint"):
             raise CompileError(Diagnostic("C1001", Position(path, 1, 1),
@@ -1752,11 +1848,21 @@ def _compile_and_run(source, path, entry, fuel, depth, args, test, root=None) ->
         if not (1 <= depth <= M64):
             raise Refused("the depth limit must be an I64 with D >= 1 (SPEC-01 9.4)")
         kind, target = _select_entry(prog, entry, test)
-        values = _check_args(target, args) if kind == "function" else []
-        if kind == "function" and target.name == "main" and entry is None and target.params:
-            raise Refused("`main` takes no parameters")
+        try:
+            grant_set = GrantSet(grants)
+        except ValueError as v:
+            raise Refused("a grant the runtime refuses at context creation (SPEC-03 A-10; rt/OPEN.md RT-OQ-72): %s" % v)
+        # The program arguments reach `main` only (SPEC-04 LS-221; OQ-306): each one its bytes and
+        # one NUL, in order, as the bytes of the entry's `in U8[_] args` view.
+        pargs = None
+        if kind == "function" and target.name == "main" and entry in (None, "main"):
+            pargs = b"".join((a.encode("utf-8") if isinstance(a, str) else bytes(a)) + b"\0" for a in program_args)
+        values = _check_args(target, args, grant_set, pargs) if kind == "function" else []
     except CompileError as e:
         return Outcome("compile-error", diagnostic=e.diagnostic)
     except Refused as r:
         return Outcome("refused", message=r.message)
-    return _run(prog, kind, target, values, fuel, depth)
+    try:
+        return _run(prog, kind, target, values, fuel, depth)
+    finally:
+        services.console_restore()   # a raw terminal is restored however the run ends (RT-OQ-73)

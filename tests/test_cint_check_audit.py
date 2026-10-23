@@ -5,7 +5,8 @@ decision 25 (`__chkstk_darwin` on the apple-clang leg only), its x86-64 spelling
 `___chkstk_darwin` (OQ-219), the `bzero` that the ruling of 2026-10-05 adds to that row (G-C1,
 rt/OPEN.md RT-OQ-32), the MSVC `/GS` range check
 `__report_rangecheckfailure` and the MSVC C runtime's `__isa_available` on the msvc leg only
-(OQ-211, OQ-215), and MSVC's `__isa_available_default` among the toolchain names (OQ-215).
+(OQ-211, OQ-215), MSVC's `__isa_available_default` among the toolchain names (OQ-215), and
+the 128-bit quotient's `__udivti3` and `__divti3` on the gcc and clang legs only (OQ-271).
 Python standard library only; no toolchain is needed."""
 import pathlib
 import sys
@@ -138,6 +139,24 @@ class Audit(unittest.TestCase):
         obj = (SEED_OBJECT[0] | {"__isa_available"}, SEED_OBJECT[1] | {"__isa_enabled", "__favor"})
         self.assertEqual(audit_program([obj], exports, RT, "msvc"),
                          ["defines __isa_available", "refers to __favor", "refers to __isa_enabled"])
+
+    def test_gnu_quotient_on_the_gcc_and_clang_targets_only(self):
+        # OQ-271: the runtime fast path's 128-by-64 quotient calls __udivti3 under GCC and Clang
+        # on x86-64 Linux, and GCC leaves an unused undefined __divti3 beside it. Both names pass
+        # on gcc and clang only; the other 128-bit helpers stay findings.
+        exports = {"cx_3_add_4_add3", "cm_3_add", "cint_program_abi", "cint_observer_desc"}
+        obj = (SEED_OBJECT[0], SEED_OBJECT[1] | {"__udivti3", "__divti3"})
+        for leg in ("gcc", "clang"):
+            self.assertEqual(audit_program([obj], exports, RT, leg), [])
+        for leg in ("msvc", "apple-clang"):
+            self.assertEqual(audit_program([obj], exports, RT, leg),
+                             ["refers to __divti3", "refers to __udivti3"])
+        obj = (SEED_OBJECT[0], SEED_OBJECT[1] | {"__umodti3", "__modti3", "__muloti4"})
+        self.assertEqual(audit_program([obj], exports, RT, "gcc"),
+                         ["refers to __modti3", "refers to __muloti4", "refers to __umodti3"])
+        # The allowance is for an undefined reference only; a program may not define it.
+        obj = (SEED_OBJECT[0] | {"__udivti3"}, SEED_OBJECT[1])
+        self.assertEqual(audit_program([obj], exports, RT, "clang"), ["defines __udivti3"])
 
     def test_msvc_isa_default_is_a_toolchain_name(self):
         # OQ-215: the object of reduce/dot_value at MSVC /O2 defines __isa_available_default and

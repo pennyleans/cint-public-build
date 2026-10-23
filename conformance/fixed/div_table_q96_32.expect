@@ -1,0 +1,9 @@
+case fixed/div_table_q96_32
+clause SPEC-01 IM-65, IM-66 (the 5.4 table in Q96.32, and a quotient whose intermediate needs more than 128 bits)
+format 5
+source reference
+outcome value
+stdout-bytes 139
+stdout-sha256 e4fdd4505e73c35c89115fb3fe3052deff770835f480861ff6f4f0bcf3c372ce
+return I64 0
+fuel-consumed 1

@@ -290,7 +290,7 @@ typedef struct cint_recording_info {
     uint32_t density;            /* 0: entry; 1: dispatch (CINT_RECORD_DISPATCH) */
     uint64_t interval;           /* the state-hash interval: 1, every entry (H-14a) */
     uint32_t module_count;       /* modules of the first revision's code */
-    uint32_t end_reason;         /* 0 closed by the host, 1 CINT_RESOURCE */
+    uint32_t end_reason;         /* 0 closed by the host, 1 CINT_RESOURCE, 2 an unrestricted occurrence */
     const uint8_t *initial;      /* the CINT-CKPT-1 of the initial state */
     size_t initial_len;
     uint64_t event_count;        /* events before the end event */
@@ -309,27 +309,33 @@ typedef struct cint_recording_info {
 #define CINT_EVENT_REVISION 7u
 #define CINT_EVENT_END 8u
 #define CINT_EVENT_DISPATCH 9u
+#define CINT_EVENT_UNRESTRICTED 10u  /* an `unrestricted` extern called: the recording ends (H-14; RT-OQ-70) */
 
-/* One event. Zeroed, it stands before the first; cint_recording_next moves it on. */
+/* One event. Zeroed, it stands before the first; cint_recording_next moves it on. An effect
+ * is a print statement, whose name is "print", or an extern call (SPEC-03 A-15; RT-OQ-70),
+ * whose name is the extern's: `data` holds its request block and `response` its response
+ * block, in the layouts of rt/cint_rec.c's header comment. */
 typedef struct cint_recording_event {
     uint32_t kind;               /* CINT_EVENT_* */
     uint32_t form;               /* entry: 0 an exported function, 1 the program entry */
     uint64_t index;              /* from 0 */
     size_t next;                 /* where the next event begins; 0 before the first */
     uint64_t sequence;           /* entry: its sequence number */
-    cint_name module, name;      /* entry: the function (empty for form 1); effect: "print" */
+    cint_name module, name;      /* entry: the function (empty for form 1); effect: "print" or
+                                    the extern's name; unrestricted: the extern's name */
     uint32_t arg_count;          /* entry: read them with cint_recording_arg */
     uint32_t module_count;       /* revision: modules of its code */
     int64_t fuel, depth, arena;  /* entry: budget, depth limit, frame-arena capacity */
-    int64_t ordinal;             /* effect: its effect-log position; dispatch: its number */
-    cint_site site;              /* effect: the print statement */
+    int64_t ordinal;             /* effect, unrestricted: the effect-log position; dispatch: its number */
+    cint_site site;              /* effect, unrestricted: the print statement or the call */
     cint_status status;          /* effect: the host's; outcome: the entry's */
     const uint8_t *data;         /* effect: the request bytes; outcome: the fault record, NULL
                                     when none; restore: the checkpoint; revision: its code */
     size_t data_len;
     int64_t consumed, allowance; /* outcome: fuel consumed, and the allowance in force at the
                                     end, which an interrupt lowers */
-    uint32_t has_result, has_error, has_hash, reason;  /* reason: end */
+    uint32_t has_result, has_error, has_hash, reason;  /* reason: end (0 the host, 1 CINT_RESOURCE,
+                                    2 an unrestricted occurrence) */
     cint_tvalue result;          /* outcome */
     cint_name error_set;         /* outcome: an error result's set and tag */
     uint64_t error_tag;
@@ -340,6 +346,8 @@ typedef struct cint_recording_event {
     uint64_t next_buffer, next_arena, next_pool;  /* restore: the identifier counters */
     uint8_t revision[32];        /* revision */
     size_t args_at;
+    const uint8_t *response;     /* effect of an extern call: the response block (ABI 3.3) */
+    size_t response_len;
 } cint_recording_event;
 
 /* Checks a CINT-REC-1 or a CINT-CASE-1: its form, its initial checkpoint and each checkpoint it
@@ -368,7 +376,9 @@ CINT_RT_API size_t cint_recording_render(const cint_recording_info *info, char *
 
 /* What a replay compared when it diverged. */
 #define CINT_REPLAY_ENTRY 1u      /* no such function, or another depth limit or frame-arena capacity */
-#define CINT_REPLAY_EFFECT 2u     /* a print statement's position, site or bytes, or one too many or few */
+#define CINT_REPLAY_EFFECT 2u     /* a print statement's position, site or bytes, an extern call's position,
+                                     site, name, arguments or, in digest mode, status or response, or one
+                                     too many or few */
 #define CINT_REPLAY_STATUS 3u
 #define CINT_REPLAY_FAULT 4u      /* the fault record's bytes */
 #define CINT_REPLAY_FUEL 5u

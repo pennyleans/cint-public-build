@@ -1,0 +1,69 @@
+module services.denied_catch
+sites services/denied_catch.ci 1:10:12:fuel.charge 2:12:16:host.call 3:13:16:host.call 4:14:14:add.checked.i64 5:11:11:arena.alloc
+error E0: fs.FsError U16 path, denied, not_found, exists, not_directory, is_directory, not_empty, bounds, quota
+error E11: fs.FsError U16 path, denied, not_found, exists, not_directory, is_directory, not_empty, bounds, quota
+error E25: fs.FsError U16 path, denied, not_found, exists, not_directory, is_directory, not_empty, bounds, quota
+extern @fs.read(Grants, U8[_], I64, out U8[_]) -> U16!I64 errors 9 observe "fs/1.read" signature 1d00000063696e742d636f72652d312f747970652d7369676e61747572652f763101000000730a00000066732e46734572726f7222000900000004000000706174680600000064656e696564090000006e6f745f666f756e64060000006578697374730d0000006e6f745f6469726563746f72790c00000069735f6469726563746f7279090000006e6f745f656d70747906000000626f756e64730500000071756f74610000000003000000005221010000140252210100740000000014
+extern @fs.stat(Grants, U8[_]) -> U16!I64 errors 9 observe "fs/1.stat" signature 1d00000063696e742d636f72652d312f747970652d7369676e61747572652f763101000000730a00000066732e46734572726f7222000900000004000000706174680600000064656e696564090000006e6f745f666f756e64060000006578697374730d0000006e6f745f6469726563746f72790c00000069735f6469726563746f7279090000006e6f745f656d70747906000000626f756e64730500000071756f746100000000010000000052210100740000000014
+export func @services.denied_catch.run(%g: Grants) -> I64 {
+  fuel.charge 1                                  #1 @services/denied_catch.ci:10:12
+  frame.mark 1, 1
+  frame.charge 4                                 #5 @services/denied_catch.ci:11:11
+  local $buf.0: U8[4]
+  %s4 = data U8[7] 47, 100, 97, 116, 97, 47, 97
+  %t0 = const I64 0
+  %t1 = host.call @fs.read(%g, %s4, %t0, $buf.0) #2 @services/denied_catch.ci:12:16
+  %t2 = error.tag
+  local $sc.1: I64
+  %t3 = const U16 0
+  %t4 = cmp.ne.u16 %t2, %t3
+  if {
+    arm {
+    } then %t4 {
+      %t5 = const I64 -1
+      store.local $sc.1, %t5
+    }
+    else {
+      store.local $sc.1, %t1
+    }
+  }
+  %t6 = load.local $sc.1
+  local $n.2: I64
+  store.local $n.2, %t6
+  %s27 = data U8[7] 47, 100, 97, 116, 97, 47, 97
+  %t7 = host.call @fs.stat(%g, %s27)             #3 @services/denied_catch.ci:13:16
+  %t8 = error.tag
+  %t9 = const U16 0
+  %t10 = cmp.ne.u16 %t8, %t9
+  if {
+    arm {
+    } then %t10 {
+      local $e.3: U16
+      store.local $e.3, %t8
+      %t11 = load.local $e.3
+      %t12 = const U16 2
+      %t13 = cmp.eq.u16 %t11, %t12
+      local $sc.4: I64
+      if {
+        arm {
+        } then %t13 {
+          %t14 = const I64 7
+          store.local $sc.4, %t14
+        }
+        else {
+          %t15 = const I64 8
+          store.local $sc.4, %t15
+        }
+      }
+      %t16 = load.local $sc.4
+      return %t16
+    }
+  }
+  local $s.5: I64
+  store.local $s.5, %t7
+  %t17 = load.local $n.2
+  %t18 = load.local $s.5
+  %t19 = add.checked.i64 %t17, %t18              #4 @services/denied_catch.ci:14:14
+  return %t19
+  frame.release 1, 1
+}

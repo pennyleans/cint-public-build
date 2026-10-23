@@ -167,6 +167,8 @@ class ContextTyping(unittest.TestCase):
 
     def test_conversion_of_a_literal_value(self):
         self.assertEqual(value_of("I8 r = 300 as% I8;"), "44")
+        self.assertEqual(value_of("I8 r = 300 as| I8;"), "127")        # never faults (SPEC-01 IM-50)
+        self.assertEqual(value_of("U8 r = -1 as| U8;"), "0")
         o = run("I8 x = 300 as I8;\n\"x\";")
         d = o.diagnostic
         self.assertEqual((d.code, d.fault.code, d.fault.operation, [(x.type, x.value) for x in d.fault.operands]),

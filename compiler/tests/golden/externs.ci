@@ -1,0 +1,29 @@
+// compiler/tests/golden/externs.ci: a program that calls externs (I/O services lane U2; SPEC-03
+// A-10, A-15; compiler/OPEN.md CINTC-OQ-66): an `observe` extern of a scalar, an `in` view and an
+// `out` view, a `pure` one, an `unrestricted` one, one with an error-union result, and one that
+// takes a string literal. compiler/tests/externs_host.c supplies the five through the host
+// table and cli/tests/fixtures/extern_host.c does the same through `cint build --lib`.
+error IoError { closed, refused }
+
+extern observe I64 fetch(I64 key, in I64[_] keys, out I64[_] buf);
+extern pure I64 square(I64 x);
+extern unrestricted void sync();
+extern observe IoError!I64 pull(I64 n, Bool strict);
+extern observe void put(in U8[_] bytes);
+
+export I64 total(I64 key) {
+    I64[2] keys = [1, 2];
+    I64[2] buf = [0, 0];
+    I64 n = fetch(key, keys, buf);
+    return n + buf[0] + buf[1] + square(3);
+}
+
+export I64 pulled(I64 n) {
+    I64 v = pull(n, true) catch -1;
+    return v;
+}
+
+export void flush() {
+    put("done\n");
+    sync();
+}

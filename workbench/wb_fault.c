@@ -121,7 +121,7 @@ int wb_fault_decode(const uint8_t *data, size_t n, wb_fault *f, int kind)
     if (version == 0u || (version == 3u && kind == WB_RECORD_COMPILE)) return -1;
     zmax = version == 3u ? CINT_Z_MAX_BYTES : CINT_Z_V2_MAX_BYTES;
     zmax_operand = kind == WB_RECORD_COMPILE ? 513u : zmax;
-    zmax_exact = kind == WB_RECORD_COMPILE ? 520u : zmax;
+    zmax_exact = kind == WB_RECORD_COMPILE ? 528u : zmax;
     f->code = (unsigned)rd_u(&r, 2u);
     len = rd_u(&r, 4u);
     s = rd_take(&r, len);
@@ -507,7 +507,8 @@ static int tval_parse(const char *s, size_t n, wb_tval *v, int exact)
         const char *dot = memchr(s, '.', tl);
         qi = dot != NULL ? count_of(s + 1, (size_t)(dot - s - 1)) : -1;
         qf = dot != NULL ? count_of(dot + 1, (size_t)(s + tl - dot - 1)) : -1;
-        if (qi < 1 || qf < 0 || (qi + qf != 8 && qi + qf != 16 && qi + qf != 32 && qi + qf != 64) || dl < 5u ||
+        if (qi < 1 || qf < 0 ||
+            (qi + qf != 8 && qi + qf != 16 && qi + qf != 32 && qi + qf != 64 && qi + qf != 128) || dl < 5u ||
             memcmp(d, "raw ", 4) != 0) {
             return -1;
         }
@@ -523,7 +524,7 @@ static int tval_parse(const char *s, size_t n, wb_tval *v, int exact)
     }
     x.neg = k == 1u && x.n > 0u;
     if (exact || (tl == 1u && s[0] == 'Z')) {
-        if ((k = wb_num_bits(&x) / 8u + 1u) > 520u) return -1;
+        if ((k = wb_num_bits(&x) / 8u + 1u) > 528u) return -1;
         (void)num_to_le(&x, v->bytes + 5u, k, 1);
         while (k >= 2u && ((v->bytes[4u + k] == 0u && v->bytes[3u + k] < 0x80u) ||
                            (v->bytes[4u + k] == 0xffu && v->bytes[3u + k] >= 0x80u))) {
@@ -537,7 +538,7 @@ static int tval_parse(const char *s, size_t n, wb_tval *v, int exact)
     if (qi > 0) {   /* tag 31: the storage tag, f as U16, then the raw storage integer (IM-146) */
         size_t w = (size_t)(qi + qf) / 8u;
         v->bytes[0] = 0x31u;
-        v->bytes[1] = (uint8_t)(CINT_TAG_I8 + (w == 1u ? 0u : w == 2u ? 1u : w == 4u ? 2u : 3u));
+        v->bytes[1] = (uint8_t)(CINT_TAG_I8 + (w == 1u ? 0u : w == 2u ? 1u : w == 4u ? 2u : w == 8u ? 3u : 4u));
         v->bytes[2] = (uint8_t)qf;
         v->bytes[3] = 0u;
         v->len = (uint16_t)(4u + w);

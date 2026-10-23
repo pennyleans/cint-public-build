@@ -1,0 +1,10 @@
+case fixed/module_state_q80_48
+clause SPEC-09 CONF-11 rules 10 and 14; SPEC-01 IM-146, IM-156 (a module-level Q80.48 scalar has a state.global line; a fixed-point array has none)
+format 5
+source reference
+outcome value
+stdout-bytes 30
+stdout-sha256 a9f350a18db550bfaefdaec1b93447b2ce23ade09114b84362a2f59d80d40904
+return I64 38146972656250000
+fuel-consumed 1
+state.global fixed.module_state_q80_48 g Q80.48 raw 703687441776640000000000000000000000

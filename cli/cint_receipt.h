@@ -1,9 +1,10 @@
-/* cint_receipt.h: what cli/cint_main.c and cli/cint_receipt.c share (decision 26).
+/* cint_receipt.h: what cli/cint_main.c, cli/cint_receipt.c and cli/cint_discover.c share
+ * (decision 26).
  *
  * Internal to the `cint` command. cint_receipt.c writes canonical JSON strings, this tool's
  * errors, the fault, error, diagnostic and test objects, the receipts, and the retained fault of a
- * faulted compiler; cint_main.c reads the toolchain, discovers modules, decodes records, builds,
- * and runs.
+ * faulted compiler; cint_discover.c reads the modules (the import scan, the standard library root,
+ * the source snapshot); cint_main.c reads the toolchain, decodes records, builds, and runs.
  */
 #ifndef CINT_RECEIPT_H
 #define CINT_RECEIPT_H
@@ -47,7 +48,11 @@ typedef struct cli_module {
     char hex[65];
     int *deps, ndeps;   /* the modules its imports name, in source order */
     int mark;           /* the dependency order walk: 1 entered, 2 placed */
+    int where;          /* 0 the source root only; 1 the standard library root probed too, absent; 2 read there (RCPT-07) */
 } cli_module;
+
+/* The module's key in a receipt: its path, with `stdlib:` before a standard library module's. */
+const char *module_key(const cli_module *m, char *buf, size_t n);
 
 /* The most runtime_source rows a toolchain file may have; the receipt's runtime identity names every one. */
 #define CLI_MAX_RT 32u
@@ -61,8 +66,14 @@ typedef struct toolchain {
 
 typedef struct cli_state {
     const char *receipt, *root, *toolchain, *cache, *file, *out;
+    const char *stdlib;  /* --stdlib DIR: the standard library root (default: lib beside this executable) */
     char *files[64];
     int nfiles, emit, mode, lib;   /* lib: `build --lib` (SPEC-06 3.1) */
+    const char *width;  /* `run --width-report PATH`, or "" for `build --width-report` (rt/OPEN.md RT-OQ-64) */
+    const char *grants[64];  /* `run --grant LINE` and `test --grant LINE`, in order (SPEC-06 3.2, ruling OQ-300) */
+    int ngrants, stdin_inherit;  /* stdin_inherit: a grant names console.input, so the program reads this stdin */
+    const char *const *args;  /* `run FILE.ci -- ARG...`: the program arguments of `main` (SPEC-04 LS-221; OQ-306) */
+    int nargs;
     cli_module *mods;   /* mods[0] is the root module; the rest in discovery order */
     int nmods;
     const char **order; /* the present modules in dependency order, the root last (D-13) */
@@ -91,10 +102,10 @@ typedef struct fpos {
     uint32_t path_len, line, column;
 } fpos;
 
-/* Compile records allow 513-byte operands and a 520-byte exact value (IM-108). */
+/* Compile records allow 513-byte operands and a 528-byte exact value (IM-108; 520 before OQ-292). */
 typedef struct fvalue {
     uint16_t len;
-    uint8_t bytes[525];
+    uint8_t bytes[533];
 } fvalue;
 
 typedef struct frec {
@@ -168,8 +179,22 @@ int64_t now_ns(void);
 int decode_fault(const uint8_t *data, size_t n, frec *f, int trailing);
 size_t value_text(const fvalue *v, char text[1700], int with_type);
 void report_diags(sbuf *receipt);
-cli_module **sorted_modules(int all, int *count);
 size_t unescape(const uint8_t *s, size_t n, char *out);
+char *dup_s(const char *s);
+int digest(const uint8_t *data, size_t n, char hex[65]);
+size_t blank(const uint8_t *s, size_t n, size_t i);
+size_t ident(const uint8_t *s, size_t n, size_t i);
+int word(const uint8_t *s, size_t n, size_t i, const char *w);
+
+/* cint_discover.c */
+extern cint_bridge_root *lib_root;  /* the standard library root; NULL when there is none */
+int open_stdlib(void);
+int module_at(cint_bridge_root *root, const char *rel, int import);
+int follow_imports(cint_bridge_root *root, int m);
+int discover(cint_bridge_root *root);
+int same_inputs(cint_bridge_root *root, cint_bridge_root *lib);
+int snapshot_inputs(const char *dir, cint_bridge_root **snap);
+cli_module **sorted_modules(int all, int *count);
 
 /* cint_receipt.c */
 int tool_error(int status, const char *tool, int tool_status, const char *log, const char *fmt, ...);

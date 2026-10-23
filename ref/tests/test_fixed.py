@@ -124,6 +124,25 @@ class Conversions(unittest.TestCase):                      # SPEC-01 5.6 table
                          ("E_NARROW", "as.checked.i64.q16_16", (Value("I64", 40000),), 2621440000,
                           Value("Q16.16", 2147483647)))
 
+    def test_saturating(self):                            # SPEC-01 IM-68 `as|` (OQ-272)
+        # `sat(T, v)` of the value `as` range-checks: exact, or rounded once by the mode.
+        self.assertEqual(fixed.convert("sat", "Q32.32", "Q16.16", 32768 << 32, mode="half_even"),
+                         Value("Q16.16", 2147483647))
+        self.assertEqual(fixed.convert("sat", "Q32.32", "Q16.16", -(40000 << 32), mode="floor"),
+                         Value("Q16.16", -2147483648))
+        self.assertEqual(fixed.convert("sat", "Q32.32", "Q16.16", 1, mode="ceil"), Value("Q16.16", 1))
+        self.assertEqual(fixed.convert("sat", "Q16.16", "Q8.24", 256 << 16), Value("Q8.24", 2147483647))
+        self.assertEqual(fixed.convert("sat", "Q16.16", "I8", 1000 << 16, mode="half_even"), Value("I8", 127))
+        self.assertEqual(fixed.convert("sat", "Q16.16", "U8", -163840, mode="floor"), Value("U8", 0))
+        self.assertEqual(fixed.convert("sat", "Q16.16", "I8", 98304, mode="half_even"), Value("I8", 2))
+        self.assertEqual(fixed.convert("sat", "Q16.16", "I8", 98304, mode="ceil"), Value("I8", 2))
+        self.assertEqual(fixed.convert("sat", "Q16.16", "I8", 163840, mode="ceil"), Value("I8", 3))
+        self.assertEqual(fixed.convert("sat", "I64", "Q16.16", 40000), Value("Q16.16", 2147483647))
+        self.assertEqual(fixed.convert("sat", "I64", "Q16.16", -40000), Value("Q16.16", -2147483648))
+        self.assertEqual(fixed.convert("sat", "U64", "Q16.16", 7), Value("Q16.16", 7 << 16))
+        with self.assertRaises(ValueError):
+            fixed.convert("sat", "Q16.16", "Q32.32", 1, mode="half_even")
+
     def test_mode_presence(self):                         # SPEC-01 9.8: mode present exactly when it rounds
         with self.assertRaises(ValueError):
             fixed.convert("checked", "Q16.16", "Q32.32", 1, mode="half_even")

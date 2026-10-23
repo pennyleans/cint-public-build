@@ -1,0 +1,13 @@
+// case: fixed/reductions_q80_48
+// clause: SPEC-02 R-4, R-5; SPEC-01 IM-77, IM-79 (the reductions act on the stored integers of a 128-bit format and keep it)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 949978046398464 (3.375); prints `604462909807314587353087.999999999999996447286321199499070644378662109375 -170141183460469231731687303715884105728 -0.5 302231454903657293676543.75` (a sum past 2^79 saturates and wraps) and `3.375 4.375 -1.0`; fuel 9 (the entry and eight reductions). Games wave G2a (OQ-292)
+
+export I64 run() {
+    Q80.48[4] a = [302231454903657293676543.5, 1.25, -0.5, 302231454903657293676543.75];
+    Q80.48[4] b = [1.5, 2.25, -0.5, 0.125];
+    "{sum_sat(a)} {sum_wrap(a)!raw} {min(a)} {max(a)}\n";
+    "{sum(b)} {fold_checked(add, 1.0, b)} {min(-1.0, b)}\n";
+    return sum(b).raw as I64;
+}

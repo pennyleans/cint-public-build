@@ -72,6 +72,7 @@ class Expressions(unittest.TestCase):
         self.assertEqual(shape(expr("-x")), ("-", "x"))
         self.assertEqual(shape(expr("a -1")), ("-", "a", 1))
         self.assertEqual(shape(expr("-1 as% U64")), ("as%", -1, "U64"))
+        self.assertEqual(shape(expr("-1 as| U64")), ("as|", -1, "U64"))
 
     def test_calls_type_args_and_properties(self):
         self.assertEqual(shape(expr("div_round(7, 2, half_even)")), ("call", "div_round", 7, 2, "half_even"))

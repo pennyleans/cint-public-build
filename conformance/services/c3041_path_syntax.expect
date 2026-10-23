@@ -1,0 +1,6 @@
+case services/c3041_path_syntax
+clause SPEC-04 LS-323 to LS-328; SPEC-07 SEC-CAP-3, SEC-CAP-6, 11.3
+source compile-error
+outcome compile-error
+diagnostic.code C3041
+diagnostic.position services/c3041_path_syntax.ci:8:18

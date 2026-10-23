@@ -1,0 +1,13 @@
+// case: fixed/mul_forms_q80_48
+// clause: SPEC-01 IM-61, IM-62 (`*|`, `mul_sat`, `mul_wrap` and `*%` apply the form rule to a rounded raw product beyond I128)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 0; prints `170141183460469231731687303715884105727 -170141183460469231731687303715884105728 -1208925819614629174706176 0` and `170141183460469231731687303715884105727 -170141183460469231731687303715884105728` (saturated, saturated, wrapped and wrapped products, then -2^79 times -1.0 saturated and wrapped); fuel 1. Games wave G2a (OQ-292)
+
+export I64 run() {
+    Q80.48 a = Q80.48.max;
+    Q80.48 n = Q80.48.min;
+    "{(a *| a)!raw} {mul_sat(n, a, floor)!raw} {mul_wrap(a, a, half_even)!raw} {(n *% n)!raw}\n";
+    "{(n *| -1.0)!raw} {(n *% -1.0)!raw}\n";
+    return 0;
+}

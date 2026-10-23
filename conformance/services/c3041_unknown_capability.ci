@@ -1,0 +1,12 @@
+// case: services/c3041_unknown_capability
+// clause: SPEC-04 LS-323 to LS-328; SPEC-07 SEC-CAP-1, SEC-CAP-6, 7.2
+// subset: cint-core-1 (a `requires` of a capability the catalog does not name)
+// entry: run; args: none
+// spec outcome: compile error C3041 at 8:10, `fs.list`: `fs.list` is not a capability of SPEC-07 7.2
+
+import fs;
+requires fs.list("/data");
+
+export I64 run(Grants g) {
+    return fs.stat(g, "/data/a") catch -1;
+}

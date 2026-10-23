@@ -235,7 +235,7 @@ int wb_emit(const char *cint, int json, const char *root, const char *rel, const
     argv[n++] = out;
     for (uint32_t i = 0; i < ml.n; i++) argv[n++] = ml.path[i];
     argv[n] = NULL;
-    cli_proc proc = {argv, NULL, log, NULL, NULL, NULL, NULL};
+    cli_proc proc = {argv, NULL, log, NULL, NULL, NULL, NULL, 0};
     if (cli_mkdirs(out) == 0 && cli_proc_run(&proc, status) == 0) r = 0;
     else wb_f(err, "cannot run %s; give --cint PATH", cint);
     wb_modules_free(&ml);

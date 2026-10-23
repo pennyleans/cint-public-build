@@ -1,0 +1,11 @@
+// case: services/c3040_no_requires
+// clause: SPEC-04 LS-323 to LS-328; SPEC-07 SEC-CAP-1
+// subset: cint-core-1 (a service call without a `requires`)
+// entry: run; args: none
+// spec outcome: compile error C3040 at 10:12, the call `fs.stat`: no `requires` in any module of the program covers `fs.read`, which `fs.stat` names
+
+import fs;
+
+export I64 run(Grants g) {
+    return fs.stat(g, "/data/a") catch -1;
+}

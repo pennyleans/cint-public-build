@@ -778,7 +778,7 @@ int wb_diff(const wb_diff_opts *o, wb_buf *err)
         status = status != 0 ? status : CINT_EXIT_CHECK;
     }
     if (status == 0 || status == CINT_EXIT_CHECK) {   /* the report: the receipt under --json */
-        if (o->json) receipt(&b, &d, outcome, &f, wb_now_ns() - t0);
+        if (o->json) receipt(&b, &d, outcome, &f, wb_elapsed_ns(t0, wb_now_ns()));
         else report(&b, &d, outcome, &f, both);
         if (b.failed || fwrite(b.p, 1, b.n, stdout) != b.n) {
             wb_s(err, "cannot write the report");
@@ -786,7 +786,7 @@ int wb_diff(const wb_diff_opts *o, wb_buf *err)
         }
         b.n = 0;
         if (o->receipt != NULL && status != CINT_EXIT_ENVIRONMENT) {
-            receipt(&b, &d, outcome, &f, wb_now_ns() - t0);
+            receipt(&b, &d, outcome, &f, wb_elapsed_ns(t0, wb_now_ns()));
             if (b.failed || wb_write_file(o->receipt, b.p, b.n) != 0) {
                 wb_f(err, "cannot write the receipt %s", o->receipt);
                 status = CINT_EXIT_ENVIRONMENT;

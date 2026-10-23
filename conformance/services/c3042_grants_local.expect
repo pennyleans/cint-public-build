@@ -1,0 +1,6 @@
+case services/c3042_grants_local
+clause SPEC-04 LS-323 to LS-328; SPEC-04 LS-326
+source compile-error
+outcome compile-error
+diagnostic.code C3042
+diagnostic.position services/c3042_grants_local.ci:11:5

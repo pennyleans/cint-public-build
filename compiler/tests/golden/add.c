@@ -100,3 +100,5 @@ static const cint_export cg_3_add_exports[1] = {
 };
 
 CINT_RT_INTERNAL const cint_module_table cg_3_add_table = {&cm_3_add, 0u, 1u, cg_3_add_exports, NULL};
+
+CINT_RT_INTERNAL const cint_host_table cg_3_add_host = {0u, 0u, NULL};

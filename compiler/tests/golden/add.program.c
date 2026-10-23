@@ -22,3 +22,6 @@ CINT_RT_EXPORT const cint_observer cint_observer_desc = {1u, 0u, &cg_program, cg
 CINT_RT_EXPORT const uint32_t cint_program_abi = CINT_ABI_VERSION;
 static const cint_module_table *const cg_tables[1] = {&cg_3_add_table};
 CINT_RT_EXPORT const cint_library cint_library_desc = {CINT_ABI_VERSION, 1u, cg_tables};
+CINT_RT_INTERNAL extern const cint_host_table cg_3_add_host;
+static const cint_host_table *const cg_host[1] = {&cg_3_add_host};
+CINT_RT_EXPORT const cint_host_desc cint_imports_desc = {1u, 0u, cg_host};

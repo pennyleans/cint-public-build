@@ -234,6 +234,44 @@ def module_cases() -> list:
         "kernel k[n](in I64[n] u) over [i: n] where n > 0\n", "kernel k[n](in I64[n] u) over [i: n]\n",
         "kernel k[n](in I64 I8) { }\n",
         "I64[2, 3] g;\n", "const I64[2] K = [1, 2];\n", "export in I64[_] v = w;\n",
+        # I/O services lane U1: extern declarations, `@service` and `requires` (SPEC-04 18.3
+        # extern_decl and requires_decl, LS-323 to LS-328; SPEC-03 H-1, H-5; SPEC-07 SEC-CAP-13)
+        "extern pure I64 f(I64 a);\n", "export extern observe void log(in U8[] s);\n",
+        "extern unrestricted E!I64 f(Grants g, in U8[] p, I64 off, out U8[] buf);\n",
+        "extern observe m.E!void f(Grants g);\n", "extern pure void f();\n", "extern pure void f(I64 a,);\n",
+        "extern I64 f();\n", "extern pure I64 f() { }\n", "extern pure I64 f()\n", "extern pure I64 f(I64 a = 1);\n",
+        "extern pure I64 f[n](in I64[n] a);\n", "extern pure in U8[_] f();\n", "extern pure U8[4] f();\n",
+        "extern pure I64 I8();\n", "extern pure I64 f(I64 extern);\n", "extern pure I64;\n", "extern pure;\n",
+        "extern;\n", "extern pure I64 f(;\n", "extern pure I64 f(I64 a I64 b);\n",
+        "extern pure I64 f(I64 a) where a > 0;\n", "extern pure I64 f(inout I64 a, out I64 b);\n",
+        "extern pure (I64, I64) f();\n", "extern pure I64 f(I64 a);\nI64 g() { return f(1); }\n",
+        "extern Pure I64 f();\n", "extern pure I64 f(I64 a) = 1;\n", "extern pure Grants f(Grants g);\n",
+        "@service(\"fs/1\", fs.read(path)) extern observe fs.FsError!I64 read(Grants g, in U8[] path, I64 offset, out U8[] buf);\n",
+        "@service(\"console/1\") export extern observe E!void write(Grants g, in U8[] bytes);\n",
+        "@service(\"console/1\", console.input) extern observe E!I64 window(Grants g);\n",
+        "@service(\"fs/1\", fs.write(path, name)) extern observe E!void put(Grants g);\n",
+        "@service(\"fs/1\", a.b.c(name)) extern pure void f();\n", "@service(\"fs/1\", a) extern pure void f();\n",
+        "@service(\"fs/1\", fs.read(path)) void f() { }\n", "@service(\"fs/1\") export I64 x = 1;\n",
+        "@service(\"fs/1\") requires fs.read(\"/\");\n", "@service(\"fs/1\")\n",
+        "@service(\"fs/1\") @service(\"x\") extern pure void f();\n", "@service extern pure void f();\n",
+        "@service() extern pure void f();\n", "@service(fs) extern pure void f();\n",
+        "@service(\"fs/1\",) extern pure void f();\n", "@service(\"fs/1\", fs.read(size)) extern pure void f();\n",
+        "@service(\"fs/1\", fs.read()) extern pure void f();\n", "@service(\"fs/1\", fs.read(path,)) extern pure void f();\n",
+        "@service(\"fs/1\", fs.read(path) extern pure void f();\n", "@service(\"fs/1\", fs.) extern pure void f();\n",
+        "@service(\"fs/1\", fs.read(path), x) extern pure void f();\n", "@service(\"a\" \"b\") extern pure void f();\n",
+        "@service(\"{x}\") extern pure void f();\n", "@service(\"fs/1\") @packed extern pure void f();\n",
+        "@packed @service(\"fs/1\") extern pure void f();\n", "@service(\"fs/1\" extern pure void f();\n",
+        "@service(\"fs/1\", fs.read(path name)) extern pure void f();\n", "@service(\"fs/1\", 1) extern pure void f();\n",
+        "requires fs.read(\"/data\");\n", "requires console.input;\n", "requires fs.read(\"/a\", \"/b\");\n",
+        "requires fs.read();\n", "requires fs.read(\"/a\",);\n", "requires fs.read(1 + 2);\n",
+        "requires fs.read(x = 1);\n", "requires;\n", "requires fs.;\n", "requires fs.read\n",
+        "requires fs.read(\"/a\";\n", "export requires fs.read(\"/a\");\n", "requires I8.read(\"/a\");\n",
+        "requires fs.read(\"/a\") { }\n", "requires a.b.c.d(\"/a\");\n", "requires fs.read(\"/a\" \"/b\");\n",
+        "requires fs.read((\"/a\"));\n", "requires fs.read(f(1));\n",
+        "void f() { extern pure void g(); }\n", "void f() { requires fs.read(\"/a\"); }\n",
+        "void f() { I64 extern = 1; }\n", "I64 requires = 1;\n", "I64 x = extern;\n", "I64 x = f(requires);\n",
+        "void f() { x = requires; }\n", "struct S { I64 extern; }\n", "void f(I64 requires) { }\n",
+        "import fs;\nrequires fs.read(\"/data\");\nextern pure I64 f(I64 a);\nexport I64 run() { return f(1); }\n",
     ]
 
 
@@ -265,6 +303,9 @@ EXPECT = {
     "type C = I64\n": ("error", 1050, 2, 1),
     "type C I64;\n": ("error", 1050, 1, 8),
     "schedule s { tile() }\n": ("error", 1050, 1, 21),
+    # I/O services lane U1: SPEC-04 18.3 extern_decl has no size parameters, and extern_param no default.
+    "extern pure I64 f[n](in I64[n] a);\n": ("error", 1050, 1, 18),
+    "extern pure I64 f(I64 a = 1);\n": ("error", 1050, 1, 25),
 }
 
 

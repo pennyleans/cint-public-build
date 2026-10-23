@@ -58,6 +58,21 @@ typedef struct scratch_block {
 } scratch_block;
 _Static_assert(sizeof(scratch_block) == 32, "scratch_block");
 
+/* One extern call at the host boundary (rt/cint_host.c; SPEC-03 A-15; RT-OQ-70), as the
+ * recorder's or replay's hook sees it: the import row and its resolved function, the
+ * arguments as the host receives them (an `out` view already staged) and the result record.
+ * The hook makes the live call through cint_rt_host_live when it wants one and returns the
+ * status that cint_rt_host_call treats as the host's. */
+typedef struct cint_rt_host_frame {
+    cint_site site;
+    const cint_host_import *import;
+    const cint_host_fn *fn;
+    cint_value *args;
+    uint32_t nargs;
+    uint32_t error_count;
+    cint_value *result;
+} cint_rt_host_frame;
+
 struct cint_ctx {
     cint_rt_head head;  /* first member: read by the inline helpers of cint_rt.h */
     cint_rt_busy_flag busy;
@@ -97,7 +112,6 @@ struct cint_ctx {
     cint_site print_site;
     cint_site stack[CINT_RT_MAX_DEPTH];  /* head.stack points here */
     cint_fault_record fault;
-    void **state;  /* module state: 2 * module_count, the blocks, then their cint_state */
     void *device;  /* the device backend's state, or NULL (cint_rt_device) */
     const void *device_record;  /* config.devices[0] with device_count 1, or NULL (A-16) */
     cint_site bind_site;  /* of the last cint_rt_bind_views: check 4's site (cint_rt_dispatch_host) */
@@ -109,6 +123,25 @@ struct cint_ctx {
     volatile sig_atomic_t interrupt;  /* cint_ctx_interrupt (rt/cint_state.h) */
     void (*boundary)(cint_ctx *ctx, int64_t number);  /* cint_rt_dispatch_end's: a recorder or replay */
     void *boundary_user;                              /* at dispatch density (rt/cint_state.c), or NULL */
+    uint64_t *width;  /* the width report's rows (cint_rt_width_note), or NULL */
+    /* The host table (cint_rt_host.h 6f; RT-OQ-70): the program's host import tables
+     * (cint_ctx_config.imports), the function resolved for each of their rows, host_base[m]
+     * rows before module m's and host_base[module_count] the row count, all NULL without a
+     * descriptor; the grants; and the recorder's or replay's hook on each extern call, or NULL. */
+    const cint_host_table *const *host_tables;  /* cint_ctx_config.imports->tables; NULL entries allowed */
+    const cint_host_fn **host_fns;
+    uint32_t *host_base;
+    const uint8_t *grants;
+    size_t grants_length;
+    const uint8_t *args;    /* the program arguments (cint_ctx_config.args; RT-OQ-76), or NULL */
+    size_t args_length;
+    cint_status (*host_hook)(cint_ctx *ctx, cint_rt_host_frame *call);
+    void *host_user;
+    /* The standard service table (rt/cint_fs.c; RT-OQ-72): the fs grants opened from the
+     * configuration's grant lines, or NULL, and the context's own functions for the service rows
+     * it resolved, or NULL. */
+    struct cint_rt_fs *fs;
+    cint_host_fn *service_fns;
 };
 
 /* The busy flag of SPEC-03 A-11. */
@@ -165,12 +198,59 @@ void cint_rt_record_range(cint_fault_record *rec, cint_rt_z128 exact, uint32_t t
 /* A context's device backend slot (rt/cint_cuda_dispatch.c): NULL, or state whose first member
  * is the release function cint_ctx_destroy calls on it. */
 void **cint_rt_device(cint_ctx *ctx);
+/* The host table (rt/cint_host.c; RT-OQ-70): whether a host import descriptor is well formed
+ * and the program's; the resolution of cint_ctx_create (SPEC-03 A-10), CINT_REFUSED for a
+ * descriptor that is not, or a function that is missing or disagrees, CINT_RESOURCE when the
+ * allocator fails; the release of what it made; and the live call of a hook. */
+bool cint_rt_host_tables_valid(const cint_host_desc *d, const cint_program *p);
+/* The standard service table (rt/cint_fs.c and rt/cint_console.c; RT-OQ-72, RT-OQ-73): one row
+ * of a service, with its name `<service>/<version>.<name>`, its parameter count with the Grants
+ * handle, the canonical type signature of its extern without the Grants parameter, and its
+ * function; the grant lines parsed and the fs roots opened at creation; the capability bits
+ * of the grant set that have no roots (`console.input`, `console.raw`); the function of a
+ * service row; the console's release at destruction and at a fault; and their release. */
+typedef struct cint_rt_service {
+    const char *name;
+    uint32_t param_count;
+    const uint8_t *signature;
+    size_t signature_len;
+    cint_status (*call)(void *user, const cint_value *args, uint32_t nargs, cint_value *result);
+} cint_rt_service;
+#define CINT_RT_CAP_CONSOLE_INPUT 1u
+#define CINT_RT_CAP_CONSOLE_RAW 2u
+cint_status cint_rt_fs_open(cint_ctx *ctx, const cint_ctx_config *config);
+void cint_rt_fs_close(cint_ctx *ctx);
+uint32_t cint_rt_grant_caps(const cint_ctx *ctx);
+const cint_host_fn *cint_rt_service_find(cint_ctx *ctx, const cint_host_import *r);
+void cint_rt_service_release(cint_ctx *ctx);
+void cint_rt_console_release(cint_ctx *ctx);
+void cint_rt_console_fault(cint_ctx *ctx);
+cint_status cint_rt_host_resolve(cint_ctx *ctx, const cint_ctx_config *config);
+void cint_rt_host_release(cint_ctx *ctx);
+cint_status cint_rt_host_live(const cint_rt_host_frame *c);
+/* The width in bytes of a scalar tag, Bool included, or 0; whether `bits` is a value of it. */
+size_t cint_rt_host_width(uint32_t tag);
+bool cint_rt_host_fits(uint32_t tag, uint64_t bits);
 /* Lowercase type name for operation identifiers ("i64"), uppercase for
  * rendering ("I64"), of I8 to U64, I128 to I1024 and U128 to U512; NULL for any other tag. */
 const char *cint_rt_type_ident(uint32_t tag);
 const char *cint_rt_type_name(uint32_t tag);
 /* The element size of a registry type (A-13), or -1 (cint_rt.c). */
 int64_t cint_rt_type_elem_bytes(const cint_ctx *ctx, const cint_type *t);
+/* cint_program_run_fuel and cint_program_run_state with the width report (RT-OQ-64): a program
+ * built with it names them through two macros (cint_wide.h section 2); hidden, so a library does not
+ * export them. */
+int cint_program_run_width(const cint_program *program, cint_main_fn main_fn, int64_t fuel, const char *fault_dest,
+                           const char *fuel_dest);
+int cint_program_run_width_state(const cint_program *program, cint_main_fn main_fn, int64_t fuel,
+                                 const char *fault_dest, const char *fuel_dest, const char *state_dest,
+                                 const cint_state_table *state);
+/* cint_program_run_args with the width report (RT-OQ-74): the macro of a generated main. */
+int cint_program_run_width_argv(const cint_program *program, cint_main_fn main_fn, int64_t fuel, int argc,
+                                char **argv, const cint_host_desc *imports, const cint_state_table *state,
+                                uint32_t flags);
+int cint_program_run_width_args(const cint_program *program, cint_main_fn main_fn, int64_t fuel, int argc,
+                                char **argv, const cint_host_desc *imports, const cint_state_table *state);
 
 #if defined(CINT_RT_LIBRARY) && !defined(_WIN32) && (defined(__GNUC__) || defined(__clang__))
 #pragma GCC visibility pop

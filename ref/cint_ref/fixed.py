@@ -48,8 +48,9 @@ class QType:
 
 
 def _make(i: int, f: int) -> QType:
-    # SPEC-01 5.1: i >= 1, f >= 0, i + f in {8, 16, 32, 64} (wider storage is Proposed).
-    if i < 1 or f < 0 or i + f not in (8, 16, 32, 64):
+    # SPEC-01 5.1: i >= 1, f >= 0, i + f in {8, 16, 32, 64, 128} (IM-54; 128 by decision
+    # 2026-10-15 on OQ-292); storage above 128 bits is Proposed (IM-59).
+    if i < 1 or f < 0 or i + f not in (8, 16, 32, 64, 128):
         raise ValueError("Q%d.%d is not a legal fixed-point type (SPEC-01 5.1)" % (i, f))
     return QType(i, f)
 
@@ -174,9 +175,10 @@ def _raw_op(name: str, form: str, q: QType, operands):
 
 
 def convert(form: str, source: str, target: str, x, mode: str | None = None):
-    """`as` and `as%` where the source or the target is fixed point (SPEC-01 5.6)."""
-    if form not in ("checked", "wrap"):
-        raise ValueError("only `as` and `as%` are Specified (SPEC-01 4.9)")
+    """`as`, `as%` and `as|` where the source or the target is fixed point (SPEC-01 5.6):
+    `as|` gives `sat(T, v)` of the value `as` would range-check (IM-68; OQ-272)."""
+    if form not in ("checked", "wrap", "sat"):
+        raise ValueError("unknown form %r" % (form,))
     src_q = q_type(source) if is_q_type(source) else None
     dst_q = q_type(target) if is_q_type(target) else None
     if src_q is None and dst_q is None:
@@ -208,6 +210,8 @@ def convert(form: str, source: str, target: str, x, mode: str | None = None):
         r = round_div(v.value, 1 << src_q.f, mode)
         if form == "wrap":
             return Value(t.name, t.wrap(r))
+        if form == "sat":
+            return Value(t.name, t.sat(r))
         if t.contains(r):
             return Value(t.name, r)
         return Fault("E_NARROW", operation, (v,), r, Value(t.name, t.max if r > t.max else t.min))

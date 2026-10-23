@@ -53,7 +53,7 @@ def check(raw):
         return "a U128 to U512 or fixed-point type in a file below format 5 (rule 14)"
     for m in IM54.finditer(text):
         i, f = int(m.group(1)), int(m.group(2))
-        if i + f not in (8, 16, 32, 64) or (m.group(3) is not None and
+        if i + f not in (8, 16, 32, 64, 128) or (m.group(3) is not None and
                                             not -(1 << (i + f - 1)) <= int(m.group(3)) < 1 << (i + f - 1)):
             return "a fixed-point type or raw value outside SPEC-01 IM-54 (rule 14)"
     m = re.search(r"^fault\.stack-depth ([0-9]+)$", text, re.M)

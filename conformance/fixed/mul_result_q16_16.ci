@@ -1,0 +1,38 @@
+// case: fixed/mul_result_q16_16
+// clause: SPEC-01 IM-61, IM-62, IM-188; SPEC-04 LS-96, LS-145 (`mul_result(a, b[, mode])` holds the product `mul` rounds by the mode, half_even without one, or .overflow; `try` passes .overflow on from a function of result `ArithError!Q16.16`; OQ-273 A)
+// subset: cint-core-1 (fixed point, error unions, `try`, `catch`)
+// entry: run; args: none
+// spec outcome: value I64 -1; prints `2 1 2 -1 -2` and `147456 -1 3.25 -1.0 -1.0`, each with a line feed (30000.0 * 30000.0 overflows; 256.0 * 127.5 + 32767.0 overflows in add_result); fuel 7 (the entry and six calls). Box 15, OQ-280 group 1
+
+ArithError!Q16.16 scaled(Q16.16 a, Q16.16 b, Q16.16 c) {
+    Q16.16 p = try mul_result(a, b, floor);
+    return try add_result(p, c);
+}
+
+I64 product(Q16.16 a, Q16.16 b) {
+    Q16.16 r = mul_result(a, b) catch (e) {
+        if (e == ArithError.overflow) {
+            return -1;
+        }
+        return -2;
+    };
+    return r.raw as I64;
+}
+
+export I64 run() {
+    Q16.16 x = 1.5;
+    Q16.16 nx = -1.5;
+    Q16.16 y = Q16.16.raw(1);
+    Q16.16 big = 30000.0;
+    Q16.16 m1 = mul_result(x, y) catch 0.0;
+    Q16.16 m2 = mul_result(x, y, floor) catch 0.0;
+    Q16.16 m3 = mul_result(x, y, ceil) catch 0.0;
+    Q16.16 m4 = mul_result(nx, y, half_up) catch 0.0;
+    Q16.16 m5 = mul_result(nx, y, half_away) catch 0.0;
+    Q16.16 s1 = scaled(x, 2.0, 0.25) catch -1.0;
+    Q16.16 s2 = scaled(big, big, 0.25) catch -1.0;
+    Q16.16 s3 = scaled(256.0, 127.5, 32767.0) catch -1.0;
+    "{m1!raw} {m2!raw} {m3!raw} {m4!raw} {m5!raw}\n";
+    "{product(x, x)} {product(big, big)} {s1} {s2} {s3}\n";
+    return product(big, big);
+}

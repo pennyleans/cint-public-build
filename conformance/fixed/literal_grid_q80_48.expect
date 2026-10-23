@@ -1,0 +1,9 @@
+case fixed/literal_grid_q80_48
+clause SPEC-04 LS-35, LS-37; SPEC-01 IM-27, IM-54 (literals on the grid of 128-bit formats, a hex fraction, the extremes, and round clauses)
+format 5
+source reference
+outcome value
+stdout-bytes 179
+stdout-sha256 b1f2e0ada50035a76cfa466920587c6807c86eb56b116982bb15c80c47c6ae6b
+return I64 140737488355328
+fuel-consumed 1

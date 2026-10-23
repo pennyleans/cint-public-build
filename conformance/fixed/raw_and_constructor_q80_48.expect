@@ -1,0 +1,9 @@
+case fixed/raw_and_constructor_q80_48
+clause SPEC-04 LS-38; SPEC-01 IM-57 (`.raw` of a 128-bit format is I128, and `Q80.48.raw(n)` takes an I128)
+format 5
+source reference
+outcome value
+stdout-bytes 215
+stdout-sha256 99a67eb5197b763a756b677c20901a606e56e60ff62bce296685e93b8389c030
+return Bool true
+fuel-consumed 1

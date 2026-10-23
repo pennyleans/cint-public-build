@@ -7,7 +7,12 @@
 # rows of its 44 signed wide table programs, with the 14 rows of 7 wide cases B1 compiles
 # (CONF-14); amended 2026-10-10 (OQ-274): the 58 rows of its 12 wide shift table programs
 # and 17 wide cases B1 compiles; amended 2026-10-10 (OQ-277): the 136 rows of its 42 unsigned
-# wide table programs and 26 wide cases of the unsigned types B1 compiles.
+# wide table programs and 26 wide cases of the unsigned types B1 compiles; amended 2026-10-15
+# (OQ-291): the 94 rows of its 47 fixed-point cases, which B1 compiles; amended 2026-10-15
+# (OQ-280): the 22 rows of the 11 programs of `as|` and the fixed-point result forms in its
+# group 1; amended 2026-10-15 (OQ-293): the 58 rows of the 29
+# cases of fixed-point storage of 128 bits; amended 2026-10-16 (OQ-293, OQ-294): the 56
+# rows of the 28 of those cases B1 compiles and cpu-sir-interp runs.
 # Required case list of stage T4 (SPEC-09 CONF-15, and CONF-15 for T4; box 13 note section 9,
 # unit 10). One line per case and executor: <case> <compiler> <category> [<detail>], where the
 # detail is the limit identifier of an unsupported case or the Open item of a held case, and
@@ -20,8 +25,8 @@
 # (tools/cint_check.py --compiler b1 --interp, gcc -O0, portable helpers, a fresh B1 of
 # compiler source identity 98c60e79) measured them: 1,842,927 records compared, none
 # disagreeing, no case left not executed, and the list its --write-required wrote equal to
-# T2.txt's cintc rows, case by case. Sorted by case bytes, then compiler. All 1073 available
-# IDs have both rows; each executor has 800 compared, 11 held, 67 not_applicable, and 195
+# T2.txt's cintc rows, case by case. Sorted by case bytes, then compiler. All 1124 available
+# IDs have both rows; each executor has 812 compared, 11 held, 67 not_applicable, and 223
 # unsupported.
 # 2026-10-09, box 15 unit 1 (OQ-252): the 23 conformance/wide/ cases are unsupported for
 # both executors under CINTC-OQ-15, as in T2.txt: B1's front end refuses the first wide
@@ -58,6 +63,58 @@
 # identity 266635ef; clang -O0, portable helpers): 66 programs, 10,776 records compared and
 # the 2 compile errors as cint_ref gives them, none disagreeing, no case left not executed.
 # Each executor: 948 compared, 11 held, 67 not_applicable, 47 unsupported.
+# 2026-10-15, box 15 unit 4e (OQ-291 A): cpu-sir-interp runs fixed point, so the 47 cases
+# that T2.txt moves are compared for both executors. Measured with --interp --stage T4 and
+# --required T4.txt on Linux, --only fixed/ (B1 of compiler source identity 47b89885; gcc
+# -O0, portable helpers): 37 programs, 47 records compared with the 10 compile errors as
+# cint_ref gives them, none disagreeing, no case left not executed. Each executor: 995
+# compared, 11 held, 67 not_applicable, 0 unsupported.
+# 2026-10-15, box 15 (OQ-280 A, group 1): cpu-sir-interp runs `as.sat` and the fixed-point
+# result forms, so the 11 programs of cases 1 to 10 of `as|` and the fixed-point result
+# forms are compared for both executors. Measured with --interp --stage T4 and --required
+# T4.txt on Linux, --only for the 11 (B1 of compiler source identity 9500e240; gcc -O0,
+# portable helpers): 7 programs, 11 records compared with the 4 compile errors as cint_ref
+# gives them, none disagreeing, no case left not executed. Each executor: 1006 compared, 11
+# held, 67 not_applicable, 0 unsupported.
+# 2026-10-15, games wave G2a (OQ-292 A; rows by OQ-293 A under OQ-232): the
+# 29 cases of fixed-point storage of 128 bits are unsupported for both executors under
+# CINTC-OQ-15, as in T2.txt: B1's front end refuses the first fixed-point type of 128 bits
+# with C9102 before either runs; fixed/type_name_c2005_q128_128, an expected compile error
+# (C2005), is compared for both. Measured with --interp --stage T4 and --required T4.txt on
+# Linux, --only fixed/ (B1 of compiler source identity 829ab40d; gcc -O0, portable
+# helpers): over the 83 cases under conformance/fixed/, 55 records compared with the 14
+# compile errors as cint_ref gives them, none disagreeing, no case left not executed,
+# every row in its category. Each executor: 1007 compared, 11 held, 67
+# not_applicable, 28 unsupported.
+# 2026-10-16, games wave G2b (OQ-293 A, amended by OQ-294 A): B1 compiles fixed-point
+# storage of 128 bits and cpu-sir-interp runs it (compiler/OPEN.md CINTC-OQ-15; rt/OPEN.md
+# RT-OQ-63), so the 56 rows of those 28 cases change from unsupported CINTC-OQ-15 to
+# compared. Measured with --interp --stage T4 and --required T4.txt on Linux, --only
+# fixed/ (B1 of compiler source identity e6e8bd53; gcc -O0, portable helpers): 83 records
+# compared with the 17 compile errors as cint_ref gives them, none disagreeing, no case
+# left not executed, every row in its category. Each executor: 1035 compared, 11 held, 67
+# not_applicable, 0 unsupported.
+# 2026-10-22, I/O services lane (OQ-304): the 22 rows of the 11 conformance/services/ cases,
+# frozen from cint_ref; on both executors the 5 cases whose diagnostic the checker reports are
+# compared and the 6 whose lowering meets a call of a service extern or a Grants parameter
+# are unsupported under compiler/OPEN.md CINTC-OQ-66 item 8 (the same front end on each).
+# 2026-10-22, I/O services lane U5b (OQ-305 A): the 6 rows of services/c3040_no_requires,
+# c3041_path_syntax and c3041_unknown_capability change to compared for both executors; the
+# 6 of denied_catch, denied_try_main and main_grants_print stay unsupported until
+# cpu-sir-interp runs Grants parameters and service calls, which it declines as forms it
+# does not run yet (not executed). Measured on Linux with --required T4.txt and --only
+# services/ (B1 of compiler source identity d2a0417e; gcc -O0, portable helpers), with
+# --stage T4 and with --interp: 11 and 8 records compared, none disagreeing; the only
+# problems are the 3 rows that wait on each. Each executor: 1043 compared, 11 held, 67
+# not_applicable, 3 unsupported.
+# 2026-10-22, I/O services lane U5c (OQ-305 A): cpu-sir-interp reads the extern rows of a
+# module's SIR text (SPEC-09 SIR-09a), passes 0 for an entry's Grants parameter and runs
+# host.call through the runtime's host table (rt/OPEN.md RT-OQ-75), so the 6 rows of
+# denied_catch, denied_try_main and main_grants_print change to compared for both executors.
+# Measured on Linux with --required T4.txt and --only services/ (B1 of compiler source
+# identity 4f3f8b8e; gcc -O0, portable helpers), with --stage T4 and with --interp: 11
+# records compared on each, none disagreeing, none left not executed, every row in its
+# category. Each executor: 1046 compared, 11 held, 67 not_applicable, 0 unsupported.
 anchors/abs.checked.i64.001 cintc compared
 anchors/abs.checked.i64.001 cintc/cpu-sir-interp compared
 anchors/abs.checked.i64.002 cintc compared
@@ -698,6 +755,10 @@ arith/const_skipped_cond_arm cintc compared
 arith/const_skipped_cond_arm cintc/cpu-sir-interp compared
 arith/const_type_mismatch cintc compared
 arith/const_type_mismatch cintc/cpu-sir-interp compared
+arith/convert_sat_literal cintc compared
+arith/convert_sat_literal cintc/cpu-sir-interp compared
+arith/convert_sat_table cintc compared
+arith/convert_sat_table cintc/cpu-sir-interp compared
 arith/div_zero_runtime cintc compared
 arith/div_zero_runtime cintc/cpu-sir-interp compared
 arith/eval_order_left_first cintc compared
@@ -1042,6 +1103,8 @@ diag/c2003_unsigned_minus_one cintc compared
 diag/c2003_unsigned_minus_one cintc/cpu-sir-interp compared
 diag/c2003_unsigned_minus_space cintc compared
 diag/c2003_unsigned_minus_space cintc/cpu-sir-interp compared
+diag/c2008_convert_sat_bool cintc compared
+diag/c2008_convert_sat_bool cintc/cpu-sir-interp compared
 diag/c2050_uninitialized_scalar cintc compared
 diag/c2050_uninitialized_scalar cintc/cpu-sir-interp compared
 diag/c2052_assign_loop_variable cintc compared
@@ -1142,100 +1205,172 @@ errors/underlying_type_u8 cintc compared
 errors/underlying_type_u8 cintc/cpu-sir-interp compared
 errors/widen_in_assignment_and_compare cintc compared
 errors/widen_in_assignment_and_compare cintc/cpu-sir-interp compared
-fixed/add_checked_overflow_raw cintc unsupported CINTC-OQ-15
-fixed/add_checked_overflow_raw cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/array_index_bounds_q16_16 cintc unsupported CINTC-OQ-15
-fixed/array_index_bounds_q16_16 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/constant_fold_overflow cintc unsupported CINTC-OQ-15
-fixed/constant_fold_overflow cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/convert_integer_narrow cintc unsupported CINTC-OQ-15
-fixed/convert_integer_narrow cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/convert_literal_c6001 cintc unsupported CINTC-OQ-15
-fixed/convert_literal_c6001 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/convert_narrow_q32_32 cintc unsupported CINTC-OQ-15
-fixed/convert_narrow_q32_32 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/convert_round_clause_c2009 cintc unsupported CINTC-OQ-15
-fixed/convert_round_clause_c2009 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/convert_table cintc unsupported CINTC-OQ-15
-fixed/convert_table cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/convert_wrap_and_result cintc unsupported CINTC-OQ-15
-fixed/convert_wrap_and_result cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/div_overflow_q16_16 cintc unsupported CINTC-OQ-15
-fixed/div_overflow_q16_16 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/div_table_q16_16 cintc unsupported CINTC-OQ-15
-fixed/div_table_q16_16 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/div_zero_q16_16 cintc unsupported CINTC-OQ-15
-fixed/div_zero_q16_16 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/dot_one_rounding cintc unsupported CINTC-OQ-15
-fixed/dot_one_rounding cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/dot_overflow_q8_8 cintc unsupported CINTC-OQ-15
-fixed/dot_overflow_q8_8 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/fraction_integer_context_c2004 cintc unsupported CINTC-OQ-15
-fixed/fraction_integer_context_c2004 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/kernel_mul_overflow cintc unsupported CINTC-OQ-15
-fixed/kernel_mul_overflow cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/kernel_scale_reduce cintc unsupported CINTC-OQ-15
-fixed/kernel_scale_reduce cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/literal_grid_q16_16 cintc unsupported CINTC-OQ-15
-fixed/literal_grid_q16_16 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/literal_off_grid_c2006 cintc unsupported CINTC-OQ-15
-fixed/literal_off_grid_c2006 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/literal_out_of_range_c2003 cintc unsupported CINTC-OQ-15
-fixed/literal_out_of_range_c2003 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/literal_round_clause cintc unsupported CINTC-OQ-15
-fixed/literal_round_clause cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/literal_round_negative cintc unsupported CINTC-OQ-15
-fixed/literal_round_negative cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/module_state_q16_16 cintc unsupported CINTC-OQ-15
-fixed/module_state_q16_16 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/mul_forms_q16_16 cintc unsupported CINTC-OQ-15
-fixed/mul_forms_q16_16 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/mul_int_overflow cintc unsupported CINTC-OQ-15
-fixed/mul_int_overflow cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/mul_overflow_q16_16 cintc unsupported CINTC-OQ-15
-fixed/mul_overflow_q16_16 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/mul_table_q16_16 cintc unsupported CINTC-OQ-15
-fixed/mul_table_q16_16 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/print_kind_c1037 cintc unsupported CINTC-OQ-15
-fixed/print_kind_c1037 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/print_layout_raw_bits cintc unsupported CINTC-OQ-15
-fixed/print_layout_raw_bits cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/print_ls215 cintc unsupported CINTC-OQ-15
-fixed/print_ls215 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/qmul_formats cintc unsupported CINTC-OQ-15
-fixed/qmul_formats cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/qmul_overflow cintc unsupported CINTC-OQ-15
-fixed/qmul_overflow cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/raw_and_constructor cintc unsupported CINTC-OQ-15
-fixed/raw_and_constructor cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/raw_forms_q8_8 cintc unsupported CINTC-OQ-15
-fixed/raw_forms_q8_8 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/raw_not_assignable_c2058 cintc unsupported CINTC-OQ-15
-fixed/raw_not_assignable_c2058 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/reductions_q16_16 cintc unsupported CINTC-OQ-15
-fixed/reductions_q16_16 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/rem_c2103 cintc unsupported CINTC-OQ-15
-fixed/rem_c2103 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/round_modes_convert cintc unsupported CINTC-OQ-15
-fixed/round_modes_convert cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/round_modes_div cintc unsupported CINTC-OQ-15
-fixed/round_modes_div cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/round_modes_mul cintc unsupported CINTC-OQ-15
-fixed/round_modes_mul cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/sqrt_negative_domain cintc unsupported CINTC-OQ-15
-fixed/sqrt_negative_domain cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/sqrt_q1_15_ceil_overflow cintc unsupported CINTC-OQ-15
-fixed/sqrt_q1_15_ceil_overflow cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/sqrt_table cintc unsupported CINTC-OQ-15
-fixed/sqrt_table cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/struct_field_q cintc unsupported CINTC-OQ-15
-fixed/struct_field_q cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/sum_overflow_q8_8 cintc unsupported CINTC-OQ-15
-fixed/sum_overflow_q8_8 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/type_name_c2005 cintc unsupported CINTC-OQ-15
-fixed/type_name_c2005 cintc/cpu-sir-interp unsupported CINTC-OQ-15
-fixed/type_properties cintc unsupported CINTC-OQ-15
-fixed/type_properties cintc/cpu-sir-interp unsupported CINTC-OQ-15
+fixed/add_checked_overflow_raw cintc compared
+fixed/add_checked_overflow_raw cintc/cpu-sir-interp compared
+fixed/add_sub_result_q16_16 cintc compared
+fixed/add_sub_result_q16_16 cintc/cpu-sir-interp compared
+fixed/array_index_bounds_q16_16 cintc compared
+fixed/array_index_bounds_q16_16 cintc/cpu-sir-interp compared
+fixed/constant_fold_overflow cintc compared
+fixed/constant_fold_overflow cintc/cpu-sir-interp compared
+fixed/constant_fold_q80_48 cintc compared
+fixed/constant_fold_q80_48 cintc/cpu-sir-interp compared
+fixed/convert_integer_narrow cintc compared
+fixed/convert_integer_narrow cintc/cpu-sir-interp compared
+fixed/convert_literal_c6001 cintc compared
+fixed/convert_literal_c6001 cintc/cpu-sir-interp compared
+fixed/convert_literal_c6001_q1_127_max cintc compared
+fixed/convert_literal_c6001_q1_127_max cintc/cpu-sir-interp compared
+fixed/convert_narrow_i1024_q1_127 cintc compared
+fixed/convert_narrow_i1024_q1_127 cintc/cpu-sir-interp compared
+fixed/convert_narrow_q32_32 cintc compared
+fixed/convert_narrow_q32_32 cintc/cpu-sir-interp compared
+fixed/convert_narrow_q80_48 cintc compared
+fixed/convert_narrow_q80_48 cintc/cpu-sir-interp compared
+fixed/convert_round_clause_c2009 cintc compared
+fixed/convert_round_clause_c2009 cintc/cpu-sir-interp compared
+fixed/convert_sat_fixed cintc compared
+fixed/convert_sat_fixed cintc/cpu-sir-interp compared
+fixed/convert_sat_round_clause_c2009 cintc compared
+fixed/convert_sat_round_clause_c2009 cintc/cpu-sir-interp compared
+fixed/convert_table cintc compared
+fixed/convert_table cintc/cpu-sir-interp compared
+fixed/convert_table_q128 cintc compared
+fixed/convert_table_q128 cintc/cpu-sir-interp compared
+fixed/convert_wrap_and_result cintc compared
+fixed/convert_wrap_and_result cintc/cpu-sir-interp compared
+fixed/div_overflow_q16_16 cintc compared
+fixed/div_overflow_q16_16 cintc/cpu-sir-interp compared
+fixed/div_overflow_q96_32 cintc compared
+fixed/div_overflow_q96_32 cintc/cpu-sir-interp compared
+fixed/div_result_q16_16 cintc compared
+fixed/div_result_q16_16 cintc/cpu-sir-interp compared
+fixed/div_table_q16_16 cintc compared
+fixed/div_table_q16_16 cintc/cpu-sir-interp compared
+fixed/div_table_q96_32 cintc compared
+fixed/div_table_q96_32 cintc/cpu-sir-interp compared
+fixed/div_zero_q16_16 cintc compared
+fixed/div_zero_q16_16 cintc/cpu-sir-interp compared
+fixed/div_zero_q96_32 cintc compared
+fixed/div_zero_q96_32 cintc/cpu-sir-interp compared
+fixed/dot_one_rounding cintc compared
+fixed/dot_one_rounding cintc/cpu-sir-interp compared
+fixed/dot_one_rounding_q80_48 cintc compared
+fixed/dot_one_rounding_q80_48 cintc/cpu-sir-interp compared
+fixed/dot_overflow_q8_8 cintc compared
+fixed/dot_overflow_q8_8 cintc/cpu-sir-interp compared
+fixed/fraction_integer_context_c2004 cintc compared
+fixed/fraction_integer_context_c2004 cintc/cpu-sir-interp compared
+fixed/kernel_mul_overflow cintc compared
+fixed/kernel_mul_overflow cintc/cpu-sir-interp compared
+fixed/kernel_scale_reduce cintc compared
+fixed/kernel_scale_reduce cintc/cpu-sir-interp compared
+fixed/kernel_scale_reduce_q80_48 cintc compared
+fixed/kernel_scale_reduce_q80_48 cintc/cpu-sir-interp compared
+fixed/literal_grid_q16_16 cintc compared
+fixed/literal_grid_q16_16 cintc/cpu-sir-interp compared
+fixed/literal_grid_q80_48 cintc compared
+fixed/literal_grid_q80_48 cintc/cpu-sir-interp compared
+fixed/literal_off_grid_c2006 cintc compared
+fixed/literal_off_grid_c2006 cintc/cpu-sir-interp compared
+fixed/literal_off_grid_c2006_q64_64 cintc compared
+fixed/literal_off_grid_c2006_q64_64 cintc/cpu-sir-interp compared
+fixed/literal_out_of_range_c2003 cintc compared
+fixed/literal_out_of_range_c2003 cintc/cpu-sir-interp compared
+fixed/literal_out_of_range_c2003_q80_48 cintc compared
+fixed/literal_out_of_range_c2003_q80_48 cintc/cpu-sir-interp compared
+fixed/literal_round_clause cintc compared
+fixed/literal_round_clause cintc/cpu-sir-interp compared
+fixed/literal_round_negative cintc compared
+fixed/literal_round_negative cintc/cpu-sir-interp compared
+fixed/module_state_q16_16 cintc compared
+fixed/module_state_q16_16 cintc/cpu-sir-interp compared
+fixed/module_state_q80_48 cintc compared
+fixed/module_state_q80_48 cintc/cpu-sir-interp compared
+fixed/mul_forms_q16_16 cintc compared
+fixed/mul_forms_q16_16 cintc/cpu-sir-interp compared
+fixed/mul_forms_q80_48 cintc compared
+fixed/mul_forms_q80_48 cintc/cpu-sir-interp compared
+fixed/mul_int_overflow cintc compared
+fixed/mul_int_overflow cintc/cpu-sir-interp compared
+fixed/mul_overflow_q16_16 cintc compared
+fixed/mul_overflow_q16_16 cintc/cpu-sir-interp compared
+fixed/mul_overflow_q80_48 cintc compared
+fixed/mul_overflow_q80_48 cintc/cpu-sir-interp compared
+fixed/mul_result_q16_16 cintc compared
+fixed/mul_result_q16_16 cintc/cpu-sir-interp compared
+fixed/mul_table_q16_16 cintc compared
+fixed/mul_table_q16_16 cintc/cpu-sir-interp compared
+fixed/mul_table_q80_48 cintc compared
+fixed/mul_table_q80_48 cintc/cpu-sir-interp compared
+fixed/print_kind_c1037 cintc compared
+fixed/print_kind_c1037 cintc/cpu-sir-interp compared
+fixed/print_layout_raw_bits cintc compared
+fixed/print_layout_raw_bits cintc/cpu-sir-interp compared
+fixed/print_ls215 cintc compared
+fixed/print_ls215 cintc/cpu-sir-interp compared
+fixed/print_q128 cintc compared
+fixed/print_q128 cintc/cpu-sir-interp compared
+fixed/qmul_formats cintc compared
+fixed/qmul_formats cintc/cpu-sir-interp compared
+fixed/qmul_mul_int_q128 cintc compared
+fixed/qmul_mul_int_q128 cintc/cpu-sir-interp compared
+fixed/qmul_overflow cintc compared
+fixed/qmul_overflow cintc/cpu-sir-interp compared
+fixed/qmul_overflow_q1_127 cintc compared
+fixed/qmul_overflow_q1_127 cintc/cpu-sir-interp compared
+fixed/raw_and_constructor cintc compared
+fixed/raw_and_constructor cintc/cpu-sir-interp compared
+fixed/raw_and_constructor_q80_48 cintc compared
+fixed/raw_and_constructor_q80_48 cintc/cpu-sir-interp compared
+fixed/raw_forms_q8_8 cintc compared
+fixed/raw_forms_q8_8 cintc/cpu-sir-interp compared
+fixed/raw_not_assignable_c2058 cintc compared
+fixed/raw_not_assignable_c2058 cintc/cpu-sir-interp compared
+fixed/reductions_q16_16 cintc compared
+fixed/reductions_q16_16 cintc/cpu-sir-interp compared
+fixed/reductions_q80_48 cintc compared
+fixed/reductions_q80_48 cintc/cpu-sir-interp compared
+fixed/rem_c2103 cintc compared
+fixed/rem_c2103 cintc/cpu-sir-interp compared
+fixed/rem_result_c2103 cintc compared
+fixed/rem_result_c2103 cintc/cpu-sir-interp compared
+fixed/result_mode_integer_c2103 cintc compared
+fixed/result_mode_integer_c2103 cintc/cpu-sir-interp compared
+fixed/round_modes_convert cintc compared
+fixed/round_modes_convert cintc/cpu-sir-interp compared
+fixed/round_modes_div cintc compared
+fixed/round_modes_div cintc/cpu-sir-interp compared
+fixed/round_modes_mul cintc compared
+fixed/round_modes_mul cintc/cpu-sir-interp compared
+fixed/sqrt_negative_domain cintc compared
+fixed/sqrt_negative_domain cintc/cpu-sir-interp compared
+fixed/sqrt_q1_127_ceil_overflow cintc compared
+fixed/sqrt_q1_127_ceil_overflow cintc/cpu-sir-interp compared
+fixed/sqrt_q1_15_ceil_overflow cintc compared
+fixed/sqrt_q1_15_ceil_overflow cintc/cpu-sir-interp compared
+fixed/sqrt_table cintc compared
+fixed/sqrt_table cintc/cpu-sir-interp compared
+fixed/sqrt_table_q64_64 cintc compared
+fixed/sqrt_table_q64_64 cintc/cpu-sir-interp compared
+fixed/struct_field_q cintc compared
+fixed/struct_field_q cintc/cpu-sir-interp compared
+fixed/struct_field_q80_48 cintc compared
+fixed/struct_field_q80_48 cintc/cpu-sir-interp compared
+fixed/sum_overflow_q80_48 cintc compared
+fixed/sum_overflow_q80_48 cintc/cpu-sir-interp compared
+fixed/sum_overflow_q8_8 cintc compared
+fixed/sum_overflow_q8_8 cintc/cpu-sir-interp compared
+fixed/translation_q80_48 cintc compared
+fixed/translation_q80_48 cintc/cpu-sir-interp compared
+fixed/type_name_c2005 cintc compared
+fixed/type_name_c2005 cintc/cpu-sir-interp compared
+fixed/type_name_c2005_q128_128 cintc compared
+fixed/type_name_c2005_q128_128 cintc/cpu-sir-interp compared
+fixed/type_properties cintc compared
+fixed/type_properties cintc/cpu-sir-interp compared
+fixed/type_properties_q128 cintc compared
+fixed/type_properties_q128 cintc/cpu-sir-interp compared
 kernel/advance_element_form cintc compared
 kernel/advance_element_form cintc/cpu-sir-interp compared
 kernel/alias_gcd_accepted cintc compared
@@ -1572,6 +1707,32 @@ reduce/sum_widened_i16 cintc compared
 reduce/sum_widened_i16 cintc/cpu-sir-interp compared
 reduce/sum_wrap_i8 cintc compared
 reduce/sum_wrap_i8 cintc/cpu-sir-interp compared
+services/c2064_out_scalar cintc compared
+services/c2064_out_scalar cintc/cpu-sir-interp compared
+services/c3040_no_requires cintc compared
+services/c3040_no_requires cintc/cpu-sir-interp compared
+services/c3041_path_syntax cintc compared
+services/c3041_path_syntax cintc/cpu-sir-interp compared
+services/c3041_unknown_capability cintc compared
+services/c3041_unknown_capability cintc/cpu-sir-interp compared
+services/c3042_grants_local cintc compared
+services/c3042_grants_local cintc/cpu-sir-interp compared
+services/c3043_no_denied cintc compared
+services/c3043_no_denied cintc/cpu-sir-interp compared
+services/c4010_extern_named cintc compared
+services/c4010_extern_named cintc/cpu-sir-interp compared
+services/c5050_struct_param cintc compared
+services/c5050_struct_param cintc/cpu-sir-interp compared
+services/denied_catch cintc compared
+services/denied_catch cintc/cpu-sir-interp compared
+services/denied_try_main cintc compared
+services/denied_try_main cintc/cpu-sir-interp compared
+services/main_grants_print cintc compared
+services/main_grants_print cintc/cpu-sir-interp compared
+services/main_args_none cintc compared
+services/main_args_none cintc/cpu-sir-interp compared
+services/main_args_print cintc compared
+services/main_args_print cintc/cpu-sir-interp compared
 struct/array_of_structs cintc compared
 struct/array_of_structs cintc/cpu-sir-interp compared
 struct/assignment_copies cintc compared
@@ -2114,6 +2275,8 @@ wide/array_i128_index_bounds cintc compared
 wide/array_i128_index_bounds cintc/cpu-sir-interp compared
 wide/convert_i256_to_u256_negative cintc compared
 wide/convert_i256_to_u256_negative cintc/cpu-sir-interp compared
+wide/convert_sat_wide cintc compared
+wide/convert_sat_wide cintc/cpu-sir-interp compared
 wide/convert_u512_to_u128_narrow cintc compared
 wide/convert_u512_to_u128_narrow cintc/cpu-sir-interp compared
 wide/convert_wrap_u128 cintc compared

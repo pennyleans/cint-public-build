@@ -1,0 +1,7 @@
+// compiler/tests/externs_wide.ci: an extern whose result is a wide integer is C9102 at the
+// result type (I/O services lane U2; compiler/OPEN.md CINTC-OQ-66 item 1).
+extern pure I128 wide(I64 x);
+
+export I64 run() {
+    return (wide(3) as I64);
+}

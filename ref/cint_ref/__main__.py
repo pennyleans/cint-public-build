@@ -97,6 +97,8 @@ def _add_run_options(p, with_names):
     p.add_argument("--fuel", type=_int)
     p.add_argument("--depth", type=_int, default=DEFAULT_DEPTH)
     p.add_argument("--path")
+    p.add_argument("--grant", action="append", default=[], metavar="CAP[:ARGS][=HOSTDIR]",
+                   help="grant one capability; a path root maps to the host directory after `=`")
     if with_names:
         p.add_argument("--case")
         p.add_argument("--clause")
@@ -109,7 +111,7 @@ def _outcome(ns):
         data = f.read()
     path = ns.path or module_path(ns.source)
     o = run_program(data, path, ns.entry, ns.fuel, ns.depth, args=ns.arg, test=ns.test,
-                    root=source_root(ns.source, path))
+                    root=source_root(ns.source, path), grants=ns.grant, program_args=ns.program_args)
     case = path[:-3] if path.endswith(".ci") else path
     return o, case
 
@@ -200,6 +202,39 @@ def cmd_sig(ns) -> int:
     return 0
 
 
+def cmd_caps(ns) -> int:
+    """The capability manifest, the host import table and the effect classes of a program
+    (SPEC-07 SEC-CAP-7; SPEC-03 A-10, H-2; ref/OPEN.md REF-OQ-48): one `capability <text>`
+    line per manifest entry in manifest order, one `extern <module>.<name> <class>` line per
+    non-service extern in module order, then one `effect <module>.<name> <class>` line per
+    function of the root module in declaration order."""
+    from . import parser as P
+    from .check import check_module
+    from .exec import _with_large_stack, loader
+    from .lexer import decode_source
+    with open(ns.source, "rb") as f:
+        data = f.read()
+    path = ns.path or module_path(ns.source)
+
+    def build():
+        module = P.parse_module(decode_source(data, path), path)
+        return module, check_module(module, loader(source_root(ns.source, path)))
+    try:
+        module, prog = _with_large_stack(build)
+    except CompileError as e:
+        d = e.diagnostic
+        _write("compile-error %s %s\n" % (d.code or UNASSIGNED, d.position))
+        return 1
+    except Refused as r:
+        _write("refused: %s\n" % r.message)
+        return 1
+    lines = ["capability %s" % t for t in prog.manifest]
+    lines += ["extern %s %s" % (name, effect) for name, effect in prog.host_imports]
+    lines += ["effect %s.%s %s" % (prog.name, f.name, prog.effects.get(f, "pure")) for f in module.functions]
+    _write("".join(line + "\n" for line in lines))
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="python -m cint_ref", description="cint_ref, the exact reference for cint-core-1")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -216,8 +251,21 @@ def main(argv=None) -> int:
     p = sub.add_parser("sig", help="print the canonical type signature of each export")
     p.add_argument("source")
     p.add_argument("--path", help="the module-relative path (default: below the nearest conformance directory)")
+    p = sub.add_parser("caps", help="print the capability manifest, the host imports and the effect classes")
+    p.add_argument("source")
+    p.add_argument("--path", help="the module-relative path (default: below the nearest conformance directory)")
+    # The words after the first `--` are the program arguments of `main` (SPEC-04 LS-221; OQ-306),
+    # as `cint run FILE -- ARG...` carries them (SPEC-06 3.1).
+    if argv is None:
+        argv = sys.argv[1:]
+    argv = list(argv)
+    program_args = ()
+    if "--" in argv:
+        at = argv.index("--")
+        argv, program_args = argv[:at], tuple(argv[at + 1:])
     ns = ap.parse_args(argv)
-    return {"run": cmd_run, "check": cmd_check, "cif1": cmd_cif1, "sig": cmd_sig}[ns.cmd](ns)
+    ns.program_args = program_args
+    return {"run": cmd_run, "check": cmd_check, "cif1": cmd_cif1, "sig": cmd_sig, "caps": cmd_caps}[ns.cmd](ns)
 
 
 if __name__ == "__main__":

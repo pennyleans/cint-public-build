@@ -1,0 +1,11 @@
+// case: fixed/qmul_overflow_q1_127
+// clause: SPEC-01 IM-63, IM-106 (2.0 times 0.5 into Q1.127 is 1.0, one past the largest value: E_OVERFLOW, exact 2^127)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 10:12 (the `qmul`), operation qmul.checked.q80_48.q32_32.q1_127, operands Q80.48 raw 562949953421312 and Q32.32 raw 2147483648, exact 2^127, limit Q1.127 raw 2^127 - 1; stack depth 0; fuel 1. Games wave G2a (OQ-292)
+
+export Bool run() {
+    Q80.48 a = 2.0;
+    Q32.32 b = 0.5;
+    return qmul(Q1.127, a, b) != 0.0;
+}

@@ -29,7 +29,7 @@ typedef struct cint_allocator {
     void (*release)(void *user, void *ptr, size_t bytes, size_t align);
     void *user;
 } cint_allocator;
-_Static_assert(sizeof(cint_allocator) == 24, "cint_allocator");
+CINT_RT_STATIC_ASSERT(sizeof(cint_allocator) == 24, "cint_allocator");
 
 /* Receives the bytes of one print statement (SPEC-04 LS-193), whole: the
  * runtime stages a statement and calls this once, after its last hole, so a
@@ -52,7 +52,18 @@ typedef cint_status (*cint_output_fn)(void *user, const uint8_t *bytes, size_t l
  * bytes discarded. `module`, when not NULL, is the descriptor of the program's
  * root module, whose record layout table gives the size of a record element
  * type in cint_buffer_register and cint_buffer_create (6a); its `program` must
- * be `program`. */
+ * be `program`. `imports` is the program's host import descriptor (6f), the
+ * `cint_host_desc` symbol of a library whose code calls a non-service extern,
+ * or NULL for none; `host` is the host table of SPEC-03 A-10: `host_count`
+ * functions, against which creation resolves every row of `imports` by name,
+ * effect class and the SHA-256 of the canonical type signature (A-23); a
+ * missing or mismatched function, or a descriptor that is not `program`'s,
+ * refuses creation. `grants` are the canonical grant set of SPEC-07, or NULL
+ * for none; this runtime keeps them for the service table (I/O services lane
+ * U2; rt/OPEN.md RT-OQ-70). */
+typedef struct cint_host_fn cint_host_fn;
+typedef struct cint_host_table cint_host_table;
+typedef struct cint_host_desc cint_host_desc;
 typedef struct cint_ctx_config {
     uint32_t size;
     uint32_t max_buffers;
@@ -65,10 +76,19 @@ typedef struct cint_ctx_config {
     const cint_module_info *module;
     uint32_t device_count, reserved;  /* 0, or 1 built with CINT_GPU_CUDA (SPEC-03 A-16a); 0 */
     const void *const *devices;       /* devices[k-1] backs device(k): a cint_cuda_device (cint_cuda.h) */
+    uint32_t host_count, reserved2;   /* ABI 3.3: the host table's functions; 0 */
+    const cint_host_fn *host;         /* NULL when host_count is 0 */
+    const cint_host_desc *imports;    /* the program's host import tables, or NULL */
+    const uint8_t *grants;            /* the canonical grant set (SPEC-07), or NULL */
+    size_t grants_length;
+    const uint8_t *args;              /* ABI 3.4 (OQ-306; RT-OQ-76): the program arguments, each its bytes */
+    size_t args_length;               /* and one NUL, or NULL: none; `main(in U8[_] args)` reads them */
 } cint_ctx_config;
-_Static_assert(sizeof(cint_ctx_config) == 96 && offsetof(cint_ctx_config, depth_limit) == 40 &&
-                   offsetof(cint_ctx_config, module) == 72 && offsetof(cint_ctx_config, devices) == 88,
-               "cint_ctx_config");
+CINT_RT_STATIC_ASSERT(sizeof(cint_ctx_config) == 152 && offsetof(cint_ctx_config, depth_limit) == 40 &&
+                          offsetof(cint_ctx_config, module) == 72 && offsetof(cint_ctx_config, devices) == 88 &&
+                          offsetof(cint_ctx_config, host) == 104 && offsetof(cint_ctx_config, imports) == 112 &&
+                          offsetof(cint_ctx_config, grants_length) == 128 && offsetof(cint_ctx_config, args) == 136,
+                      "cint_ctx_config");
 
 /* Host functions. Each that can fail returns a status and writes its out
  * parameters only on CINT_OK (SPEC-03 A-4); each that touches a context takes
@@ -95,6 +115,11 @@ CINT_RT_API cint_status cint_fuel_consumed(const cint_ctx *ctx, int64_t *out);
  * entry was not refused. CINT_BUSY during an entry. SPEC-03 cint_refusal_get,
  * with its canonical detail bytes, arrives with the full registry at T3. */
 CINT_RT_API cint_status cint_ctx_refusal(const cint_ctx *ctx, uint32_t *reason);
+/* The context's program arguments (cint_ctx_config.args; OQ-306, RT-OQ-76): the bytes
+ * `main(in U8[_] args)` reads, each argument followed by one NUL, and their length in
+ * *length; NULL and 0 when the context has none. Replay of a `full` recording gives the
+ * context the recorded arguments for its program entry (H-14, H-17a). */
+CINT_RT_API const uint8_t *cint_ctx_args(const cint_ctx *ctx, size_t *length);
 
 /* Canonical bytes of a fault record (SPEC-01 11.2 layout of the 9.2 content).
  * Returns the length of the encoding and writes it to buf only when cap is at
@@ -110,8 +135,9 @@ CINT_RT_API size_t cint_fault_encode(const cint_fault_record *record, uint8_t *b
  * storage the allocator cannot supply; otherwise CINT_OK. */
 CINT_RT_API cint_status cint_fault_get(const cint_ctx *ctx, uint8_t *buf, size_t cap, size_t *len);
 
-/* Resolves a site through a program's tables. False when it does not resolve. */
-bool cint_site_resolve(const cint_program *program, cint_site site, cint_position *out);
+/* Resolves a site through a program's tables, such as a fault record's position
+ * or stack entry, for a host too (RT-OQ-65). False when it does not resolve. */
+CINT_RT_API bool cint_site_resolve(const cint_program *program, cint_site site, cint_position *out);
 
 /* Renders a tagged value as "<Type> <decimal>" (Z as "Z <decimal>", Bool as
  * "Bool true", fixed point as "Q16.16 raw 98304"), or only the decimal ("raw
@@ -209,7 +235,7 @@ typedef struct cint_mem {
         struct { void *buffer; uint64_t offset; } webgpu;
     } u;
 } cint_mem;
-_Static_assert(sizeof(cint_mem) == 40 && offsetof(cint_mem, u) == 8, "cint_mem");
+CINT_RT_STATIC_ASSERT(sizeof(cint_mem) == 40 && offsetof(cint_mem, u) == 8, "cint_mem");
 
 typedef struct cint_sync {
     uint32_t kind;      /* CINT_MEM_* of the device, or 0: none */
@@ -221,7 +247,7 @@ typedef struct cint_sync {
         struct { void *queue; } webgpu;
     } u;
 } cint_sync;
-_Static_assert(sizeof(cint_sync) == 32 && offsetof(cint_sync, u) == 8, "cint_sync");
+CINT_RT_STATIC_ASSERT(sizeof(cint_sync) == 32 && offsetof(cint_sync, u) == 8, "cint_sync");
 
 #define CINT_PUBLISH_NONE 0u
 #define CINT_PUBLISH_COPY 1u
@@ -235,9 +261,9 @@ typedef struct cint_buffer_desc {
     uint32_t publish;   /* CINT_PUBLISH_*; NONE unless writable */
     cint_sync sync;     /* producer synchronization of device memory, or kind 0 */
 } cint_buffer_desc;
-_Static_assert(sizeof(cint_buffer_desc) == 112 && offsetof(cint_buffer_desc, mem) == 24 &&
-                   offsetof(cint_buffer_desc, extent) == 64 && offsetof(cint_buffer_desc, sync) == 80,
-               "cint_buffer_desc");
+CINT_RT_STATIC_ASSERT(sizeof(cint_buffer_desc) == 112 && offsetof(cint_buffer_desc, mem) == 24 &&
+                          offsetof(cint_buffer_desc, extent) == 64 && offsetof(cint_buffer_desc, sync) == 80,
+                      "cint_buffer_desc");
 
 CINT_RT_API cint_status cint_buffer_register(cint_ctx *ctx, const cint_buffer_desc *desc, cint_buffer_id *out_id,
                                              uint64_t *out_generation);
@@ -268,7 +294,7 @@ typedef struct cint_observer_entry {
     const uint32_t *types;   /* type signature {R, n, T1..Tn}, n <= 16; R 0: none */
     cint_observer_fn call;
 } cint_observer_entry;
-_Static_assert(sizeof(cint_observer_entry) == 32, "cint_observer_entry");
+CINT_RT_STATIC_ASSERT(sizeof(cint_observer_entry) == 32, "cint_observer_entry");
 
 typedef struct cint_observer {
     uint32_t entry_count;
@@ -276,7 +302,7 @@ typedef struct cint_observer {
     const cint_program *program;
     const cint_observer_entry *entries;  /* module order, then declaration order */
 } cint_observer;
-_Static_assert(sizeof(cint_observer) == 24, "cint_observer");
+CINT_RT_STATIC_ASSERT(sizeof(cint_observer) == 24, "cint_observer");
 
 /* ------------------------------------------------------------------------- */
 /* 6b''. The reflection table of cint-abi-1 (SPEC-03 5.6, A-19 to A-26; box   */
@@ -301,7 +327,7 @@ typedef struct cint_name {
     uint32_t len;       /* at least 1 */
     uint32_t reserved;  /* 0 */
 } cint_name;
-_Static_assert(sizeof(cint_name) == 16 && offsetof(cint_name, len) == 8, "cint_name");
+CINT_RT_STATIC_ASSERT(sizeof(cint_name) == 16 && offsetof(cint_name, len) == 8, "cint_name");
 
 typedef void (*cint_entry_fn)(void);
 
@@ -317,8 +343,8 @@ typedef struct cint_export {
     uint64_t type_signature_len;
     cint_entry_fn call;               /* the cx wrapper */
 } cint_export;
-_Static_assert(sizeof(cint_export) == 72 && offsetof(cint_export, size_names) == 32 &&
-               offsetof(cint_export, type_signature_len) == 56 && offsetof(cint_export, call) == 64, "cint_export");
+CINT_RT_STATIC_ASSERT(sizeof(cint_export) == 72 && offsetof(cint_export, size_names) == 32 &&
+                      offsetof(cint_export, type_signature_len) == 56 && offsetof(cint_export, call) == 64, "cint_export");
 
 typedef struct cint_module_table {
     const cint_module_info *info;     /* the module's cm descriptor */
@@ -327,15 +353,111 @@ typedef struct cint_module_table {
     const cint_export *exports;       /* NULL when export_count is 0 */
     const cint_name *record_names;    /* row i of info->records; NULL when it has none */
 } cint_module_table;
-_Static_assert(sizeof(cint_module_table) == 32 && offsetof(cint_module_table, exports) == 16 &&
-               offsetof(cint_module_table, record_names) == 24, "cint_module_table");
+CINT_RT_STATIC_ASSERT(sizeof(cint_module_table) == 32 && offsetof(cint_module_table, exports) == 16 &&
+                      offsetof(cint_module_table, record_names) == 24, "cint_module_table");
 
 typedef struct cint_library {
     uint32_t abi;                     /* CINT_ABI_VERSION */
     uint32_t module_count;            /* the program's module count */
     const cint_module_table *const *modules;
 } cint_library;
-_Static_assert(sizeof(cint_library) == 16 && offsetof(cint_library, modules) == 8, "cint_library");
+CINT_RT_STATIC_ASSERT(sizeof(cint_library) == 16 && offsetof(cint_library, modules) == 8, "cint_library");
+
+/* ------------------------------------------------------------------------- */
+/* 6f. Host functions (SPEC-03 5.3, A-10, A-15, A-23, H-5, H-9; ABI 3.3, I/O  */
+/* services lane U2; rt/OPEN.md RT-OQ-70). A non-service `extern` that a      */
+/* module's code calls is a row of the module's host import table; the        */
+/* program's tables are its cint_host_desc, which a library of cintc exports   */
+/* as `cint_host_desc` when any module has one, and which the host passes as  */
+/* cint_ctx_config.imports; cint_ctx_create resolves each row against         */
+/* cint_ctx_config.host, and cint_rt_host_call (cint_rt.h 6) calls the        */
+/* function with its arguments as cint_value records. A view argument         */
+/* addresses the data directly and is valid during the call only (H-9): the   */
+/* element at index i of dimension 0 is at mem.u.host.ptr + i * byte_stride[0]. */
+
+typedef struct cint_arg_view {
+    cint_type type;
+    uint8_t rank;                     /* 1 (this runtime passes rank-1 views) */
+    uint8_t perm;                     /* CINT_VIEW_READ for `in`, CINT_VIEW_WRITE for `out` */
+    uint8_t reserved[6];              /* 0 */
+    cint_mem mem;                     /* host memory: the element at the lower-bound tuple */
+    int64_t shape[CINT_MAX_RANK];
+    int64_t byte_stride[CINT_MAX_RANK];
+    int64_t lower[CINT_MAX_RANK];     /* 0 */
+    int64_t reachable_bytes;          /* from the lowest to past the highest byte read or written; 0 if empty */
+} cint_arg_view;
+CINT_RT_STATIC_ASSERT(sizeof(cint_arg_view) == 168 && offsetof(cint_arg_view, mem) == 24 &&
+                          offsetof(cint_arg_view, shape) == 64 && offsetof(cint_arg_view, reachable_bytes) == 160,
+                      "cint_arg_view");
+
+#define CINT_VAL_SCALAR 1u
+#define CINT_VAL_WIDE 2u  /* not passed by this runtime: a wide argument or result is refused by cintc */
+#define CINT_VAL_VIEW 3u
+struct cint_value {
+    cint_type type;                   /* the declared type: a scalar tag, or a view's element type */
+    uint32_t kind;                    /* CINT_VAL_*; a `void` result has kind 0 */
+    uint32_t is_error;                /* error unions: 0 the value alternative, 1 the error alternative */
+    int64_t error;                    /* the error alternative: its tag in the result's set, from 1 (SPEC-04 LS-93) */
+    union {
+        int64_t i64;                  /* signed scalars, sign-extended; Bool as 0 or 1 */
+        uint64_t u64;                 /* unsigned scalars, zero-extended */
+        uint8_t *wide;                /* CINT_VAL_WIDE: w/8 bytes */
+        cint_arg_view view;
+    } as;
+};
+CINT_RT_STATIC_ASSERT(sizeof(cint_value) == 200 && offsetof(cint_value, as) == 32, "cint_value");
+
+/* One function of the host table: its name as the `extern` declares it, its
+ * effect class, the SHA-256 of its canonical type signature (A-20, A-23),
+ * and the function, which receives the arguments in declaration order, writes
+ * the result and returns CINT_OK for one alternative produced (A-15). It
+ * receives no context (H-9). */
+struct cint_host_fn {
+    const char *name;                 /* NUL-terminated UTF-8 */
+    uint32_t effect;                  /* CINT_PURE, CINT_OBSERVE or CINT_UNRESTRICTED: must equal the declaration */
+    uint32_t reserved;                /* 0 */
+    uint8_t signature[32];
+    cint_status (*call)(void *user, const cint_value *args, uint32_t nargs, cint_value *result);
+    void *user;
+};
+CINT_RT_STATIC_ASSERT(sizeof(cint_host_fn) == 64 && offsetof(cint_host_fn, signature) == 16 &&
+                          offsetof(cint_host_fn, call) == 48, "cint_host_fn");
+
+/* One row of a module's host import table, written by cintc: the extern's
+ * name, effect class, parameter count and canonical type signature (A-20). */
+typedef struct cint_host_import {
+    cint_name name;
+    uint32_t effect;
+    uint32_t param_count;
+    const uint8_t *type_signature;
+    uint64_t type_signature_len;
+} cint_host_import;
+CINT_RT_STATIC_ASSERT(sizeof(cint_host_import) == 40 && offsetof(cint_host_import, type_signature) == 24,
+                      "cint_host_import");
+
+struct cint_host_table {
+    uint32_t count;                   /* the module's imports; 0 for a module that calls none */
+    uint32_t reserved;                /* 0 */
+    const cint_host_import *imports;  /* NULL when count is 0 */
+};
+CINT_RT_STATIC_ASSERT(sizeof(cint_host_table) == 16 && offsetof(cint_host_table, imports) == 8, "cint_host_table");
+
+/* A program's host import tables: one pointer per module, in program order, so
+ * that `module_count` is the program's; a NULL entry is a module that calls no
+ * extern. The tables live apart from cint_program (whose initializer the frozen
+ * seed emits with four members) and reach the runtime through
+ * cint_ctx_config.imports. */
+struct cint_host_desc {
+    uint32_t module_count;
+    uint32_t reserved;                /* 0 */
+    const cint_host_table *const *tables;  /* NULL when module_count is 0 */
+};
+CINT_RT_STATIC_ASSERT(sizeof(cint_host_desc) == 16 && offsetof(cint_host_desc, tables) == 8, "cint_host_desc");
+
+/* The type signature hash of a row (A-23): SHA-256 over its canonical type
+ * signature bytes, for a host that fills cint_host_fn.signature from a
+ * descriptor's row. */
+CINT_RT_API void cint_signature_hash(const uint8_t *signature, size_t length, uint8_t digest[32]);
 
 /* ------------------------------------------------------------------------- */
 /* 6c'. Error results: the host side (SPEC-03 A-18). The error sets and       */
@@ -371,8 +493,12 @@ CINT_RT_API cint_status cint_ctx_error(const cint_ctx *ctx, const cint_error_set
 /* in decimal; it is written and not closed), or a file path in UTF-8, which  */
 /* is created or truncated. It is touched only when the program faults or     */
 /* leaves with an error result. The caller (the `cint` command) gives the     */
-/* program the null device as stdin and renders the record on stderr; this    */
-/* function writes nothing to stderr.                                         */
+/* program the null device as stdin and renders the record on stderr. With   */
+/* a destination this function writes nothing to stderr; with NULL it writes  */
+/* one line there in place of the record (SPEC-06 3.4a; OQ-289 A): for a      */
+/* fault, `fault[<code>]: <operation> at <path>:<line>:<column>` and a note   */
+/* that argv[1] takes a file path for the full record; for an error result,   */
+/* `error: <set>.<value> (tag <n>)`, the line `cint run` prints.               */
 /*                                                                            */
 /* The error record (Proposed, rt/OPEN.md RT-OQ-33; SPEC-06 3.4a, BX12-12,    */
 /* BX12-22), all little-endian: a U32 length and the ASCII domain string      */
@@ -426,6 +552,31 @@ int cint_program_run_state(const cint_program *program, cint_main_fn main_fn, in
                            const char *fault_dest, const char *fuel_dest, const char *state_dest,
                            const cint_state_table *state);
 
+/* cint_program_run_state from a C main's argv (Proposed, rt/OPEN.md RT-OQ-74; I/O services  */
+/* lane U5, ruling OQ-300). "--grant" and the argument after it, anywhere and any number of   */
+/* times, give a grant line of SPEC-07 SEC-CAP-6 (`<text>` or `<text>=<host dir>`); every     */
+/* other argument after argv[0] is a destination of the forms above, in order fault, fuel and */
+/* state, "-" for none. More destinations than that (two when `state` is NULL), or "--grant"  */
+/* as the last argument, is CINT_EXIT_USAGE before anything runs. The lines, joined by LF,    */
+/* are the context's grants and `imports` its host import tables (6f), so a service call      */
+/* resolves and a grant covers it; a line the runtime refuses, or an import that does not     */
+/* resolve, is CINT_EXIT_USAGE with one line on stderr. Generated mains call this one with    */
+/* their program's `cint_imports_desc`, and `cint run --grant` passes each grant through.     */
+int cint_program_run_args(const cint_program *program, cint_main_fn main_fn, int64_t fuel, int argc,
+                          char **argv, const cint_host_desc *imports, const cint_state_table *state);
+
+/* cint_program_run_args with the program arguments of OQ-306 (rt/OPEN.md RT-OQ-76): "--arg"   */
+/* and the argument after it, anywhere and any number of times, and every argument after a      */
+/* "--", are the program's arguments in order, each its bytes and one NUL in the context's     */
+/* `args` (cint_ctx_config), which `main(in U8[_] args)` reads. With CINT_PROGRAM_ARGS in       */
+/* `flags` the program's `main` takes them; without it (cint_program_run_args), or with a       */
+/* "--arg" as the last argument, an argument given is CINT_EXIT_USAGE with one line on stderr.  */
+/* Generated mains of programs whose `main` takes arguments call this one with the flag.        */
+#define CINT_PROGRAM_ARGS 1u
+int cint_program_run_argv(const cint_program *program, cint_main_fn main_fn, int64_t fuel, int argc,
+                          char **argv, const cint_host_desc *imports, const cint_state_table *state,
+                          uint32_t flags);
+
 /* ------------------------------------------------------------------------- */
 /* 14. The view descriptors of a dispatch's E_ALIAS record (rt/OPEN.md        */
 /* RT-OQ-35). Views and kernels are in cint_rt.h, section 14.                 */
@@ -438,7 +589,7 @@ typedef struct cint_fault_descriptor {
     int64_t shape[4];
     int64_t stride[4];
 } cint_fault_descriptor;
-_Static_assert(sizeof(cint_fault_descriptor) == 88, "cint_fault_descriptor");
+CINT_RT_STATIC_ASSERT(sizeof(cint_fault_descriptor) == 88, "cint_fault_descriptor");
 CINT_RT_API cint_status cint_ctx_fault_descriptors(const cint_ctx *ctx, cint_fault_descriptor out[2], uint32_t *count);
 
 #endif /* CINT_RT_HOST_H */

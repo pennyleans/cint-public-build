@@ -1,7 +1,8 @@
 /* cint_proc_posix.c: cli/cint_proc.h on POSIX systems (slice 2 task 2.12; decision patch D-16, D-19).
  *
  * Children start through posix_spawn. Every descriptor this process opens is close-on-exec,
- * so a child inherits only its stdin (/dev/null), stdout, stderr, and the fault record file.
+ * so a child inherits only its stdin (/dev/null, or this process's stdin for a program granted
+ * console.input), stdout, stderr, and the fault record file.
  * `cint <name>` instead replaces this process through execv (cli_handoff).
  */
 #if !defined(_POSIX_C_SOURCE)
@@ -169,7 +170,7 @@ int cli_proc_run(const cli_proc *p, int *status)
     if ((args = calloc(n + 3u, sizeof *args)) == NULL) return -1;
     memcpy((void *)args, (const void *)p->argv, n * sizeof *args);
     if (posix_spawn_file_actions_init(&fa) != 0) { free((void *)args); return -1; }
-    if (posix_spawn_file_actions_addopen(&fa, 0, "/dev/null", O_RDONLY, 0) != 0) goto done;
+    if (!p->inherit_stdin && posix_spawn_file_actions_addopen(&fa, 0, "/dev/null", O_RDONLY, 0) != 0) goto done;
     if (p->log_path != NULL) {
         if (posix_spawn_file_actions_addopen(&fa, 1, p->log_path, O_WRONLY | O_CREAT | O_APPEND, 0666) != 0 ||
             posix_spawn_file_actions_adddup2(&fa, 1, 2) != 0) {

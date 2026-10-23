@@ -1,0 +1,11 @@
+// case: fixed/mul_overflow_q80_48
+// clause: SPEC-01 IM-61, IM-106 (Q80.48.max squared: the 256-bit intermediate is exact, and its rounded raw value is outside I128)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: fault E_OVERFLOW at 10:14 (the `*`), operation mul.checked.q80_48.half_even, operands Q80.48 raw 2^127 - 1 twice, exact 102844034832575377634685573909834406560212065782484112284581888 (the 254-bit product rounded once, half_even, by 2^48), limit Q80.48 raw 2^127 - 1; stack depth 0; fuel 1. Games wave G2a (OQ-292)
+
+export Bool run() {
+    Q80.48 a = Q80.48.max;
+    Q80.48 b = Q80.48.max;
+    return a * b != 0.0;
+}

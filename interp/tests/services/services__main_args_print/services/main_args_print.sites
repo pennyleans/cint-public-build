@@ -1,0 +1,84 @@
+module services.main_args_print
+sites services/main_args_print.ci 1:9:13:fuel.charge 2:11:5:fuel.charge 3:12:17:index.checked.u8 4:13:15:add.checked.i64 5:16:5:print 6:17:5:fuel.charge 7:18:17:index.checked.u8 8:19:13:print 9:21:19:index.checked.u8 10:21:13:print 11:24:5:print
+export func @services.main_args_print.main(%g: Grants, %args: U8[_]) {
+  fuel.charge 1                                  #1 @services/main_args_print.ci:9:13
+  %t0 = const I64 0
+  local $n.0: I64
+  store.local $n.0, %t0
+  %t1 = const I64 0
+  %t2 = view.extent %args, 0
+  local $i.1: I64
+  store.local $i.1, %t1
+  loop L8 {
+    %t3 = load.local $i.1
+    %t4 = cmp.lt.i64 %t3, %t2
+    while %t4
+    fuel.charge 1                                #2 @services/main_args_print.ci:11:5
+    if {
+      arm {
+        %t5 = load.local $i.1
+        index.checked.u8 %args, %t5              #3 @services/main_args_print.ci:12:17
+        %t6 = index.load %args, %t5
+        %t7 = const U8 0
+        %t8 = cmp.eq.u8 %t6, %t7
+      } then %t8 {
+        %t9 = load.local $n.0
+        %t10 = const I64 1
+        %t11 = add.checked.i64 %t9, %t10         #4 @services/main_args_print.ci:13:15
+        store.local $n.0, %t11
+      }
+    }
+    next
+    %t12 = load.local $i.1
+    %t13 = const I64 1
+    %t14 = add.wrap.i64 %t12, %t13
+    store.local $i.1, %t14
+  }
+  %t15 = load.local $n.0
+  %t16 = view.extent %args, 0
+  print.begin                                    #5 @services/main_args_print.ci:16:5
+  print.value I64 %t15
+  print.bytes " "
+  print.value I64 %t16
+  print.bytes " "
+  print.end
+  %t17 = const I64 0
+  %t18 = view.extent %args, 0
+  local $i.2: I64
+  store.local $i.2, %t17
+  loop L45 {
+    %t19 = load.local $i.2
+    %t20 = cmp.lt.i64 %t19, %t18
+    while %t20
+    fuel.charge 1                                #6 @services/main_args_print.ci:17:5
+    if {
+      arm {
+        %t21 = load.local $i.2
+        index.checked.u8 %args, %t21             #7 @services/main_args_print.ci:18:17
+        %t22 = index.load %args, %t21
+        %t23 = const U8 0
+        %t24 = cmp.eq.u8 %t22, %t23
+      } then %t24 {
+        print.begin                              #8 @services/main_args_print.ci:19:13
+        print.bytes "|"
+        print.end
+      }
+      else {
+        %t25 = load.local $i.2
+        index.checked.u8 %args, %t25             #9 @services/main_args_print.ci:21:19
+        %t26 = index.load %args, %t25
+        print.begin                              #10 @services/main_args_print.ci:21:13
+        print.value U8 %t26
+        print.end
+      }
+    }
+    next
+    %t27 = load.local $i.2
+    %t28 = const I64 1
+    %t29 = add.wrap.i64 %t27, %t28
+    store.local $i.2, %t29
+  }
+  print.begin                                    #11 @services/main_args_print.ci:24:5
+  print.bytes "\n"
+  print.end
+}

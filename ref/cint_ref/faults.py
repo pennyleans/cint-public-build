@@ -212,7 +212,7 @@ RUN_TIME = "run-time"            # a record from cint_fault_get, or embedded in 
 RECORD_KINDS = (COMPILE_TIME, RUN_TIME)
 Z_MAX = 257                      # IM-108 item 1, and every Z of a version 1 record
 Z_MAX_OPERAND = 513              # IM-108 item 2: an operand of a compile-time v2 record
-Z_MAX_EXACT = 520                # IM-108 item 3: `exact` of a compile-time v2 record
+Z_MAX_EXACT = 528                # IM-108 item 3: `exact` of a compile-time v2 record (520 before OQ-292)
 MAX_OPERANDS = 8                 # IM-106
 MAX_OPERATION = 64               # IM-106
 MAX_PATH = 1024                  # IM-106
@@ -271,7 +271,7 @@ def encode_value(v, z_max: int = Z_MAX) -> bytes:
     if q:
         # Tag 31: the storage tag, f as U16, then the raw storage integer (IM-145, IM-146).
         w = int(q.group(1)) + int(q.group(2))
-        if w not in (8, 16, 32, 64) or not -(1 << (w - 1)) <= v.value < (1 << (w - 1)):
+        if w not in (8, 16, 32, 64, 128) or not -(1 << (w - 1)) <= v.value < (1 << (w - 1)):
             raise ValueError("%s is outside its type" % v.render())
         return bytes([0x31, _TAG_OF["I%d" % w]]) + int(q.group(2)).to_bytes(2, "little") \
             + (v.value & ((1 << w) - 1)).to_bytes(w // 8, "little")
@@ -407,7 +407,7 @@ def _descriptor(rd: _Reader, where: str, nested: bool = False):
         return tag, _UNSIGNED_TAGS[tag] // 8
     if tag == 0x31:
         storage, f = rd.u(1), rd.u(2)
-        if storage not in (0x11, 0x12, 0x13, 0x14) or f > _SIGNED_TAGS[storage] - 1:
+        if storage not in (0x11, 0x12, 0x13, 0x14, 0x15) or f > _SIGNED_TAGS[storage] - 1:
             raise ValueError("a Q descriptor with storage %02x and f %d (SPEC-01 IM-146, IM-148)" % (storage, f))
         return tag, _SIGNED_TAGS[storage] // 8
     if tag in (0x51, 0x61) and not nested and (tag == 0x51 or where == "operand"):

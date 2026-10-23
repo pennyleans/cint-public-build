@@ -1,0 +1,11 @@
+// case: diag/c2008_convert_sat_bool
+// clause: SPEC-04 LS-133, LS-135 (`Bool` converts to integers only with `as`, so `b as| I32` is C2008; OQ-272 A)
+// subset: cint-core-1 (saturating conversion)
+// entry: run; args: none
+// spec outcome: compile-error C2008 at 9:13 (the operand of `as|`). Box 15, OQ-280 group 1
+
+export I64 run() {
+    Bool on = true;
+    I32 n = on as| I32;
+    return n as I64;
+}

@@ -1,0 +1,9 @@
+case fixed/convert_sat_fixed
+clause SPEC-01 IM-68, IM-69; SPEC-04 LS-133 (`as|` with fixed point on either side rounds the exact value once by its `round` clause, half_even without one, then clamps to T.min or T.max; OQ-272 A)
+format 5
+source reference
+outcome value
+stdout-bytes 111
+stdout-sha256 ba45f2a7e8b3f08b91b0c565f03feceac1d436e0b7f16d7b9136243e160b3a05
+return I64 127
+fuel-consumed 1

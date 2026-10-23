@@ -29,6 +29,7 @@
 // The writer costs O(rows written). No importer mutates this declaration table.
 
 import limits;
+import fold;
 import scan;
 import parse;
 import resolve;
@@ -73,13 +74,15 @@ export Bool header[k](inout limits.Decl[k] d) {
     return true;
 }
 
-// Writes one record at row `at` (fields as CINTC-16 gives them by kind) with the name
+// Writes one record at row `at` (fields as CINTC-16 gives them by kind; type code tag, whose
+// bits above 8 go to `align`, row_tag, SPEC-09I.32) with the name
 // src[s, s + nb), its continuation rows after it. Returns the row after them, or -1 when
 // they do not fit in the k rows of the table.
-export I64 put[n, k](inout limits.Decl[k] d, I64 at, U8 kind, U8 vis, U8 mode, I64 module, U8 tag, U8 rank,
+export I64 put[n, k](inout limits.Decl[k] d, I64 at, U8 kind, U8 vis, U8 mode, I64 module, I64 tag, U8 rank,
         U8 ext, I64 a, I64 b, in U8[n] src, I64 s, I64 nb) {
     I64 rows = record_rows(nb);
-    if (at < 1 || at + rows > k || nb < 1 || nb > 255) {
+    // A `requires` argument may be the empty string (DK_ARG, name_len 0).
+    if (at < 1 || at + rows > k || (nb < 1 && kind != limits.DK_ARG) || nb > 255) {
         return -1;
     }
     for r in at..at + rows {
@@ -90,7 +93,8 @@ export I64 put[n, k](inout limits.Decl[k] d, I64 at, U8 kind, U8 vis, U8 mode, I
     d[at].mode = mode;
     d[at].name_len = nb as U8;
     d[at].module = module as U32;
-    d[at].tag = tag;
+    d[at].tag = (tag & 255) as U8;
+    d[at].align = (tag >> 8) as U8;
     d[at].rank = rank;
     d[at].ext_kind = ext;
     d[at].a = a;
@@ -144,15 +148,15 @@ export I64 block_of[k](in limits.Decl[k] d, I64 m) {
     return -1;
 }
 
-// The top-level record (constant, variable, function or struct) named src[s, s + nb) in
-// the block whose module row is b, or -1.
+// The top-level record (constant, variable, function, struct or error set) named src[s, s
+// + nb) in the block whose module row is b, or -1.
 export I64 find[n, k](in limits.Decl[k] d, I64 b, in U8[n] src, I64 s, I64 nb) {
     I64 end = b + d[b].a;
     I64 r = b + 1;
     while (r < end && r < k) {
         U8 kd = d[r].kind;
-        if ((kd == limits.DK_CONST || kd == limits.DK_VAR || kd == limits.DK_FUNC || kd == limits.DK_STRUCT) &&
-                name_equals(d, r, src, s, nb)) {
+        if ((kd == limits.DK_CONST || kd == limits.DK_VAR || kd == limits.DK_FUNC || kd == limits.DK_STRUCT ||
+                kd == limits.DK_ERRSET) && name_equals(d, r, src, s, nb)) {
             return r;
         }
         r += 1;
@@ -176,10 +180,13 @@ export I64 next_member[k](in limits.Decl[k] d, I64 r) {
 // 0x71 with ref the row write_block gave it, kept in Sem.lit_at of its N_STRUCT node; a
 // struct of an imported module (a symbol with no node, check.import_struct_ty) keeps the
 // row it was bound to; a view whose extent is a size parameter is DX_SIZE with the
-// parameter's position. An error set is tag 0x72, an error union 0x73, and (box 12) an
-// arena, a pool or a handle 0x74, which no importer types yet (check.import_type gives 0,
-// so a use is C9102; box 12, compiler/OPEN.md). An array is rank 1 here; write_block gives
-// a field of rank 2 to 4 its rank and packed extents (BX22-06, packed_extents).
+// parameter's position. An error set is tag 0x72 and an error union 0x73, each with ref the
+// row of its set (set_row; 0 for ArithError and AllocError, which no importer types), and a
+// union's value tag in t[3], which a function row keeps in `align` (I/O services lane U5;
+// CINTC-16, edition 40); an arena, a pool or a handle is 0x74, which no importer types yet
+// (check.import_type gives 0, so a use is C9102; box 12, compiler/OPEN.md). An array is
+// rank 1 here; write_block gives a field of rank 2 to 4 its rank and packed extents
+// (BX22-06, packed_extents).
 void persist[n](in parse.Node[_] nodes, in resolve.Sem[_] sem, in resolve.Sym[_] syms, I64 ty,
         inout I64[n] t) {
     t[0] = ty;
@@ -191,8 +198,17 @@ void persist[n](in parse.Node[_] nodes, in resolve.Sem[_] sem, in resolve.Sym[_]
         t[0] = 0x02;
     } else if (resolve.is_errset(ty)) {
         t[0] = ERRSET_TAG;
+        t[4] = set_row(nodes, sem, ty);
     } else if (resolve.is_errunion(ty)) {
         t[0] = ERRUNION_TAG;
+        t[4] = set_row(nodes, sem, resolve.union_set(ty));
+        t[3] = resolve.union_value(ty);
+        if (t[3] == resolve.TY_VOID) {
+            t[3] = 0x02;
+        } else if (t[3] > 255) {
+            // A handle's union (box 12): no importer types it.
+            t[3] = 0;
+        }
     } else if (resolve.is_mem(ty)) {
         t[0] = MEM_TAG;
     } else if (resolve.is_struct(ty)) {
@@ -205,6 +221,7 @@ void persist[n](in parse.Node[_] nodes, in resolve.Sem[_] sem, in resolve.Sym[_]
             t[4] = struct_row(nodes, sem, syms, t[0]);
             t[0] = 0x71;
         } else if (resolve.is_errset(t[0])) {
+            t[4] = set_row(nodes, sem, t[0]);
             t[0] = ERRSET_TAG;
         }
         t[1] = 1;
@@ -261,11 +278,21 @@ export const I64 ERRSET_TAG = 0x72;
 export const I64 ERRUNION_TAG = 0x73;
 export const I64 MEM_TAG = 0x74;
 
+// The type code of row r (CINTC-16, SPEC-09I.32): `tag`, and in every row but a struct's or
+// an error union's (whose `align` is the union's value tag, I/O services lane U5) `align`
+// times 256 above it, for the fixed-point types of 128 bits (0xF8 to 0x177).
+export I64 row_tag(in limits.Decl[_] d, I64 r) {
+    if (d[r].kind == limits.DK_STRUCT || (d[r].tag as I64) == ERRUNION_TAG) {
+        return d[r].tag as I64;
+    }
+    return (d[r].tag as I64) + 256 * (d[r].align as I64);
+}
+
 // The checker type of the type fields of row r (the reverse of persist), or 0 for a type
 // this checker does not have yet (a struct, an error set or union, or an extent of a size
 // parameter).
 export I64 type_of_row[k](in limits.Decl[k] d, I64 r) {
-    I64 tag = d[r].tag as I64;
+    I64 tag = row_tag(d, r);
     if (tag == ERRSET_TAG || tag == ERRUNION_TAG || tag == MEM_TAG) {
         return 0;
     }
@@ -285,13 +312,17 @@ export I64 type_of_row[k](in limits.Decl[k] d, I64 r) {
 }
 
 // The limbs of a value of type ty: 0 for a type of at most 64 bits; 2^(tag - 0x14) for I128
-// to I1024 (tags 0x15 to 0x18) and 2^(tag - 0x24) for U128 to U512 (tags 0x25 to 0x27).
+// to I1024 (tags 0x15 to 0x18), 2^(tag - 0x24) for U128 to U512 (tags 0x25 to 0x27), and 2 for
+// fixed point of 128 bits, its raw I128.
 I64 wide_limbs(I64 ty) {
     if (ty >= 0x15 && ty <= 0x18) {
         return (1 as I64) << (ty - 0x14);
     }
     if (ty >= 0x25 && ty <= 0x27) {
         return (1 as I64) << (ty - 0x24);
+    }
+    if (fold.q_wide(ty)) {
+        return 2;
     }
     return 0;
 }
@@ -380,6 +411,9 @@ U8 mode_of(in parse.Node[_] nodes, I64 p) {
     if (nodes[p].op == scan.KW_INOUT) {
         return 2;
     }
+    if (nodes[p].op == scan.KW_OUT) {
+        return 3;
+    }
     return 0;
 }
 
@@ -402,23 +436,269 @@ I64 struct_row(in parse.Node[_] nodes, in resolve.Sem[_] sem, in resolve.Sym[_] 
     return sem[sx].lit_at;
 }
 
+// The row of the set record of set type ty (CINTC-16 `ref`; I/O services lane U5): for a set
+// of this module, the row write_block assigned it, kept in Sem.lit_at of its N_ERROR_DECL
+// node; for an imported set, the row its type carries (resolve.IMPORT_SET); 0 for
+// ArithError and AllocError, which have no row.
+I64 set_row(in parse.Node[_] nodes, in resolve.Sem[_] sem, I64 ty) {
+    if (resolve.is_import_set(ty)) {
+        return resolve.import_set_row(ty);
+    }
+    I64 x = resolve.errset_node(nodes, ty);
+    if (x < 0) {
+        return 0;
+    }
+    return sem[x].lit_at;
+}
+
+// The row of value j (from 0) of set record `set`: its DK_EVALUE rows follow the record's
+// name rows in tag order.
+export I64 value_row(in limits.Decl[_] d, I64 set, I64 j) {
+    I64 r = next_member(d, set);
+    for i in 0..j {
+        r = next_member(d, r);
+    }
+    return r;
+}
+
+// The DK_SERVICE row of function row row (a service extern), after its parameter rows and
+// its DK_CAP row, or -1 for none.
+export I64 service_row(in limits.Decl[_] d, I64 row) {
+    if (d[row].kind != limits.DK_FUNC || d[row].ext_kind != limits.DF_SERVICE) {
+        return -1;
+    }
+    I64 q = next_member(d, row);
+    for j in 0..d[row].a {
+        q = next_member(d, q);
+    }
+    if (q < d[0].a && d[q].kind == limits.DK_CAP) {
+        q = next_member(d, q);
+    }
+    if (q < d[0].a && d[q].kind == limits.DK_SERVICE) {
+        return q;
+    }
+    return -1;
+}
+
 // Whether top-level node x is a module-level variable of a module (not a script local).
 Bool module_var(in parse.Node[_] nodes, in resolve.Sem[_] sem, in resolve.Sym[_] syms, I64 x) {
     return nodes[x].kind == parse.N_VAR && (nodes[x].flags & parse.F_CONST) == 0 && sem[x].sym >= 0 &&
         syms[sem[x].sym].kind == resolve.SK_MODVAR;
 }
 
-// The rows of top-level record x (an N_VAR constant or module-level variable, N_FUNC or
-// N_STRUCT node) with its parameter or field rows, every name with its continuation rows;
-// 0 for any other node.
-I64 item_rows(in scan.Token[_] toks, in parse.Node[_] nodes, in resolve.Sem[_] sem, in resolve.Sym[_] syms,
-        I64 x) {
+// ---------------------------------------------------------------- capabilities (I/O services lane U1)
+
+// The dotted name of the N_NAME segments at list head into buf: its length, or -1 past buf.
+I64 dotted[b](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, I64 head, inout U8[b] buf) {
+    I64 nlen = 0;
+    I64 v = head;
+    while (v >= 0) {
+        I64 vt = nodes[v].tok as I64;
+        if (nlen > 0) {
+            if (nlen >= b) {
+                return -1;
+            }
+            buf[nlen] = '.';
+            nlen += 1;
+        }
+        for i in 0..toks[vt].len as I64 {
+            if (nlen >= b) {
+                return -1;
+            }
+            buf[nlen] = src[(toks[vt].start as I64) + i];
+            nlen += 1;
+        }
+        v = nodes[v].next as I64;
+    }
+    return nlen;
+}
+
+// The decoded bytes of string node x (resolve.string_next) into buf: their count, or -1 past
+// buf.
+I64 decoded[b](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, I64 x, inout U8[b] buf) {
+    I64 nlen = 0;
+    I64[5] got;
+    I64 tk = nodes[x].tok as I64;
+    for q in tk..tk + (nodes[x].op as I64) {
+        I64 at = (toks[q].start as I64) + 1;
+        I64 end = (toks[q].start as I64) + (toks[q].len as I64) - 1;
+        while (at < end) {
+            at = resolve.string_next(src, at, end, got);
+            for i in 0..got[4] {
+                if (nlen >= b) {
+                    return -1;
+                }
+                buf[nlen] = got[i] as U8;
+                nlen += 1;
+            }
+        }
+    }
+    return nlen;
+}
+
+// The name of row row of the table into buf: its length, or -1 past buf.
+I64 row_name[b](in limits.Decl[_] d, I64 row, inout U8[b] buf) {
+    I64 nb = d[row].name_len as I64;
+    if (nb > b) {
+        return -1;
+    }
+    for i in 0..nb {
+        buf[i] = d[row + i / 32].name[i % 32];
+    }
+    return nb;
+}
+
+// The DK_CAP row of function row row, after its parameter rows, or -1 for none.
+I64 cap_row(in limits.Decl[_] d, I64 row) {
+    if (d[row].kind != limits.DK_FUNC || d[row].ext_kind != limits.DF_SERVICE) {
+        return -1;
+    }
+    I64 q = next_member(d, row);
+    for j in 0..d[row].a {
+        q = next_member(d, q);
+    }
+    if (q < d[0].a && d[q].kind == limits.DK_CAP) {
+        return q;
+    }
+    return -1;
+}
+
+// The name of the capability that covers call node x into buf: a call of a service extern of
+// this module (its symbol, extern_capability) or of an imported one (the DK_CAP row of
+// its function row). Its length, or -1 when x is no such call.
+I64 call_capability[b](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, in resolve.Sem[_] sem,
+        in resolve.Sym[_] syms, in limits.Decl[_] d, I64 x, inout U8[b] buf) {
+    if (nodes[x].kind != parse.N_CALL) {
+        return -1;
+    }
+    I64 callee = nodes[x].a as I64;
+    if (nodes[callee].kind == parse.N_NAME) {
+        I64 sy = sem[x].sym;
+        if (sy < 0 || syms[sy].kind != resolve.SK_EXTERN) {
+            return -1;
+        }
+        I64 at = extern_capability(nodes, syms[sy].node);
+        if (at < 0) {
+            return -1;
+        }
+        return dotted(src, toks, nodes, nodes[at].b as I64, buf);
+    }
+    if (nodes[callee].kind == parse.N_FIELD && (sem[callee].flags & resolve.SEM_IMPORT) != 0) {
+        I64 cap = cap_row(d, sem[callee].lit_at);
+        if (cap < 0) {
+            return -1;
+        }
+        return row_name(d, cap, buf);
+    }
+    return -1;
+}
+
+// The `@service` attribute of extern node x that names a covering capability, or -1.
+export I64 extern_capability(in parse.Node[_] nodes, I64 x) {
+    I64 at = nodes[x].f as I64;
+    while (at >= 0) {
+        if (nodes[at].kind == parse.N_ATTR && nodes[at].op == 1 && nodes[at].b >= 0) {
+            return at;
+        }
+        at = nodes[at].next as I64;
+    }
+    return -1;
+}
+
+// The `@service` attribute of extern node x, with or without a capability, or -1.
+export I64 service_attr(in parse.Node[_] nodes, I64 x) {
+    I64 at = nodes[x].f as I64;
+    while (at >= 0) {
+        if (nodes[at].kind == parse.N_ATTR && nodes[at].op == 1) {
+            return at;
+        }
+        at = nodes[at].next as I64;
+    }
+    return -1;
+}
+
+// The rows of the DK_CAP record of extern node x: 0 without a capability.
+I64 cap_rows(in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, I64 x) {
+    I64 at = extern_capability(nodes, x);
+    if (at < 0) {
+        return 0;
+    }
+    U8[256] buf;
+    I64 nlen = dotted(src, toks, nodes, nodes[at].b as I64, buf);
+    if (nlen < 1) {
+        return 0;
+    }
+    return record_rows(nlen);
+}
+
+// The bytes of the service that the `@service` attribute of extern node x names, between
+// the quotes of its first argument, into buf: their count, 0 without the attribute, or -1
+// past buf.
+I64 service_text[b](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, I64 x, inout U8[b] buf) {
+    I64 at = service_attr(nodes, x);
+    if (at < 0) {
+        return 0;
+    }
+    I64 stk = nodes[nodes[at].a as I64].tok as I64;
+    I64 nlen = (toks[stk].len as I64) - 2;
+    if (nlen < 1) {
+        return 0;
+    }
+    if (nlen > b) {
+        return -1;
+    }
+    for i in 0..nlen {
+        buf[i] = src[(toks[stk].start as I64) + 1 + i];
+    }
+    return nlen;
+}
+
+// The rows of the DK_SERVICE record of extern node x: 0 without a `@service` attribute.
+I64 service_rows(in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, I64 x) {
+    U8[256] buf;
+    I64 nlen = service_text(src, toks, nodes, x, buf);
+    if (nlen < 1) {
+        return 0;
+    }
+    return record_rows(nlen);
+}
+
+// The rows of `requires` node x: its record and one per argument.
+I64 requires_rows(in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, I64 x) {
+    U8[256] buf;
+    I64 rows = record_rows(dotted(src, toks, nodes, nodes[x].a as I64, buf));
+    I64 g = nodes[x].b as I64;
+    while (g >= 0) {
+        rows += record_rows(decoded(src, toks, nodes, g, buf));
+        g = nodes[g].next as I64;
+    }
+    return rows;
+}
+
+// The rows of top-level record x (an N_VAR constant or module-level variable, N_FUNC,
+// N_EXTERN, N_REQUIRES or N_STRUCT node) with its parameter, field, capability or argument
+// rows, every name with its continuation rows; 0 for any other node.
+I64 item_rows(in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, in resolve.Sem[_] sem,
+        in resolve.Sym[_] syms, I64 x) {
     I32 kind = nodes[x].kind;
+    if (kind == parse.N_REQUIRES) {
+        return requires_rows(src, toks, nodes, x);
+    }
     I64 rows = record_rows(toks[nodes[x].tok as I64].len as I64);
     I64 p = -1;
     if (kind == parse.N_FUNC) {
         p = nodes[x].b as I64;
+    } else if (kind == parse.N_EXTERN) {
+        p = nodes[x].b as I64;
+        rows += cap_rows(src, toks, nodes, x) + service_rows(src, toks, nodes, x);
     } else if (kind == parse.N_STRUCT) {
+        p = nodes[x].a as I64;
+    } else if (kind == parse.N_ERROR_DECL) {
+        // An error set (I/O services lane U5): its record, then a value row per value; a
+        // combined set has its record alone.
+        if (nodes[x].op == 1) {
+            return rows;
+        }
         p = nodes[x].a as I64;
     } else if (kind != parse.N_VAR || ((nodes[x].flags & parse.F_CONST) == 0 && !module_var(nodes, sem, syms, x))) {
         return 0;
@@ -439,9 +719,18 @@ I64 item_rows(in scan.Token[_] toks, in parse.Node[_] nodes, in resolve.Sem[_] s
 // N_STRUCT node), so a type that names a struct declared later refers to its row (CINTC-16
 // "Block order"). Returns true, or false after C9001 (LIM_DECLS) at the name of the first
 // declaration that does not fit, with the table as it was.
+// I/O services lane U1 (SPEC-09 CINTC-16, edition 34): an extern is a function row with its
+// class in `mode` and DF_EXTERN or DF_SERVICE in `ext_kind`, its DK_CAP row after its
+// parameters; a `requires` is a DK_REQ row with a DK_ARG row per argument; and after the
+// items the DK_NEED rows name each capability the module's service calls need, once each,
+// at the first call among nodes 0..nn. The fit check counts one DK_NEED record per such
+// call, so a module whose calls would fit only once each may be C9001 early.
+// I/O services lane U5 (edition 40): an error set that names its values is a DK_ERRSET
+// record with a DK_EVALUE row per value, and a service extern's DK_SERVICE row follows its
+// DK_CAP row; a first walk gives each set its row too (Sem.lit_at of its N_ERROR_DECL node).
 export Bool write_block[n, k, r](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes,
         inout resolve.Sem[_] sem, in resolve.Sym[_] syms, in U8[_] lits, I64 root, I64 m, inout limits.Decl[k] d,
-        inout limits.CompilerDiag[r] diag) {
+        inout limits.CompilerDiag[r] diag, I64 nn) {
     if (k == 0 || d[0].kind != limits.DK_HEADER) {
         _ = limits.limit_diag(diag, m, 1, 1, limits.LIM_DECLS, k);
         return false;
@@ -488,16 +777,37 @@ export Bool write_block[n, k, r](in U8[n] src, in scan.Token[_] toks, in parse.N
                 need += rows;
                 p = nodes[p].next as I64;
             }
+        } else if (kind == parse.N_EXTERN || kind == parse.N_REQUIRES || kind == parse.N_ERROR_DECL) {
+            I64 tk = nodes[x].tok as I64;
+            I64 rows = item_rows(src, toks, nodes, sem, syms, x);
+            if (need + rows > k) {
+                _ = limits.limit_diag(diag, m, toks[tk].line as I64, toks[tk].col as I64, limits.LIM_DECLS, k);
+                return false;
+            }
+            need += rows;
         }
         x = nodes[x].next as I64;
+    }
+    U8[256] buf;
+    for y in 0..nn {
+        I64 nlen = call_capability(src, toks, nodes, sem, syms, d, y, buf);
+        if (nlen > 0) {
+            I64 rows = record_rows(nlen);
+            if (need + rows > k) {
+                I64 tk = nodes[y].start as I64;
+                _ = limits.limit_diag(diag, m, toks[tk].line as I64, toks[tk].col as I64, limits.LIM_DECLS, k);
+                return false;
+            }
+            need += rows;
+        }
     }
     I64 at = mrow + 1;
     x = nodes[root].a as I64;
     while (x >= 0) {
-        if (nodes[x].kind == parse.N_STRUCT) {
+        if (nodes[x].kind == parse.N_STRUCT || nodes[x].kind == parse.N_ERROR_DECL) {
             sem[x].lit_at = at;
         }
-        at += item_rows(toks, nodes, sem, syms, x);
+        at += item_rows(src, toks, nodes, sem, syms, x);
         x = nodes[x].next as I64;
     }
     at = mrow + 1;
@@ -515,7 +825,7 @@ export Bool write_block[n, k, r](in U8[n] src, in scan.Token[_] toks, in parse.N
             I64 sy = sem[x].sym;
             persist(nodes, sem, syms, syms[sy].ty, t);
             I64 nl = limb_rows(syms[sy].ty);
-            next = put(d, at, limits.DK_CONST, vis_of(nodes, x), 0, m, t[0] as U8, 0, 0,
+            next = put(d, at, limits.DK_CONST, vis_of(nodes, x), 0, m, t[0], 0, 0,
                 syms[sy].value as% I64, nl, src, s, l);
             if (next >= 0 && nl > 0) {
                 put_limbs(d, next, nl, m, syms[sy].ty, lits, sem[x].lit_at, sem[x].lit_len);
@@ -526,10 +836,64 @@ export Bool write_block[n, k, r](in U8[n] src, in scan.Token[_] toks, in parse.N
             // Its index in the module's state, the order of lowering.declare_globals; rank 1
             // for a module-level array (box 13 MLA), which an importer does not name yet.
             persist(nodes, sem, syms, syms[sem[x].sym].ty, t);
-            next = put(d, at, limits.DK_VAR, vis_of(nodes, x), 0, m, t[0] as U8, t[1] as U8, 0, nvar, 0,
+            next = put(d, at, limits.DK_VAR, vis_of(nodes, x), 0, m, t[0], t[1] as U8, 0, nvar, 0,
                 src, s, l);
             nrec += 1;
-        } else if (kind == parse.N_FUNC || kind == parse.N_STRUCT) {
+        } else if (kind == parse.N_REQUIRES) {
+            // A `requires` (I/O services lane U1): its name and position, then its arguments.
+            I64 nlen = dotted(src, toks, nodes, nodes[x].a as I64, buf);
+            I64 nt = nodes[x].start as I64;
+            I64 nargs = 0;
+            I64 g = nodes[x].b as I64;
+            while (g >= 0) {
+                nargs += 1;
+                g = nodes[g].next as I64;
+            }
+            next = put(d, at, limits.DK_REQ, 0, 0, m, 0, 0, 0, toks[nt].line as I64, toks[nt].col as I64, buf, 0, nlen);
+            if (next >= 0) {
+                d[at].ref = nargs as U32;
+            }
+            g = nodes[x].b as I64;
+            while (g >= 0 && next >= 0) {
+                I64 nb = decoded(src, toks, nodes, g, buf);
+                I64 gt = nodes[g].start as I64;
+                next = put(d, next, limits.DK_ARG, 0, 0, m, 0, 0, 0, toks[gt].line as I64, toks[gt].col as I64,
+                    buf, 0, nb);
+                g = nodes[g].next as I64;
+            }
+        } else if (kind == parse.N_ERROR_DECL) {
+            // An error set (I/O services lane U5): its record, then a row per value in tag
+            // order; a combined set's record has `a` -1 and no value rows, which an importer
+            // does not type (resolve.import_set_ty).
+            I64 nv = 0;
+            I64 v = nodes[x].a as I64;
+            if (nodes[x].op == 1) {
+                nv = -1;
+                v = -1;
+            }
+            while (v >= 0) {
+                nv += 1;
+                v = nodes[v].next as I64;
+            }
+            next = put(d, at, limits.DK_ERRSET, vis_of(nodes, x), 0, m, resolve.errset_decl_under(toks, nodes, x),
+                0, 0, nv, 0, src, s, l);
+            if (next >= 0) {
+                d[at].ref = at as U32;
+            }
+            v = nodes[x].a as I64;
+            if (nodes[x].op == 1) {
+                v = -1;
+            }
+            I64 j = 1;
+            while (v >= 0 && next >= 0) {
+                I64 vt = nodes[v].tok as I64;
+                next = put(d, next, limits.DK_EVALUE, vis_of(nodes, x), 0, m, 0, 0, 0, j, 0, src,
+                    toks[vt].start as I64, toks[vt].len as I64);
+                j += 1;
+                v = nodes[v].next as I64;
+            }
+            nrec += 1;
+        } else if (kind == parse.N_FUNC || kind == parse.N_STRUCT || kind == parse.N_EXTERN) {
             I64 np = 0;
             I64 p = nodes[x].b as I64;
             if (kind == parse.N_STRUCT) {
@@ -549,9 +913,27 @@ export Bool write_block[n, k, r](in U8[n] src, in scan.Token[_] toks, in parse.N
                     z = nodes[z].next as I64;
                 }
                 persist(nodes, sem, syms, sem[x].ty, t);
-                next = put(d, at, limits.DK_FUNC, vis, 0, m, t[0] as U8, 0, 0, np, nz, src, s, l);
+                next = put(d, at, limits.DK_FUNC, vis, 0, m, t[0], 0, 0, np, nz, src, s, l);
                 if (next >= 0) {
                     d[at].ref = t[4] as U32;
+                    if (t[0] == ERRUNION_TAG) {
+                        d[at].align = t[3] as U8;
+                    }
+                }
+            } else if (kind == parse.N_EXTERN) {
+                // An extern (I/O services lane U1): a function row whose `mode` is its effect
+                // class and whose `ext_kind` tells a service extern from a host one.
+                U8 ext = limits.DF_EXTERN;
+                if (service_attr(nodes, x) >= 0) {
+                    ext = limits.DF_SERVICE;
+                }
+                persist(nodes, sem, syms, sem[x].ty, t);
+                next = put(d, at, limits.DK_FUNC, vis, nodes[x].op as U8, m, t[0], 0, ext, np, 0, src, s, l);
+                if (next >= 0) {
+                    d[at].ref = t[4] as U32;
+                    if (t[0] == ERRUNION_TAG) {
+                        d[at].align = t[3] as U8;
+                    }
                 }
             } else {
                 next = put(d, at, limits.DK_STRUCT, vis, 0, m, 0x71, 0, 0, np, sem[x].lit_len, src, s, l);
@@ -567,8 +949,8 @@ export Bool write_block[n, k, r](in U8[n] src, in scan.Token[_] toks, in parse.N
                 persist(nodes, sem, syms, sem[p].ty, t);
                 I64 ptk = nodes[p].tok as I64;
                 I64 row = next;
-                if (kind == parse.N_FUNC) {
-                    next = put(d, row, limits.DK_PARAM, vis, mode_of(nodes, p), m, t[0] as U8, t[1] as U8,
+                if (kind == parse.N_FUNC || kind == parse.N_EXTERN) {
+                    next = put(d, row, limits.DK_PARAM, vis, mode_of(nodes, p), m, t[0], t[1] as U8,
                         t[2] as U8, pos, t[3], src, toks[ptk].start as I64, toks[ptk].len as I64);
                 } else {
                     if (resolve.is_array(sem[p].ty) && resolve.array_rank(sem[p].ty) > 1) {
@@ -577,7 +959,7 @@ export Bool write_block[n, k, r](in U8[n] src, in scan.Token[_] toks, in parse.N
                         t[2] = limits.DX_LITERAL as I64;
                         t[3] = packed_extents(sem[p].ty);
                     }
-                    next = put(d, row, limits.DK_FIELD, vis, 0, m, t[0] as U8, t[1] as U8, t[2] as U8,
+                    next = put(d, row, limits.DK_FIELD, vis, 0, m, t[0], t[1] as U8, t[2] as U8,
                         sem[p].lit_at, t[3], src, toks[ptk].start as I64, toks[ptk].len as I64);
                 }
                 if (next < 0) {
@@ -587,6 +969,33 @@ export Bool write_block[n, k, r](in U8[n] src, in scan.Token[_] toks, in parse.N
                 }
                 pos += 1;
                 p = nodes[p].next as I64;
+            }
+            I64 capat = -1;
+            if (kind == parse.N_EXTERN) {
+                capat = extern_capability(nodes, x);
+            }
+            if (capat >= 0 && next >= 0) {
+                // The covering capability: its name, argument count and kinds (SEC-CAP-13).
+                I64 nlen = dotted(src, toks, nodes, nodes[capat].b as I64, buf);
+                I64 nk = 0;
+                I64 kinds = 0;
+                I64 kn = nodes[capat].c as I64;
+                while (kn >= 0) {
+                    I64 kt = nodes[kn].tok as I64;
+                    if ((toks[kt].len as I64) == 4 && src[toks[kt].start as I64] == 'p') {
+                        kinds = kinds | ((1 as I64) << nk);
+                    }
+                    nk += 1;
+                    kn = nodes[kn].next as I64;
+                }
+                next = put(d, next, limits.DK_CAP, vis, 0, m, 0, 0, 0, nk, kinds, buf, 0, nlen);
+            }
+            if (kind == parse.N_EXTERN && next >= 0) {
+                // The service of a service extern (I/O services lane U5).
+                I64 nlen = service_text(src, toks, nodes, x, buf);
+                if (nlen > 0) {
+                    next = put(d, next, limits.DK_SERVICE, vis, 0, m, 0, 0, 0, 0, 0, buf, 0, nlen);
+                }
             }
         }
         if (next < 0) {
@@ -598,6 +1007,30 @@ export Bool write_block[n, k, r](in U8[n] src, in scan.Token[_] toks, in parse.N
         }
         at = next;
         x = nodes[x].next as I64;
+    }
+    // The capabilities the module's service calls need, each at its first call.
+    I64 needs = at;
+    for y in 0..nn {
+        I64 nlen = call_capability(src, toks, nodes, sem, syms, d, y, buf);
+        if (nlen <= 0) {
+            continue;
+        }
+        Bool seen = false;
+        I64 q = needs;
+        while (q < at && !seen) {
+            seen = name_equals(d, q, buf, 0, nlen);
+            q = next_member(d, q);
+        }
+        if (seen) {
+            continue;
+        }
+        I64 ct = nodes[y].start as I64;
+        I64 next = put(d, at, limits.DK_NEED, 0, 0, m, 0, 0, 0, toks[ct].line as I64, toks[ct].col as I64, buf, 0, nlen);
+        if (next < 0) {
+            _ = limits.limit_diag(diag, m, toks[ct].line as I64, toks[ct].col as I64, limits.LIM_DECLS, k);
+            return false;
+        }
+        at = next;
     }
     clear_row(d, mrow);
     d[mrow].kind = limits.DK_MODULE;

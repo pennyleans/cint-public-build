@@ -2,8 +2,11 @@
  *
  * Every path goes through the wide API, so a UTF-8 path with characters outside the ANSI
  * code page works. A child inherits exactly the handles it is given (a handle list on
- * STARTUPINFOEX): its stdin (NUL), stdout and stderr, and the fault record file. The child of
- * `cint <name>` (cli_handoff) gets this process's stdin, stdout and stderr instead.
+ * STARTUPINFOEX): its stdin (NUL, or a duplicate of this process's for a program granted
+ * console.input), stdout and stderr, and the fault record file. It runs in a hidden console of
+ * its own, except a program whose stdin is this process's console, which shares that console,
+ * so the keys typed reach it and Ctrl+C ends both, as on POSIX. The child of `cint <name>`
+ * (cli_handoff) gets this process's stdin, stdout and stderr instead.
  */
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -247,11 +250,19 @@ int cli_proc_run(const cli_proc *p, int *status)
     char token[48], fuel_token[48];
     const char **args = NULL;
     size_t len = 64, at = 0, i, n, nh = 0;
-    int r = -1;
-    DWORD code = 0;
+    int r = -1, share = 0;
+    DWORD code = 0, mode = 0;
     memset(&si, 0, sizeof si);
     memset(&pi, 0, sizeof pi);
-    in = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, NULL);
+    if (p->inherit_stdin) {
+        /* A program granted console.input reads this process's stdin: an inheritable duplicate. */
+        if (!DuplicateHandle(GetCurrentProcess(), GetStdHandle(STD_INPUT_HANDLE), GetCurrentProcess(), &in, 0, TRUE,
+                             DUPLICATE_SAME_ACCESS)) {
+            in = INVALID_HANDLE_VALUE;
+        }
+    } else {
+        in = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, NULL);
+    }
     if (p->log_path != NULL) {
         out = open_file(p->log_path, OPEN_ALWAYS, TRUE);
         if (out == INVALID_HANDLE_VALUE || !DuplicateHandle(GetCurrentProcess(), out, GetCurrentProcess(), &err, 0,
@@ -282,6 +293,7 @@ int cli_proc_run(const cli_proc *p, int *status)
     if (in == INVALID_HANDLE_VALUE) {
         goto done;
     }
+    share = p->inherit_stdin && GetConsoleMode(in, &mode);   /* stdin is this process's console */
     for (n = 0; p->argv[n] != NULL; n++) {
         len += 2u * strlen(p->argv[n]) + 3u;
     }
@@ -333,8 +345,8 @@ int cli_proc_run(const cli_proc *p, int *status)
     si.StartupInfo.hStdOutput = out;
     si.StartupInfo.hStdError = err;
     si.lpAttributeList = attrs;
-    if (!CreateProcessW(exe, cmd, NULL, NULL, TRUE, EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW, NULL, NULL,
-                        &si.StartupInfo, &pi)) {
+    if (!CreateProcessW(exe, cmd, NULL, NULL, TRUE, EXTENDED_STARTUPINFO_PRESENT | (share ? 0 : CREATE_NO_WINDOW), NULL,
+                        NULL, &si.StartupInfo, &pi)) {
         goto done;
     }
     CloseHandle(out);

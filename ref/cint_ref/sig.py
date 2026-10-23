@@ -434,6 +434,9 @@ class _Mapper:
             return ErrorUnion(self.error_set(t.set), None if t.value == VOID else self.type(t.value, sizes))
         if isinstance(t, str) and t in SCALAR_TAGS:
             return t
+        if t == "Grants":
+            raise NoCarrier("a Grants parameter has no carrier: a host program passes grants in cint_ctx_config "
+                            "(SPEC-03 A-10)")
         raise NoCarrier("the type %s has no carrier (SPEC-03 A-25)" % (t,))
 
     def struct(self, st: StructType) -> Struct:

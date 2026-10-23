@@ -60,7 +60,7 @@ class Interpreter:
             raise LoadError("the interpreter's library %s cannot be used: %s" % (path, failure)) from None
         self.state = _state.StateApi(lib)
         if self.state.stale is not None:
-            raise LoadError("the interpreter's library %s is %s, older than ABI 3.2 (SPEC-03 A-5)"
+            raise LoadError("the interpreter's library %s is %s, older than ABI 3.3 (SPEC-03 A-5)"
                             % (path, self.state.stale))
         if self.state.missing is not None:
             raise LoadError("the interpreter's library %s lacks %s" % (path, self.state.missing))

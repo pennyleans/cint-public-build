@@ -152,13 +152,17 @@ done:
     return status;
 }
 
-static int run_read(char **argv)
+/* read ROOT REL LIMIT [NEXT]: NEXT is chained as the standard library root (RT-OQ-71). */
+static int run_read(int argc, char **argv)
 {
-    size_t n = 0, m = 0, limit = 0, len = 0;
+    size_t n = 0, m = 0, k = 0, limit = 0, len = 0;
     uint8_t *dir = unhex(argv[2], &n), *rel = unhex(argv[3], &m), *bytes = NULL, d[32];
-    cint_bridge_root *root = NULL;
+    uint8_t *nextdir = argc > 5 ? unhex(argv[5], &k) : NULL;
+    cint_bridge_root *root = NULL, *next = NULL;
     bool ok = dir != NULL && rel != NULL && parse_size(argv[4], &limit) && cint_bridge_root_open((const char *)dir, &root)
-              && cint_bridge_read_input(root, (const char *)rel, limit, &bytes, &len);
+              && (argc <= 5 || (nextdir != NULL && cint_bridge_root_open((const char *)nextdir, &next)));
+    if (ok && next != NULL) cint_bridge_root_chain(root, next);
+    ok = ok && cint_bridge_read_input(root, (const char *)rel, limit, &bytes, &len);
     if (ok) {
         cint_sha256(bytes, len, d);
         printf("read %zu ", len);
@@ -167,9 +171,28 @@ static int run_read(char **argv)
     }
     cint_bridge_free_input(bytes);
     cint_bridge_root_close(root);
+    cint_bridge_root_close(next);
     free(dir);
     free(rel);
+    free(nextdir);
     return ok ? 0 : 1;
+}
+
+/* probe ROOT REL: `absent` (exit 0) or `present` (exit 1), as cint_bridge_input_absent says. */
+static int run_probe(char **argv)
+{
+    size_t n = 0, m = 0;
+    uint8_t *dir = unhex(argv[2], &n), *rel = unhex(argv[3], &m);
+    cint_bridge_root *root = NULL;
+    int status = 2;
+    if (dir != NULL && rel != NULL && cint_bridge_root_open((const char *)dir, &root)) {
+        status = cint_bridge_input_absent(root, (const char *)rel) ? 0 : 1;
+        printf("%s\n", status == 0 ? "absent" : "present");
+    }
+    cint_bridge_root_close(root);
+    free(dir);
+    free(rel);
+    return status;
 }
 
 #ifdef CINT_BRIDGE_TEST_HOOKS
@@ -277,9 +300,10 @@ int main(int argc, char **argv)
 {
     if (argc == 2 && strcmp(argv[1], "calls") == 0) return run_calls();
     if (argc >= 5 && strcmp(argv[1], "commit") == 0) return run_commit(argc, argv);
-    if (argc == 5 && strcmp(argv[1], "read") == 0) return run_read(argv);
+    if ((argc == 5 || argc == 6) && strcmp(argv[1], "read") == 0) return run_read(argc, argv);
+    if (argc == 4 && strcmp(argv[1], "probe") == 0) return run_probe(argv);
     if (argc >= 5 && strcmp(argv[1], "build") == 0) return run_build(argc, argv);
-    fprintf(stderr, "usage: test_bridge calls | commit PATH DATA LIMIT [-i INPUT]... [-f STEP] | read ROOT REL LIMIT"
-                    " | build ROOT OUT [-f STEP] [-w K] [-k K] [-p] [-t K] [-l] REL...\n");
+    fprintf(stderr, "usage: test_bridge calls | commit PATH DATA LIMIT [-i INPUT]... [-f STEP] | read ROOT REL LIMIT [NEXT]"
+                    " | probe ROOT REL | build ROOT OUT [-f STEP] [-w K] [-k K] [-p] [-t K] [-l] REL...\n");
     return 2;
 }

@@ -99,6 +99,37 @@ export const U8 DK_VAR = 9;
 // The limbs of a constant of a wide type after its record and name rows (box 15 unit 4b;
 // SPEC-09 CINTC-16): six to a row from limb 1, `a` and `b` then four in `name`, little-endian.
 export const U8 DK_LIMBS = 10;
+// I/O services lane U1 (SPEC-09 CINTC-16, edition 34; compiler/OPEN.md CINTC-OQ-65). An
+// extern is a function row (kind 4) whose `mode` is its effect class (1 `pure`, 2
+// `observe`, 3 `unrestricted`) and whose `ext_kind` is DF_EXTERN for a host extern or
+// DF_SERVICE for a service extern. The capability that covers a service extern follows its
+// parameter rows: `name` the capability's dotted name, `a` its argument count, `b` the
+// kinds, bit j set when argument j is a logical path and clear when it is a name.
+export const U8 DK_CAP = 11;
+// A `requires` declaration: `name` the capability's dotted name, `a` and `b` the line and
+// column of its first name, `ref` its argument count; one DK_ARG row per argument follows.
+export const U8 DK_REQ = 12;
+// A string argument of a `requires`: `name` its decoded bytes (`name_len` 0 for ""), `a`
+// and `b` the line and column of its first token.
+export const U8 DK_ARG = 13;
+// The first call, in check order, that a module makes of a service extern covered by a
+// capability: `name` the capability's dotted name, `a` and `b` the line and column of the
+// call. The root module's compile reads these rows program-wide (check.capabilities).
+export const U8 DK_NEED = 14;
+// I/O services lane U5 (SPEC-09 CINTC-16, edition 40; compiler/OPEN.md CINTC-OQ-68). An
+// `error` declaration that names its values is a set record: `tag` its underlying type, `a`
+// its value count, `ref` its own row, and one DK_EVALUE row per value after it, in tag
+// order, `name` the value's name and `a` its tag from 1. A combined set (`= A | B`) has its
+// record alone, `a` -1. A set or union field of another row refers to the set's row in `ref`
+// (decl.persist).
+export const U8 DK_ERRSET = 15;
+export const U8 DK_EVALUE = 16;
+// The service of a service extern, after its parameter rows and its DK_CAP row: `name` the
+// service's name and version as its `@service` attribute spells them (`fs/1`).
+export const U8 DK_SERVICE = 17;
+// Decl.ext_kind of a function row that is an extern.
+export const U8 DF_EXTERN = 1;
+export const U8 DF_SERVICE = 2;
 // Decl.ext_kind of a rank-1 type.
 export const U8 DX_LITERAL = 1;
 export const U8 DX_SIZE = 2;
@@ -119,7 +150,7 @@ export const I64 ARMS_MAX = 65536;
 export const I64 DIAG_RETAINED_MAX = 100;
 export const I64 DIAG_ROWS = 101;
 export const I64 LITERAL_BYTES_MAX = 513;
-export const I64 FOLD_LIMBS = 65;
+export const I64 FOLD_LIMBS = 66;
 export const I64 OUTPUT_BYTES_MAX = 268435456;
 export const I64 FAULT_RECORD_MAX = 2372;
 export const I64 FAULT_BYTES = 237200;

@@ -48,6 +48,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -78,7 +79,7 @@ class Toolchain(boot.LoggedToolchain):
     """The bootstrap's logged toolchain at any configuration of the run matrix (SPEC-09 9.4)."""
     def __init__(self, leg: str, opt: str, helpers: str, sanitize: bool, logs: pathlib.Path):
         cc.Toolchain.__init__(self, leg, opt, helpers, sanitize)
-        self.logs, self.commands = logs, []
+        self.logs, self.commands, self.lock = logs, [], threading.Lock()
         logs.mkdir()
 
 

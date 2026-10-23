@@ -21,6 +21,7 @@ This directory holds the cases that every cint implementation must agree on: `ci
 | `errors/`, `cleanup/` | Error sets, error unions, `try`, `catch` and `as?`; `defer` and `errdefer` | reference or compile-error |
 | `memory/` | Arenas, pools and handles (SPEC-03) | reference or compile-error |
 | `module/` | Programs of several modules; the imported modules are in `module/lib/`, read from the source root `conformance/` | reference or compile-error |
+| `services/` | Service declarations (`extern`, `@service`, `requires`), `Grants`, and the `denied` result of a service call that no grant covers; the cases that `import fs;` or `import console;` read `lib/fs.ci` and `lib/console.ci` through the standard library root of the `cint` command | reference or compile-error |
 | `boot/` | The productions that the seed compiler accepts, and programs outside its subset that it must refuse (see "Seed outcomes") | reference, or compile-error from the case header |
 | `ternary/` | Balanced ternary arithmetic on binary words, written in the language as it is, each also checked by `tools/t27_ref.py` | reference |
 | `held.txt` | Cases held out of the frozen set, each with the open item it waits on. A held case has no `.expect` file | |
@@ -59,7 +60,7 @@ A program case is a `.ci` source file and an `.expect` file in the canonical tex
 
 - `clause` names the clauses the case tests.
 - `subset` says whether the case is inside `cint-boot-1` (SPEC-09 5.2 and 5.3), which the seed compiler accepts, or needs the full `cint-core-1` language.
-- `entry` and `args` name the exported function and its typed arguments; `fuel` and `depth` give the budgets where a case needs them. These keys (`case`, `clause`, `subset`, `entry`, `args`, `fuel`, `depth`) are normative. A case with no named entry runs the script, else `main`, else its only test.
+- `entry` and `args` name the exported function and its typed arguments; `fuel` and `depth` give the budgets where a case needs them. These keys (`case`, `clause`, `subset`, `entry`, `args`, `fuel`, `depth`) are normative. `argv` lists the program arguments of a `main` that takes them (`main(in U8[_] args)`, SPEC-04 LS-221), comma-separated words that `cint run FILE.ci -- ARG...` passes after `--`; a case without the line gives `main` none (SPEC-09 CONF-10a). A case with no named entry runs the script, else `main`, else its only test.
 - `spec outcome` is the author's reading of the specification, written for a reader. The `.expect` file, not this comment, is the frozen expectation.
 
 `arith/add_i64_overflow.ci` keeps the listing of SPEC-09 9.2 unchanged. Its header is folded into the first comment line so that the fault stays at line 5, column 15.

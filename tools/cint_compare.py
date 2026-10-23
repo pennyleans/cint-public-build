@@ -412,7 +412,7 @@ def tool_identity(configs) -> dict:
             "compare_sha256": cc.files_digest([pathlib.Path(__file__).resolve()]),
             "harness_sha256": cc.files_digest([cc.HARNESS / "cint_harness.c"]),
             "runtime_library_sha256": cc.files_digest([cc.RT / "cint_rt.c", cc.RT / "cint_rt_internal.h",
-                                                     cc.RT / "cint_mem.c", cc.RT / "cint_mem.h",
+                                                     cc.RT / "cint_host.c", cc.RT / "cint_fs.c", cc.RT / "cint_console.c", cc.RT / "cint_program.c", cc.RT / "cint_mem.c", cc.RT / "cint_mem.h",
                                                      cc.RT / "cint_wide.c", cc.RT / "cint_wide.h",
                                                      cc.RT / "cint_fixed.c", cc.RT / "cint_fixed.h"])}
     if any(c["compiler"] == "b1" for c in configs):

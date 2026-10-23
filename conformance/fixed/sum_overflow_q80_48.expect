@@ -1,0 +1,17 @@
+case fixed/sum_overflow_q80_48
+clause SPEC-02 R-4; SPEC-01 IM-77 (a sum of Q80.48 values whose exact total is outside I128 faults E_OVERFLOW)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 2
+fault.code E_OVERFLOW
+fault.operation sum.checked.q80_48.q80_48
+fault.operand I64 2
+fault.exact 170141183460469231731687303715884105728
+fault.limit Q80.48 raw 170141183460469231731687303715884105727
+fault.position fixed/sum_overflow_q80_48.ci:9:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

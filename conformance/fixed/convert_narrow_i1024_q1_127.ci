@@ -1,0 +1,10 @@
+// case: fixed/convert_narrow_i1024_q1_127
+// clause: SPEC-01 IM-68, IM-106, IM-108 item 1 (I1024.min converted to Q1.127 at run time: exact -2^1150, the largest run-time conversion source, 144 bytes)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: fault E_NARROW at 9:15 (the `as`), operation as.checked.i1024.q1_127, operand I1024 -2^1023, exact -2^1150, limit Q1.127 raw -2^127; stack depth 0; fuel 1. Games wave G2a (OQ-292)
+
+export Bool run() {
+    I1024 n = I1024.min;
+    return (n as Q1.127) != 0.0;
+}

@@ -1,17 +1,44 @@
 /* wb_text.c: text buffers and canonical JSON strings of the workbench (box 14).
  */
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#define _POSIX_C_SOURCE 200809L
+#include <time.h>
+#endif
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 #include "wb.h"
 
+/* A monotonic clock: TIME_UTC is the time of day, which steps back when the system clock is set
+ * or a virtual machine resumes, so a difference of two readings can be negative. */
+#if defined(_WIN32)
+long long wb_now_ns(void)
+{
+    LARGE_INTEGER c, f;
+    if (!QueryPerformanceCounter(&c) || !QueryPerformanceFrequency(&f) || f.QuadPart <= 0) return 0ll;
+    return c.QuadPart / f.QuadPart * 1000000000ll + c.QuadPart % f.QuadPart * 1000000000ll / f.QuadPart;
+}
+#else
 long long wb_now_ns(void)
 {
     struct timespec t;
-    return timespec_get(&t, TIME_UTC) == TIME_UTC ? (long long)t.tv_sec * 1000000000ll + t.tv_nsec : 0ll;
+    return clock_gettime(CLOCK_MONOTONIC, &t) == 0 ? (long long)t.tv_sec * 1000000000ll + t.tv_nsec : 0ll;
+}
+#endif
+
+long long wb_elapsed_ns(long long from, long long to)
+{
+    return to > from ? to - from : 0ll;
 }
 
 static int grow(wb_buf *b, size_t n)

@@ -10,6 +10,8 @@
 # 2026-10-04: constructor-shape seed-measure-01 measured 4 SEED-OQ-06 cases
 # and 1 outside_subset case; all five are listed below.
 # 2026-10-05: 11 built-in cases (box 07) measured with the seed: all outside_subset.
+# 2026-10-22 (OQ-304): the 11 conformance/services/ cases of the I/O services lane measured with the seed: all outside_subset (C9100 at the first extern, requires, error set, catch or print).
+# 2026-10-22 (OQ-305 A): services/denied_try_main imports fs and services/main_grants_print drops its `entry: main` header line; remeasured with the seed, both stay outside_subset (C9100 at 7:1, the `requires` declaration, and at 9:5, the print statement).
 # 2026-10-05: box 09 adds 17 reference cases, measured on the seed at d6d3e85
 # (scratch runs, no receipt): 15 compared, 2 outside_subset; and 88 cases held
 # under I-2 (docs/design/notes/2026-10-05-box09-arrays-views-kernels.md).
@@ -90,6 +92,18 @@
 # conformance/fixed/ return Bool or I64, so that cint-observe-1 can call them; no row
 # changes. The seed now refuses wide/mul_full_u64 at the type property `U64.max` (8:13),
 # before its first wide type.
+# 2026-10-15, box 15 (OQ-280 A, group 1): the 11 programs of cases 1 to 10 of `as|` and the
+# fixed-point result forms (OQ-272 A, OQ-273 A, OQ-278 A; .expect format 5) are frozen from
+# cint_ref; the seed refuses each with C9100, at `as|`, the type property `U64.max`, the
+# first wide or fixed-point type, or the built-in `div_result`, so all 11 are outside_subset
+# here. Measured with --required T1.txt and --only for the 11 on Linux (the seed of fed52d7,
+# gcc -O0, portable helpers; scratch run, no receipt).
+# 2026-10-15, games wave G2a (OQ-292 A; rows by OQ-293 A under OQ-232):
+# the 29 cases of fixed-point storage of 128 bits (Q80.48, Q96.32, Q64.64, Q1.127 and the
+# C2005 refusal of Q128.128; .expect format 5) are frozen from cint_ref; the seed refuses
+# each with C9100 at its first fixed-point type, so all 29 are outside_subset here.
+# Measured with --required T1.txt and --only fixed/ on Linux (the seed of 375beca, gcc
+# -O0, portable helpers; scratch run, no receipt).
 anchors/abs.checked.i64.001 cint-seed not_applicable
 anchors/abs.checked.i64.002 cint-seed not_applicable
 anchors/abs.checked.i8.001 cint-seed not_applicable
@@ -410,6 +424,8 @@ arith/const_shift_count cint-seed compared
 arith/const_skipped_and cint-seed compared
 arith/const_skipped_cond_arm cint-seed outside_subset
 arith/const_type_mismatch cint-seed compared
+arith/convert_sat_literal cint-seed outside_subset
+arith/convert_sat_table cint-seed outside_subset
 arith/div_zero_runtime cint-seed compared
 arith/eval_order_left_first cint-seed compared
 arith/floor_division_literals cint-seed compared
@@ -582,6 +598,7 @@ diag/c2003_skipped_arm cint-seed outside_subset
 diag/c2003_skipped_or cint-seed compared
 diag/c2003_unsigned_minus_one cint-seed compared
 diag/c2003_unsigned_minus_space cint-seed compared
+diag/c2008_convert_sat_bool cint-seed outside_subset
 diag/c2050_uninitialized_scalar cint-seed compared
 diag/c2052_assign_loop_variable cint-seed compared
 diag/c2055_nested_direct cint-seed compared
@@ -635,52 +652,88 @@ errors/test_try_any_set cint-seed outside_subset
 errors/underlying_type_u8 cint-seed outside_subset
 errors/widen_in_assignment_and_compare cint-seed outside_subset
 fixed/add_checked_overflow_raw cint-seed outside_subset
+fixed/add_sub_result_q16_16 cint-seed outside_subset
 fixed/array_index_bounds_q16_16 cint-seed outside_subset
 fixed/constant_fold_overflow cint-seed outside_subset
+fixed/constant_fold_q80_48 cint-seed outside_subset
 fixed/convert_integer_narrow cint-seed outside_subset
 fixed/convert_literal_c6001 cint-seed outside_subset
+fixed/convert_literal_c6001_q1_127_max cint-seed outside_subset
+fixed/convert_narrow_i1024_q1_127 cint-seed outside_subset
 fixed/convert_narrow_q32_32 cint-seed outside_subset
+fixed/convert_narrow_q80_48 cint-seed outside_subset
 fixed/convert_round_clause_c2009 cint-seed outside_subset
+fixed/convert_sat_fixed cint-seed outside_subset
+fixed/convert_sat_round_clause_c2009 cint-seed outside_subset
 fixed/convert_table cint-seed outside_subset
+fixed/convert_table_q128 cint-seed outside_subset
 fixed/convert_wrap_and_result cint-seed outside_subset
 fixed/div_overflow_q16_16 cint-seed outside_subset
+fixed/div_overflow_q96_32 cint-seed outside_subset
+fixed/div_result_q16_16 cint-seed outside_subset
 fixed/div_table_q16_16 cint-seed outside_subset
+fixed/div_table_q96_32 cint-seed outside_subset
 fixed/div_zero_q16_16 cint-seed outside_subset
+fixed/div_zero_q96_32 cint-seed outside_subset
 fixed/dot_one_rounding cint-seed outside_subset
+fixed/dot_one_rounding_q80_48 cint-seed outside_subset
 fixed/dot_overflow_q8_8 cint-seed outside_subset
 fixed/fraction_integer_context_c2004 cint-seed outside_subset
 fixed/kernel_mul_overflow cint-seed outside_subset
 fixed/kernel_scale_reduce cint-seed outside_subset
+fixed/kernel_scale_reduce_q80_48 cint-seed outside_subset
 fixed/literal_grid_q16_16 cint-seed outside_subset
+fixed/literal_grid_q80_48 cint-seed outside_subset
 fixed/literal_off_grid_c2006 cint-seed outside_subset
+fixed/literal_off_grid_c2006_q64_64 cint-seed outside_subset
 fixed/literal_out_of_range_c2003 cint-seed outside_subset
+fixed/literal_out_of_range_c2003_q80_48 cint-seed outside_subset
 fixed/literal_round_clause cint-seed outside_subset
 fixed/literal_round_negative cint-seed outside_subset
 fixed/module_state_q16_16 cint-seed outside_subset
+fixed/module_state_q80_48 cint-seed outside_subset
 fixed/mul_forms_q16_16 cint-seed outside_subset
+fixed/mul_forms_q80_48 cint-seed outside_subset
 fixed/mul_int_overflow cint-seed outside_subset
 fixed/mul_overflow_q16_16 cint-seed outside_subset
+fixed/mul_overflow_q80_48 cint-seed outside_subset
+fixed/mul_result_q16_16 cint-seed outside_subset
 fixed/mul_table_q16_16 cint-seed outside_subset
+fixed/mul_table_q80_48 cint-seed outside_subset
 fixed/print_kind_c1037 cint-seed outside_subset
 fixed/print_layout_raw_bits cint-seed outside_subset
 fixed/print_ls215 cint-seed outside_subset
+fixed/print_q128 cint-seed outside_subset
 fixed/qmul_formats cint-seed outside_subset
+fixed/qmul_mul_int_q128 cint-seed outside_subset
 fixed/qmul_overflow cint-seed outside_subset
+fixed/qmul_overflow_q1_127 cint-seed outside_subset
 fixed/raw_and_constructor cint-seed outside_subset
+fixed/raw_and_constructor_q80_48 cint-seed outside_subset
 fixed/raw_forms_q8_8 cint-seed outside_subset
 fixed/raw_not_assignable_c2058 cint-seed outside_subset
 fixed/reductions_q16_16 cint-seed outside_subset
+fixed/reductions_q80_48 cint-seed outside_subset
 fixed/rem_c2103 cint-seed outside_subset
+fixed/rem_result_c2103 cint-seed outside_subset
+fixed/result_mode_integer_c2103 cint-seed outside_subset
 fixed/round_modes_convert cint-seed outside_subset
 fixed/round_modes_div cint-seed outside_subset
 fixed/round_modes_mul cint-seed outside_subset
 fixed/sqrt_negative_domain cint-seed outside_subset
+fixed/sqrt_q1_127_ceil_overflow cint-seed outside_subset
 fixed/sqrt_q1_15_ceil_overflow cint-seed outside_subset
 fixed/sqrt_table cint-seed outside_subset
+fixed/sqrt_table_q64_64 cint-seed outside_subset
 fixed/struct_field_q cint-seed outside_subset
+fixed/struct_field_q80_48 cint-seed outside_subset
+fixed/sum_overflow_q80_48 cint-seed outside_subset
 fixed/sum_overflow_q8_8 cint-seed outside_subset
+fixed/translation_q80_48 cint-seed outside_subset
 fixed/type_name_c2005 cint-seed outside_subset
+fixed/type_name_c2005_q128_128 cint-seed outside_subset
 fixed/type_properties cint-seed outside_subset
+fixed/type_properties_q128 cint-seed outside_subset
 kernel/advance_element_form cint-seed outside_subset
 kernel/alias_gcd_accepted cint-seed outside_subset
 kernel/alias_same_view_c5010 cint-seed outside_subset
@@ -849,6 +902,32 @@ reduce/sum_sat_rank2_transposed cint-seed outside_subset
 reduce/sum_strided_view cint-seed outside_subset
 reduce/sum_widened_i16 cint-seed outside_subset
 reduce/sum_wrap_i8 cint-seed outside_subset
+# Reference: services/c2064_out_scalar cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (the `extern` declaration); frozen from cint_ref, I/O services lane (OQ-304)
+services/c2064_out_scalar cint-seed outside_subset
+# Reference: services/c3040_no_requires cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 10:34 (`catch`); frozen from cint_ref, I/O services lane (OQ-304)
+services/c3040_no_requires cint-seed outside_subset
+# Reference: services/c3041_path_syntax cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:1 (the `requires` declaration); frozen from cint_ref, I/O services lane (OQ-304)
+services/c3041_path_syntax cint-seed outside_subset
+# Reference: services/c3041_unknown_capability cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:1 (the `requires` declaration); frozen from cint_ref, I/O services lane (OQ-304)
+services/c3041_unknown_capability cint-seed outside_subset
+# Reference: services/c3042_grants_local cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:1 (the `requires` declaration); frozen from cint_ref, I/O services lane (OQ-304)
+services/c3042_grants_local cint-seed outside_subset
+# Reference: services/c3043_no_denied cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (the `error` set); frozen from cint_ref, I/O services lane (OQ-304)
+services/c3043_no_denied cint-seed outside_subset
+# Reference: services/c4010_extern_named cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (the `extern` declaration); frozen from cint_ref, I/O services lane (OQ-304)
+services/c4010_extern_named cint-seed outside_subset
+# Reference: services/c5050_struct_param cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 9:1 (the `extern` declaration); frozen from cint_ref, I/O services lane (OQ-304)
+services/c5050_struct_param cint-seed outside_subset
+# Reference: services/denied_catch cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:1 (the `requires` declaration); frozen from cint_ref, I/O services lane (OQ-304)
+services/denied_catch cint-seed outside_subset
+# Reference: services/denied_try_main cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (the `requires` declaration); frozen from cint_ref, I/O services lane (OQ-304), the case importing `fs` (OQ-305)
+services/denied_try_main cint-seed outside_subset
+# Reference: services/main_grants_print cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 9:5 (the print statement); frozen from cint_ref, I/O services lane (OQ-304), the header without `entry: main` (OQ-305)
+services/main_grants_print cint-seed outside_subset
+# Reference: services/main_args_none cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:5 (the print statement); frozen from cint_ref, I/O services lane U6 (OQ-306)
+services/main_args_none cint-seed outside_subset
+# Reference: services/main_args_print cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 11:17 (the built-in `len`); frozen from cint_ref, I/O services lane U6 (OQ-306)
+services/main_args_print cint-seed outside_subset
 struct/array_of_structs cint-seed compared
 struct/assignment_copies cint-seed compared
 struct/by_value_parameter cint-seed compared
@@ -1122,6 +1201,7 @@ wide/array_i1024_rank2_row_sum cint-seed outside_subset
 wide/array_i128_extremes cint-seed outside_subset
 wide/array_i128_index_bounds cint-seed outside_subset
 wide/convert_i256_to_u256_negative cint-seed outside_subset
+wide/convert_sat_wide cint-seed outside_subset
 wide/convert_u512_to_u128_narrow cint-seed outside_subset
 wide/convert_wrap_u128 cint-seed outside_subset
 wide/copy_reverse_reshape_i256 cint-seed outside_subset

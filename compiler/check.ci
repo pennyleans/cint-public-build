@@ -145,6 +145,13 @@ const I64 I64_MIN = -9223372036854775807 - 1;
 // C3020: two tests of a module with the same name (SPEC-04 LS-233).
 const I64 C_TEST_NAME = 3020;
 
+// Box 15 unit 4e: the rounding mode half_even (SPEC-01 4.5, numbered as resolve.round_mode),
+// the default of `*`, `/`, `sqrt`, `qmul`, `dot` and a conversion that rounds (IM-43, IM-62,
+// IM-67, IM-69), and the mark h_infer gives a fraction literal whose `round` clause names no
+// mode (C3007 when it settles).
+const I64 MODE_HALF_EVEN = 5;
+const I64 MODE_BAD = 10;
+
 // Internal statement flags; the checked constant/type fields keep their usual meaning.
 const I64 SEM_SWITCH_BREAK = 32;
 const I64 SEM_SWITCH_DEFAULT = 64;
@@ -206,6 +213,14 @@ Bool is_literal(in parse.Node[_] nodes, I64 x) {
     return nodes[x].kind == parse.N_LIT || nodes[x].kind == parse.N_NEGLIT;
 }
 
+// The token kind of literal node x: TK_INT, TK_CHAR or TK_FRAC.
+I32 literal_kind(in scan.Token[_] toks, in parse.Node[_] nodes, I64 x) {
+    if (nodes[x].kind == parse.N_NEGLIT) {
+        return toks[nodes[x].c as I64].kind;
+    }
+    return toks[tok_of(nodes, x)].kind;
+}
+
 // Whether node x is a call of an integer built-in (mark_builtin).
 Bool is_builtin(in parse.Node[_] nodes, in resolve.Sem[_] sem, I64 x) {
     return nodes[x].kind == parse.N_CALL && (sem[x].flags & resolve.SEM_BUILTIN) != 0;
@@ -222,10 +237,10 @@ I64 arg_at(in parse.Node[_] nodes, I64 x, I64 i) {
     return g;
 }
 
-// Value i of built-in call x (after the type argument of `muldiv`); a rotation's count is
-// value 1.
+// Value i of built-in call x (after the type argument of `muldiv` and `qmul`); a rotation's
+// count is value 1.
 I64 builtin_value(in parse.Node[_] nodes, in resolve.Sem[_] sem, I64 x, I64 i) {
-    if (sem[x].lit_at == fold.BI_MULDIV) {
+    if (sem[x].lit_at == fold.BI_MULDIV || sem[x].lit_at == fold.BI_QMUL) {
         return arg_at(nodes, x, i + 1);
     }
     return arg_at(nodes, x, i);
@@ -298,11 +313,6 @@ Bool spells[n, t, k](in U8[n] src, in scan.Token[t] toks, I64 tok, in U8[k] word
     return true;
 }
 
-// Whether a literal token is outside the subset: a fraction.
-Bool odd_literal(in scan.Token[_] toks, I64 tok) {
-    return toks[tok].kind == scan.TK_FRAC;
-}
-
 // Whether N_NAME node x spells the alias of an import among nodes 0..nn (the last name of
 // its path); a field of anything else is part (ii)'s, outside the subset until it lands.
 Bool names_alias[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, I64 nn, I64 x) {
@@ -341,7 +351,7 @@ Bool declared[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, I6
     for k in 0..nn {
         I32 kind = nodes[k].kind;
         if (kind == parse.N_FUNC || kind == parse.N_PARAM || kind == parse.N_SIZE || kind == parse.N_VAR ||
-                kind == parse.N_BIND || kind == parse.N_STRUCT) {
+                kind == parse.N_BIND || kind == parse.N_STRUCT || kind == parse.N_EXTERN) {
             I64 d = nodes[k].tok as I64;
             if (toks[d].len == toks[t].len &&
                     resolve.same_text(src, toks[d].start as I64, toks[t].start as I64, toks[t].len as I64)) {
@@ -377,9 +387,12 @@ Bool unsupported[n, q, r](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] 
             return (sem[x].flags & resolve.SEM_TOP) == 0;
         case parse.N_INDEX, parse.N_WILD, parse.N_SIZE:
             return false;
-        case parse.N_FIELD_DECL, parse.N_FIELD:
-            // A struct field (task 2.13 part (ii)) or `alias.name` (part (iii)): the checker
-            // tells them apart (qualified).
+        case parse.N_FIELD_DECL:
+            // A struct field (task 2.13 part (ii)); a bit field stays outside (SPEC-04 4.4),
+            // as `cint_ref` refuses it.
+            return nodes[x].b >= 0;
+        case parse.N_FIELD:
+            // `alias.name` (part (iii)) or a field: the checker tells them apart (qualified).
             return false;
         case parse.N_NAMEDARG: return (sem[x].flags & (resolve.SEM_NAMED_OK | resolve.SEM_BUILTIN)) == 0;
         case parse.N_STRUCT: return nodes[x].f >= 0;
@@ -417,13 +430,13 @@ Bool unsupported[n, q, r](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] 
         case parse.N_FOR_RANGE: return nodes[x].op == 0 || nodes[x].b >= 0;
         case parse.N_BIND: return nodes[x].a >= 0;
         case parse.N_HOLE:
-            // A format specification is checked at the hole; a conversion stays outside.
-            return nodes[x].op != 0;
-        case parse.N_LIT: return odd_literal(toks, tok);
-        case parse.N_NEGLIT: return odd_literal(toks, nodes[x].c as I64);
+            // A format specification is checked at the hole; of the conversions, `!raw` and
+            // `!bits` of a fixed-point value (format_ok; box 15 unit 4e).
+            return nodes[x].op != 0 && nodes[x].op != parse.HOLE_RAW && nodes[x].op != parse.HOLE_BITS;
+        case parse.N_LIT, parse.N_NEGLIT: return false;
         case parse.N_STRING: return (sem[x].flags & resolve.SEM_STRING_OK) == 0;
         case parse.N_UNARY: return nodes[x].op == parse.UNARY_TRY && (sem[x].flags & resolve.SEM_TOP) == 0;
-        case parse.N_CONVERT: return nodes[x].op == scan.OP_AS_SAT;
+        case parse.N_CONVERT: return false;
         case parse.N_CALL:
             I64 callee = nodes[x].a as I64;
             if (nodes[callee].kind == parse.N_FIELD) {
@@ -431,6 +444,11 @@ Bool unsupported[n, q, r](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] 
                 // pool (box 12), which the checker tells apart (h_call, h_member).
                 I64 obj = nodes[callee].a as I64;
                 return nodes[obj].kind != parse.N_NAME || (nodes[obj].flags & parse.F_PAREN) != 0;
+            }
+            if (nodes[callee].kind == parse.N_TYPEPROP && (nodes[callee].flags & parse.F_PAREN) == 0 &&
+                    toks[tok_of(nodes, callee)].kind == scan.TK_FIXED && spells(src, toks, nodes[callee].c as I64, "raw")) {
+                // `Q<i>.<f>.raw(n)` (box 15 unit 4e; h_rawctor).
+                return false;
             }
             return nodes[callee].kind != parse.N_NAME || (nodes[callee].flags & parse.F_PAREN) != 0;
         case parse.N_IMPORT:
@@ -459,6 +477,11 @@ Bool unsupported[n, q, r](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] 
             return (names[id].cls & resolve.NC_DECLARED) == 0;
         case parse.N_TYPEPROP:
             I64 p = nodes[x].c as I64;
+            if (toks[tok].kind == scan.TK_FIXED) {
+                // The checker decides: C2005, then C9102 for a property other than `min`, `max`
+                // and `epsilon` (box 15 unit 4e).
+                return false;
+            }
             return resolve.int_class(toks[tok].aux & 255) == 0 ||
                 !(spells(src, toks, p, "min") || spells(src, toks, p, "max"));
         case parse.N_TYPE:
@@ -470,9 +493,21 @@ Bool unsupported[n, q, r](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] 
                 // Resolves qualified record names, including view elements, after this gate.
                 return false;
             }
+            if (toks[tok].kind == scan.TK_FIXED) {
+                // A fixed-point type, or an array of one (box 15 unit 4e; C2005 in the checker).
+                return nodes[x].op != 1 || nodes[x].b >= 0;
+            }
             I32 cls = toks[tok].aux & 255;
             return toks[tok].kind != scan.TK_IDENT || nodes[x].op != 1 || nodes[x].b >= 0 ||
                 !(resolve.int_class(cls) != 0 || cls == scan.IDC_BOOL || scan.ordinary_name_class(cls));
+        case parse.N_EXTERN:
+            // An extern declaration (I/O services lane U1; SPEC-03 H-1, H-5); `cint_ref`
+            // refuses a view result.
+            return nodes[x].e >= 0;
+        case parse.N_REQUIRES: return false;
+        case parse.N_ATTR:
+            // `@service` on an extern (SPEC-07 SEC-CAP-13); other attributes stay outside.
+            return nodes[x].op != 1;
         default: return true;
     }
 }
@@ -486,7 +521,7 @@ I64 string_params[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes
     I64 ct = nodes[callee].tok as I64;
     I64 f = nodes[root].a as I64;
     while (f >= 0) {
-        if (nodes[f].kind == parse.N_FUNC) {
+        if (nodes[f].kind == parse.N_FUNC || nodes[f].kind == parse.N_EXTERN) {
             I64 ft = nodes[f].tok as I64;
             if (toks[ft].len == toks[ct].len && resolve.same_text(src, toks[ft].start as I64, toks[ct].start as I64,
                     toks[ct].len as I64)) {
@@ -586,23 +621,35 @@ void mark_builtin[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes
         g = nodes[g].next as I64;
     }
     I64 ta = nodes[x].b as I64;
-    if (id == fold.BI_MULDIV && ta >= 0 && (nodes[ta].kind == parse.N_NAME || nodes[ta].kind == parse.N_TYPENAME)) {
+    if ((id == fold.BI_MULDIV || id == fold.BI_QMUL) && ta >= 0 &&
+            (nodes[ta].kind == parse.N_NAME || nodes[ta].kind == parse.N_TYPENAME)) {
         sem[ta].flags = sem[ta].flags | resolve.SEM_BUILTIN;
     }
-    if (fold.builtin_mode(id) && last >= 0 && nodes[last].kind == parse.N_NAME) {
+    if (given_mode(nodes, x, id) && last >= 0 && nodes[last].kind == parse.N_NAME) {
         sem[last].flags = sem[last].flags | resolve.SEM_BUILTIN;
     }
 }
 
+// Whether built-in call x of id has a trailing mode argument: always for a built-in that
+// takes one, for `sqrt` of 2 arguments and `qmul` of 4 (box 15 unit 4e), and for
+// `mul_result` and `div_result` of 3 (OQ-273).
+Bool given_mode(in parse.Node[_] nodes, I64 x, I64 id) {
+    I64 argc = list_length(nodes, nodes[x].b as I64);
+    return fold.builtin_mode(id) || (id == fold.BI_SQRT && argc == 2) || (id == fold.BI_QMUL && argc == 4) ||
+        ((id == fold.BI_MUL_RESULT || id == fold.BI_DIV_RESULT) && argc == 3);
+}
+
 // Marks the shape of N_TYPE node ty (or -1) SEM_SHAPE_OK when its element is an integer
-// type or Bool: the gate then admits ranks 2 to 4 (box 09).
+// type, Bool or (box 15 unit 4e) a fixed-point type: the gate then admits ranks 2 to 4 (box
+// 09).
 void shape_ok(in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.Sem[_] sem, I64 ty) {
     if (ty < 0 || nodes[ty].kind != parse.N_TYPE || nodes[ty].a < 0 || nodes[ty].op != 1 || nodes[ty].b >= 0) {
         return;
     }
     I64 tk = tok_of(nodes, ty);
     I32 cls = toks[tk].aux & 255;
-    if (toks[tk].kind == scan.TK_IDENT && (resolve.int_class(cls) != 0 || cls == scan.IDC_BOOL)) {
+    if ((toks[tk].kind == scan.TK_IDENT && (resolve.int_class(cls) != 0 || cls == scan.IDC_BOOL)) ||
+            toks[tk].kind == scan.TK_FIXED) {
         I64 sh = nodes[ty].a as I64;
         sem[sh].flags = sem[sh].flags | resolve.SEM_SHAPE_OK;
     }
@@ -636,6 +683,12 @@ void mark_arrayfn[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes
     if (id == resolve.AF_FOLD && op >= 0 && nodes[op].kind == parse.N_NAME) {
         sem[op].flags = sem[op].flags | resolve.SEM_BUILTIN;
     }
+    if (id == resolve.AF_DOT && list_length(nodes, op) == 4 && nodes[op].kind == parse.N_TYPENAME &&
+            toks[tok_of(nodes, op)].kind == scan.TK_FIXED) {
+        // The mode of `dot` of fixed point (af_mode; box 15 unit 4e).
+        I64 ma = arg_at(nodes, x, 3);
+        sem[ma].flags = sem[ma].flags | resolve.SEM_BUILTIN;
+    }
 }
 
 // Box 12: marks the nodes of node x that the gate admits in one position only. The
@@ -651,7 +704,8 @@ void top_union(in parse.Node[_] nodes, inout resolve.Sem[_] sem, I64 x) {
             sem[v].flags = sem[v].flags | resolve.SEM_NAMED_OK;
             v = nodes[v].next as I64;
         }
-    } else if (k == parse.N_FUNC && nodes[x].a >= 0 && nodes[nodes[x].a as I64].kind == parse.N_ERRUNION) {
+    } else if ((k == parse.N_FUNC || k == parse.N_EXTERN) && nodes[x].a >= 0 &&
+            nodes[nodes[x].a as I64].kind == parse.N_ERRUNION) {
         I64 u = nodes[x].a as I64;
         sem[u].flags = sem[u].flags | resolve.SEM_TOP;
     } else if (k == parse.N_VAR || (k == parse.N_ASSIGN && nodes[x].op == scan.OP_ASSIGN)) {
@@ -710,6 +764,16 @@ Bool alloc_union[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes,
 }
 
 // C9102 at the first node outside the subset, in source order. Returns whether there is one.
+// Marks the N_NAME nodes of list head SEM_NAMED_OK: the segments of a capability's name and
+// the argument kinds of `@service` (I/O services lane U1), which are no values.
+void mark_names(in parse.Node[_] nodes, inout resolve.Sem[_] sem, I64 head) {
+    I64 v = head;
+    while (v >= 0) {
+        sem[v].flags = sem[v].flags | resolve.SEM_NAMED_OK;
+        v = nodes[v].next as I64;
+    }
+}
+
 Bool gate[n, q, r](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, I64 nn, inout resolve.Sem[_] sem,
         inout resolve.Name[q] names, inout limits.CompilerDiag[r] diag,
         inout resolve.RState[_] rs) {
@@ -734,23 +798,29 @@ Bool gate[n, q, r](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
     }
     for x in 0..nn {
         I32 kx = nodes[x].kind;
-        if (kx == parse.N_FUNC || kx == parse.N_KERNEL) {
+        if (kx == parse.N_FUNC || kx == parse.N_KERNEL || kx == parse.N_EXTERN) {
             I64 p = nodes[x].b as I64;
             while (p >= 0) {
                 if (kx == parse.N_KERNEL) {
                     sem[p].flags = sem[p].flags | SEM_KERNEL_PART;
                 } else {
                     mem_admit(toks, nodes, sem, nodes[p].a as I64);
+                    if (kx == parse.N_EXTERN) {
+                        // An extern's `out` parameter passes the gate as a kernel's does
+                        // (SPEC-03 H-5; I/O services lane U1); the checker gives C2064 for an
+                        // `out` scalar (extern_param_ok).
+                        sem[p].flags = sem[p].flags | SEM_KERNEL_PART;
+                    }
                 }
                 shape_ok(toks, nodes, sem, nodes[p].a as I64);
                 p = nodes[p].next as I64;
             }
             I64 res = nodes[x].a as I64;
-            if (kx == parse.N_FUNC && res >= 0 && nodes[res].kind == parse.N_ERRUNION) {
+            if (kx != parse.N_KERNEL && res >= 0 && nodes[res].kind == parse.N_ERRUNION) {
                 if (alloc_union(src, toks, nodes, res)) {
                     mem_admit(toks, nodes, sem, nodes[res].b as I64);
                 }
-            } else if (kx == parse.N_FUNC) {
+            } else if (kx != parse.N_KERNEL) {
                 mem_admit(toks, nodes, sem, res);
             }
         } else if (kx == parse.N_VAR && (sem[x].flags & SEM_ITEM) == 0 && nodes[x].a >= 0) {
@@ -827,6 +897,26 @@ Bool gate[n, q, r](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
                 }
                 g = nodes[g].next as I64;
             }
+        } else if (nodes[x].kind == parse.N_REQUIRES) {
+            // A `requires` (I/O services lane U1; SPEC-07 SEC-CAP-1): its name segments and
+            // string arguments; the checker gives C3041 for another argument (requires_args).
+            mark_names(nodes, sem, nodes[x].a as I64);
+            I64 g = nodes[x].b as I64;
+            while (g >= 0) {
+                if (nodes[g].kind == parse.N_STRING) {
+                    sem[g].flags = sem[g].flags | resolve.SEM_STRING_OK;
+                }
+                g = nodes[g].next as I64;
+            }
+        } else if (nodes[x].kind == parse.N_ATTR && nodes[x].op == 1) {
+            // `@service` (SEC-CAP-13): its service name, the covering capability's segments
+            // and the argument kinds, which the parser checked.
+            if (nodes[x].a >= 0) {
+                I64 sn = nodes[x].a as I64;
+                sem[sn].flags = sem[sn].flags | resolve.SEM_STRING_OK;
+            }
+            mark_names(nodes, sem, nodes[x].b as I64);
+            mark_names(nodes, sem, nodes[x].c as I64);
         }
     }
     // The rows of an admitted literal of rank 2 to 4, an initializer or an argument.
@@ -921,8 +1011,10 @@ void pop(inout CState[_] cs) {
 
 // ---------------------------------------------------------------- literals and faults
 
-// Converts literal node x (N_LIT or N_NEGLIT) to its bytes in the literal-value table, once.
-// False after C9001 when the table is full.
+// Converts literal node x (N_LIT or N_NEGLIT) to its bytes in the literal-value table, once:
+// its value, or (box 15 unit 4e) when its type is fixed point, its raw value (SPEC-04 LS-37,
+// SPEC-01 IM-27), C2006 at the literal for a fraction off the grid without a `round` clause.
+// False after C2006, or C9001 when the table is full.
 Bool literal[l, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.Sem[_] sem,
         inout U8[l] lits, inout limits.CompilerDiag[r] diag, inout fold.Work[_] z, inout resolve.RState[_] rs,
         inout CState[_] cs, I64 x) {
@@ -934,8 +1026,13 @@ Bool literal[l, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
     if (neg) {
         tok = nodes[x].c as I64;
     }
+    I64 fbits = 0;
+    if (fold.ty_q(sem[x].ty)) {
+        fbits = fold.q_frac(sem[x].ty);
+    }
     if (toks[tok].kind == scan.TK_CHAR) {
         fold.z_load128(z, neg, 0, toks[tok].aux as U64);
+        fold.lit_scale(z, fbits);
     } else {
         I64 radix = toks[tok].sub as I64;
         I64 s = toks[tok].start as I64;
@@ -944,11 +1041,19 @@ Bool literal[l, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
             s += 2;
             nd -= 2;
         }
-        fold.lit_start(z, neg);
-        if (radix == 3) {
-            _ = fold.lit_trits(z, src, s, nd, neg);
+        if (toks[tok].kind == scan.TK_FRAC) {
+            if (!fold.lit_fraction(z, src, s, nd, radix, neg, fbits, sem[x].opty)) {
+                eval_fail(toks, diag, rs, cs, resolve.C_OFF_GRID, tok_of(nodes, x));
+                return false;
+            }
         } else {
-            _ = fold.lit_digits(z, src, s, nd, radix);
+            fold.lit_start(z, neg);
+            if (radix == 3) {
+                _ = fold.lit_trits(z, src, s, nd, neg);
+            } else {
+                _ = fold.lit_digits(z, src, s, nd, radix);
+            }
+            fold.lit_scale(z, fbits);
         }
     }
     I64 nb = fold.z_len(z);
@@ -960,6 +1065,10 @@ Bool literal[l, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
     sem[x].lit_len = fold.lit_put(z, lits, cs[0].lit_used);
     cs[0].lit_used += sem[x].lit_len;
     sem[x].flags = sem[x].flags | resolve.SEM_LIT;
+    if (fold.ty_q(sem[x].ty)) {
+        // The raw value, for compiler/lowering.ci; the callers check its range (C2003).
+        sem[x].bits = fold.lit_bits(lits, sem[x].lit_at, sem[x].lit_len);
+    }
     return true;
 }
 
@@ -989,26 +1098,6 @@ void const_fault[r](in scan.Token[_] toks, inout limits.CompilerDiag[r] diag, in
 }
 
 // ---------------------------------------------------------------- settling
-
-// The diagnostic of settling the untyped expression x to type t when t is Bool or void
-// (SPEC-01 IM-21; `cint_ref` Checker.settle): C2001 at a literal, C2103 at an operator,
-// down the first arm of each `?:` and the first value of each built-in call.
-void settle_error[r](in scan.Token[_] toks, in parse.Node[_] nodes, in resolve.Sem[_] sem,
-        inout limits.CompilerDiag[r] diag, inout resolve.RState[_] rs, I64 x) {
-    I64 e = x;
-    while (nodes[e].kind == parse.N_COND || is_builtin(nodes, sem, e)) {
-        if (nodes[e].kind == parse.N_COND) {
-            e = nodes[e].b as I64;
-        } else {
-            e = first_value(nodes, sem, e);
-        }
-    }
-    if (is_literal(nodes, e)) {
-        resolve.fail(toks, diag, rs, resolve.C_TYPE_MISMATCH, first(nodes, e));
-    } else {
-        resolve.fail(toks, diag, rs, resolve.C_NO_OPERATOR, first(nodes, e));
-    }
-}
 
 // Whether the untyped expression x passes its context to a literal-only shift (`cint_ref`
 // _untyped_shift), with the stack rows above the top as scratch.
@@ -1068,82 +1157,149 @@ I64 push_values(in parse.Node[_] nodes, in resolve.Sem[_] sem, inout parse.Frame
     return top;
 }
 
-// The first rotation (rotl, rotr) in the untyped expression x, parents before children and
-// left to right, or -1.
-I64 first_rotation[s](in parse.Node[_] nodes, in resolve.Sem[_] sem, inout parse.Frame[s] wk, in CState[_] cs, I64 x) {
+// Whether operator op, a binary operator or a compound assignment's, is defined on type t
+// (`cint_ref` require_op): every one on an integer type; on fixed point `+`, `-`, `*`, `/` and
+// the wrapping and saturating `+`, `-` and `*` (SPEC-01 IM-60 to IM-62, IM-65; `%` is not
+// defined, IM-66, nor a shift or a bitwise operator).
+Bool op_on(I32 op, I64 t) {
+    if (resolve.is_int(t)) {
+        return true;
+    }
+    if (!fold.ty_q(t)) {
+        return false;
+    }
+    switch (op) {
+        case scan.OP_ADD, scan.OP_SUB, scan.OP_MUL, scan.OP_DIV, scan.OP_ADD_WRAP, scan.OP_SUB_WRAP, scan.OP_MUL_WRAP,
+                scan.OP_ADD_SAT, scan.OP_SUB_SAT, scan.OP_MUL_SAT, scan.OP_ADD_ASSIGN, scan.OP_SUB_ASSIGN,
+                scan.OP_MUL_ASSIGN, scan.OP_DIV_ASSIGN, scan.OP_ADD_WRAP_ASSIGN, scan.OP_SUB_WRAP_ASSIGN,
+                scan.OP_MUL_WRAP_ASSIGN, scan.OP_ADD_SAT_ASSIGN, scan.OP_SUB_SAT_ASSIGN, scan.OP_MUL_SAT_ASSIGN:
+            return true;
+        default: return false;
+    }
+}
+
+// The diagnostic of built-in call x of id when its operand type is t (`cint_ref`
+// _builtin_result, rules that do not depend on a target type), or 0: C2103 for one not
+// defined on fixed point t, for one defined on fixed point only and an integer type t, for an
+// operand type that is neither, and for a rotation of a signed type.
+I64 builtin_on(I64 id, I64 t) {
+    if (fold.ty_q(t)) {
+        if (!fold.builtin_q(id) || id == fold.BI_QMUL || id == fold.BI_MUL_INT) {
+            return resolve.C_NO_OPERATOR;
+        }
+        return 0;
+    }
+    if (!resolve.is_int(t) || fold.builtin_q_only(id) || ((id == fold.BI_ROTL || id == fold.BI_ROTR) && fold.ty_signed(t))) {
+        return resolve.C_NO_OPERATOR;
+    }
+    return 0;
+}
+
+// The diagnostic of settling literal node x to type t (`cint_ref` Checker.settle), or 0: for
+// a fraction, C2004 when t is an integer type, C2001 when it is not fixed point, C3007 when
+// its `round` clause names no mode (h_infer keeps the mode in Sem.opty, MODE_BAD there); for
+// an integer or a character, C2001 when t is not a number.
+I64 literal_on(in scan.Token[_] toks, in parse.Node[_] nodes, in resolve.Sem[_] sem, I64 x, I64 t) {
+    if (literal_kind(toks, nodes, x) != scan.TK_FRAC) {
+        if (!resolve.is_num(t)) {
+            return resolve.C_TYPE_MISMATCH;
+        }
+        return 0;
+    }
+    if (resolve.is_int(t)) {
+        return resolve.C_FRACTION_INT;
+    }
+    if (!fold.ty_q(t)) {
+        return resolve.C_TYPE_MISMATCH;
+    }
+    if (sem[x].opty == MODE_BAD) {
+        return resolve.C_WRONG_KIND;
+    }
+    return 0;
+}
+
+// Checks settling the untyped expression x to type t (`cint_ref` Checker.settle) in its
+// order, each node before its operands and a built-in call's own rule after its values: the
+// first of literal_on at a literal; C2103 at a unary operator other than `-` of fixed point
+// or of a type that takes none, and at a binary operator that t does not take (op_on, a
+// shift only on an integer type); builtin_on at a built-in call. The stack rows above the
+// top are scratch: a node, and d 1 once its values are checked. False after a diagnostic.
+Bool settle_check[s, r](in scan.Token[_] toks, in parse.Node[_] nodes, in resolve.Sem[_] sem, inout parse.Frame[s] wk,
+        inout limits.CompilerDiag[r] diag, inout resolve.RState[_] rs, in CState[_] cs, I64 x, I64 t) {
     I64 base = cs[0].sp;
     I64 sp = base;
-    if (sp == cs[0].cap) {
-        return -1;
+    if (sp < cs[0].cap) {
+        wk[sp].node = x as I32;
+        wk[sp].d = 0;
+        sp += 1;
     }
-    wk[sp].node = x as I32;
-    sp += 1;
     while (sp > base) {
         sp -= 1;
         I64 e = wk[sp].node as I64;
         I32 k = nodes[e].kind;
+        I32 op = nodes[e].op;
+        Bool after = wk[sp].d == 1;
+        I64 code = 0;
+        if (after) {
+            code = builtin_on(sem[e].lit_at, t);
+        } else if (is_literal(nodes, e)) {
+            code = literal_on(toks, nodes, sem, e, t);
+        } else if (k == parse.N_UNARY && !resolve.is_int(t) && !(fold.ty_q(t) && op == scan.OP_SUB)) {
+            code = resolve.C_NO_OPERATOR;
+        } else if (k == parse.N_BINARY && ((is_shift(op) && !resolve.is_int(t)) || !op_on(op, t))) {
+            code = resolve.C_NO_OPERATOR;
+        }
+        if (code != 0) {
+            resolve.fail(toks, diag, rs, code, first(nodes, e));
+            return false;
+        }
+        if (after) {
+            continue;
+        }
         I64 more0 = -1;
         I64 more1 = -1;
-        if (k == parse.N_BINARY) {
+        if (k == parse.N_UNARY) {
             more0 = nodes[e].a as I64;
-            if (!is_shift(nodes[e].op)) {
+        } else if (k == parse.N_BINARY) {
+            more0 = nodes[e].a as I64;
+            if (!is_shift(op)) {
                 more1 = nodes[e].b as I64;
             }
-        } else if (k == parse.N_UNARY) {
-            more0 = nodes[e].a as I64;
         } else if (k == parse.N_COND) {
             more0 = nodes[e].b as I64;
             more1 = nodes[e].c as I64;
-        } else if (is_builtin(nodes, sem, e)) {
-            I64 id = sem[e].lit_at;
-            if (id == fold.BI_ROTL || id == fold.BI_ROTR) {
-                return e;
+        } else if (is_builtin(nodes, sem, e) && sp < cs[0].cap) {
+            wk[sp].d = 1;
+            sp += 1;
+            I64 top = push_values(nodes, sem, wk, cs[0].cap, sp, e);
+            for j in sp..top {
+                wk[j].d = 0;
             }
-            sp = push_values(nodes, sem, wk, cs[0].cap, sp, e);
+            sp = top;
         }
         if (more1 >= 0 && sem[more1].ty == resolve.TY_NONE && sp < cs[0].cap) {
             wk[sp].node = more1 as I32;
+            wk[sp].d = 0;
             sp += 1;
         }
         if (more0 >= 0 && sem[more0].ty == resolve.TY_NONE && sp < cs[0].cap) {
             wk[sp].node = more0 as I32;
+            wk[sp].d = 0;
             sp += 1;
         }
     }
-    return -1;
+    return true;
 }
 
-// The rotation at which settling the untyped expression x to a signed type is C2103
-// (`cint_ref` _builtin_result, called by Checker.settle after a call's values): the first
-// rotation to complete in settling order, or -1.
-I64 signed_rotation[s](in parse.Node[_] nodes, in resolve.Sem[_] sem, inout parse.Frame[s] wk, in CState[_] cs, I64 x) {
-    I64 r = first_rotation(nodes, sem, wk, cs, x);
-    while (r >= 0) {
-        I64 inner = first_rotation(nodes, sem, wk, cs, builtin_value(nodes, sem, r, 0));
-        if (inner < 0) {
-            return r;
-        }
-        r = inner;
-    }
-    return -1;
-}
-
-// Settles the untyped expression x to type t (`cint_ref` Checker.settle): a diagnostic when
-// t is not an integer type, else t becomes the type of every untyped node of x except the
-// right operand of a shift, whose own context is I64, with the stack rows above the top as
-// scratch. An untyped node left over is I64 (ety).
+// Settles the untyped expression x to type t (`cint_ref` Checker.settle): its diagnostics
+// (settle_check), else t becomes the type of every untyped node of x except the right
+// operand of a shift, whose own context is I64, with the stack rows above the top as
+// scratch; a `sqrt` of fixed point without a mode rounds half_even (SPEC-01 IM-67). An
+// untyped node left over is I64 (ety).
 void settle[s, r](in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.Sem[_] sem, inout parse.Frame[s] wk,
         inout limits.CompilerDiag[r] diag, inout resolve.RState[_] rs, in CState[_] cs, I64 x, I64 t) {
-    if (!resolve.is_int(t)) {
-        settle_error(toks, nodes, sem, diag, rs, x);
+    if (!settle_check(toks, nodes, sem, wk, diag, rs, cs, x, t)) {
         return;
-    }
-    if (fold.ty_signed(t)) {
-        I64 rot = signed_rotation(nodes, sem, wk, cs, x);
-        if (rot >= 0) {
-            resolve.fail(toks, diag, rs, resolve.C_NO_OPERATOR, first(nodes, rot));
-            return;
-        }
     }
     if (t == fold.TY_I64) {
         return;
@@ -1161,6 +1317,9 @@ void settle[s, r](in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.S
         I32 k = nodes[e].kind;
         if (is_builtin(nodes, sem, e)) {
             sem[e].opty = t;
+            if (sem[e].lit_at == fold.BI_SQRT && sem[e].lit_len == 0) {
+                sem[e].lit_len = MODE_HALF_EVEN;
+            }
             I64 top = push_values(nodes, sem, wk, cs[0].cap, sp, e);
             I64 j = sp;
             while (j < top) {
@@ -1246,8 +1405,8 @@ I64 set_named[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, in
 // C3005 when no member set of w declares it, at the `.` of `.name` and at the name of
 // `Set.name`, C2044 at the first token of x when several do (LS-97). False after an error.
 Bool set_value[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.Sem[_] sem,
-        inout limits.CompilerDiag[_] diag, inout resolve.RState[_] rs, I64 x, I64 w) {
-    I64 tag = resolve.errset_find(src, toks, nodes, sem, w, tok_of(nodes, x));
+        in limits.Decl[_] decls, inout limits.CompilerDiag[_] diag, inout resolve.RState[_] rs, I64 x, I64 w) {
+    I64 tag = resolve.errset_find_d(src, toks, nodes, sem, decls, w, tok_of(nodes, x));
     if (tag == 0) {
         I64 at = tok_of(nodes, x);
         if (nodes[x].kind == parse.N_DOTNAME) {
@@ -1300,13 +1459,20 @@ void widen(in parse.Node[_] nodes, inout resolve.Sem[_] sem, I64 x, I64 w) {
 // a set that w holds widens to it, and any other value is `code` at its first token (C2001;
 // C2042 for a returned value, LS-97). False after an error.
 Bool expect_set[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.Sem[_] sem,
-        inout limits.CompilerDiag[_] diag, inout resolve.RState[_] rs, I64 x, I64 w, I64 code) {
+        in limits.Decl[_] decls, inout limits.CompilerDiag[_] diag, inout resolve.RState[_] rs, I64 x, I64 w,
+        I64 code) {
     I64 got = sem[x].ty;
     if (got == resolve.TY_DOTNAME) {
-        return set_value(src, toks, nodes, sem, diag, rs, x, w);
+        return set_value(src, toks, nodes, sem, decls, diag, rs, x, w);
     }
     if (!resolve.is_errset(got) || !resolve.errset_holds(nodes, sem, w, got)) {
-        resolve.fail(toks, diag, rs, code, first(nodes, x));
+        I64 at_code = code;
+        if (resolve.is_errset(got) && (resolve.is_import_set(w) || resolve.is_import_set(got))) {
+            // Whether one module's set holds another's is not checked across modules
+            // (compiler/OPEN.md CINTC-OQ-68): C9102.
+            at_code = resolve.C_UNSUPPORTED;
+        }
+        resolve.fail(toks, diag, rs, at_code, first(nodes, x));
         return false;
     }
     widen(nodes, sem, x, w);
@@ -1318,17 +1484,17 @@ Bool expect_set[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
 // set that the other operand's set holds widens to it. C2001 at the first token of b (of a
 // when a is a `.name` with no set beside it) when they do not meet. 0 after an error.
 I64 compare_sets[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.Sem[_] sem,
-        inout limits.CompilerDiag[_] diag, inout resolve.RState[_] rs, I64 a, I64 b) {
+        in limits.Decl[_] decls, inout limits.CompilerDiag[_] diag, inout resolve.RState[_] rs, I64 a, I64 b) {
     I64 tl = sem[a].ty;
     I64 tr = sem[b].ty;
     if (tl == resolve.TY_DOTNAME && resolve.is_errset(tr)) {
-        if (set_value(src, toks, nodes, sem, diag, rs, a, tr)) {
+        if (set_value(src, toks, nodes, sem, decls, diag, rs, a, tr)) {
             return tr;
         }
         return 0;
     }
     if (tr == resolve.TY_DOTNAME && resolve.is_errset(tl)) {
-        if (set_value(src, toks, nodes, sem, diag, rs, b, tl)) {
+        if (set_value(src, toks, nodes, sem, decls, diag, rs, b, tl)) {
             return tl;
         }
         return 0;
@@ -1345,6 +1511,10 @@ I64 compare_sets[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes,
         if (resolve.errset_holds(nodes, sem, tr, tl)) {
             widen(nodes, sem, a, tr);
             return tr;
+        }
+        if (resolve.is_import_set(tl) || resolve.is_import_set(tr)) {
+            resolve.fail(toks, diag, rs, resolve.C_UNSUPPORTED, first(nodes, b));
+            return 0;
         }
     }
     resolve.fail(toks, diag, rs, use_code(sem, b, resolve.C_TYPE_MISMATCH), first(nodes, b));
@@ -1460,7 +1630,12 @@ void h_try[s, r](in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.Se
     I64 want = cs[0].result;
     if (cs[0].in_test == 0 && (rs[0].ctx != resolve.CTX_FUNCTION || !resolve.is_errunion(want) ||
             !resolve.errset_holds(nodes, sem, resolve.union_set(want), resolve.union_set(u)))) {
-        resolve.fail(toks, diag, rs, resolve.C_SET_NARROW, tok_of(nodes, x));
+        I64 code = resolve.C_SET_NARROW;
+        if (rs[0].ctx == resolve.CTX_FUNCTION && resolve.is_errunion(want) &&
+                (resolve.is_import_set(resolve.union_set(want)) || resolve.is_import_set(resolve.union_set(u)))) {
+            code = resolve.C_UNSUPPORTED;
+        }
+        resolve.fail(toks, diag, rs, code, tok_of(nodes, x));
         return;
     }
     sem[x].ty = resolve.union_value(u);
@@ -1523,7 +1698,8 @@ void h_catch[n, s, r](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] node
 
 // K_INFER on a field of a struct value, node x of frame f (`cint_ref` _infer_Field): C2103
 // on a value that is not a struct, C3005 for a name that is not a field of it, both at the
-// field's name.
+// field's name. `x.raw` of a fixed-point value is its storage integer, exact (SPEC-01 IM-57,
+// SPEC-04 LS-38; box 15 unit 4e), marked SEM_RAW.
 void h_field[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.Sem[_] sem,
         inout resolve.Sym[_] syms, in limits.Decl[_] decls, inout parse.Frame[s] wk, inout limits.CompilerDiag[r] diag,
         inout resolve.RState[_] rs, inout CState[_] cs, I64 f, I64 step) {
@@ -1533,11 +1709,17 @@ void h_field[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
         _ = push(toks, nodes, wk, diag, rs, cs, K_INFER, a, 0);
         return;
     }
-    if (!resolve.is_struct(sem[a].ty)) {
-        resolve.fail(toks, diag, rs, resolve.C_NO_OPERATOR, tok_of(nodes, x));
+    I64 tk = tok_of(nodes, x);
+    if (fold.ty_q(sem[a].ty) && spells(src, toks, tk, "raw")) {
+        sem[x].ty = fold.q_storage(sem[a].ty);
+        sem[x].flags = sem[x].flags | resolve.SEM_RAW;
+        pop(cs);
         return;
     }
-    I64 tk = tok_of(nodes, x);
+    if (!resolve.is_struct(sem[a].ty)) {
+        resolve.fail(toks, diag, rs, resolve.C_NO_OPERATOR, tk);
+        return;
+    }
     if (resolve.struct_node(syms, sem[a].ty) < 0) {
         // A field of an imported struct: its field row (task 2.13 part (iii)).
         I64 fr = import_field(src, toks, decls, syms[sem[a].ty - resolve.TY_STRUCT].value as% I64, tk);
@@ -1594,13 +1776,41 @@ void h_infer[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
         case parse.N_LIT, parse.N_NEGLIT:
             sem[x].ty = resolve.TY_NONE;
             sem[x].flags = sem[x].flags | resolve.SEM_CONST;
+            // A fraction's `round` clause: its mode in opty (literal_on, literal).
+            sem[x].opty = 0;
+            I64 mt = c;
+            if (k == parse.N_NEGLIT) {
+                mt = b;
+            }
+            if (mt >= 0) {
+                sem[x].opty = resolve.round_mode(src, toks[mt].start as I64, toks[mt].len as I64);
+                if (sem[x].opty == 0) {
+                    sem[x].opty = MODE_BAD;
+                }
+            }
             pop(cs);
         case parse.N_BOOL:
             sem[x].ty = fold.TY_BOOL;
             sem[x].flags = sem[x].flags | resolve.SEM_CONST;
             pop(cs);
         case parse.N_TYPEPROP:
-            sem[x].ty = resolve.int_class(toks[tok_of(nodes, x)].aux & 255);
+            I64 pt = tok_of(nodes, x);
+            if (toks[pt].kind == scan.TK_FIXED) {
+                // `Q<i>.<f>.min`, `.max` and `.epsilon`, the value of raw 1 (SPEC-04 LS-51; box 15
+                // unit 4e): C2005 for a name of no type, then C9102 for another property, as
+                // `cint_ref` refuses it.
+                I64 q = resolve.fixed_type(toks, diag, rs, pt);
+                if (q == 0) {
+                    return;
+                }
+                if (!(spells(src, toks, c, "min") || spells(src, toks, c, "max") || spells(src, toks, c, "epsilon"))) {
+                    resolve.fail(toks, diag, rs, resolve.C_UNSUPPORTED, first(nodes, x));
+                    return;
+                }
+                sem[x].ty = q;
+            } else {
+                sem[x].ty = resolve.int_class(toks[pt].aux & 255);
+            }
             sem[x].flags = sem[x].flags | resolve.SEM_CONST;
             pop(cs);
         case parse.N_TYPENAME:
@@ -1629,7 +1839,7 @@ void h_infer[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
                 }
             }
             I64 found = sem[x].sym;
-            if (syms[found].kind == resolve.SK_FUNC) {
+            if (syms[found].kind == resolve.SK_FUNC || syms[found].kind == resolve.SK_EXTERN) {
                 resolve.fail(toks, diag, rs, resolve.C_FUNCTION_VALUE, first(nodes, x));
                 return;
             }
@@ -1709,7 +1919,7 @@ void h_infer[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
                     resolve.fail(toks, diag, rs, resolve.C_NOT_BOOL, first(nodes, a));
                     return;
                 }
-            } else if (t != resolve.TY_NONE && !resolve.is_int(t)) {
+            } else if (t != resolve.TY_NONE && !resolve.is_int(t) && !(fold.ty_q(t) && nodes[x].op == scan.OP_SUB)) {
                 resolve.fail(toks, diag, rs, use_code(sem, a, resolve.C_NO_OPERATOR), first(nodes, a));
                 return;
             }
@@ -1744,14 +1954,14 @@ void h_infer[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
                 t = tl;
             } else if (k == parse.N_BINARY) {
                 if (tl == resolve.TY_NONE && tr != resolve.TY_NONE) {
-                    if (!resolve.is_int(tr)) {
+                    if (!op_on(nodes[x].op, tr)) {
                         resolve.fail(toks, diag, rs, use_code(sem, b, resolve.C_NO_OPERATOR), first(nodes, b));
                         return;
                     }
                     settle_rule4(toks, nodes, sem, wk, diag, rs, cs, a, tr);
                     t = tr;
                 } else if (tr == resolve.TY_NONE && tl != resolve.TY_NONE) {
-                    if (!resolve.is_int(tl)) {
+                    if (!op_on(nodes[x].op, tl)) {
                         resolve.fail(toks, diag, rs, use_code(sem, a, resolve.C_NO_OPERATOR), first(nodes, a));
                         return;
                     }
@@ -1762,7 +1972,7 @@ void h_infer[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
                         resolve.fail(toks, diag, rs, resolve.C_TYPE_MISMATCH, first(nodes, b));
                         return;
                     }
-                    if (!resolve.is_int(tl)) {
+                    if (!op_on(nodes[x].op, tl)) {
                         resolve.fail(toks, diag, rs, resolve.C_NO_OPERATOR, first(nodes, x));
                         return;
                     }
@@ -1772,7 +1982,7 @@ void h_infer[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
                 I64 ot = fold.TY_I64;
                 if (resolve.is_errset(tl) || resolve.is_errset(tr) || tl == resolve.TY_DOTNAME ||
                         tr == resolve.TY_DOTNAME) {
-                    ot = compare_sets(src, toks, nodes, sem, diag, rs, a, b);
+                    ot = compare_sets(src, toks, nodes, sem, decls, diag, rs, a, b);
                 } else if (tl == resolve.TY_NONE && tr == resolve.TY_NONE) {
                     settle(toks, nodes, sem, wk, diag, rs, cs, a, fold.TY_I64);
                     if (rs[0].err == 0) {
@@ -1795,9 +2005,10 @@ void h_infer[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
                     return;
                 }
                 I32 op = nodes[x].op;
-                if (ot == resolve.TY_VOID || resolve.is_mem(ot) || ((ot == fold.TY_BOOL || resolve.is_errset(ot)) &&
-                        op != scan.OP_EQ && op != scan.OP_NE)) {
-                    // Handles, arenas and pools are not compared, as structs are not (box 12).
+                if (ot == resolve.TY_VOID || ot == resolve.TY_GRANTS || resolve.is_mem(ot) ||
+                        ((ot == fold.TY_BOOL || resolve.is_errset(ot)) && op != scan.OP_EQ && op != scan.OP_NE)) {
+                    // Handles, arenas and pools are not compared, as structs are not (box 12),
+                    // nor grant sets (I/O services lane U1).
                     resolve.fail(toks, diag, rs, resolve.C_NO_OPERATOR, first(nodes, x));
                     return;
                 }
@@ -1865,6 +2076,12 @@ void h_infer[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
                     return;
                 }
                 keep_payload(wk, f, target);
+                if (is_literal(nodes, a) && literal_kind(toks, nodes, a) == scan.TK_FRAC) {
+                    // A fraction literal has no rule as a conversion's source (OQ-162); `cint_ref`
+                    // refuses it.
+                    resolve.fail(toks, diag, rs, resolve.C_UNSUPPORTED, first(nodes, a));
+                    return;
+                }
                 if (is_literal(nodes, a) && nodes[x].op != scan.OP_AS_TRY) {
                     sem[a].ty = fold.TY_Z;
                     sem[a].flags = sem[a].flags | resolve.SEM_CONST;
@@ -1883,8 +2100,24 @@ void h_infer[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
             I64 src_ty = ety(sem, a);
             I64 to = payload(wk, f);
             I64 at = first(nodes, x);
-            if (c >= 0) {
+            // Fixed point to an integer, or to fewer fraction bits, rounds by the `round`
+            // clause's mode, half_even without one (SPEC-01 IM-68, IM-69); the mode is kept in
+            // lit_len, 0 for a conversion that does not round.
+            Bool rounds = fold.ty_q(src_ty) && (resolve.is_int(to) || (fold.ty_q(to) && fold.q_frac(to) < fold.q_frac(src_ty)));
+            sem[x].lit_len = 0;
+            if (rounds) {
+                sem[x].lit_len = MODE_HALF_EVEN;
+                if (c >= 0) {
+                    sem[x].lit_len = resolve.round_mode(src, toks[c].start as I64, toks[c].len as I64);
+                }
+            }
+            Bool fixed = fold.ty_q(src_ty) || fold.ty_q(to);
+            if (c >= 0 && !rounds) {
                 resolve.fail(toks, diag, rs, resolve.C_ROUND_CLAUSE, tok_of(nodes, x));
+            } else if (c >= 0 && sem[x].lit_len == 0) {
+                resolve.fail(toks, diag, rs, resolve.C_WRONG_KIND, tok_of(nodes, x));
+            } else if (fixed && (src_ty == fold.TY_BOOL || to == fold.TY_BOOL)) {
+                resolve.fail(toks, diag, rs, resolve.C_NO_CONVERSION, at);
             } else if (to == fold.TY_BOOL && (resolve.is_int(src_ty) || src_ty == fold.TY_Z)) {
                 resolve.fail(toks, diag, rs, resolve.C_INT_AS_BOOL, at);
             } else if (to == fold.TY_BOOL || src_ty == resolve.TY_VOID) {
@@ -1897,10 +2130,11 @@ void h_infer[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
                 // A handle, arena or pool converts to nothing: no clause gives the diagnostic
                 // (box 12; compiler/OPEN.md CINTC-OQ-15).
                 resolve.fail(toks, diag, rs, resolve.C_UNSUPPORTED, at);
-            } else if ((fold.ty_wide(src_ty) || fold.ty_wide(to)) &&
-                    (src_ty == fold.TY_BOOL || (nodes[x].op != parse.CONV_AS && nodes[x].op != scan.OP_AS_WRAP))) {
-                // A wide side converts with `as` and `as%` from an integer type only (box 15
-                // unit 4; CINTC-OQ-15).
+            } else if ((fold.ty_limbs(src_ty) || fold.ty_limbs(to)) && (src_ty == fold.TY_BOOL ||
+                    (nodes[x].op != parse.CONV_AS && nodes[x].op != scan.OP_AS_WRAP && nodes[x].op != scan.OP_AS_SAT))) {
+                // A wide side, or fixed point of 128 bits, converts with `as`, `as%` and `as|`
+                // only (box 15 unit 4, games wave G2b; CINTC-OQ-15): `as?` would give an error
+                // union, whose value type is a code below 256 (resolve.union_type).
                 resolve.fail(toks, diag, rs, resolve.C_UNSUPPORTED, at);
             }
             if (rs[0].err != 0) {
@@ -1927,9 +2161,26 @@ void h_infer[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
                 if (rs[0].err != 0) {
                     return;
                 }
+                if (set == 0 && nodes[a].kind == parse.N_FIELD &&
+                        alias_of(src, toks, nodes, syms, names, diag, rs, nodes[a].a as I64) >= 0) {
+                    // `alias.Set.name`, a value of an imported error set (I/O services lane U5).
+                    I64 srow = qualified(src, toks, nodes, sem, syms, names, decls, diag, rs, a);
+                    if (srow < 0) {
+                        return;
+                    }
+                    if (decls[srow].kind == limits.DK_ERRSET) {
+                        set = resolve.import_set_ty(toks, syms, diag, rs, decls, srow, tok_of(nodes, a));
+                        if (set == 0) {
+                            return;
+                        }
+                    }
+                }
+                if (rs[0].err != 0) {
+                    return;
+                }
                 if (set != 0) {
                     // An error value `Set.name` (LS-92, LS-97).
-                    if (set_value(src, toks, nodes, sem, diag, rs, x, set)) {
+                    if (set_value(src, toks, nodes, sem, decls, diag, rs, x, set)) {
                         pop(cs);
                     }
                     return;
@@ -2050,14 +2301,32 @@ I64 qualified[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, in
 I64 row_type[y](in scan.Token[_] toks, in limits.Decl[_] decls, inout resolve.Sym[y] syms,
         inout limits.CompilerDiag[_] diag, inout resolve.RState[_] rs, I64 r, I64 tok) {
     I64 st = 0;
-    if ((decls[r].tag as I64) == DECL_STRUCT_TAG) {
+    I64 tag = decl.row_tag(decls, r);
+    if ((tag == decl.ERRSET_TAG || tag == decl.ERRUNION_TAG) && decls[r].rank == 0 && decls[r].ref > 0 &&
+            (decls[r].kind == limits.DK_FUNC || decls[r].kind == limits.DK_PARAM)) {
+        // An imported error set, or an error union of one, in a signature (I/O services lane
+        // U5): the set's row in `ref`, a union's value tag in `align` (0x02 void). A field of
+        // one stays untyped (C9102; compiler/OPEN.md CINTC-OQ-68).
+        I64 set = resolve.import_set_ty(toks, syms, diag, rs, decls, decls[r].ref as I64, tok);
+        if (set == 0 || tag == decl.ERRSET_TAG) {
+            return set;
+        }
+        I64 v = decls[r].align as I64;
+        if (v == 0x02) {
+            v = resolve.TY_VOID;
+        } else if (!(v == fold.TY_BOOL || resolve.is_int(v) || fold.ty_q(v))) {
+            return 0;
+        }
+        return resolve.union_type(set, v);
+    }
+    if (tag == DECL_STRUCT_TAG) {
         st = resolve.import_struct_ty(toks, syms, diag, rs, decls[r].ref as I64, tok);
     }
     I64 ext = 0;
     if (decls[r].kind == limits.DK_PARAM || decls[r].kind == limits.DK_FIELD) {
         ext = decls[r].b;
     }
-    return import_type(decls[r].tag as I64, decls[r].rank as I64, decls[r].ext_kind as I64, ext, st);
+    return import_type(decl.row_tag(decls, r), decls[r].rank as I64, decls[r].ext_kind as I64, ext, st);
 }
 
 // The field row named by token tk of the imported struct whose record is row `row`, or -1.
@@ -2145,7 +2414,7 @@ void import_shapes[r](in scan.Token[_] toks, in parse.Node[_] nodes, in resolve.
 
 // Whether parameter row p is a view or a struct.
 Bool row_aggregate(in limits.Decl[_] decls, I64 p) {
-    return decls[p].rank != 0 || (decls[p].tag as I64) == DECL_STRUCT_TAG;
+    return decls[p].rank != 0 || decl.row_tag(decls, p) == DECL_STRUCT_TAG;
 }
 
 // K_INFER on a call of an integer built-in, node x of frame f (`cint_ref` _builtin and
@@ -2163,6 +2432,10 @@ void h_builtin[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes
         I64 f) {
     I64 x = wk[f].node as I64;
     I64 id = sem[x].lit_at;
+    if (id == fold.BI_QMUL || id == fold.BI_MUL_INT) {
+        h_mixed(src, toks, nodes, sem, wk, diag, rs, cs, f);
+        return;
+    }
     Bool rot = id == fold.BI_ROTL || id == fold.BI_ROTR;
     I64 nv = typed_values(sem, x);
     if (wk[f].d < 0) {
@@ -2180,7 +2453,8 @@ void h_builtin[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes
         if (id == fold.BI_MULDIV) {
             need += 1;
         }
-        if (fold.builtin_mode(id)) {
+        Bool moded = given_mode(nodes, x, id);
+        if (moded) {
             need += 1;
         }
         if (argc != need) {
@@ -2199,7 +2473,7 @@ void h_builtin[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes
             }
         }
         sem[x].lit_len = 0;
-        if (fold.builtin_mode(id)) {
+        if (moded) {
             I64 ma = arg_at(nodes, x, need - 1);
             if (nodes[ma].kind == parse.N_NAME) {
                 I64 mt = tok_of(nodes, ma);
@@ -2299,14 +2573,168 @@ void h_builtin[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes
     }
 }
 
+// K_INFER on `qmul(R, a, b[, mode])` or `mul_int(a, n)`, call x of frame f (`cint_ref`
+// _mixed_fixed; SPEC-01 IM-63, IM-64; box 15 unit 4e): their operands have types of their
+// own, so none unifies them. C2063 at a named argument; C2022 for other than 3 or 4
+// arguments of `qmul` or 2 of `mul_int`; C3007 at a first argument of `qmul` that is no
+// fixed-point type's name (C2005 at one that names none) and at a mode that names no
+// rounding mode; then each value in order, inferred (an untyped one settled to I64), C2103 at
+// one that is not fixed point, or for the n of `mul_int` not an integer (C9102 for a wide n,
+// which no SIR form takes). `qmul` rounds, by its mode or half_even, when fa + fb > fr; a
+// mode for one that does not is C9102, as `cint_ref` refuses it. The call keeps the type of a
+// in opty, the mode in lit_len and the result R (`mul_int`: the type of a) in ty. Frame: b
+// the value being checked, d 1 once it is inferred.
+void h_mixed[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.Sem[_] sem,
+        inout parse.Frame[s] wk, inout limits.CompilerDiag[r] diag, inout resolve.RState[_] rs, inout CState[_] cs,
+        I64 f) {
+    I64 x = wk[f].node as I64;
+    Bool qm = sem[x].lit_at == fold.BI_QMUL;
+    I64 argc = list_length(nodes, nodes[x].b as I64);
+    if (wk[f].d < 0) {
+        I64 g = nodes[x].b as I64;
+        while (g >= 0) {
+            if (nodes[g].kind == parse.N_NAMEDARG) {
+                resolve.fail(toks, diag, rs, C_NO_PARAM, tok_of(nodes, g));
+                return;
+            }
+            g = nodes[g].next as I64;
+        }
+        if ((qm && argc != 3 && argc != 4) || (!qm && argc != 2)) {
+            resolve.fail(toks, diag, rs, resolve.C_ARG_COUNT, first(nodes, x));
+            return;
+        }
+        sem[x].lit_len = 0;
+        if (qm) {
+            I64 ta = arg_at(nodes, x, 0);
+            if (nodes[ta].kind != parse.N_TYPENAME || toks[tok_of(nodes, ta)].kind != scan.TK_FIXED) {
+                resolve.fail(toks, diag, rs, resolve.C_WRONG_KIND, first(nodes, ta));
+                return;
+            }
+            if (resolve.fixed_type(toks, diag, rs, tok_of(nodes, ta)) == 0) {
+                return;
+            }
+            if (argc == 4) {
+                I64 ma = arg_at(nodes, x, 3);
+                if (nodes[ma].kind == parse.N_NAME) {
+                    I64 mt = tok_of(nodes, ma);
+                    sem[x].lit_len = resolve.round_mode(src, toks[mt].start as I64, toks[mt].len as I64);
+                }
+                if (sem[x].lit_len == 0) {
+                    resolve.fail(toks, diag, rs, resolve.C_WRONG_KIND, first(nodes, ma));
+                    return;
+                }
+            }
+        }
+        wk[f].b = 0;
+        wk[f].d = 0;
+    }
+    while (wk[f].b < 2) {
+        I64 v = builtin_value(nodes, sem, x, wk[f].b as I64);
+        if (wk[f].d == 0) {
+            wk[f].d = 1;
+            _ = push(toks, nodes, wk, diag, rs, cs, K_INFER, v, 0);
+            return;
+        }
+        if (sem[v].ty == resolve.TY_NONE) {
+            // No rule of LS-56 gives these operands a type from each other: rule 8 (I64).
+            settle(toks, nodes, sem, wk, diag, rs, cs, v, fold.TY_I64);
+            if (rs[0].err != 0) {
+                return;
+            }
+        }
+        I64 vt = ety(sem, v);
+        Bool want_q = qm || wk[f].b == 0;
+        if ((want_q && !fold.ty_q(vt)) || (!want_q && !resolve.is_int(vt))) {
+            resolve.fail(toks, diag, rs, resolve.C_NO_OPERATOR, first(nodes, v));
+            return;
+        }
+        wk[f].b += 1;
+        wk[f].d = 0;
+    }
+    I64 a = builtin_value(nodes, sem, x, 0);
+    I64 b = builtin_value(nodes, sem, x, 1);
+    sem[x].opty = sem[a].ty;
+    sem[x].ty = sem[a].ty;
+    if (qm) {
+        I64 rt = toks[tok_of(nodes, arg_at(nodes, x, 0))].sub as I64;
+        Bool rounds = fold.q_frac(sem[a].ty) + fold.q_frac(sem[b].ty) > fold.q_frac(rt);
+        if (!rounds && argc == 4) {
+            resolve.fail(toks, diag, rs, resolve.C_UNSUPPORTED, first(nodes, arg_at(nodes, x, 3)));
+            return;
+        }
+        if (rounds && sem[x].lit_len == 0) {
+            sem[x].lit_len = MODE_HALF_EVEN;
+        }
+        sem[x].ty = rt;
+    }
+    if (is_const(sem, a) && is_const(sem, b)) {
+        sem[x].flags = sem[x].flags | resolve.SEM_CONST;
+    }
+    pop(cs);
+}
+
+// K_INFER on `Q<i>.<f>.raw(n)`, call x of frame f (`cint_ref` _raw_ctor; SPEC-01 IM-57,
+// SPEC-04 LS-38; box 15 unit 4e): the value whose storage integer is n, exact. C2005 at the
+// type's name when it names none, C2063 at a named argument, C2022 for other than one
+// argument, then n is expected to have the storage integer type. Marked SEM_RAW.
+void h_rawctor[s, r](in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.Sem[_] sem, inout parse.Frame[s] wk,
+        inout limits.CompilerDiag[r] diag, inout resolve.RState[_] rs, inout CState[_] cs, I64 f) {
+    I64 x = wk[f].node as I64;
+    I64 qt = tok_of(nodes, nodes[x].a as I64);
+    I64 v = nodes[x].b as I64;
+    if (wk[f].d < 0) {
+        I64 q = resolve.fixed_type(toks, diag, rs, qt);
+        if (q == 0) {
+            return;
+        }
+        I64 g = v;
+        while (g >= 0) {
+            if (nodes[g].kind == parse.N_NAMEDARG) {
+                resolve.fail(toks, diag, rs, C_NO_PARAM, tok_of(nodes, g));
+                return;
+            }
+            g = nodes[g].next as I64;
+        }
+        if (list_length(nodes, v) != 1) {
+            resolve.fail(toks, diag, rs, resolve.C_ARG_COUNT, first(nodes, x));
+            return;
+        }
+        wk[f].d = 0;
+        _ = push(toks, nodes, wk, diag, rs, cs, K_EXPECT, v, fold.q_storage(q));
+        return;
+    }
+    sem[x].ty = toks[qt].sub as I64;
+    sem[x].flags = sem[x].flags | resolve.SEM_RAW;
+    if (is_const(sem, v)) {
+        sem[x].flags = sem[x].flags | resolve.SEM_CONST;
+    }
+    pop(cs);
+}
+
 // The result type of built-in call x on operand type t (`cint_ref` _builtin_result), and
 // its diagnostics; target the result type of `muldiv`.
 void builtin_result[r](in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.Sem[_] sem,
         inout limits.CompilerDiag[r] diag, inout resolve.RState[_] rs, I64 x, I64 t, I64 target) {
     I64 id = sem[x].lit_at;
     I64 at = first(nodes, x);
-    if (!resolve.is_int(t) || (id == fold.BI_UABS && !fold.ty_signed(t)) ||
-            ((id == fold.BI_ROTL || id == fold.BI_ROTR) && fold.ty_signed(t)) ||
+    if (fold.builtin_result(id) && fold.ty_q(t)) {
+        // On fixed point (SPEC-01 IM-188, SPEC-04 LS-145; OQ-273, OQ-278): `add_result` and
+        // `sub_result` on the raw values, `mul_result` and `div_result` with the call's mode,
+        // half_even without one; `rem_result` and `shl_result` are C2103. ArithError!Q, as
+        // below.
+        if (id == fold.BI_REM_RESULT || id == fold.BI_SHL_RESULT) {
+            resolve.fail(toks, diag, rs, resolve.C_NO_OPERATOR, at);
+            return;
+        }
+        if ((id == fold.BI_MUL_RESULT || id == fold.BI_DIV_RESULT) && sem[x].lit_len == 0) {
+            sem[x].lit_len = MODE_HALF_EVEN;
+        }
+    } else if (fold.builtin_result(id) && sem[x].lit_len != 0) {
+        // A mode with integer operands: defined on fixed point only (`cint_ref`
+        // _result_builtin).
+        resolve.fail(toks, diag, rs, resolve.C_NO_OPERATOR, at);
+        return;
+    } else if (builtin_on(id, t) != 0 || (id == fold.BI_UABS && !fold.ty_signed(t)) ||
             ((id == fold.BI_UABS || id == fold.BI_MUL_FULL) && fold.ty_width(t) > 512) ||
             (id == fold.BI_MUL_FULL && !fold.ty_signed(t) && fold.ty_width(t) > 256)) {
         // `uabs` is defined on I8 to I512, `mul_full` on I8 to I512 and U8 to U256 (SPEC-01
@@ -2314,16 +2742,26 @@ void builtin_result[r](in scan.Token[_] toks, in parse.Node[_] nodes, inout reso
         resolve.fail(toks, diag, rs, resolve.C_NO_OPERATOR, at);
         return;
     }
-    if ((fold.ty_wide(t) && fold.builtin_result(id)) ||
+    if ((fold.ty_limbs(t) && fold.builtin_result(id)) ||
             ((id == fold.BI_ROTL || id == fold.BI_ROTR) && fold.ty_wide(sem[builtin_value(nodes, sem, x, 1)].ty)) ||
             (id == fold.BI_MULDIV && fold.ty_wide(target) && !fold.ty_wide(t))) {
-        // `add_result` and the others on a wide type, a rotation by a wide count (rt/OPEN.md
-        // RT-OQ-52), and `muldiv` of narrow operands into a wide type are outside this
-        // implementation (box 15 unit 4; CINTC-OQ-15).
+        // `add_result` and the others on a wide type or fixed point of 128 bits (an error
+        // union's value type is a code below 256, resolve.union_type), a rotation by a wide
+        // count (rt/OPEN.md RT-OQ-52), and `muldiv` of narrow operands into a wide type are
+        // outside this implementation (box 15 unit 4, games wave G2b; CINTC-OQ-15).
         resolve.fail(toks, diag, rs, resolve.C_UNSUPPORTED, at);
         return;
     }
     sem[x].opty = t;
+    if (fold.ty_q(t) && !fold.builtin_result(id)) {
+        // SPEC-01 IM-60 to IM-67: a result of the operands' fixed-point type; `sqrt` without a
+        // mode rounds half_even (IM-67).
+        sem[x].ty = t;
+        if (id == fold.BI_SQRT && sem[x].lit_len == 0) {
+            sem[x].lit_len = MODE_HALF_EVEN;
+        }
+        return;
+    }
     if (fold.builtin_result(id)) {
         // `add_result` and the others (SPEC-01 IM-30, IM-188): ArithError!T, consumed by
         // `try`, `catch` or `_ =` (C2040 otherwise, LS-95).
@@ -2376,6 +2814,20 @@ I64 af_skip(in parse.Node[_] nodes, in resolve.Sem[_] sem, I64 x) {
     return 0;
 }
 
+// The result type that reduction x writes as its first argument (`sum(R, xs)`, `dot(R, a,
+// b)`): an integer or (box 15 unit 4e) a fixed-point type; 0 when it writes none.
+I64 af_target(in scan.Token[_] toks, in parse.Node[_] nodes, in resolve.Sem[_] sem, I64 x) {
+    I64 a0 = nodes[x].b as I64;
+    if (af_skip(nodes, sem, x) == 0 || sem[x].lit_at == resolve.AF_FOLD) {
+        return 0;
+    }
+    I64 tk = tok_of(nodes, a0);
+    if (toks[tk].kind == scan.TK_FIXED) {
+        return toks[tk].sub as I64;
+    }
+    return resolve.int_class(toks[tk].aux & 255);
+}
+
 // Value i of array built-in call x, or -1.
 I64 af_value(in parse.Node[_] nodes, in resolve.Sem[_] sem, I64 x, I64 i) {
     return arg_at(nodes, x, i + af_skip(nodes, sem, x));
@@ -2383,7 +2835,18 @@ I64 af_value(in parse.Node[_] nodes, in resolve.Sem[_] sem, I64 x, I64 i) {
 
 // The number of values of array built-in call x.
 I64 af_values(in parse.Node[_] nodes, in resolve.Sem[_] sem, I64 x) {
-    return list_length(nodes, nodes[x].b as I64) - af_skip(nodes, sem, x);
+    return list_length(nodes, nodes[x].b as I64) - af_skip(nodes, sem, x) - af_mode(nodes, sem, x);
+}
+
+// 1 when array built-in call x is `dot(R, a, b, mode)` of a fixed-point R (SPEC-04 LS-145,
+// SPEC-01 IM-87; box 15 unit 4e), whose mode mark_arrayfn marked; else 0.
+I64 af_mode(in parse.Node[_] nodes, in resolve.Sem[_] sem, I64 x) {
+    I64 a0 = nodes[x].b as I64;
+    if (sem[x].lit_at == resolve.AF_DOT && list_length(nodes, a0) == 4 &&
+            (sem[arg_at(nodes, x, 3)].flags & resolve.SEM_BUILTIN) != 0) {
+        return 1;
+    }
+    return 0;
 }
 
 // Array i of reduction x: both values of `dot`, else the last value.
@@ -2598,7 +3061,25 @@ void h_arrayfn[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes
         }
         if (af_reduction(id)) {
             Bool typed = af_skip(nodes, sem, x) == 1 && id != resolve.AF_FOLD;
-            if (typed && resolve.int_class(toks[tok_of(nodes, a0)].aux & 255) == 0) {
+            sem[x].lit_len = 0;
+            if (typed && toks[tok_of(nodes, a0)].kind == scan.TK_FIXED) {
+                // A fixed-point result type (box 15 unit 4e): C2005 for a name of none, then
+                // C3007 at a mode of `dot` that names no rounding mode, kept in lit_len.
+                if (resolve.fixed_type(toks, diag, rs, tok_of(nodes, a0)) == 0) {
+                    return;
+                }
+                if (af_mode(nodes, sem, x) == 1) {
+                    I64 ma = arg_at(nodes, x, 3);
+                    if (nodes[ma].kind == parse.N_NAME) {
+                        I64 mt = tok_of(nodes, ma);
+                        sem[x].lit_len = resolve.round_mode(src, toks[mt].start as I64, toks[mt].len as I64);
+                    }
+                    if (sem[x].lit_len == 0) {
+                        resolve.fail(toks, diag, rs, resolve.C_WRONG_KIND, first(nodes, ma));
+                        return;
+                    }
+                }
+            } else if (typed && resolve.int_class(toks[tok_of(nodes, a0)].aux & 255) == 0) {
                 resolve.fail(toks, diag, rs, resolve.C_WRONG_KIND, first(nodes, a0));
                 return;
             }
@@ -2610,7 +3091,6 @@ void h_arrayfn[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes
                 resolve.fail(toks, diag, rs, resolve.C_WRONG_KIND, wh);
                 return;
             }
-            sem[x].lit_len = 0;
             if (id == resolve.AF_FOLD) {
                 if (a0 >= 0 && nodes[a0].kind == parse.N_NAME) {
                     I64 ot = tok_of(nodes, a0);
@@ -2705,8 +3185,18 @@ void h_arrayfn[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes
                     resolve.fail(toks, diag, rs, resolve.C_TYPE_MISMATCH, first(nodes, y0));
                     return;
                 }
-            } else if (!resolve.is_int(elem)) {
+            } else if (!resolve.is_num(elem)) {
                 resolve.fail(toks, diag, rs, resolve.C_NO_OPERATOR, first(nodes, y0));
+                return;
+            }
+            I64 target = af_target(toks, nodes, sem, x);
+            if (id != resolve.AF_COUNT && ((target != 0 && fold.ty_q(elem) != fold.ty_q(target)) ||
+                    (id == resolve.AF_SUM && fold.ty_q(elem) && target != 0 && target != elem) ||
+                    (id == resolve.AF_FOLD && sem[x].lit_len == 2 && fold.ty_q(elem)))) {
+                // `cint_ref` refuses a reduction between an integer and a fixed-point type, a
+                // `sum` of fixed point into another type (SPEC-02 R-4 keeps one format), and
+                // `fold_checked(mul, ...)` of fixed point (R-4 admits no rounding).
+                resolve.fail(toks, diag, rs, resolve.C_UNSUPPORTED, at);
                 return;
             }
             if (id == resolve.AF_DOT) {
@@ -2723,6 +3213,19 @@ void h_arrayfn[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes
                     resolve.fail(toks, diag, rs, resolve.C_UNSUPPORTED, first(nodes, y1));
                     return;
                 }
+                if (fold.ty_q(elem)) {
+                    // One rounding of the exact sum, at scale 2^(2f), to R's g fraction bits
+                    // (SPEC-01 IM-87, BX15-04): by its mode, half_even without one; a mode for
+                    // a `dot` that does not round is C9102, as `cint_ref` refuses it.
+                    if (2 * fold.q_frac(elem) <= fold.q_frac(target)) {
+                        if (sem[x].lit_len != 0) {
+                            resolve.fail(toks, diag, rs, resolve.C_UNSUPPORTED, at);
+                            return;
+                        }
+                    } else if (sem[x].lit_len == 0) {
+                        sem[x].lit_len = MODE_HALF_EVEN;
+                    }
+                }
             }
             if (id != resolve.AF_DOT && af_values(nodes, sem, x) == 2) {
                 _ = push(toks, nodes, wk, diag, rs, cs, K_EXPECT, af_value(nodes, sem, x, 0), elem);
@@ -2732,8 +3235,8 @@ void h_arrayfn[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes
         I64 result = elem;
         if (id == resolve.AF_COUNT) {
             result = fold.TY_I64;
-        } else if (af_skip(nodes, sem, x) == 1 && id != resolve.AF_FOLD) {
-            result = resolve.int_class(toks[tok_of(nodes, a0)].aux & 255);
+        } else if (af_target(toks, nodes, sem, x) != 0) {
+            result = af_target(toks, nodes, sem, x);
         }
         sem[x].ty = result;
         sem[x].opty = elem;
@@ -2842,6 +3345,11 @@ void h_call[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, i
     I64 x = wk[f].node as I64;
     I64 step = wk[f].state as I64 - 1;
     I64 at = first(nodes, x);
+    if (nodes[nodes[x].a as I64].kind == parse.N_TYPEPROP) {
+        // `Q<i>.<f>.raw(n)`, which the gate admits (box 15 unit 4e).
+        h_rawctor(toks, nodes, sem, wk, diag, rs, cs, f);
+        return;
+    }
     if (is_builtin(nodes, sem, x) && (sem[x].lit_at == fold.BI_MIN || sem[x].lit_at == fold.BI_MAX) &&
             wk[f].d < 0 && step < 2) {
         // `min` and `max` reduce when their last argument is an array (`cint_ref` _array_form,
@@ -2952,7 +3460,8 @@ void h_call[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, i
             while (nodes[done].next as I64 != arg) {
                 done = nodes[done].next as I64;
             }
-            if (decls[dp].mode == 2 && !writable_view(nodes, sem, syms, decls, done)) {
+            // An `out` parameter (mode 3) is an imported extern's (SPEC-03 H-5; SPEC-04 LS-323).
+            if ((decls[dp].mode == 2 || decls[dp].mode == 3) && !writable_view(nodes, sem, syms, decls, done)) {
                 resolve.fail(toks, diag, rs, C_NOT_WRITABLE, first(nodes, done));
                 return;
             }
@@ -3037,7 +3546,7 @@ void h_call[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, i
             wk[f].a = bound as I32;
             wk[f].b = nodes[x].b;
             wk[f].d = 2;
-        } else if (bound < 0 || syms[bound].kind != resolve.SK_FUNC) {
+        } else if (bound < 0 || (syms[bound].kind != resolve.SK_FUNC && syms[bound].kind != resolve.SK_EXTERN)) {
             I64 sy = resolve.lookup(src, toks, nodes, syms, names, diag, rs, tok, at);
             if (sy < 0) {
                 return;
@@ -3143,7 +3652,9 @@ void h_call[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, i
         I64 dp = wk[f].c as I64;
         wk[f].d = 0;
         wk[f].c = nodes[dp].next;
-        if (nodes[dp].op == scan.KW_INOUT && !writable_view(nodes, sem, syms, decls, done)) {
+        if ((nodes[dp].op == scan.KW_INOUT || nodes[dp].op == scan.KW_OUT) &&
+                !writable_view(nodes, sem, syms, decls, done)) {
+            // An `out` parameter is an extern's (SPEC-03 H-5; I/O services lane U1).
             resolve.fail(toks, diag, rs, C_NOT_WRITABLE, first(nodes, done));
             return;
         }
@@ -3157,8 +3668,14 @@ void h_call[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, i
         return;
     }
     I64 fn = syms[wk[f].a as I64].node;
-    static_shapes(toks, nodes, sem, diag, rs, fn, nodes[x].b as I64);
-    if (rs[0].err == 0) {
+    // An extern's call (I/O services lane U1; `cint_ref` _extern_call) is no call site of the
+    // module's call graph: no static shapes or aliases, and no C5012; decl.write_block reads
+    // its capability from the callee.
+    Bool ext = syms[wk[f].a as I64].kind == resolve.SK_EXTERN;
+    if (!ext) {
+        static_shapes(toks, nodes, sem, diag, rs, fn, nodes[x].b as I64);
+    }
+    if (rs[0].err == 0 && !ext) {
         static_alias(toks, nodes, sem, syms, wk, diag, rs, cs, fn, nodes[x].b as I64);
     }
     if (rs[0].err != 0) {
@@ -3170,7 +3687,9 @@ void h_call[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, i
         resolve.fail(toks, diag, rs, resolve.C_UNCONSUMED, at);
         return;
     }
-    note_call(sem, wk, cs, x);
+    if (!ext) {
+        note_call(sem, wk, cs, x);
+    }
     pop(cs);
 }
 
@@ -3578,8 +4097,8 @@ void static_alias[s, r](in scan.Token[_] toks, in parse.Node[_] nodes, in resolv
 // is the result type of the function whose `return` gives x, which is an error of the
 // union's set (C2042 when the set does not hold it) or a value of its value type.
 void h_expect[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.Sem[_] sem,
-        inout parse.Frame[s] wk, inout limits.CompilerDiag[r] diag, inout resolve.RState[_] rs, inout CState[_] cs,
-        I64 f) {
+        in limits.Decl[_] decls, inout parse.Frame[s] wk, inout limits.CompilerDiag[r] diag,
+        inout resolve.RState[_] rs, inout CState[_] cs, I64 f) {
     I64 x = wk[f].node as I64;
     if (wk[f].state == 0) {
         wk[f].state = 1;
@@ -3602,7 +4121,7 @@ void h_expect[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes,
     I64 got = sem[x].ty;
     if (resolve.is_errunion(t)) {
         if (got == resolve.TY_DOTNAME || resolve.is_errset(got)) {
-            if (expect_set(src, toks, nodes, sem, diag, rs, x, resolve.union_set(t), resolve.C_SET_NARROW)) {
+            if (expect_set(src, toks, nodes, sem, decls, diag, rs, x, resolve.union_set(t), resolve.C_SET_NARROW)) {
                 pop(cs);
             }
             return;
@@ -3616,7 +4135,7 @@ void h_expect[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes,
     if (resolve.is_errset(t) || resolve.is_errset(got) || got == resolve.TY_DOTNAME) {
         if (!resolve.is_errset(t)) {
             resolve.fail(toks, diag, rs, use_code(sem, x, resolve.C_TYPE_MISMATCH), first(nodes, x));
-        } else if (expect_set(src, toks, nodes, sem, diag, rs, x, t, resolve.C_TYPE_MISMATCH)) {
+        } else if (expect_set(src, toks, nodes, sem, decls, diag, rs, x, t, resolve.C_TYPE_MISMATCH)) {
             pop(cs);
         }
         return;
@@ -3778,6 +4297,10 @@ export I64 import_type(I64 tag, I64 rank, I64 ext_kind, I64 ext, I64 struct_ty) 
         }
         if (tag == 0x02) {
             return resolve.TY_VOID;
+        }
+        if (tag == resolve.TY_GRANTS) {
+            // The `Grants` parameter of an imported service extern (I/O services lane U5).
+            return resolve.TY_GRANTS;
         }
         if (tag == fold.TY_BOOL || resolve.is_int(tag)) {
             return tag;
@@ -4980,7 +5503,16 @@ void h_fold[s, r](in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.S
             next = kid(nodes, x, j);
             wk[f].state = (j + 1) as I32;
         }
-    } else if (k == parse.N_ARRAY) {
+    } else if (k == parse.N_CATCH) {
+        // The operand, then the value, which runs only on an error, as an operand that `?:`
+        // may skip (ref/OPEN.md REF-OQ-43); a block is checked as statements.
+        if (step == 0) {
+            next = nodes[x].a as I64;
+        } else if (step == 1 && nodes[x].c < 0) {
+            next = nodes[x].b as I64;
+            skip = 1;
+        }
+    } else if (k == parse.N_ARRAY || k == parse.N_TUPLE) {
         if (step == 0) {
             wk[f].b = nodes[x].a;
         }
@@ -5016,6 +5548,17 @@ void h_fold[s, r](in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.S
         return;
     }
     _ = push(toks, nodes, wk, diag, rs, cs, K_FOLD, next, skip);
+}
+
+// The fold form of conversion node x: `as` checked, `as%` wrapping, `as|` saturating (OQ-272).
+I64 convert_form(in parse.Node[_] nodes, I64 x) {
+    if (nodes[x].op == scan.OP_AS_WRAP) {
+        return fold.FORM_WRAP;
+    }
+    if (nodes[x].op == scan.OP_AS_SAT) {
+        return fold.FORM_SAT;
+    }
+    return fold.FORM_CHECKED;
 }
 
 // Records the outcome of a fold.ci call for node x: its value, or C6001 at token tok.
@@ -5054,7 +5597,7 @@ void h_eval[s, l, r, nw](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] n
     I64 b = nodes[x].b as I64;
     I64 tok = tok_of(nodes, x);
     I64 ty = ety(sem, x);
-    Bool wide = fold.ty_wide(ty);
+    Bool wide = fold.ty_limbs(ty);
     if (wide && step == 0 && pushes_wide(nodes, sem, x) && !fold.wide_room(ws, wv)) {
         if (cs[0].quiet > 0) {
             cs[0].quiet = -cs[0].quiet;
@@ -5080,7 +5623,13 @@ void h_eval[s, l, r, nw](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] n
             sem[x].bits = nodes[x].op as U64;
         case parse.N_TYPEPROP:
             Bool upper = !spells(src, toks, nodes[x].c as I64, "min");
-            if (wide) {
+            if (fold.ty_q(ty) && spells(src, toks, nodes[x].c as I64, "epsilon")) {
+                // A fixed-point type's epsilon, the value of raw 1 (SPEC-04 LS-51).
+                sem[x].bits = 1;
+                if (wide) {
+                    fold.wide_push_bits(ws, wv, fold.TY_I64, 1);
+                }
+            } else if (wide) {
                 fold.wide_push_bound(ws, wv, ty, upper);
                 sem[x].bits = fold.wide_low(ws, wv, fold.wide_top(ws, wv));
             } else if (upper) {
@@ -5129,7 +5678,7 @@ void h_eval[s, l, r, nw](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] n
             }
             if (k == parse.N_COMPARE) {
                 Bool holds = false;
-                if (fold.ty_wide(sem[x].opty)) {
+                if (fold.ty_limbs(sem[x].opty)) {
                     holds = fold.fold_wide_compare(ws, wv, cmp_of(nodes[x].op));
                 } else {
                     holds = fold.fold_compare(cmp_of(nodes[x].op), sem[x].opty, sem[a].bits, sem[b].bits);
@@ -5140,10 +5689,16 @@ void h_eval[s, l, r, nw](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] n
                 }
             } else {
                 I32 op = nodes[x].op;
-                if (wide) {
+                Bool q_rounds = fold.ty_q(ty) && (op_name(op) == fold.OP_MUL || op_name(op) == fold.OP_DIV);
+                if (wide && q_rounds) {
+                    fold.fold_wide_q_binary(fres, ws, wv, op_name(op), op_form(op), MODE_HALF_EVEN, ty);
+                } else if (wide) {
                     fold.fold_wide_binary(fres, ws, wv, op_name(op), op_form(op), ty, ety(sem, b), sem[b].bits);
                 } else if (fold.ty_wide(ety(sem, b))) {
                     fold.fold_shift_by_wide(fres, ws, wv, op_name(op), op_form(op), ty, sem[a].bits, ety(sem, b));
+                } else if (q_rounds) {
+                    // A fixed-point product or quotient rounds half_even (SPEC-01 IM-61, IM-62).
+                    fold.fold_q_binary(fres, op_name(op), op_form(op), MODE_HALF_EVEN, ty, sem[a].bits, sem[b].bits);
                 } else {
                     fold.fold_binary(fres, op_name(op), op_form(op), ty, sem[a].bits, ety(sem, b), sem[b].bits);
                 }
@@ -5185,16 +5740,29 @@ void h_eval[s, l, r, nw](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] n
             // A wide arm left its value on the wide stack, which is this node's.
             sem[x].bits = sem[arm].bits;
         case parse.N_CONVERT:
-            I64 form = fold.FORM_CHECKED;
-            if (nodes[x].op == scan.OP_AS_WRAP) {
-                form = fold.FORM_WRAP;
-            }
+            I64 form = convert_form(nodes, x);
             if (sem[x].opty == fold.TY_Z) {
                 if (!literal(src, toks, nodes, sem, lits, diag, z, rs, cs, a)) {
                     return;
                 }
-                fold.fold_lit_convert(fres, form, lits, sem[a].lit_at, sem[a].lit_len, ty);
-                if (wide && fres[0].fault == fold.F_NONE) {
+                if (fold.ty_q(ty)) {
+                    fold.fold_lit_q(fres, form, lits, sem[a].lit_at, sem[a].lit_len, ty, z, ws, wv);
+                } else {
+                    fold.fold_lit_convert(fres, form, lits, sem[a].lit_at, sem[a].lit_len, ty);
+                }
+                if (wide && fold.ty_q(ty) && fres[0].fault == fold.F_NONE) {
+                    // The raw value, also stored for compiler/lowering.ci.
+                    fold.wide_push_ex(ws, wv, ty);
+                    if (!q_lit_raw(toks, nodes, sem, lits, diag, z, ws, wv, rs, cs, x)) {
+                        return;
+                    }
+                } else if (wide && fres[0].fault == fold.F_NONE && form == fold.FORM_SAT &&
+                        !fold.lit_fits(lits, sem[a].lit_at, sem[a].lit_len, ty)) {
+                    // `as|` of a literal outside a wide type: its bound, which lowering
+                    // writes as the type's minimum or maximum (SEM_SAT_BOUND; OQ-272).
+                    fold.wide_push_bound(ws, wv, ty, nodes[a].kind != parse.N_NEGLIT);
+                    sem[x].flags = sem[x].flags | resolve.SEM_SAT_BOUND;
+                } else if (wide && fres[0].fault == fold.F_NONE) {
                     fold.wide_push_lit_as(ws, wv, lits, sem[a].lit_at, sem[a].lit_len, ty);
                 }
             } else {
@@ -5202,8 +5770,13 @@ void h_eval[s, l, r, nw](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] n
                     _ = push(toks, nodes, wk, diag, rs, cs, K_EVAL, a, 0);
                     return;
                 }
-                if (wide || fold.ty_wide(sem[x].opty)) {
+                if ((wide || fold.ty_limbs(sem[x].opty)) && (fold.ty_q(ty) || fold.ty_q(sem[x].opty))) {
+                    fold.fold_wide_q_convert(fres, ws, wv, form, sem[x].lit_len, sem[x].opty, sem[a].bits, ty);
+                } else if (wide || fold.ty_limbs(sem[x].opty)) {
                     fold.fold_wide_convert(fres, ws, wv, form, sem[x].opty, sem[a].bits, ty);
+                } else if (fold.ty_q(ty) || fold.ty_q(sem[x].opty)) {
+                    // Its mode, of the `round` clause or half_even, is in lit_len (h_infer).
+                    fold.fold_q_convert(fres, form, sem[x].lit_len, sem[x].opty, sem[a].bits, ty);
                 } else {
                     fold.fold_convert(fres, form, sem[x].opty, sem[a].bits, ty);
                 }
@@ -5223,6 +5796,16 @@ void h_eval[s, l, r, nw](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] n
                 }
             }
         case parse.N_CALL:
+            if ((sem[x].flags & resolve.SEM_RAW) != 0) {
+                // `Q<i>.<f>.raw(n)`: the value whose raw is n, exact (SPEC-01 IM-57).
+                if (step == 0) {
+                    _ = push(toks, nodes, wk, diag, rs, cs, K_EVAL, b, 0);
+                    return;
+                }
+                sem[x].bits = sem[b].bits;
+                pop(cs);
+                return;
+            }
             if (!is_builtin(nodes, sem, x)) {
                 eval_fail(toks, diag, rs, cs, resolve.C_UNSUPPORTED, tok);
                 return;
@@ -5246,7 +5829,34 @@ void h_eval[s, l, r, nw](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] n
             if (id == fold.BI_ROTL || id == fold.BI_ROTR) {
                 kty = ety(sem, builtin_value(nodes, sem, x, 1));
             }
-            if (fold.ty_wide(oty) || wide) {
+            U64 v0 = sem[builtin_value(nodes, sem, x, 0)].bits;
+            if (id >= fold.BI_QMUL_OP && id <= fold.BI_QMUL_SAT) {
+                // `mul`, `div`, `mul_wrap` and `mul_sat` with a mode: the operators' rules.
+                I64 qname = fold.OP_MUL;
+                I64 qform = fold.FORM_CHECKED;
+                if (id == fold.BI_QDIV) {
+                    qname = fold.OP_DIV;
+                } else if (id == fold.BI_QMUL_WRAP) {
+                    qform = fold.FORM_WRAP;
+                } else if (id == fold.BI_QMUL_SAT) {
+                    qform = fold.FORM_SAT;
+                }
+                if (fold.ty_limbs(oty)) {
+                    fold.fold_wide_q_binary(fres, ws, wv, qname, qform, sem[x].lit_len, oty);
+                } else {
+                    fold.fold_q_binary(fres, qname, qform, sem[x].lit_len, oty, v0, v1);
+                }
+            } else if (id == fold.BI_SQRT || id == fold.BI_QMUL || id == fold.BI_MUL_INT) {
+                I64 tb = fold.TY_I64;
+                if (nb > 1) {
+                    tb = ety(sem, builtin_value(nodes, sem, x, 1));
+                }
+                if (wide || fold.ty_limbs(oty) || fold.ty_limbs(tb)) {
+                    fold.fold_wide_q_builtin(fres, ws, wv, id, sem[x].lit_len, oty, tb, ty, v0, v1);
+                } else {
+                    fold.fold_q_builtin(fres, id, sem[x].lit_len, oty, tb, ty, v0, v1);
+                }
+            } else if (fold.ty_limbs(oty) || wide) {
                 fold.fold_wide_builtin(fres, ws, wv, id, sem[x].lit_len, oty, ty, sem[builtin_value(nodes, sem, x, 0)].bits,
                     v1, kty);
             } else {
@@ -5273,9 +5883,9 @@ Bool pushes_wide(in parse.Node[_] nodes, in resolve.Sem[_] sem, I64 x) {
         return true;
     }
     if (k == parse.N_CONVERT) {
-        return !fold.ty_wide(sem[x].opty);
+        return !fold.ty_limbs(sem[x].opty);
     }
-    return k == parse.N_CALL && !fold.ty_wide(builtin_opty(sem, x));
+    return k == parse.N_CALL && !fold.ty_limbs(builtin_opty(sem, x));
 }
 
 // A diagnostic of constant evaluation at token tok, unless the evaluation is quiet (h_clamp),
@@ -5433,7 +6043,7 @@ void h_clamp[s, r](in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.
     cs[0].quiet = 0;
     wk[f].d = 0;
     Bool above = false;
-    if (fold.ty_wide(builtin_opty(sem, c))) {
+    if (fold.ty_limbs(builtin_opty(sem, c))) {
         // Both bounds are on the wide stack, hi at the top.
         above = fold.fold_wide_compare(ws, wv, fold.CMP_GT);
     } else {
@@ -5472,18 +6082,22 @@ void h_walk[s, l, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes
         if (!literal(src, toks, nodes, sem, lits, diag, z, rs, cs, a)) {
             return;
         }
-        I64 form = fold.FORM_CHECKED;
-        if (nodes[x].op == scan.OP_AS_WRAP) {
-            form = fold.FORM_WRAP;
+        I64 form = convert_form(nodes, x);
+        if (fold.ty_q(sem[x].ty)) {
+            fold.fold_lit_q(fres, form, lits, sem[a].lit_at, sem[a].lit_len, sem[x].ty, z, ws, wv);
+        } else {
+            fold.fold_lit_convert(fres, form, lits, sem[a].lit_at, sem[a].lit_len, sem[x].ty);
         }
-        fold.fold_lit_convert(fres, form, lits, sem[a].lit_at, sem[a].lit_len, sem[x].ty);
         if (fres[0].fault != fold.F_NONE) {
             const_fault(toks, diag, faults, fres, lits, z, ws, wv, path, rs, tok_of(nodes, x));
             return;
         }
+        if (fold.q_wide(sem[x].ty) && !q_lit_raw(toks, nodes, sem, lits, diag, z, ws, wv, rs, cs, x)) {
+            return;
+        }
     }
     I64 n = 0;
-    if (k == parse.N_UNARY || k == parse.N_CONVERT) {
+    if (k == parse.N_UNARY || k == parse.N_CONVERT || (k == parse.N_CALL && (sem[x].flags & resolve.SEM_RAW) != 0)) {
         n = 1;
     } else if (k == parse.N_BINARY || k == parse.N_COMPARE || k == parse.N_LOGICAL) {
         n = 2;
@@ -5497,6 +6111,8 @@ void h_walk[s, l, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes
         I64 child = kid(nodes, x, i);
         if (is_builtin(nodes, sem, x)) {
             child = builtin_value(nodes, sem, x, i);
+        } else if (k == parse.N_CALL) {
+            child = nodes[x].b as I64;
         }
         if (!push(toks, nodes, wk, diag, rs, cs, K_WALK, child, 0)) {
             return;
@@ -5669,7 +6285,8 @@ I64 interval_insert[r](in scan.Token[_] toks, in parse.Node[_] nodes, in resolve
 
 // Inorder interval traversal is O(items), using parent links rather than recursion. The
 // values of a set type are its tags, 1 to its size (LS-314).
-Bool interval_covers(in parse.Node[_] nodes, in resolve.Sem[_] sem, in parse.Frame[_] wk, I64 root, I64 ty) {
+Bool interval_covers(in parse.Node[_] nodes, in resolve.Sem[_] sem, in limits.Decl[_] decls, in parse.Frame[_] wk,
+        I64 root, I64 ty) {
     U64 cursor = interval_key(ty, fold.ty_min(ty));
     U64 last = interval_key(ty, fold.ty_max(ty));
     if (ty == fold.TY_BOOL) {
@@ -5677,7 +6294,7 @@ Bool interval_covers(in parse.Node[_] nodes, in resolve.Sem[_] sem, in parse.Fra
         last = 1;
     } else if (resolve.is_errset(ty)) {
         cursor = 1;
-        last = resolve.errset_size(nodes, sem, ty) as U64;
+        last = resolve.errset_size_d(nodes, sem, decls, ty) as U64;
     }
     I64 at = root;
     if (at >= 0) {
@@ -5715,8 +6332,8 @@ Bool interval_covers(in parse.Node[_] nodes, in resolve.Sem[_] sem, in parse.Fra
 
 // K_SWITCH: a interval root, b clause cursor, c current item. All labels precede bodies.
 void h_switch[s, r](in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.Sem[_] sem,
-        inout parse.Frame[s] wk, inout limits.CompilerDiag[r] diag, inout resolve.RState[_] rs,
-        inout CState[_] cs, I64 f) {
+        in limits.Decl[_] decls, inout parse.Frame[s] wk, inout limits.CompilerDiag[r] diag,
+        inout resolve.RState[_] rs, inout CState[_] cs, I64 f) {
     I64 x = wk[f].node as I64;
     I64 scr = nodes[x].a as I64;
     I64 phase = wk[f].state as I64;
@@ -5767,7 +6384,7 @@ void h_switch[s, r](in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve
         wk[f].b = clause as I32;
         wk[f].c = item as I32;
         if (clause < 0) {
-            if ((sem[x].flags & SEM_SWITCH_DEFAULT) == 0 && !interval_covers(nodes, sem, wk, wk[f].a as I64, ty)) {
+            if ((sem[x].flags & SEM_SWITCH_DEFAULT) == 0 && !interval_covers(nodes, sem, decls, wk, wk[f].a as I64, ty)) {
                 resolve.fail(toks, diag, rs, resolve.C_SWITCH_COVERAGE, tok_of(nodes, x));
                 return;
             }
@@ -6089,10 +6706,37 @@ I64 format_rule(in I64[_] sp, Bool has, I64 ty) {
     return format_layout(sp);
 }
 
+// The rule of a hole of fixed-point type (`cint_ref` fmt._check_fixed; SPEC-04 LS-201 to
+// LS-213; box 15 unit 4e) with no conversion, its specification sp when has: C1036 for a
+// precision with a scale, C9102 for the kind `d` and for a group, which `cint_ref` refuses,
+// C1037 for another kind, a scale or `#`, then the layout's rule; 0 when it applies.
+I64 format_rule_q(in I64[_] sp, Bool has) {
+    if (!has) {
+        return 0;
+    }
+    I64 k = sp[parse.FS_KIND];
+    if (sp[parse.FS_PRECISION] >= 0 && sp[parse.FS_SCALE] >= 0) {
+        return C_FORMAT_PRECISION;
+    }
+    if (k == 'd') {
+        return resolve.C_UNSUPPORTED;
+    }
+    if (k != 0 || sp[parse.FS_SCALE] >= 0 || sp[parse.FS_ALT] != 0) {
+        return C_FORMAT;
+    }
+    if (sp[parse.FS_GROUP] != 0) {
+        return resolve.C_UNSUPPORTED;
+    }
+    return format_layout(sp);
+}
+
 // Checks hole h of type ty: C1037 or C1036 at the hole for a specification that is malformed
 // or does not apply to the value's type (the element type for an array), and C9102 there for
 // a width that does not fit I64. An array of structs is left to lowering, which refuses it,
-// as `cint_ref` refuses it before reading the specification. False after an error.
+// as `cint_ref` refuses it before reading the specification. Of the conversions, `!raw` and
+// `!bits` of a fixed-point value print its storage integer by the integer rules, `!bits` with
+// neither a scale nor `t` or `c` (box 15 unit 4e); any other conversion is C9102 (CINTC-OQ-15). False
+// after an error.
 Bool format_ok[r](in U8[_] src, in parse.Node[_] nodes, inout limits.CompilerDiag[r] diag,
         inout resolve.RState[_] rs, I64 h, I64 ty) {
     I64 et = ty;
@@ -6104,9 +6748,20 @@ Bool format_ok[r](in U8[_] src, in parse.Node[_] nodes, inout limits.CompilerDia
     }
     I64[11] sp;
     Bool has = nodes[h].c >= 0;
+    I64 conv = (nodes[h].op & 255) as I64;
     I64 code = 0;
-    if (has && !parse.format_spec(src, nodes[h].c as I64, nodes[h].d as I64, sp)) {
+    if (conv != 0 && !fold.ty_q(et)) {
+        code = resolve.C_UNSUPPORTED;
+    } else if (has && !parse.format_spec(src, nodes[h].c as I64, nodes[h].d as I64, sp)) {
         code = C_FORMAT;
+    } else if (conv != 0) {
+        code = format_rule(sp, has, fold.q_storage(et));
+        if (code == 0 && has && conv == (parse.HOLE_BITS as I64) && (sp[parse.FS_SCALE] >= 0 || sp[parse.FS_KIND] == 't' ||
+                sp[parse.FS_KIND] == 'c')) {
+            code = C_FORMAT;
+        }
+    } else if (fold.ty_q(et)) {
+        code = format_rule_q(sp, has);
     } else {
         code = format_rule(sp, has, et);
     }
@@ -6308,7 +6963,7 @@ void h_stmt[s, l, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes
                 if (constant) {
                     kind = resolve.SK_CONST;
                 }
-                if (constant && fold.ty_wide(sem[x].ty) &&
+                if (constant && fold.ty_limbs(sem[x].ty) &&
                         !wide_decl_value(toks, nodes, sem, syms, lits, diag, z, ws, wv, rs, cs, x, b)) {
                     return;
                 }
@@ -6358,6 +7013,11 @@ void h_stmt[s, l, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes
                 return;
             }
             if (step == 1) {
+                if ((sem[a].flags & resolve.SEM_RAW) != 0) {
+                    // `x.raw` reads the storage integer and is no place (SPEC-01 IM-57).
+                    resolve.fail(toks, diag, rs, resolve.C_NOT_PLACE, first(nodes, a));
+                    return;
+                }
                 I64 root = a;
                 while (nodes[root].kind == parse.N_INDEX || nodes[root].kind == parse.N_FIELD) {
                     root = nodes[root].a as I64;
@@ -6428,11 +7088,20 @@ void h_stmt[s, l, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes
                 I64 t = sem[a].ty;
                 sem[x].ty = t;
                 I32 op = nodes[x].op;
-                if (k == parse.N_INCDEC || op != scan.OP_ASSIGN) {
-                    if (!resolve.is_int(t)) {
-                        resolve.fail(toks, diag, rs, use_code(sem, a, resolve.C_NO_OPERATOR), first(nodes, a));
-                        return;
-                    }
+                if (k == parse.N_INCDEC && fold.ty_q(t)) {
+                    // `cint_ref` refuses `++` and `--` of fixed point: SPEC-04 LS-166 does not say
+                    // whether they add 1 or the raw unit.
+                    resolve.fail(toks, diag, rs, resolve.C_UNSUPPORTED, first(nodes, a));
+                    return;
+                }
+                Bool shift = op == scan.OP_SHL_ASSIGN || op == scan.OP_SHR_ASSIGN || op == scan.OP_SHL_WRAP_ASSIGN;
+                if ((k == parse.N_INCDEC || shift) && !resolve.is_int(t)) {
+                    resolve.fail(toks, diag, rs, use_code(sem, a, resolve.C_NO_OPERATOR), first(nodes, a));
+                    return;
+                }
+                if (k == parse.N_ASSIGN && op != scan.OP_ASSIGN && !op_on(op, t)) {
+                    resolve.fail(toks, diag, rs, use_code(sem, a, resolve.C_NO_OPERATOR), first(nodes, a));
+                    return;
                 }
                 if (k == parse.N_INCDEC) {
                     pop(cs);
@@ -7183,15 +7852,15 @@ I64 element_form[s, n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nod
 }
 
 // The checks of kernel parameter p after its type (`cint_ref` kernel_signature; SPEC-04
-// LS-246, SPEC-02 K-1, K-2): an array of integer elements (C5028 at the parameter) whose
-// extents are shape expressions (C9102), or a scalar of an integer type (C5028) that is not
+// LS-246, SPEC-02 K-1, K-2): an array of integer or fixed-point elements (C5028 at the
+// parameter) whose extents are shape expressions (C9102), or a scalar of such a type (C5028) that is not
 // `inout` (C2064). False after an error.
 Bool kernel_param_ok(in scan.Token[_] toks, in parse.Node[_] nodes, in resolve.Sem[_] sem,
         inout limits.CompilerDiag[_] diag, inout resolve.RState[_] rs, I64 p) {
     I64 t = sem[p].ty;
     I64 at = nodes[p].start as I64;
     if (resolve.is_array(t)) {
-        if (!resolve.is_int(resolve.array_elem(t))) {
+        if (!resolve.is_num(resolve.array_elem(t))) {
             resolve.fail(toks, diag, rs, C_KERNEL_TYPE, at);
             return false;
         }
@@ -7204,7 +7873,7 @@ Bool kernel_param_ok(in scan.Token[_] toks, in parse.Node[_] nodes, in resolve.S
         }
         return true;
     }
-    if (!resolve.is_int(t)) {
+    if (!resolve.is_num(t)) {
         resolve.fail(toks, diag, rs, C_KERNEL_TYPE, at);
         return false;
     }
@@ -8192,8 +8861,14 @@ void h_reduce[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes,
                 }
             }
             elem = sem[v].ty;
-            if (!resolve.is_int(elem)) {
+            if (!resolve.is_num(elem)) {
                 resolve.fail(toks, diag, rs, resolve.C_NO_OPERATOR, first(nodes, v));
+                return;
+            }
+            if ((fold.ty_q(elem) || fold.ty_q(sem[x].ty)) && elem != sem[x].ty) {
+                // Contributions of another format than the target's (SPEC-02 R-4), which
+                // `cint_ref` refuses.
+                resolve.fail(toks, diag, rs, resolve.C_UNSUPPORTED, first(nodes, v));
                 return;
             }
         }
@@ -8221,7 +8896,7 @@ Bool wide_decl_value[l, r](in scan.Token[_] toks, in parse.Node[_] nodes, inout 
         sem[x].lit_len = sem[b].lit_len;
         return true;
     }
-    if (k == parse.N_NAME && sem[b].sym >= 0 && syms[sem[b].sym].node >= 0 && fold.ty_wide(syms[sem[b].sym].ty)) {
+    if (k == parse.N_NAME && sem[b].sym >= 0 && syms[sem[b].sym].node >= 0 && fold.ty_limbs(syms[sem[b].sym].ty)) {
         I64 d = syms[sem[b].sym].node;
         sem[x].lit_at = sem[d].lit_at;
         sem[x].lit_len = sem[d].lit_len;
@@ -8237,6 +8912,30 @@ Bool wide_decl_value[l, r](in scan.Token[_] toks, in parse.Node[_] nodes, inout 
     sem[x].lit_at = cs[0].lit_used;
     sem[x].lit_len = fold.lit_put(z, lits, cs[0].lit_used);
     cs[0].lit_used += sem[x].lit_len;
+    return true;
+}
+
+// The raw value of `L as T` (node x) for T fixed point of 128 bits, which fold.fold_lit_q left
+// as its wide exact, stored once in the literal-value table at x's lit_at and lit_len for
+// compiler/lowering.ci (as the conversion of a literal does not round, its lit_len is no
+// mode). False after C9001 at the node when the table is full.
+Bool q_lit_raw[l, r](in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.Sem[_] sem, inout U8[l] lits,
+        inout limits.CompilerDiag[r] diag, inout fold.Work[_] z, inout fold.Wide[_] ws, inout fold.WideVal[_] wv,
+        inout resolve.RState[_] rs, inout CState[_] cs, I64 x) {
+    if ((sem[x].flags & resolve.SEM_LIT) != 0) {
+        return true;
+    }
+    fold.ex_load(ws, wv, z);
+    I64 nb = fold.z_len(z);
+    if (cs[0].lit_used + nb > l) {
+        I64 tok = tok_of(nodes, x);
+        resolve.fail_at(diag, rs, limits.C_LIMIT, toks[tok].line as I64, toks[tok].col as I64, limits.LIM_LITERALS, l);
+        return false;
+    }
+    sem[x].lit_at = cs[0].lit_used;
+    sem[x].lit_len = fold.lit_put(z, lits, cs[0].lit_used);
+    cs[0].lit_used += sem[x].lit_len;
+    sem[x].flags = sem[x].flags | resolve.SEM_LIT;
     return true;
 }
 
@@ -8268,7 +8967,7 @@ void h_gconst[s, l, r](in scan.Token[_] toks, in parse.Node[_] nodes, inout reso
         }
         _ = push(toks, nodes, wk, diag, rs, cs, K_FOLD, init, 0);
     } else {
-        if (fold.ty_wide(sem[x].ty) && !wide_decl_value(toks, nodes, sem, syms, lits, diag, z, ws, wv, rs, cs, x, init)) {
+        if (fold.ty_limbs(sem[x].ty) && !wide_decl_value(toks, nodes, sem, syms, lits, diag, z, ws, wv, rs, cs, x, init)) {
             return;
         }
         syms[sy].value = sem[init].bits;
@@ -8320,6 +9019,10 @@ void h_signature[s](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes,
                 if (!kernel_param_ok(toks, nodes, sem, diag, rs, done)) {
                     return;
                 }
+            } else if (nodes[x].kind == parse.N_EXTERN) {
+                if (!extern_param_ok(toks, nodes, sem, diag, rs, done)) {
+                    return;
+                }
             } else if (nodes[done].op == scan.KW_INOUT && !resolve.is_array(sem[done].ty) &&
                     !resolve.is_struct(sem[done].ty) &&
                     !(resolve.is_mem(sem[done].ty) && !resolve.is_handle(sem[done].ty))) {
@@ -8341,14 +9044,28 @@ void h_signature[s](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes,
         if (nodes[x].kind == parse.N_KERNEL) {
             resolve.scope_close(syms, names, rs, wk[f].a as I64);
         } else if (res >= 0 && nodes[res].kind == parse.N_ERRUNION) {
-            sem[x].ty = union_result(src, toks, nodes, sem, syms, names, decls, diag, rs, res);
+            sem[x].ty = union_result(src, toks, nodes, sem, syms, names, decls, diag, rs, res,
+                nodes[x].kind == parse.N_EXTERN);
             if (rs[0].err != 0) { return; }
         } else if (res >= 0) {
             sem[x].ty = resolve.type_ref(src, toks, nodes, sem, syms, names, decls, diag, rs, res, -1, -2);
+            if (rs[0].err != 0) { return; }
             if (resolve.is_array(sem[x].ty)) {
                 resolve.fail(toks, diag, rs, resolve.C_UNSUPPORTED, nodes[res].tok as I64);
                 return;
             }
+            if (nodes[x].kind == parse.N_EXTERN && !(resolve.is_num(sem[x].ty) || sem[x].ty == fold.TY_BOOL)) {
+                // An extern returns void, a scalar or an error union of one (SPEC-03 H-5).
+                resolve.fail(toks, diag, rs, resolve.C_EXTERN_TYPE, nodes[res].tok as I64);
+                return;
+            }
+        }
+        if (nodes[x].kind == parse.N_EXTERN && !extern_denied(src, toks, nodes, sem, decls, x)) {
+            // A service extern covered by a capability returns an error union whose set holds
+            // `denied`, the result of a call that no grant covers (SPEC-03 A-10; SPEC-07
+            // SEC-OS-1).
+            resolve.fail(toks, diag, rs, resolve.C_SERVICE_FORM, tok_of(nodes, x));
+            return;
         }
         syms[sy].ty = sem[x].ty;
         syms[sy].state = resolve.CS_DONE;
@@ -8359,13 +9076,15 @@ void h_signature[s](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes,
 
 // The type of the error union `E!T` of N_ERRUNION node x, a function's result (LS-94,
 // LS-95): E names an error set (C3007 at its name otherwise), and T is an integer type,
-// Bool, void, or (box 12) a handle when E is AllocError; another T is C9102 at its first
-// token (compiler/OPEN.md CINTC-OQ-15).
+// Bool, void, a fixed-point type (box 15), or (box 12) a handle when E is AllocError; another
+// T is C9102 at its first token (compiler/OPEN.md CINTC-OQ-15).
 // Its Sem.ty is the union, and the set's and value's N_TYPE nodes keep their types. 0 after
 // an error.
+// For an extern (ext; I/O services lane U1) T is an integer type, Bool or a fixed-point type,
+// C5050 at the union's first token otherwise (SPEC-03 H-5).
 I64 union_result[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.Sem[_] sem,
         inout resolve.Sym[_] syms, inout resolve.Name[_] names, in limits.Decl[_] decls,
-        inout limits.CompilerDiag[_] diag, inout resolve.RState[_] rs, I64 x) {
+        inout limits.CompilerDiag[_] diag, inout resolve.RState[_] rs, I64 x, Bool ext) {
     I64 e = nodes[x].a as I64;
     I64 v = nodes[x].b as I64;
     I64 set = resolve.type_ref(src, toks, nodes, sem, syms, names, decls, diag, rs, e, -1, -2);
@@ -8383,7 +9102,14 @@ I64 union_result[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes,
         if (rs[0].err != 0) {
             return 0;
         }
-        if (!resolve.is_int(vt) && vt != fold.TY_BOOL && !(resolve.is_handle(vt) && set == resolve.TY_ALLOC)) {
+        if (ext && !(resolve.is_int(vt) || vt == fold.TY_BOOL || fold.ty_q(vt))) {
+            resolve.fail(toks, diag, rs, resolve.C_EXTERN_TYPE, first(nodes, x));
+            return 0;
+        }
+        if ((!resolve.is_int(vt) && vt != fold.TY_BOOL && !fold.ty_q(vt) && !(resolve.is_handle(vt) && set == resolve.TY_ALLOC)) ||
+                fold.q_wide(vt)) {
+            // Fixed point of 128 bits too: its code is past the 256 of a union's value
+            // (resolve.union_type; games wave G2b, CINTC-OQ-15).
             resolve.fail(toks, diag, rs, resolve.C_UNSUPPORTED, nodes[v].start as I64);
             return 0;
         }
@@ -8391,6 +9117,40 @@ I64 union_result[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes,
     }
     sem[x].ty = resolve.union_type(set, vt);
     return sem[x].ty;
+}
+
+// A parameter of extern node x once typed (`cint_ref` extern_signature; SPEC-03 H-5): a view
+// in any mode, or an integer, Bool, fixed-point or `Grants` value passed `in` (C5050 at the
+// parameter for another type, C2064 for an `out` or `inout` scalar). False after an error.
+Bool extern_param_ok[r](in scan.Token[_] toks, in parse.Node[_] nodes, in resolve.Sem[_] sem,
+        inout limits.CompilerDiag[r] diag, inout resolve.RState[_] rs, I64 p) {
+    I64 ty = sem[p].ty;
+    if (resolve.is_array(ty)) {
+        return true;
+    }
+    if (!(resolve.is_num(ty) || ty == fold.TY_BOOL || ty == resolve.TY_GRANTS)) {
+        resolve.fail(toks, diag, rs, resolve.C_EXTERN_TYPE, nodes[p].start as I64);
+        return false;
+    }
+    if (nodes[p].op == scan.KW_OUT || nodes[p].op == scan.KW_INOUT) {
+        resolve.fail(toks, diag, rs, resolve.C_INOUT_SCALAR, nodes[p].start as I64);
+        return false;
+    }
+    return true;
+}
+
+// Whether typed extern node x may carry its capability: it has none, or its result is an
+// error union whose set declares `denied` (SPEC-03 A-10; SPEC-07 SEC-OS-1).
+Bool extern_denied[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, in resolve.Sem[_] sem,
+        in limits.Decl[_] decls, I64 x) {
+    if (decl.extern_capability(nodes, x) < 0) {
+        return true;
+    }
+    I64 ty = sem[x].ty;
+    if (!resolve.is_errunion(ty)) {
+        return false;
+    }
+    return resolve.errset_named_d(src, toks, nodes, sem, decls, resolve.union_set(ty), "denied");
 }
 
 // K_FUNC on frame f: the body of function node x (`cint_ref` check_function): parameters
@@ -8498,7 +9258,7 @@ void h_modvar[s, l, r](in scan.Token[_] toks, in parse.Node[_] nodes, inout reso
         }
         _ = push(toks, nodes, wk, diag, rs, cs, K_FOLD, init, 0);
     } else {
-        if (fold.ty_wide(syms[sy].ty) && !wide_decl_value(toks, nodes, sem, syms, lits, diag, z, ws, wv, rs, cs, x, init)) {
+        if (fold.ty_limbs(syms[sy].ty) && !wide_decl_value(toks, nodes, sem, syms, lits, diag, z, ws, wv, rs, cs, x, init)) {
             return;
         }
         syms[sy].value = sem[init].bits;
@@ -8508,11 +9268,12 @@ void h_modvar[s, l, r](in scan.Token[_] toks, in parse.Node[_] nodes, inout reso
 
 // Box 15 (decision 2026-10-09 on OQ-260): module-level variable x of struct type ty is one
 // global of the module state when it is not exported and its fields at any depth are
-// integers, `Bool`, structs of such fields, or arrays of rank 1 to 4 of them with static
-// extents; else C9102 at its type. A handle, an error value or another type in a field stays
-// C9102 until a unit admits it. The walk marks the structs it reaches in their symbols'
-// flags (SF_STATE_SEEN), and checks each once (SF_STATE_OK): a struct of the module by its
-// fields' types, an imported one by its field rows. Any other type passes.
+// integers, fixed point (games wave G2b), `Bool`, structs of such fields, or arrays of rank
+// 1 to 4 of them with static extents; else C9102 at its type. A handle, an error value or
+// another type in a field stays C9102 until a unit admits it. The walk marks the structs it
+// reaches in their symbols' flags (SF_STATE_SEEN), and checks each once (SF_STATE_OK): a
+// struct of the module by its fields' types, an imported one by its field rows. Any other
+// type passes.
 const I64 SF_STATE_SEEN = 16;
 const I64 SF_STATE_OK = 32;
 
@@ -8577,7 +9338,7 @@ Bool state_field(inout resolve.Sym[_] syms, I64 ty) {
         syms[e - resolve.TY_STRUCT].flags = syms[e - resolve.TY_STRUCT].flags | SF_STATE_SEEN;
         return true;
     }
-    return resolve.is_int(e) || e == fold.TY_BOOL;
+    return resolve.is_num(e) || e == fold.TY_BOOL;
 }
 
 // Whether initializer x of a module-level variable is constant: 1 for a constant expression,
@@ -8659,9 +9420,9 @@ void run[s, l, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, i
         switch (wk[f].kind) {
             case K_STMT: h_stmt(src, toks, nodes, sem, syms, names, decls, wk, lits, diag, z, ws, wv, rs, cs, f);
             case K_BLOCK, K_CLAUSE: h_block(toks, nodes, sem, syms, names, wk, diag, rs, cs, f);
-            case K_SWITCH: h_switch(toks, nodes, sem, wk, diag, rs, cs, f);
+            case K_SWITCH: h_switch(toks, nodes, sem, decls, wk, diag, rs, cs, f);
             case K_INFER: h_infer(src, toks, nodes, sem, syms, names, decls, wk, diag, rs, cs, f);
-            case K_EXPECT: h_expect(src, toks, nodes, sem, wk, diag, rs, cs, f);
+            case K_EXPECT: h_expect(src, toks, nodes, sem, decls, wk, diag, rs, cs, f);
             case K_FOLD: h_fold(toks, nodes, sem, wk, diag, ws, wv, rs, cs, f);
             case K_EVAL: h_eval(src, toks, nodes, sem, syms, decls, wk, lits, diag, faults, fres, z, ws, wv, path, rs, cs,
                 f);
@@ -8913,6 +9674,226 @@ void state_args[s, r](in scan.Token[_] toks, in parse.Node[_] nodes, I64 nn, in 
     }
 }
 
+// The arguments of `requires` node x (`cint_ref` check_requires; SPEC-07 SEC-CAP-3): each a
+// string constant, C3041 at another argument's first token. One of more than 255 bytes has
+// no row in the declaration table (C9102; compiler/OPEN.md CINTC-OQ-65).
+void requires_args[n, r](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes,
+        inout limits.CompilerDiag[r] diag, inout resolve.RState[_] rs, I64 x) {
+    I64 g = nodes[x].b as I64;
+    while (g >= 0 && rs[0].err == 0) {
+        if (nodes[g].kind != parse.N_STRING) {
+            resolve.fail(toks, diag, rs, resolve.C_BAD_REQUIRES, first(nodes, g));
+        } else if (resolve.string_length(src, toks, nodes[g].tok as I64, nodes[g].op as I64) > 255) {
+            resolve.fail(toks, diag, rs, resolve.C_UNSUPPORTED, first(nodes, g));
+        }
+        g = nodes[g].next as I64;
+    }
+}
+
+// ---------------------------------------------------------------- capabilities
+
+// Byte i of the name of row row, its continuation rows included.
+U8 row_byte(in limits.Decl[_] d, I64 row, I64 i) {
+    return d[row + i / 32].name[i % 32];
+}
+
+// Whether rows p and q have the same name.
+Bool rows_equal(in limits.Decl[_] d, I64 p, I64 q) {
+    I64 nb = d[p].name_len as I64;
+    if (nb != (d[q].name_len as I64)) {
+        return false;
+    }
+    for i in 0..nb {
+        if (row_byte(d, p, i) != row_byte(d, q, i)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// The first DK_CAP row of the table, in table order, that names row q's capability, or -1.
+I64 find_cap(in limits.Decl[_] d, I64 q) {
+    I64 end = d[0].a;
+    I64 row = 1;
+    while (row < end) {
+        if (d[row].kind == limits.DK_CAP && rows_equal(d, row, q)) {
+            return row;
+        }
+        row += 1;
+    }
+    return -1;
+}
+
+// Whether byte c may stand in a segment of a logical path or in a logical name (SPEC-07
+// SEC-OS-5, SEC-CAP-6): an ASCII letter, a digit, `_`, `-` or `.`.
+Bool segment_byte(I64 c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' ||
+        c == '.';
+}
+
+// The lower-case form of ASCII byte c.
+I64 lower_byte(I64 c) {
+    if (c >= 'A' && c <= 'Z') {
+        return c + 32;
+    }
+    return c;
+}
+
+// Whether the segment at bytes [lo, hi) of row row's name is a Windows reserved device name
+// before its first `.`, ignoring case: con, prn, aux, nul, com1 to com9, lpt1 to lpt9.
+Bool device_stem(in limits.Decl[_] d, I64 row, I64 lo, I64 hi) {
+    I64 stem = 0;
+    while (lo + stem < hi && row_byte(d, row, lo + stem) != '.') {
+        stem += 1;
+    }
+    if (stem != 3 && stem != 4) {
+        return false;
+    }
+    I64 c0 = lower_byte(row_byte(d, row, lo) as I64);
+    I64 c1 = lower_byte(row_byte(d, row, lo + 1) as I64);
+    I64 c2 = lower_byte(row_byte(d, row, lo + 2) as I64);
+    if (stem == 3) {
+        return (c0 == 'c' && c1 == 'o' && c2 == 'n') || (c0 == 'p' && c1 == 'r' && c2 == 'n') ||
+            (c0 == 'a' && c1 == 'u' && c2 == 'x') || (c0 == 'n' && c1 == 'u' && c2 == 'l');
+    }
+    I64 c3 = row_byte(d, row, lo + 3) as I64;
+    if (c3 < '1' || c3 > '9') {
+        return false;
+    }
+    return (c0 == 'c' && c1 == 'o' && c2 == 'm') || (c0 == 'l' && c1 == 'p' && c2 == 't');
+}
+
+// Whether row row's name is a logical path (SPEC-07 SEC-OS-5; `cint_ref` logical_path_fault):
+// `/` alone, or absolute `/`-separated segments of segment_byte bytes, none empty, `.`, `..`,
+// ending in `.` or a device name before its first `.`, and no trailing `/`.
+Bool logical_path(in limits.Decl[_] d, I64 row) {
+    I64 nb = d[row].name_len as I64;
+    if (nb == 1 && row_byte(d, row, 0) == '/') {
+        return true;
+    }
+    if (nb < 1 || row_byte(d, row, 0) != '/') {
+        return false;
+    }
+    I64 lo = 1;
+    while (lo <= nb) {
+        I64 hi = lo;
+        while (hi < nb && row_byte(d, row, hi) != '/') {
+            hi += 1;
+        }
+        if (hi == lo) {
+            return false;
+        }
+        if (row_byte(d, row, lo) == '.' && (hi - lo == 1 || (hi - lo == 2 && row_byte(d, row, lo + 1) == '.'))) {
+            return false;
+        }
+        for i in lo..hi {
+            if (!segment_byte(row_byte(d, row, i) as I64)) {
+                return false;
+            }
+        }
+        if (row_byte(d, row, hi - 1) == '.' || device_stem(d, row, lo, hi)) {
+            return false;
+        }
+        lo = hi + 1;
+    }
+    return true;
+}
+
+// Whether row row's name is a logical name (SPEC-07 SEC-CAP-6): 1 to 63 segment_byte bytes.
+Bool logical_name(in limits.Decl[_] d, I64 row) {
+    I64 nb = d[row].name_len as I64;
+    if (nb < 1 || nb > 63) {
+        return false;
+    }
+    for i in 0..nb {
+        if (!segment_byte(row_byte(d, row, i) as I64)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// The diagnostic code at the position row row keeps in `a` and `b`, in row's module.
+I64 row_fail[r](inout limits.CompilerDiag[r] diag, in limits.Decl[_] d, I64 row, I64 code) {
+    _ = limits.diag_add(diag, code, d[row].module as I64, d[row].a, d[row].b, 0, 0);
+    return code;
+}
+
+// The block after block b in the order of capabilities: the root module's block rb first, then
+// the other blocks in table order; -1 after the last.
+I64 next_block(in limits.Decl[_] d, I64 b, I64 rb) {
+    I64 end = d[0].a;
+    I64 q = 1;
+    if (b != rb && b >= 0) {
+        q = b + d[b].a;
+    }
+    while (q < end && q == rb) {
+        q += d[q].a;
+    }
+    if (q >= end) {
+        return -1;
+    }
+    return q;
+}
+
+// The capability check of the program (`cint_ref` _check_capabilities; SPEC-07 SEC-CAP-1,
+// SEC-CAP-6, SEC-CAP-13), run by compiler/main.ci once the root module's block is written
+// (I/O services lane U1; compiler/OPEN.md CINTC-OQ-65). Each `requires` row (DK_REQ) names a
+// capability that a service extern of the program carries (a DK_CAP row), with one string
+// argument per kind, a logical path for `path` and a logical name for `name`: C3041 at the
+// name for no such capability or another argument count, and at the first argument that is
+// not of its kind. Then each capability a module's service calls need (DK_NEED) has a
+// `requires` somewhere in the program: C3040 at the call. Blocks are read in the order of
+// next_block, the root module's first, and rows in table order; the DK_CAP rows' `rank` marks
+// the capabilities declared. Returns 0, or the code of the first diagnostic, in `diag`.
+export I64 capabilities[k, r](inout limits.Decl[k] d, inout limits.CompilerDiag[r] diag, I64 root_module) {
+    if (k == 0 || d[0].kind != limits.DK_HEADER) {
+        return 0;
+    }
+    I64 end = d[0].a;
+    for row in 1..end {
+        if (d[row].kind == limits.DK_CAP) {
+            d[row].rank = 0;
+        }
+    }
+    I64 rb = decl.block_of(d, root_module);
+    for step in 0..2 {
+        I64 b = rb;
+        if (b < 0) {
+            b = next_block(d, -1, -1);
+        }
+        while (b >= 0) {
+            I64 bend = b + d[b].a;
+            I64 row = b + 1;
+            while (row < bend) {
+                if (step == 0 && d[row].kind == limits.DK_REQ) {
+                    I64 cap = find_cap(d, row);
+                    if (cap < 0 || (d[row].ref as I64) != d[cap].a) {
+                        return row_fail(diag, d, row, resolve.C_BAD_REQUIRES);
+                    }
+                    I64 arg = decl.next_member(d, row);
+                    for j in 0..d[cap].a {
+                        Bool path = ((d[cap].b >> j) & 1) != 0;
+                        if ((path && !logical_path(d, arg)) || (!path && !logical_name(d, arg))) {
+                            return row_fail(diag, d, arg, resolve.C_BAD_REQUIRES);
+                        }
+                        arg = decl.next_member(d, arg);
+                    }
+                    d[cap].rank = 1;
+                } else if (step == 1 && d[row].kind == limits.DK_NEED) {
+                    I64 cap = find_cap(d, row);
+                    if (cap >= 0 && d[cap].rank == 0) {
+                        return row_fail(diag, d, row, resolve.C_NO_REQUIRES);
+                    }
+                }
+                row += 1;
+            }
+            b = next_block(d, b, rb);
+        }
+    }
+    return 0;
+}
+
 // Checks module `module`, whose N_MODULE node is root among nodes 0..nn (compiler/parse.ci
 // over the tokens toks of src), in `cint_ref`'s order: the subset gate (C9102), the
 // module-level pass of compiler/resolve.ci, each constant, function, static_assert and
@@ -9011,6 +9992,23 @@ export I64 check_module[m, s, l, r, y](in U8[_] src, in scan.Token[_] toks, in p
         if (nodes[item].kind == parse.N_FUNC) {
             run(src, toks, nodes, sem, syms, names, decls, wk, lits, diag, faults, fres, z, ws, wv, path, rs, cs,
                 K_SIGNATURE, item, 0);
+        }
+        item = nodes[item].next as I64;
+    }
+    // The externs' signatures after the functions' (`cint_ref` extern_signature), then the
+    // arguments of each `requires` (check_requires), before the kernels' (I/O services lane U1).
+    item = nodes[root].a as I64;
+    while (item >= 0 && rs[0].err == 0) {
+        if (nodes[item].kind == parse.N_EXTERN) {
+            run(src, toks, nodes, sem, syms, names, decls, wk, lits, diag, faults, fres, z, ws, wv, path, rs, cs,
+                K_SIGNATURE, item, 0);
+        }
+        item = nodes[item].next as I64;
+    }
+    item = nodes[root].a as I64;
+    while (item >= 0 && rs[0].err == 0) {
+        if (nodes[item].kind == parse.N_REQUIRES) {
+            requires_args(src, toks, nodes, diag, rs, item);
         }
         item = nodes[item].next as I64;
     }

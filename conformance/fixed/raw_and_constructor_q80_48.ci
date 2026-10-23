@@ -1,0 +1,16 @@
+// case: fixed/raw_and_constructor_q80_48
+// clause: SPEC-04 LS-38; SPEC-01 IM-57 (`.raw` of a 128-bit format is I128, and `Q80.48.raw(n)` takes an I128)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value Bool true; prints Q80.48.max, Q80.48.min and Q64.64 raw 1 (2^-64) as exact decimals, then `true -170141183460469231731687303715884105728`; fuel 1. Games wave G2a (OQ-292)
+
+export Bool run() {
+    I128 n = 170141183460469231731687303715884105727;
+    Q80.48 a = Q80.48.raw(n);
+    Q80.48 b = Q80.48.raw(-n - 1);
+    Q64.64 c = Q64.64.raw(1 as I128);
+    I128 r = a.raw;
+    "{a} {b} {c}\n";
+    "{r == n} {b.raw}\n";
+    return r == n;
+}

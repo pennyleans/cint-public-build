@@ -1,0 +1,19 @@
+// case: fixed/kernel_scale_reduce_q80_48
+// clause: SPEC-04 LS-246; SPEC-02 R-4, K-9 (Q80.48 kernel parameters, a Q80.48 product per work-item, and a Q80.48 sum reduction)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 9007199254740992 (2^53); prints `[3.0, -0.5, 302231454903657293676542.0] 151115727451828646838272.25`; fuel 4 (the entry and the dispatch charge of 3). Games wave G2a (OQ-292)
+
+kernel twice[n](in Q80.48[n] a, out Q80.48[n] b, out Q80.48 s) over [i: n] {
+    b[i] = a[i] * 2.0;
+    reduce s = sum(a[i]);
+}
+
+export I64 run() {
+    Q80.48[3] a = [1.5, -0.25, 151115727451828646838271.0];
+    Q80.48[3] b;
+    Q80.48 s = 0.0;
+    twice(a, b, s);
+    "{b} {s}\n";
+    return (s.raw >> 72) as I64;
+}

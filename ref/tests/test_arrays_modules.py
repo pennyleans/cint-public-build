@@ -273,8 +273,9 @@ class Views(unittest.TestCase):
         src = ("I64 w[n](in U8[n] s) {\n    I64 t = 0;\n    for i in 0..n {\n        t = t + (i + 1) * (s[i] as I64);\n"
                "    }\n    return t;\n}\nexport I64 run() {\n    return w(\"ab\" \"c\");\n}\n")
         self.assertEqual(value(src), 97 + 2 * 98 + 3 * 99)
-        self.assertEqual(run("void f(inout U8[_] s) { }\nexport I64 run() {\n    f(\"ab\");\n    return 0;\n}\n").kind,
-                         "refused")
+        # A string literal is no writable place: C2067 at the call, as cintc reports it (LS-119; REF-OQ-48).
+        self.assertEqual(diag("void f(inout U8[_] s) { }\nexport I64 run() {\n    f(\"ab\");\n    return 0;\n}\n")[0],
+                         "C2067")
         self.assertEqual(diag("I64 f(in U8[_] s) { return 0; }\nexport I64 run() {\n    return f(\"a{x}\");\n}\n")[0],
                          "C1033")
 

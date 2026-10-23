@@ -29,7 +29,7 @@
 #define SITE_COLUMN 49u              /* offset of `#` from the start of its line, at least */
 #define CELLS_MAX 0x7FFFFFF0u        /* cells of one struct or one parameter list */
 #define GLOBAL_MAX 65536u            /* elements of one module-level array, at least cintc's
-                                        (compiler/lowering.ci, MODULE_ARRAY_BYTES) */
+                                        (compiler/resolve.ci, MODULE_ARRAY_MAX) */
 
 static const char *const SCALAR_NAMES[SC_COUNT] = {"", "Bool", "I8", "I16", "I32", "I64", "U8", "U16", "U32", "U64",
                                                    "I128", "I256", "I512", "I1024", "U128", "U256", "U512"};
@@ -49,7 +49,7 @@ enum { BI_UABS = 2, BI_MIN = 3, BI_MAX = 4, BI_CLAMP = 5, BI_DIV_ROUND = 10, BI_
        BI_ISQRT = 13, BI_ISQRT_ROUND = 14, BI_ROTL = 15, BI_ROTR = 16 };
 
 typedef struct caps {
-    uint32_t site, global, item, func, node, opd, param, strct, field, eset, eval, widen, run, mem;
+    uint32_t site, global, item, func, node, opd, param, strct, field, eset, eval, widen, run, mem, ext;
 } caps;
 
 typedef struct frame {
@@ -57,7 +57,7 @@ typedef struct frame {
                          the function */
     uint8_t state;    /* if: 1 after an arm, 2 after else; loop: 1 after while, 2 after next; switch: 2 after
                          default; case: 1 after fallthrough */
-    uint8_t scalar;   /* switch: the scrutinee's scalar */
+    uint16_t scalar;  /* switch: the scrutinee's scalar */
     uint32_t node;
     int64_t label;
 } frame;
@@ -292,7 +292,8 @@ static int lookup(const uint8_t *t, si_name n, const char *const *names, int cou
 
 /* The scalar a type name (suffix 0) or an operation name's suffix (1) names; a fixed-point type
  * Q<i>.<f>, suffix q<i>_<f>, with i >= 1 and f >= 0 written without a leading zero and i + f a
- * storage of 8 to 64 bits (SPEC-01 IM-54, IM-55), is SC_Q + i + 2f - 8 (sir.h); -1 for another. */
+ * storage of 8 to 128 bits (SPEC-01 IM-54, IM-55; OQ-292), is SC_Q + i + 2f - 8 (sir.h); -1 for
+ * another. */
 static int scalar_of(const uint8_t *t, si_name n, int suffix)
 {
     unsigned v[2] = {0u, 0u};
@@ -306,7 +307,8 @@ static int scalar_of(const uint8_t *t, si_name n, int suffix)
             return -1;
     }
     unsigned w = v[0] + v[1];
-    return p == e && v[0] >= 1u && (w == 8u || w == 16u || w == 32u || w == 64u) ? SC_Q + (int)(w - 8u + v[1]) : -1;
+    return p == e && v[0] >= 1u && (w == 8u || w == 16u || w == 32u || w == 64u || w == 128u)
+               ? SC_Q + (int)(w - 8u + v[1]) : -1;
 }
 
 /* Extends name n over the `.<f>` of a fixed-point type name after it. */
@@ -322,6 +324,12 @@ static void q_tail(rd *r, si_name *n)
 static int is_wide(int sc)
 {
     return sc >= SC_I128 && sc <= SC_U512;
+}
+
+/* A value in limbs: a wide integer, or fixed point of 128 bits in an I128's two (OQ-292). */
+static int is_limbs(int sc)
+{
+    return is_wide(sc) || (sc_is_q(sc) && sc_qwidth(sc) == 128u);
 }
 
 static int is_signed(int sc)
@@ -347,10 +355,10 @@ static unsigned width_of(int sc)
     return sc_is_q(sc) ? sc_qwidth(sc) : w[sc];
 }
 
-/* The cells of a scalar: a wide integer's limbs, else one. */
+/* The cells of a scalar: a wide integer's limbs or fixed point's of 128 bits, else one. */
 static unsigned limbs_of(int sc)
 {
-    return is_wide(sc) ? width_of(sc) / 64u : 1u;
+    return is_limbs(sc) ? width_of(sc) / 64u : 1u;
 }
 
 static si_type scalar_type(int sc)
@@ -358,11 +366,11 @@ static si_type scalar_type(int sc)
     si_type ty;
     memset(&ty, 0, sizeof ty);
     ty.kind = sc == SC_NONE ? TK_NONE : TK_SCALAR;
-    ty.scalar = (uint8_t)sc;
+    ty.scalar = (uint16_t)sc;
     return ty;
 }
 
-static si_type special_type(uint8_t kind, uint8_t scalar)
+static si_type special_type(uint8_t kind, uint16_t scalar)
 {
     si_type ty = scalar_type(SC_NONE);
     ty.kind = kind;
@@ -406,11 +414,12 @@ static int value(rd *r, int sc, int64_t *out)
 
 /* A value of wide scalar sc (box 15): a decimal integer in range, written into its limbs, limb 0
  * first, in two's complement for I128 to I1024 and in binary for U128 to U512 (rt/cint_wide.h),
- * under the rules of value. */
+ * under the rules of value; fixed point of 128 bits as `raw` and its storage I128. */
 static int wide_value(rd *r, int sc, uint64_t *limb)
 {
     size_t s = r->pos;
     unsigned n = limbs_of(sc);
+    if (sc_is_q(sc) && !take(r, "raw ")) return fail_at(r, s, "expected raw and the storage integer");
     int neg = take(r, "-");
     for (unsigned k = 0; k < n; k++) limb[k] = 0;
     if (neg && !is_signed(sc)) return fail_at(r, s, "an unsigned value has no sign");
@@ -502,6 +511,12 @@ static int elem_type(rd *r, si_type *ty)
                 return CINT_SIR_OK;
             }
         }
+    }
+    /* A `Grants` parameter (SPEC-04 LS-323; I/O services lane U5c): an I64 handle. */
+    if (cut == 0 && name_is(r->t, n, "Grants")) {
+        *ty = scalar_type(SC_I64);
+        ty->grants = 1;
+        return CINT_SIR_OK;
     }
     return fail_at(r, n.at, "no struct %.*s", (int)n.len, (const char *)r->t + n.at);
 }
@@ -964,10 +979,11 @@ static int split(const uint8_t *t, si_name w, parts *out)
 }
 
 /* Decodes an arithmetic, comparison, conversion or built-in operation word into n. On fixed point
- * (box 15; SPEC-01 IM-60 to IM-69): add and sub checked, wrap or sat; mul in those forms and div
- * checked, with a mode; neg, cmp, abs, min and max; sqrt with a mode; `qmul.checked.<a>.<b>.<r>`,
- * with a mode when fa + fb > fr; `mul_int.checked.<q>.<integer>`; and a conversion with fixed point
- * on one side, its mode when it rounds, or `as.raw` to or from the storage integer. */
+ * (box 15; SPEC-01 IM-60 to IM-69): add and sub checked, wrap, sat or result; mul in those forms and
+ * div checked or result, with a mode; neg, cmp, abs, min and max; sqrt with a mode;
+ * `qmul.checked.<a>.<b>.<r>`, with a mode when fa + fb > fr; `mul_int.checked.<q>.<integer>`; and a
+ * conversion with fixed point on one side, its mode when it rounds, or `as.raw` to or from the
+ * storage integer. `as.sat` (`as|`, OQ-272) converts from any type but Bool. */
 static int arith_name(const uint8_t *t, si_name w, si_node *n)
 {
     parts p;
@@ -976,7 +992,7 @@ static int arith_name(const uint8_t *t, si_name w, si_node *n)
     if (b >= BO_AND && p.n == 2u) {
         n->op = OP_BIN;
         n->sub = (uint8_t)b;
-        n->t1 = (uint8_t)(scalar_of(t, p.p[1], 1) & 0xFF);
+        n->t1 = (uint16_t)(scalar_of(t, p.p[1], 1) & 0xFFFF);
         return scalar_of(t, p.p[1], 1) > 0 && !sc_is_q(n->t1);
     }
     if (b >= 0 && b < BO_AND && (p.n == 3u || p.n == 4u)) {   /* the result forms of add to shl (box 12) too */
@@ -985,11 +1001,11 @@ static int arith_name(const uint8_t *t, si_name w, si_node *n)
         n->op = OP_BIN;
         n->sub = (uint8_t)b;
         n->form = (uint8_t)(f & 0xFF);
-        n->t1 = (uint8_t)(sc & 0xFF);
+        n->t1 = (uint16_t)(sc & 0xFFFF);
         n->mode = (uint8_t)(md & 0xFF);
-        if (sc_is_q(sc))
-            return f >= 0 && f != FM_RESULT && b <= BO_DIV && (b == BO_MUL || b == BO_DIV ? md > 0 : p.n == 3u) &&
-                   (b != BO_DIV || f == FM_CHECKED);
+        if (sc_is_q(sc))   /* no result form at 128 bits (games wave G2b) */
+            return f >= 0 && b <= BO_DIV && (b == BO_MUL || b == BO_DIV ? md > 0 : p.n == 3u) &&
+                   (b != BO_DIV || f == FM_CHECKED || f == FM_RESULT) && !(f == FM_RESULT && is_limbs(sc));
         return p.n == 3u && f >= 0 && is_arith(sc) && !((b == BO_DIV || b == BO_REM) && f == FM_SAT) &&
                !(b == BO_SHR && f == FM_RESULT);
     }
@@ -997,14 +1013,14 @@ static int arith_name(const uint8_t *t, si_name w, si_node *n)
         int sc = scalar_of(t, p.p[2], 1);
         n->op = OP_UN;
         n->sub = BO_NEG;
-        n->t1 = (uint8_t)(sc & 0xFF);
+        n->t1 = (uint16_t)(sc & 0xFFFF);
         return is_arith(sc) || sc_is_q(sc);
     }
     if (name_is(t, p.p[0], "not") && p.n == 2u) {
         int sc = scalar_of(t, p.p[1], 1);
         n->op = OP_UN;
         n->sub = BO_NOT;
-        n->t1 = (uint8_t)(sc & 0xFF);
+        n->t1 = (uint16_t)(sc & 0xFFFF);
         return sc > 0 && !sc_is_q(sc);
     }
     if (name_is(t, p.p[0], "cmp") && p.n == 3u) {
@@ -1012,7 +1028,7 @@ static int arith_name(const uint8_t *t, si_name w, si_node *n)
         int sc = scalar_of(t, p.p[2], 1);
         n->op = OP_CMP;
         n->sub = (uint8_t)(c & 0xFF);
-        n->t1 = (uint8_t)(sc & 0xFF);
+        n->t1 = (uint16_t)(sc & 0xFFFF);
         return c >= 0 && sc > 0 && (c <= CM_NE || sc != SC_BOOL);
     }
     if (name_is(t, p.p[0], "as") && (p.n == 4u || p.n == 5u)) {   /* as.result: `as?` (box 12) */
@@ -1021,16 +1037,16 @@ static int arith_name(const uint8_t *t, si_name w, si_node *n)
         int md = p.n == 5u ? lookup(t, p.p[4], MODE_NAMES, 10) : 0, q = sc_is_q(from) + sc_is_q(to);
         n->op = OP_AS;
         n->form = (uint8_t)(f & 0xFF);
-        n->t1 = (uint8_t)(from & 0xFF);
-        n->t2 = (uint8_t)(to & 0xFF);
+        n->t1 = (uint16_t)(from & 0xFFFF);
+        n->t2 = (uint16_t)(to & 0xFFFF);
         n->mode = (uint8_t)(md & 0xFF);
         if (f == FM_RAW)   /* the storage integer of the same width */
-            return p.n == 4u && q == 1 && is_signed(from) && is_signed(to) && !is_wide(from) && !is_wide(to) &&
-                   width_of(from) == width_of(to);
-        if (q > 0)
-            return f >= 0 && f != FM_SAT && md >= 0 && (md > 0) == (sc_qfrac(from) > sc_qfrac(to)) &&
-                   (sc_is_q(from) || is_integer(from)) && (sc_is_q(to) || is_integer(to));
-        return p.n == 4u && f >= 0 && f != FM_SAT && from > 0 && is_arith(to);
+            return p.n == 4u && q == 1 && is_signed(from) && is_signed(to) && width_of(from) == width_of(to);
+        if (q > 0)   /* a wide integer too, with no result form on a side in limbs (games wave G2b) */
+            return f >= 0 && md >= 0 && (md > 0) == (sc_qfrac(from) > sc_qfrac(to)) &&
+                   (sc_is_q(from) || is_arith(from)) && (sc_is_q(to) || is_arith(to)) &&
+                   !(f == FM_RESULT && (is_limbs(from) || is_limbs(to)));
+        return p.n == 4u && f >= 0 && from > 0 && is_arith(to) && (f != FM_SAT || from != SC_BOOL);
     }
     int id = lookup(t, p.p[0], BUILTIN_NAMES, 20);
     if (id < 1 || p.n < 3u || !name_is(t, p.p[1], "checked")) return 0;
@@ -1038,17 +1054,17 @@ static int arith_name(const uint8_t *t, si_name w, si_node *n)
     uint32_t k = 3;
     n->op = OP_BUILTIN;
     n->sub = (uint8_t)id;
-    n->t1 = (uint8_t)(sc & 0xFF);
+    n->t1 = (uint16_t)(sc & 0xFFFF);
     n->t2 = n->t1;
     if (id == BI_QMUL || id == BI_MUL_INT) {   /* the second operand's type */
         int y = k < p.n ? scalar_of(t, p.p[k++], 1) : -1;
-        if (id == BI_QMUL ? !sc_is_q(y) : !is_integer(y)) return 0;
-        n->t3 = (uint8_t)y;
+        if (id == BI_QMUL ? !sc_is_q(y) : !is_arith(y)) return 0;
+        n->t3 = (uint16_t)y;
     }
     if (id == BI_UABS || id == BI_MUL_FULL || id == BI_MULDIV || id == BI_QMUL) {
         int r = k < p.n ? scalar_of(t, p.p[k++], 1) : -1;
         if (id == BI_QMUL ? !sc_is_q(r) : !is_arith(r)) return 0;
-        n->t2 = (uint8_t)r;
+        n->t2 = (uint16_t)r;
     }
     if (id == BI_DIV_ROUND || id == BI_ISQRT_ROUND || id == BI_MULDIV || id == BI_SQRT ||
         (id == BI_QMUL && sc_qfrac(sc) + sc_qfrac(n->t3) > sc_qfrac(n->t2))) {
@@ -1223,7 +1239,7 @@ static int call(rd *r, si_node *n, int has_dst)
             return fail_at(r, at, "a call of a function with a scalar result defines a temporary");
         r->temps[n->dst] = cf->result;
         r->f->handles = (uint8_t)(r->f->handles || cf->result.kind == TK_HANDLE);
-        n->wide = (uint8_t)(cf->result.kind == TK_SCALAR && is_wide(cf->result.scalar) ? limbs_of(cf->result.scalar) : 0u);
+        n->wide = (uint8_t)(cf->result.kind == TK_SCALAR && is_limbs(cf->result.scalar) ? limbs_of(cf->result.scalar) : 0u);
     } else if (has_dst) {
         return fail_at(r, at, "a call of a function with no scalar result defines no temporary");
     }
@@ -1235,6 +1251,58 @@ static int call(rd *r, si_node *n, int has_dst)
         if ((st = expect(r, " into ")) != CINT_SIR_OK || (st = slot(r, &o, 1)) != CINT_SIR_OK)
             return st;
         return (st = receive(r, o, s + 6u, cf->result, 0)) != CINT_SIR_OK ? st : add_opd(r, o);
+    }
+    return CINT_SIR_OK;
+}
+
+/* `host.call @<module>.<name>(<arguments>)` (SPEC-03 A-15; I/O services lane U5c), checked against
+ * the module's extern row of that name: a value for a scalar or a `Grants` handle, and an array,
+ * a view or `%s<k>` for a view. */
+static int host_call(rd *r, si_node *n, int has_dst)
+{
+    size_t at = r->pos;
+    si_opd target = opd_of(OD_IMPORT, 0);
+    int st = expect(r, " @");
+    if (st == CINT_SIR_OK) st = dotted(r, &target.name);
+    if (st != CINT_SIR_OK) return st;
+    uint32_t k = 0;
+    while (k < r->m->nextern && !same_name(r->t, r->m->externs[k].name, r->t, target.name)) k++;
+    if (k == r->m->nextern) {
+        return fail_at(r, at + 1u, "no extern row %.*s in this module", (int)target.name.len,
+                       (const char *)r->t + target.name.at);
+    }
+    const si_extern *x = &r->m->externs[k];
+    if ((st = add_opd(r, target)) != CINT_SIR_OK || (st = expect(r, "(")) != CINT_SIR_OK) return st;
+    n->cmod = r->prog->nmod;   /* r->m is mods[r->prog->nmod] */
+    n->cfn = k;
+    for (uint32_t a = 0; a < x->nparam && st == CINT_SIR_OK; a++) {
+        si_type want = r->m->params[x->param + a].ty;
+        size_t s = r->pos;
+        if (a > 0 && (st = sep(r)) != CINT_SIR_OK) return st;
+        s = r->pos;
+        if (want.kind == TK_SCALAR) {
+            st = val(r, want);
+        } else if (peek(r) == '%' && peek_at(r, 1) == 's' && is_digit(peek_at(r, 2))) {
+            si_opd o;
+            st = percent(r, &o, &s);
+            if (st == CINT_SIR_OK && (o.kind != OD_DATA || !fits(want, type_of(r, o))))
+                st = fail_at(r, s, "data passed for a parameter that is not a U8 view");
+            if (st == CINT_SIR_OK) st = add_opd(r, o);
+        } else {
+            si_type have;
+            st = place(r, &have);
+            if (st == CINT_SIR_OK && !fits(want, have))
+                st = fail_at(r, s, "argument %u is not an array or a view of rank 1 of the parameter's type", a + 1u);
+        }
+    }
+    if (st == CINT_SIR_OK) st = expect(r, ")");
+    if (st != CINT_SIR_OK) return st;
+    n->nopd = r->m->nopd - n->opd;
+    if (x->result.kind == TK_SCALAR) {
+        if (!has_dst) return fail_at(r, at, "a call of an extern with a scalar result defines a temporary");
+        r->temps[n->dst] = x->result;
+    } else if (has_dst) {
+        return fail_at(r, at, "a call of an extern with no scalar result defines no temporary");
     }
     return CINT_SIR_OK;
 }
@@ -1352,7 +1420,7 @@ static int define(rd *r, si_node *n, si_type ty)
     }
     r->temps[n->dst] = ty;
     r->f->handles = (uint8_t)(r->f->handles || ty.kind == TK_HANDLE);   /* four cells of its own (sir_exec.c) */
-    n->wide = (uint8_t)(ty.kind == TK_SCALAR && is_wide(ty.scalar) ? limbs_of(ty.scalar) : 0u);   /* its limbs, too */
+    n->wide = (uint8_t)(ty.kind == TK_SCALAR && is_limbs(ty.scalar) ? limbs_of(ty.scalar) : 0u);   /* its limbs, too */
     return CINT_SIR_OK;
 }
 
@@ -1408,8 +1476,8 @@ static int reduce_word(const uint8_t *t, si_name w, si_node *n)
         int md = p.n == 3u ? lookup(t, p.p[2], MODE_NAMES, 10) : 0;
         n->op = OP_REDUCE;
         n->sub = (uint8_t)k;
-        n->t1 = (uint8_t)(e & 0xFF);
-        n->t2 = (uint8_t)(k == 8 ? SC_I64 : res & 0xFF);
+        n->t1 = (uint16_t)(e & 0xFFFF);
+        n->t2 = (uint16_t)(k == 8 ? SC_I64 : res & 0xFFFF);
         n->mode = (uint8_t)(md & 0xFF);
         if (sc_is_q(e))   /* fixed point (box 15; RT-OQ-57): the element's format, dot's with a mode when it rounds */
             return md >= 0 && (md > 0) == (k == 9 && 2u * sc_qfrac(e) > sc_qfrac(res)) && sc_is_q(res) &&
@@ -1469,7 +1537,7 @@ static int view_body(rd *r, si_node *n, si_name word)
         si_name sfx = {word.at + 14u, word.len - 14u};
         int sc = scalar_of(t, sfx, 1);
         n->op = OP_VSLICE;
-        n->t1 = (uint8_t)(sc > 0 ? sc : SC_NONE);
+        n->t1 = (uint16_t)(sc > 0 ? sc : SC_NONE);
         if (sc <= 0) return fail_at(r, word.at, "unknown operation");
         if ((st = expect(r, " ")) != CINT_SIR_OK || (st = view_place(r, &a, 1)) != CINT_SIR_OK)
             return st;
@@ -1890,11 +1958,12 @@ static int error_body(rd *r, si_node *n, si_name word)
     if (name_is(t, word, "error.tag")) {
         const si_node *g = r->m->nnode >= 2u && r->m->nnode - 2u >= f->first ? &r->m->nodes[r->m->nnode - 2u] : NULL;
         int sc = g == NULL ? 0 : g->op == OP_CALL ? r->prog->mods[g->cmod].funcs[g->cfn].etag
+                 : g->op == OP_HCALL ? r->m->externs[g->cfn].etag
                  : (g->op == OP_BIN || g->op == OP_AS) && g->form == FM_RESULT ? SC_U16
                  : g->op == OP_MEMBER && (g->sub == MB_ALLOC_RESULT || g->sub == MB_INSERT_RESULT) ? SC_U16 : 0;
         n->op = OP_ETAG;
         if (sc == 0)
-            return fail_at(r, word.at, "error.tag follows a call of a function with an error union result, or a result form");
+            return fail_at(r, word.at, "error.tag follows a call of a function or an extern with an error union result, or a result form");
         return define(r, n, scalar_type(sc));
     }
     if (name_is(t, word, "return.error")) {
@@ -1917,8 +1986,8 @@ static int error_body(rd *r, si_node *n, si_name word)
     if (!split(t, word, &p) || p.n != 3u || !name_is(t, p.p[0], "widen")) return NOT_ERROR;
     int from = scalar_of(t, p.p[1], 1), to = scalar_of(t, p.p[2], 1);
     n->op = OP_WIDEN;
-    n->t1 = (uint8_t)(from & 0xFF);
-    n->t2 = (uint8_t)(to & 0xFF);
+    n->t1 = (uint16_t)(from & 0xFFFF);
+    n->t2 = (uint16_t)(to & 0xFFFF);
     if (!is_integer(from) || is_signed(from) || !is_integer(to) || is_signed(to))
         return fail_at(r, word.at, "widen converts between unsigned tag types");
     if ((st = expect(r, " ")) != CINT_SIR_OK || (st = val(r, scalar_type(from))) != CINT_SIR_OK ||
@@ -2040,8 +2109,8 @@ static int node_body(rd *r, si_node *n, si_name word)
         if ((st = expect(r, " ")) == CINT_SIR_OK && (st = scalar_name(r, &sc)) == CINT_SIR_OK &&
             (st = expect(r, " ")) == CINT_SIR_OK) {
             uint32_t at = 0;   /* a wide constant's limbs are items (box 15) */
-            st = is_wide(sc) ? wide_item(r, sc, &at) : value(r, sc, &n->value);
-            n->value = is_wide(sc) ? (int64_t)at : n->value;
+            st = is_limbs(sc) ? wide_item(r, sc, &at) : value(r, sc, &n->value);
+            n->value = is_limbs(sc) ? (int64_t)at : n->value;
         }
         n->ty = scalar_type(sc);
         return st != CINT_SIR_OK ? st : define(r, n, n->ty);
@@ -2254,7 +2323,7 @@ static int node_body(rd *r, si_node *n, si_name word)
         si_name sfx = {word.at + 14u, word.len - 14u};
         int sc = scalar_of(t, sfx, 1);
         n->op = OP_ICHECK;
-        n->t1 = (uint8_t)(sc > 0 ? sc : SC_NONE);
+        n->t1 = (uint16_t)(sc > 0 ? sc : SC_NONE);
         if (sc <= 0 && !name_is(t, sfx, "struct")) return fail_at(r, word.at, "unknown operation");
         if ((st = expect(r, " ")) != CINT_SIR_OK || (st = place(r, &ty)) != CINT_SIR_OK ||
             (st = sep(r)) != CINT_SIR_OK || (st = val(r, ANY_INTEGER)) != CINT_SIR_OK) {
@@ -2287,6 +2356,10 @@ static int node_body(rd *r, si_node *n, si_name word)
     if (name_is(t, word, "call")) {
         n->op = OP_CALL;
         return call(r, n, n->dst >= 0);
+    }
+    if (name_is(t, word, "host.call")) {
+        n->op = OP_HCALL;
+        return host_call(r, n, n->dst >= 0);
     }
     if (name_is(t, word, "discard") || name_is(t, word, "assert.checked.bool")) {
         int d = name_is(t, word, "discard");
@@ -2532,7 +2605,7 @@ static int body_line(rd *r, int *done)
         si_opd o = opd_of(OD_LABEL, 0);
         o.value = lab;
         if ((st = add_opd(r, o)) != CINT_SIR_OK) return st;
-        uint8_t sc = 0;
+        uint16_t sc = 0;
         if (n->op == OP_SWITCH) {
             si_opd v;
             size_t a = r->pos + 1u;
@@ -2684,6 +2757,15 @@ static int view_type(rd *r, si_type *ty)
     return expect(r, "]");
 }
 
+/* Whether f takes what `main` may take (SPEC-04 LS-221): nothing, a `Grants` parameter, the
+ * program arguments `in U8[_] args` (OQ-306), or both in that order. */
+static int main_params(const si_module *m, const si_func *f)
+{
+    const si_type *a = f->nparam > 0 ? &m->params[f->param].ty : NULL;
+    return f->nparam == 0 || (f->nparam == 1 && (a->grants || si_args_param(a))) ||
+           (f->nparam == 2 && a->grants && si_args_param(&m->params[f->param + 1].ty));
+}
+
 /* `[export ]func @<module>.<name>(<parameters>)[ -> <T>] {`, `[export ]kernel
  * @<module>.<name>(<parameters>) {`, `script @<module> {` or `test @<module> <k> {`, at r->bol. */
 static int header(rd *r, si_func *f)
@@ -2795,7 +2877,7 @@ static int header(rd *r, si_func *f)
                     return fail_at(r, r->pos, "the error set's tag type is not the result's");
             }
             /* an entry, an export or `main()`, names the set its error leaves with, and only an entry */
-            int entry = f->exported || (f->nparam == 0 && f->result.kind == TK_NONE && name_is(r->t, f->name, "main"));
+            int entry = f->exported || (main_params(m, f) && f->result.kind == TK_NONE && name_is(r->t, f->name, "main"));
             if (entry != (f->eset >= 0)) {
                 return fail_at(r, r->pos, entry ? "an entry's error union result names its error set, error E<k>"
                                                 : "only an entry's error union result names its error set");
@@ -3039,6 +3121,98 @@ static int error_line(rd *r, int set)
     return at_end(r);
 }
 
+/* `extern @<module>.<name>(<T>, ...)[ -> <R>] <effect> "<row>" signature <hex>`, after `extern @`
+ * (SPEC-09 SIR-09a, edition 41; I/O services lane U5c): a row of the module's host import table,
+ * in its order. A parameter is `Grants`, a scalar of at most 64 bits, or a rank-1 view of them,
+ * `<T>[_]` or `<T>[<n>]`, after `out ` when the extern writes it; the result is such a scalar or
+ * an error union of one, `<tag>!<T>` or `<tag>!void` and ` errors <n>`, its set's value count;
+ * the effect is `pure`, `observe` or `unrestricted`; the row's name is quoted text of 1 to 255
+ * bytes; and the signature is lowercase hexadecimal, two digits a byte. */
+static int extern_line(rd *r)
+{
+    static const char *const EFFECTS[3] = {" pure ", " observe ", " unrestricted "};
+    si_module *m = r->m;
+    si_extern x;
+    int st;
+    memset(&x, 0, sizeof x);
+    x.line = r->line;
+    x.param = m->nparam;
+    x.result = scalar_type(SC_NONE);
+    size_t at = r->pos;
+    if ((st = dotted(r, &x.name)) != CINT_SIR_OK || (st = expect(r, "(")) != CINT_SIR_OK) return st;
+    for (uint32_t i = 0; i < m->nextern; i++) {
+        if (same_name(r->t, m->externs[i].name, r->t, x.name)) return fail_at(r, at, "a second extern row of this name");
+    }
+    while (peek(r) != ')') {
+        si_param p;
+        memset(&p, 0, sizeof p);
+        if (x.nparam > 0 && (st = sep(r)) != CINT_SIR_OK) return st;
+        size_t ts = r->pos;
+        int out = take(r, "out ");
+        if (x.nparam == 16u) return fail_at(r, ts, "an extern takes at most 16 parameters");
+        if ((st = elem_type(r, &p.ty)) != CINT_SIR_OK) return st;
+        if (p.ty.kind != TK_SCALAR || is_wide(p.ty.scalar) || sc_is_q(p.ty.scalar))
+            return fail_at(r, ts, "an extern takes Grants, scalars of at most 64 bits and rank-1 views of them");
+        if (take(r, "[")) {
+            uint64_t e = 0;
+            p.ty.kind = TK_VIEW;
+            p.ty.extent = -1;
+            if (p.ty.grants) return fail_at(r, ts, "Grants is no element type");
+            if (!take(r, "_")) {
+                if ((st = number(r, (uint64_t)INT64_MAX, &e)) != CINT_SIR_OK) return st;
+                p.ty.extent = (int64_t)e;
+            }
+            if ((st = expect(r, "]")) != CINT_SIR_OK) return st;
+        } else if (out) {
+            return fail_at(r, ts, "out marks a view the extern writes");
+        }
+        p.ty.out = (uint8_t)out;
+        p.name = x.name;
+        if (!grow((void **)&m->params, &r->cap.param, m->nparam, sizeof *m->params)) return oom(r);
+        m->params[m->nparam++] = p;
+        x.nparam++;
+    }
+    r->pos++;
+    if (take(r, " -> ")) {
+        size_t ts = r->pos;
+        if ((st = elem_type(r, &x.result)) != CINT_SIR_OK) return st;
+        if (take(r, "!")) {   /* `<tag type>!<value type>` */
+            uint32_t most = 0;
+            x.etag = x.result.scalar;
+            x.result = scalar_type(SC_NONE);
+            if (!is_integer(x.etag) || is_signed(x.etag) || is_wide(x.etag))
+                return fail_at(r, ts, "an error union's tag has an unsigned type of at most 64 bits");
+            if (!take(r, "void") && (st = elem_type(r, &x.result)) != CINT_SIR_OK) return st;
+            if ((st = expect(r, " errors ")) != CINT_SIR_OK || (st = number32(r, &x.errors)) != CINT_SIR_OK) return st;
+            most = width_of(x.etag) < 32u ? (uint32_t)((1u << width_of(x.etag)) - 1u) : UINT32_MAX;
+            if (x.errors == 0 || x.errors > most)
+                return fail_at(r, r->pos, "an error set holds 1 to %u values of its tag type", most);
+        }
+        if (x.result.kind != TK_NONE && (x.result.kind != TK_SCALAR || x.result.grants || is_wide(x.result.scalar) ||
+                                         sc_is_q(x.result.scalar)))
+            return fail_at(r, ts, "an extern returns a scalar of at most 64 bits or an error union of one");
+    }
+    while (x.effect < 3u && !take(r, EFFECTS[x.effect])) x.effect++;
+    if (x.effect == 3u) return fail_at(r, r->pos, "expected the effect class: pure, observe or unrestricted");
+    x.effect++;   /* CINT_PURE 1 to CINT_UNRESTRICTED 3 */
+    int64_t len = 0;
+    size_t q = r->pos;
+    if ((st = print_text(r, &len)) != CINT_SIR_OK) return st;
+    if (len < 1 || len > 255) return fail_at(r, q, "a row's name has 1 to 255 bytes");
+    x.row.at = (uint32_t)q;
+    x.row.len = (uint32_t)(r->pos - q);
+    if ((st = expect(r, " signature ")) != CINT_SIR_OK) return st;
+    x.sig.at = (uint32_t)r->pos;
+    while (r->pos < r->eol && (is_digit(peek(r)) || (peek(r) >= 'a' && peek(r) <= 'f'))) r->pos++;
+    x.sig.len = (uint32_t)(r->pos - x.sig.at);
+    if (x.sig.len == 0 || x.sig.len % 2u != 0)
+        return fail_at(r, x.sig.at, "a signature is two lowercase hexadecimal digits a byte");
+    if ((st = at_end(r)) != CINT_SIR_OK) return st;
+    if (!grow((void **)&m->externs, &r->cap.ext, m->nextern, sizeof *m->externs)) return oom(r);
+    m->externs[m->nextern++] = x;
+    return CINT_SIR_OK;
+}
+
 /* The module whose text is in r->m: its lines, functions and nodes. */
 static int read_module(rd *r)
 {
@@ -3099,6 +3273,11 @@ static int read_module(rd *r)
             if (m->nfunc > 0)
                 return fail_line(r, "widen and error lines come before the functions");
             if ((st = error_line(r, t[r->bol] == 'e')) != CINT_SIR_OK) return st;
+            continue;
+        }
+        if (take(r, "extern @")) {   /* the host import table's rows (I/O services lane U5c) */
+            if (m->nfunc > 0) return fail_line(r, "extern lines come before the functions");
+            if ((st = extern_line(r)) != CINT_SIR_OK) return st;
             continue;
         }
         if (take(r, "arena @") || take(r, "pool @")) {   /* box 12's arenas and pools */
@@ -3166,9 +3345,9 @@ static int read_module(rd *r)
                         int64_t v = 0;
                         uint32_t lead = 0;
                         if ((i > 0 && (st = sep(r)) != CINT_SIR_OK) ||
-                            (st = is_wide(sc) ? wide_item(r, sc, &lead) : value(r, sc, &v)) != CINT_SIR_OK)
+                            (st = is_limbs(sc) ? wide_item(r, sc, &lead) : value(r, sc, &v)) != CINT_SIR_OK)
                             return st;
-                        if (is_wide(sc)) continue;
+                        if (is_limbs(sc)) continue;
                         if (!grow((void **)&m->items, &r->cap.item, m->nitem, sizeof *m->items))
                             return oom(r);
                         m->items[m->nitem++] = v;
@@ -3195,9 +3374,9 @@ static int read_module(rd *r)
                         int64_t v = 0;
                         uint32_t lead = 0;
                         if ((i > 0 && (st = sep(r)) != CINT_SIR_OK) ||
-                            (st = is_wide(ty.scalar) ? wide_item(r, ty.scalar, &lead) : value(r, ty.scalar, &v)) != CINT_SIR_OK)
+                            (st = is_limbs(ty.scalar) ? wide_item(r, ty.scalar, &lead) : value(r, ty.scalar, &v)) != CINT_SIR_OK)
                             return st;
-                        if (is_wide(ty.scalar)) continue;
+                        if (is_limbs(ty.scalar)) continue;
                         if (!grow((void **)&m->items, &r->cap.item, m->nitem, sizeof *m->items))
                             return oom(r);
                         m->items[m->nitem++] = v;
@@ -3205,7 +3384,7 @@ static int read_module(rd *r)
                     g.nitem = (uint32_t)(e * limbs_of(ty.scalar));
                     st = expect(r, "]");
                 }
-            } else if ((st = expect(r, " = ")) == CINT_SIR_OK && is_wide(ty.scalar)) {
+            } else if ((st = expect(r, " = ")) == CINT_SIR_OK && is_limbs(ty.scalar)) {
                 st = wide_item(r, ty.scalar, &g.item);   /* its limbs */
                 g.nitem = limbs_of(ty.scalar);
             } else if (st == CINT_SIR_OK) {
@@ -3227,7 +3406,8 @@ static int read_module(rd *r)
             return fail_at(r, r->bol, "a node outside a function");
         if (take(r, "global ") || take(r, "struct "))
             return fail_line(r, "struct and global lines come before the functions");
-        if (take(r, "widen W") || take(r, "error E") || take(r, "arena @") || take(r, "pool @")) {   /* read above */
+        if (take(r, "widen W") || take(r, "error E") || take(r, "arena @") || take(r, "pool @") ||
+            take(r, "extern @")) {   /* read above */
             continue;
         }
         /* a function: its header was read above */
@@ -3288,6 +3468,7 @@ static void free_module(si_module *m)
     free(m->widens);
     free(m->runs);
     free(m->mems);
+    free(m->externs);
 }
 
 void cint_sir_free(cint_sir_program *p)

@@ -77,7 +77,8 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CONFORMANCE = os.path.join(ROOT, "conformance")
 CATEGORIES = ("arith", "control", "switch", "struct", "diag", "determinism", "boot", "module", "view",
-              "reduce", "kernel", "errors", "cleanup", "ternary", "memory", "wide", "fixed")
+              "reduce", "kernel", "errors", "cleanup", "ternary", "memory", "wide", "fixed",
+              "services")
 SEED_OUTCOME = re.compile(r"^// seed outcome: (C[0-9]{4}) at ([1-9][0-9]*):([1-9][0-9]*)$", re.M)
 HELD = os.path.join(CONFORMANCE, "held.txt")
 CINTC = ".cintc"   # the per-compiler expectation of a boot/ refusal case (CONF-11, decision 26)
@@ -116,24 +117,27 @@ def read_held(path=HELD, open_md=OPEN_MD):
 
 
 def header(text):
-    """The case header as a dict: case, clause, entries, args, fuel, depth."""
+    """The case header as a dict: case, clause, entries, args, fuel, depth, argv (the program
+    arguments of `main`, from an `// argv:` line of comma-separated words; SPEC-04 LS-221,
+    OQ-306)."""
     h = {}
     if text.startswith("﻿"):           # diag/c1002_byte_order_mark: the header follows the mark
         text = text[1:]
     for line in text.split("\n"):
-        m = re.match(r"// (case|clause|entry): (.*)\Z", line)
+        m = re.match(r"// (case|clause|entry|argv): (.*)\Z", line)
         if m and m.group(1) not in h:
             h[m.group(1)] = m.group(2).strip()
+    argv = [a.strip() for a in h["argv"].split(",")] if h.get("argv") else []
     if "case" in h and "entry" not in h:     # no named entry (REF-OQ-12)
         return {"case": h["case"], "clause": h.get("clause"), "entries": [None], "args": [],
-                "fuel": None, "depth": None}
+                "fuel": None, "depth": None, "argv": argv}
     if "case" not in h:                      # the CONF-01 example: header folded into line 1
         first = text.split("\n", 1)[0]
         m = re.search(r"clause ([^;]*);", first)
         return {"case": None, "clause": m.group(1).strip() if m else None,
-                "entries": [None], "args": [], "fuel": None, "depth": None}
+                "entries": [None], "args": [], "fuel": None, "depth": None, "argv": []}
     parts = [p.strip() for p in h["entry"].split(";")]
-    out = {"case": h["case"], "clause": h.get("clause"), "fuel": None, "depth": None, "args": []}
+    out = {"case": h["case"], "clause": h.get("clause"), "fuel": None, "depth": None, "args": [], "argv": argv}
     out["entries"] = [e.strip() for e in parts[0].split(",")]
     for p in parts[1:]:
         if p.startswith("args:"):
@@ -193,6 +197,8 @@ def run_case(ci_path, h, entry, fmt=1):
         cmd += ["--depth", h["depth"]]
     if fmt != 1:
         cmd += ["--format", str(fmt)]
+    if h["argv"]:
+        cmd += ["--"] + h["argv"]
     env = dict(os.environ, PYTHONPATH=os.path.join(ROOT, "ref"))
     r = subprocess.run(cmd, capture_output=True, env=env, cwd=ROOT)
     return r.returncode, r.stdout, r.stderr

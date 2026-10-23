@@ -1,0 +1,6 @@
+case services/c3041_unknown_capability
+clause SPEC-04 LS-323 to LS-328; SPEC-07 SEC-CAP-1, SEC-CAP-6, 7.2
+source compile-error
+outcome compile-error
+diagnostic.code C3041
+diagnostic.position services/c3041_unknown_capability.ci:8:10

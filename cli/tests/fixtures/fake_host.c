@@ -46,7 +46,7 @@ static int copy_file(const char *source, const char *destination)
     return 0;
 }
 
-/* The fuel record of cint_program_run_fuel (rt/cint_rt.h) with fuel consumed 0, to the
+/* The fuel record of cint_program_run_args (rt/cint_rt_host.h) with fuel consumed 0, to the
  * inherited handle of `token`, the program's last argument. */
 static int write_fuel(const char *token)
 {

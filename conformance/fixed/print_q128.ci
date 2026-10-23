@@ -1,0 +1,15 @@
+// case: fixed/print_q128
+// clause: SPEC-04 LS-201 to LS-215 (fixed-point printing at 128 bits: exact text, precision, width, fill, sign, `!raw` and `!bits`)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 0; prints `-1.5|+1.5|***-1.5|-00001.5|0.38|0.000|39614081257132168796771975167.2` and `-422212465065984|-1800000000000|0x00000000000000006000000000000000|39614081257132168796771975167.25`; fuel 1. Games wave G2a (OQ-292)
+
+export I64 run() {
+    Q80.48 a = -1.5;
+    Q96.32 b = 39614081257132168796771975167.25;
+    Q1.127 c = Q1.127.epsilon;
+    Q64.64 d = 0.375;
+    "{a:+}|{-a:+}|{a:*>7}|{a:08}|{d:.2}|{c:.3}|{b:.1}\n";
+    "{a!raw}|{a!raw:x}|{d!bits:#x}|{b}\n";
+    return 0;
+}

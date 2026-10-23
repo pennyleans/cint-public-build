@@ -1,0 +1,31 @@
+// case: wide/convert_sat_wide
+// clause: SPEC-01 IM-6, IM-50; SPEC-04 LS-133 (`as|` between the wide types I128 to I1024 and U128 to U512 and the narrow ones, both ways; OQ-272 A)
+// subset: cint-core-1 (wide integers, saturating conversion, print statements)
+// entry: run; args: none
+// spec outcome: value I64 0; prints `9223372036854775807 -9223372036854775808 0 255`, then I256.max, I512.max and U256.max in decimal on a line each, then `0 -9223372036854775808 18446744073709551615 -7`, each with a line feed; fuel 1. Box 15, OQ-280 group 1
+
+export I64 run() {
+    I128 one = 1;
+    I128 huge = one << 100;
+    I128 low = 0 - huge;
+    I64 a = huge as| I64;
+    I64 b = low as| I64;
+    U128 c = low as| U128;
+    U8 d = huge as| U8;
+    I1024 big = I1024.max;
+    I256 e = big as| I256;
+    U512 umax = U512.max;
+    I512 f = umax as| I512;
+    U256 g = umax as| U256;
+    I64 m = I64.min;
+    U128 h = m as| U128;
+    I128 i = m as| I128;
+    U64 u = U64.max;
+    I128 j = u as| I128;
+    I256 small = -7;
+    I16 k = small as| I16;
+    "{a} {b} {c} {d}\n";
+    "{e}\n{f}\n{g}\n";
+    "{h} {i} {j} {k}\n";
+    return a - 9223372036854775807;
+}

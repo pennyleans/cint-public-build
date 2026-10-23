@@ -1,0 +1,7 @@
+case fixed/result_mode_integer_c2103
+clause SPEC-01 IM-188; SPEC-04 LS-145 (a rounding mode argument of `mul_result` or `div_result` is defined on fixed point only, so `div_result(a, b, floor)` of I32 is C2103; OQ-273 A)
+format 5
+source compile-error
+outcome compile-error
+diagnostic.code C2103
+diagnostic.position fixed/result_mode_integer_c2103.ci:10:13

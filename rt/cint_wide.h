@@ -70,8 +70,11 @@
  * typed operands; every helper returns false after it, as in cint_rt.h. The
  * limb product uses 32-bit halves in the portable helper mode and the
  * compiler's 128-bit product (GCC and Clang) or _umul128 and __umulh (MSVC) in
- * the builtin one (EMIT-12); division uses cint_rt_div_wide's two-digit step
- * in both modes, so no helper needs a compiler support routine.
+ * the builtin one (EMIT-12). Division takes cint_rt_div_wide_b's 128-by-64
+ * quotient where it divides in hardware, which under GCC and Clang calls
+ * __udivti3 (EMIT-31, OQ-271), and cint_rt_div_wide's two-digit step
+ * elsewhere. I128, U128, I256 and U256 take the straight-line steps of
+ * section 3a (rt/OPEN.md RT-OQ-62).
  */
 #ifndef CINT_WIDE_H
 #define CINT_WIDE_H
@@ -164,6 +167,11 @@ void cint_rt_wide_udivmod(uint64_t *q, uint64_t *r, const uint64_t *u, unsigned 
  * quotient's m - n + 1 limbs in q, the remainder's n limbs in r. */
 void cint_rt_wide_udivrem(uint64_t *q, uint64_t *r, const uint64_t *u, unsigned m, const uint64_t *v, unsigned n);
 
+/* cint_w_mul_ovf and cint_w_divide (section 3) at 4 limbs for operands that
+ * do not both lie in 128 bits (rt/OPEN.md RT-OQ-62). */
+bool cint_rt_wide_mul4(uint64_t *r, const uint64_t *a, const uint64_t *b, bool s);
+void cint_rt_wide_divide4(uint64_t *q, uint64_t *r, const uint64_t *a, const uint64_t *b, unsigned kind, bool s);
+
 /* The largest root with root * root <= x, for the n-limb magnitude x (n <= 16). */
 void cint_rt_wide_isqrt(uint64_t *root, const uint64_t *x, unsigned n);
 
@@ -220,11 +228,41 @@ bool cint_rt_wide_fold_step(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t
 bool cint_rt_reduce_wide(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t elem, uint32_t result,
                          const cint_vdesc *xs, const cint_vdesc *ys, const uint64_t *init, void *out);
 
+/* The width report (games G3; rt/OPEN.md RT-OQ-64). C compiled with
+ * CINT_WIDTH_REPORT, and with cint_program_run_args defined as
+ * cint_program_run_width_args (RT-OQ-74; older entries: cint_program_run_width*), records
+ * at each checked helper below that takes a site its hits (hit 1, operands a,
+ * b, c) and the largest width, in bits, of its operands and its result (hit 0,
+ * a alone), each of the wide type tag (values of another tag are skipped); the
+ * report goes to stderr when the program ends (`cint run --width-report`).
+ * Otherwise the hooks are empty. */
+void cint_rt_width_note(cint_ctx *ctx, cint_site site, uint32_t tag, uint32_t hit, const uint64_t *a,
+                        const uint64_t *b, const uint64_t *c);
+#if defined(CINT_WIDTH_REPORT)
+#define CINT_W_IN(t, a, b, c) cint_rt_width_note(ctx, site, (t), 1u, (a), (b), (c))
+#define CINT_W_OUT(t, r) cint_rt_width_note(ctx, site, (t), 0u, (r), NULL, NULL)
+#else
+#define CINT_W_IN(t, a, b, c) ((void)0)
+#define CINT_W_OUT(t, r) ((void)0)
+#endif
+
 /* ------------------------------------------------------------------------- */
 /* 3. Limb arithmetic. n is a constant at every call site of section 4.       */
 
 #if CINT_RT_USE_BUILTINS && defined(CINT_RT_BUILTINS_GNU)
 __extension__ typedef unsigned __int128 cint_w_u128;
+__extension__ typedef __int128 cint_w_s128;
+#endif
+
+/* Whether cint_rt_div_wide_b divides 128 bits by 64 in hardware: _udiv128 on
+ * MSVC x64, and on x86-64 outside macOS the 128-bit quotient of GCC and Clang,
+ * which calls __udivti3 (SPEC-09 EMIT-31, OQ-271; rt/OPEN.md RT-OQ-62). */
+#if CINT_RT_USE_BUILTINS && !defined(CINT_W_GENERIC) &&                                                  \
+    ((defined(CINT_RT_BUILTINS_MSVC) && defined(_M_X64)) ||                                              \
+     (defined(CINT_RT_BUILTINS_GNU) && defined(__x86_64__) && !defined(__APPLE__)))
+#define CINT_W_DIV_NATIVE 1
+#else
+#define CINT_W_DIV_NATIVE 0
 #endif
 
 /* The product of two limbs: the low limb returned, the high one in *hi. */
@@ -245,14 +283,14 @@ static inline uint64_t cint_w_mul64(uint64_t a, uint64_t b, uint64_t *hi)
 }
 
 /* hi:lo divided by d, with d's top bit set and hi < d: the quotient
- * returned, the remainder in *rem. The builtin path is _udiv128 on MSVC x64
- * (EMIT-05, BX15-15); GCC and Clang would call a compiler support routine for
- * a 128-bit quotient, so they keep the portable step, cint_rt_div_wide's long
- * division in base 2^32 without its normalization. */
+ * returned, the remainder in *rem. Where CINT_W_DIV_NATIVE holds this is
+ * cint_rt_div_wide_b (EMIT-05, BX15-15, OQ-271); elsewhere it is the portable
+ * step, cint_rt_div_wide's long division in base 2^32 without its
+ * normalization. */
 static inline uint64_t cint_w_div21(uint64_t hi, uint64_t lo, uint64_t d, uint64_t *rem)
 {
-#if CINT_RT_USE_BUILTINS && defined(CINT_RT_BUILTINS_MSVC) && defined(_M_X64)
-    return _udiv128(hi, lo, d, rem);
+#if CINT_W_DIV_NATIVE
+    return cint_rt_div_wide_b(hi, lo, d, rem);
 #else
     uint64_t q = 0u, d1 = d >> 32, d0 = d & 0xFFFFFFFFu;
     unsigned k;
@@ -276,6 +314,311 @@ static inline uint64_t cint_w_div21(uint64_t hi, uint64_t lo, uint64_t d, uint64
 #endif
 }
 
+/* ------------------------------------------------------------------------- */
+/* 3a. Two and four limbs (rt/OPEN.md RT-OQ-62).                              */
+/*                                                                            */
+/* I128 and U128 (n = 2) and I256 and U256 (n = 4) take the straight-line     */
+/* steps of this section in place of the limb loops: the functions below      */
+/* dispatch on n, a constant at every call site of section 4, so the compiler */
+/* keeps one path, and a division or a product whose operands' magnitudes fit */
+/* 128 bits takes the 2-limb step at either width. A product of more than 4   */
+/* limbs whose operands both lie in 128 bits takes the 4-limb step            */
+/* (RT-OQ-66). The results, overflow flags and fault records are the loops'.  */
+/* CINT_W_GENERIC, defined when the runtime is built, keeps the loops for     */
+/* every n and the portable quotient; rt/tests/test_wide_fast.c compares the  */
+/* runtime built with and without it.                                         */
+
+#if defined(CINT_W_GENERIC)
+#define CINT_W_FAST 0
+#else
+#define CINT_W_FAST 1
+#endif
+
+/* a + b + *carry, the carry out (0 or 1) in *carry. */
+static inline uint64_t cint_w_adc(uint64_t a, uint64_t b, uint64_t *carry)
+{
+    uint64_t t = a + b, r = t + *carry;
+    *carry = (t < a ? 1u : 0u) | (r < t ? 1u : 0u);
+    return r;
+}
+
+/* a - b - *borrow, the borrow out (0 or 1) in *borrow. */
+static inline uint64_t cint_w_sbb(uint64_t a, uint64_t b, uint64_t *borrow)
+{
+    uint64_t t = a - b, r = t - *borrow;
+    *borrow = (a < b ? 1u : 0u) | (t < *borrow ? 1u : 0u);
+    return r;
+}
+
+#if CINT_RT_USE_BUILTINS && defined(CINT_RT_BUILTINS_GNU)
+/* The builtin helper mode of GCC and Clang takes a 2-limb value as one 128-bit
+ * integer for sums, differences, negations and comparisons, which they compile
+ * to carries with no branch (EMIT-12, as for the limb product). */
+static inline cint_w_u128 cint_w2_get(const uint64_t *a)
+{
+    return ((cint_w_u128)a[1] << 64) | a[0];
+}
+
+static inline void cint_w2_put(uint64_t *r, cint_w_u128 x)
+{
+    r[0] = (uint64_t)x;
+    r[1] = (uint64_t)(x >> 64);
+}
+#endif
+
+static inline uint64_t cint_w2_addc(uint64_t *r, const uint64_t *a, const uint64_t *b)
+{
+#if CINT_RT_USE_BUILTINS && defined(CINT_RT_BUILTINS_GNU)
+    cint_w_u128 x = cint_w2_get(a), z = x + cint_w2_get(b);
+    cint_w2_put(r, z);
+    return z < x ? 1u : 0u;
+#else
+    uint64_t c = 0u, r0, r1;
+    r0 = cint_w_adc(a[0], b[0], &c);
+    r1 = cint_w_adc(a[1], b[1], &c);
+    r[0] = r0;
+    r[1] = r1;
+    return c;
+#endif
+}
+
+static inline uint64_t cint_w4_addc(uint64_t *r, const uint64_t *a, const uint64_t *b)
+{
+    uint64_t c = 0u, r0, r1, r2, r3;
+    r0 = cint_w_adc(a[0], b[0], &c);
+    r1 = cint_w_adc(a[1], b[1], &c);
+    r2 = cint_w_adc(a[2], b[2], &c);
+    r3 = cint_w_adc(a[3], b[3], &c);
+    r[0] = r0;
+    r[1] = r1;
+    r[2] = r2;
+    r[3] = r3;
+    return c;
+}
+
+static inline uint64_t cint_w2_subb(uint64_t *r, const uint64_t *a, const uint64_t *b)
+{
+#if CINT_RT_USE_BUILTINS && defined(CINT_RT_BUILTINS_GNU)
+    cint_w_u128 x = cint_w2_get(a), y = cint_w2_get(b);
+    cint_w2_put(r, x - y);
+    return x < y ? 1u : 0u;
+#else
+    uint64_t c = 0u, r0, r1;
+    r0 = cint_w_sbb(a[0], b[0], &c);
+    r1 = cint_w_sbb(a[1], b[1], &c);
+    r[0] = r0;
+    r[1] = r1;
+    return c;
+#endif
+}
+
+static inline uint64_t cint_w4_subb(uint64_t *r, const uint64_t *a, const uint64_t *b)
+{
+    uint64_t c = 0u, r0, r1, r2, r3;
+    r0 = cint_w_sbb(a[0], b[0], &c);
+    r1 = cint_w_sbb(a[1], b[1], &c);
+    r2 = cint_w_sbb(a[2], b[2], &c);
+    r3 = cint_w_sbb(a[3], b[3], &c);
+    r[0] = r0;
+    r[1] = r1;
+    r[2] = r2;
+    r[3] = r3;
+    return c;
+}
+
+/* The sign mask of a flag: all ones when it is set, 0 when not. */
+static inline uint64_t cint_w_mask(bool negative)
+{
+    return (uint64_t)0 - (negative ? 1u : 0u);
+}
+
+/* r = (a ^ m) - m for a sign mask m: a, or -a modulo 2^(64n) when m is all
+ * ones, without a branch on the sign. */
+static inline void cint_w2_cneg(uint64_t *r, const uint64_t *a, uint64_t m)
+{
+#if CINT_RT_USE_BUILTINS && defined(CINT_RT_BUILTINS_GNU)
+    cint_w_u128 mm = ((cint_w_u128)m << 64) | m;
+    cint_w2_put(r, (cint_w2_get(a) ^ mm) - mm);
+#else
+    uint64_t b = 0u, r0, r1;
+    r0 = cint_w_sbb(a[0] ^ m, m, &b);
+    r1 = cint_w_sbb(a[1] ^ m, m, &b);
+    r[0] = r0;
+    r[1] = r1;
+#endif
+}
+
+static inline void cint_w4_cneg(uint64_t *r, const uint64_t *a, uint64_t m)
+{
+    uint64_t b = 0u, r0, r1, r2, r3;
+    r0 = cint_w_sbb(a[0] ^ m, m, &b);
+    r1 = cint_w_sbb(a[1] ^ m, m, &b);
+    r2 = cint_w_sbb(a[2] ^ m, m, &b);
+    r3 = cint_w_sbb(a[3] ^ m, m, &b);
+    r[0] = r0;
+    r[1] = r1;
+    r[2] = r2;
+    r[3] = r3;
+}
+
+/* -1, 0 or 1 as a < b, a == b or a > b, the top limbs compared as signed when
+ * s: the borrows of a - b and b - a, with the sign bits flipped for s. */
+static inline int cint_w2_cmp(const uint64_t *a, const uint64_t *b, bool s)
+{
+#if CINT_RT_USE_BUILTINS && defined(CINT_RT_BUILTINS_GNU)
+    cint_w_u128 flip = (cint_w_u128)(s ? 1u : 0u) << 127, x = cint_w2_get(a) ^ flip, y = cint_w2_get(b) ^ flip;
+    return (x > y ? 1 : 0) - (x < y ? 1 : 0);
+#else
+    uint64_t flip = s ? (uint64_t)1 << 63 : 0u, a1 = a[1] ^ flip, b1 = b[1] ^ flip, lt = 0u, gt = 0u;
+    (void)cint_w_sbb(a[0], b[0], &lt);
+    (void)cint_w_sbb(a1, b1, &lt);
+    (void)cint_w_sbb(b[0], a[0], &gt);
+    (void)cint_w_sbb(b1, a1, &gt);
+    return (int)gt - (int)lt;
+#endif
+}
+
+static inline int cint_w4_cmp(const uint64_t *a, const uint64_t *b, bool s)
+{
+    uint64_t flip = s ? (uint64_t)1 << 63 : 0u, a3 = a[3] ^ flip, b3 = b[3] ^ flip, lt = 0u, gt = 0u;
+    unsigned i;
+    for (i = 0u; i < 3u; i++) {
+        (void)cint_w_sbb(a[i], b[i], &lt);
+        (void)cint_w_sbb(b[i], a[i], &gt);
+    }
+    (void)cint_w_sbb(a3, b3, &lt);
+    (void)cint_w_sbb(b3, a3, &gt);
+    return (int)gt - (int)lt;
+}
+
+/* The product of two 2-limb magnitudes, all four limbs. p does not overlap a
+ * or b. */
+static inline void cint_w2_umul(uint64_t *p, const uint64_t *a, const uint64_t *b)
+{
+    uint64_t h00, h01, h10, h11, l00, l01, l10, l11, p1, p2, ca = 0u, cb = 0u;
+    l00 = cint_w_mul64(a[0], b[0], &h00);
+    l01 = cint_w_mul64(a[0], b[1], &h01);
+    l10 = cint_w_mul64(a[1], b[0], &h10);
+    l11 = cint_w_mul64(a[1], b[1], &h11);
+    /* Two carry chains, each carrying 0 or 1 from limb to limb. */
+    p1 = cint_w_adc(h00, l01, &ca);
+    p1 = cint_w_adc(p1, l10, &cb);
+    p2 = cint_w_adc(h01, h10, &ca);
+    p2 = cint_w_adc(p2, l11, &cb);
+    p[0] = l00;
+    p[1] = p1;
+    p[2] = p2;
+    p[3] = h11 + ca + cb;  /* the product is below 2^256 */
+}
+
+/* hi:lo divided by d with hi < d, d not necessarily normalized: the quotient
+ * returned, the remainder in *rem. */
+static inline uint64_t cint_w_div21_any(uint64_t hi, uint64_t lo, uint64_t d, uint64_t *rem)
+{
+#if CINT_W_DIV_NATIVE
+    return cint_rt_div_wide_b(hi, lo, d, rem);
+#else
+    unsigned s;
+    uint64_t q;
+    if (hi == 0u) {
+        *rem = lo % d;
+        return lo / d;
+    }
+    s = cint_rt_clz64(d);
+    if (s != 0u) {
+        hi = (hi << s) | (lo >> (64u - s));
+        lo <<= s;
+        d <<= s;
+    }
+    q = cint_w_div21(hi, lo, d, rem);
+    *rem >>= s;
+    return q;
+#endif
+}
+
+/* The 2-limb magnitude u divided by the 2-limb magnitude v != 0: the quotient
+ * in q and the remainder in r, 2 limbs each; q and r may not overlap u or v.
+ * A divisor of two limbs gives a quotient below 2^64, estimated from the top
+ * 64 bits of the normalized divisor and u / 2, then corrected once (Warren,
+ * Hacker's Delight, 2nd ed., 9-5, on 64-bit digits). */
+static inline void cint_w2_udivmod(uint64_t *q, uint64_t *r, const uint64_t *u, const uint64_t *v)
+{
+    uint64_t u0 = u[0], u1 = u[1], v0 = v[0], v1 = v[1];
+    if (v1 == 0u) {
+        uint64_t q1 = 0u, rest = u1;
+        if (u1 >= v0) {
+            q1 = u1 / v0;
+            rest = u1 % v0;
+        }
+        q[0] = cint_w_div21_any(rest, u0, v0, &r[0]);
+        q[1] = q1;
+        r[1] = 0u;
+    } else {
+        unsigned s = cint_rt_clz64(v1);
+        uint64_t top = s == 0u ? v1 : (v1 << s) | (v0 >> (64u - s)), dummy, est, ph, pl, borrow = 0u, r0, r1;
+        /* u / 2 has its top limb below 2^63 <= top, so the 2-by-1 step applies */
+        est = cint_w_div21(u1 >> 1, (u0 >> 1) | (u1 << 63), top, &dummy) >> (63u - s);
+        if (est != 0u) est--;  /* now the quotient or one below it */
+        pl = cint_w_mul64(est, v0, &ph);
+        ph += est * v1;  /* est * v <= u */
+        r0 = cint_w_sbb(u0, pl, &borrow);
+        r1 = cint_w_sbb(u1, ph, &borrow);
+        if (r1 > v1 || (r1 == v1 && r0 >= v0)) {
+            est++;
+            borrow = 0u;
+            r0 = cint_w_sbb(r0, v0, &borrow);
+            r1 = cint_w_sbb(r1, v1, &borrow);
+        }
+        q[0] = est;
+        q[1] = 0u;
+        r[0] = r0;
+        r[1] = r1;
+    }
+}
+
+/* Whether the 4-limb value a (signed when s) lies in 128 bits; m receives the
+ * magnitude of its low 2 limbs, which is |a| when it does (2^127 at most when
+ * signed), and *sign their sign mask. */
+static inline bool cint_w4_small(uint64_t *m, const uint64_t *a, bool s, uint64_t *sign)
+{
+    uint64_t fill = s ? (uint64_t)0 - (a[1] >> 63) : 0u;
+    *sign = fill;
+    cint_w2_cneg(m, a, fill);
+    return ((a[2] ^ fill) | (a[3] ^ fill)) == 0u;
+}
+
+/* r = the 4-limb value of sign mask `sign` and 2-limb magnitude m. */
+static inline void cint_w4_put_small(uint64_t *r, const uint64_t *m, uint64_t sign)
+{
+    uint64_t fill = sign & cint_w_mask((m[0] | m[1]) != 0u);
+    cint_w2_cneg(r, m, sign);
+    r[2] = fill;
+    r[3] = fill;
+}
+
+/* The signs of a division (kind as for cint_w_divide, section 3) from the
+ * 2-limb magnitudes qm and rm of |a| / |b|, mb = |b|, and the operands' sign
+ * masks sa and sb: qm and rm become the magnitudes of the quotient and the
+ * remainder, *rs the remainder's sign mask, and the quotient's is sa ^ sb.
+ * Floor with unequal signs and Euclidean division of a negative dividend step
+ * one further from zero when the remainder is not 0, which leaves the
+ * remainder mb - rm, of the divisor's sign for floor and positive for
+ * Euclidean; otherwise the remainder takes the dividend's sign, except for
+ * Euclidean. All without a branch on the signs. */
+static inline void cint_w2_div_signs(uint64_t *qm, uint64_t *rm, const uint64_t *mb, unsigned kind, uint64_t sa,
+                                     uint64_t sb, uint64_t *rs)
+{
+    uint64_t step = (kind == 0u ? sa ^ sb : kind == 2u ? sa : 0u) & cint_w_mask((rm[0] | rm[1]) != 0u);
+    uint64_t c = step & 1u, b = 0u, t0, t1;
+    qm[0] = cint_w_adc(qm[0], 0u, &c);
+    qm[1] += c;
+    t0 = cint_w_sbb(mb[0], rm[0], &b);
+    t1 = cint_w_sbb(mb[1], rm[1], &b);
+    rm[0] = (t0 & step) | (rm[0] & ~step);
+    rm[1] = (t1 & step) | (rm[1] & ~step);
+    *rs = (step & (kind == 0u ? sb : 0u)) | (~step & (kind != 2u ? sa : 0u));
+}
+
 static inline void cint_w_copy(uint64_t *r, const uint64_t *a, unsigned n)
 {
     unsigned i;
@@ -291,6 +634,10 @@ static inline bool cint_w_is_zero(const uint64_t *a, unsigned n)
 {
     uint64_t any = 0u;
     unsigned i;
+#if CINT_W_FAST
+    if (n == 2u) return (a[0] | a[1]) == 0u;
+    if (n == 4u) return (a[0] | a[1] | a[2] | a[3]) == 0u;
+#endif
     for (i = 0u; i < n; i++) any |= a[i];
     return any == 0u;
 }
@@ -305,6 +652,10 @@ static inline bool cint_w_is_minus_one(const uint64_t *a, unsigned n)
 {
     uint64_t all = UINT64_MAX;
     unsigned i;
+#if CINT_W_FAST
+    if (n == 2u) return (a[0] & a[1]) == UINT64_MAX;
+    if (n == 4u) return (a[0] & a[1] & a[2] & a[3]) == UINT64_MAX;
+#endif
     for (i = 0u; i < n; i++) all &= a[i];
     return all == UINT64_MAX;
 }
@@ -322,6 +673,10 @@ static inline uint64_t cint_w_addc(uint64_t *r, const uint64_t *a, const uint64_
 {
     uint64_t carry = 0u;
     unsigned i;
+#if CINT_W_FAST
+    if (n == 2u) return cint_w2_addc(r, a, b);
+    if (n == 4u) return cint_w4_addc(r, a, b);
+#endif
     for (i = 0u; i < n; i++) {
         uint64_t s = a[i] + b[i];
         uint64_t t = s + carry;
@@ -336,6 +691,10 @@ static inline uint64_t cint_w_subb(uint64_t *r, const uint64_t *a, const uint64_
 {
     uint64_t borrow = 0u;
     unsigned i;
+#if CINT_W_FAST
+    if (n == 2u) return cint_w2_subb(r, a, b);
+    if (n == 4u) return cint_w4_subb(r, a, b);
+#endif
     for (i = 0u; i < n; i++) {
         uint64_t d = a[i] - b[i];
         uint64_t t = d - borrow;
@@ -350,10 +709,40 @@ static inline void cint_w_negate(uint64_t *r, const uint64_t *a, unsigned n)
 {
     uint64_t carry = 1u;
     unsigned i;
+#if CINT_W_FAST
+    if (n == 2u) {
+        cint_w2_cneg(r, a, UINT64_MAX);
+        return;
+    }
+    if (n == 4u) {
+        cint_w4_cneg(r, a, UINT64_MAX);
+        return;
+    }
+#endif
     for (i = 0u; i < n; i++) {
         uint64_t t = ~a[i] + carry;
         carry = carry != 0u && t == 0u ? 1u : 0u;
         r[i] = t;
+    }
+}
+
+/* r = a, or -a modulo 2^(64n) when negate. */
+static inline void cint_w_cneg(uint64_t *r, const uint64_t *a, unsigned n, bool negate)
+{
+#if CINT_W_FAST
+    if (n == 2u) {
+        cint_w2_cneg(r, a, cint_w_mask(negate));
+        return;
+    }
+    if (n == 4u) {
+        cint_w4_cneg(r, a, cint_w_mask(negate));
+        return;
+    }
+#endif
+    if (negate) {
+        cint_w_negate(r, a, n);
+    } else {
+        cint_w_copy(r, a, n);
     }
 }
 
@@ -374,6 +763,10 @@ static inline bool cint_w_magnitude(uint64_t *m, const uint64_t *a, unsigned n, 
 static inline int cint_w_ucmp(const uint64_t *a, const uint64_t *b, unsigned n)
 {
     unsigned i = n;
+#if CINT_W_FAST
+    if (n == 2u) return cint_w2_cmp(a, b, false);
+    if (n == 4u) return cint_w4_cmp(a, b, false);
+#endif
     while (i > 0u) {
         i--;
         if (a[i] != b[i]) return a[i] < b[i] ? -1 : 1;
@@ -385,8 +778,22 @@ static inline int cint_w_ucmp(const uint64_t *a, const uint64_t *b, unsigned n)
 static inline int cint_w_cmp(const uint64_t *a, const uint64_t *b, unsigned n, bool s)
 {
     bool an = s && cint_w_negative(a, n), bn = s && cint_w_negative(b, n);
+#if CINT_W_FAST
+    if (n == 2u) return cint_w2_cmp(a, b, s);
+    if (n == 4u) return cint_w4_cmp(a, b, s);
+#endif
     if (an != bn) return an ? -1 : 1;
     return cint_w_ucmp(a, b, n);
+}
+
+/* Whether two n-limb patterns are equal. */
+static inline bool cint_w_eq(const uint64_t *a, const uint64_t *b, unsigned n)
+{
+#if CINT_W_FAST
+    if (n == 2u) return ((a[0] ^ b[0]) | (a[1] ^ b[1])) == 0u;
+    if (n == 4u) return ((a[0] ^ b[0]) | (a[1] ^ b[1]) | (a[2] ^ b[2]) | (a[3] ^ b[3])) == 0u;
+#endif
+    return cint_w_ucmp(a, b, n) == 0;
 }
 
 /* The significant limbs of an n-limb magnitude: n less its zero top limbs. */
@@ -477,7 +884,15 @@ static inline void cint_w_umul_len(uint64_t *p, const uint64_t *a, unsigned la, 
 /* p = a * b, the 2n-limb product of two n-limb magnitudes. */
 static inline void cint_w_umul(uint64_t *p, const uint64_t *a, const uint64_t *b, unsigned n)
 {
-    unsigned la = cint_w_len(a, n), lb = cint_w_len(b, n), i;
+    unsigned la, lb, i;
+#if CINT_W_FAST
+    if (n == 2u) {
+        cint_w2_umul(p, a, b);
+        return;
+    }
+#endif
+    la = cint_w_len(a, n);
+    lb = cint_w_len(b, n);
     if (la == 0u || lb == 0u) {
         la = 0u;
         lb = 0u;
@@ -491,6 +906,15 @@ static inline void cint_w_umul(uint64_t *p, const uint64_t *a, const uint64_t *b
 static inline void cint_w_mul_low(uint64_t *r, const uint64_t *a, const uint64_t *b, unsigned n)
 {
     unsigned i, j;
+#if CINT_W_FAST
+    if (n == 2u) {
+        uint64_t hi, lo = cint_w_mul64(a[0], b[0], &hi);
+        hi += a[0] * b[1] + a[1] * b[0];
+        r[0] = lo;
+        r[1] = hi;
+        return;
+    }
+#endif
     for (i = 0u; i < n; i++) r[i] = 0u;
     for (i = 0u; i < n; i++) {
         uint64_t carry = 0u;
@@ -587,6 +1011,14 @@ static inline bool cint_w_fits_narrow(const uint64_t *a, unsigned n, bool s, uin
 {
     uint64_t high = a[n - 1u];
     unsigned i;
+#if CINT_W_FAST
+    if (n == 2u && s) {
+        /* a lies in I64 when its high limb is the sign of its low one, and
+         * otherwise only U64 holds it, from 2^63 to 2^64 - 1 */
+        if (a[1] + (a[0] >> 63) == 0u) return cint_rt_fits(a[0], true, tag);
+        return a[1] == 0u && !cint_rt_tag_signed(tag) && cint_rt_tag_width(tag) == 64u;
+    }
+#endif
     if (!s && high != 0u) return false;
     for (i = 1u; i < n; i++) {
         if (a[i] != high) return false;
@@ -600,7 +1032,7 @@ static inline void cint_w_from_narrow(uint64_t *r, unsigned n, uint32_t tag, uin
 {
     unsigned w = cint_rt_tag_width(tag), i;
     uint64_t v = cint_rt_tag_signed(tag) ? (uint64_t)cint_rt_sext(bits, w) : bits & cint_rt_mask(w);
-    uint64_t fill = cint_rt_tag_signed(tag) && (v >> 63) != 0u ? UINT64_MAX : 0u;
+    uint64_t fill = cint_rt_tag_signed(tag) ? (uint64_t)0 - (v >> 63) : 0u;
     r[0] = v;
     for (i = 1u; i < n; i++) r[i] = fill;
 }
@@ -613,9 +1045,55 @@ static inline void cint_w_bound(uint64_t *r, unsigned n, bool negative, bool s)
     if (s) r[n - 1u] = negative ? (uint64_t)1 << 63 : UINT64_MAX >> 1;
 }
 
+#if CINT_RT_USE_BUILTINS && defined(CINT_RT_BUILTINS_GNU)
+/* cint_w_add_ovf and cint_w_sub_ovf at 2 limbs: the overflow builtins on the
+ * compiler's 128-bit integers, an add or subtract with carry and the overflow
+ * or carry flag. Converting the unsigned value to the signed type keeps its
+ * bits on GCC and Clang. */
+static inline bool cint_w2_add_ovf(uint64_t *r, const uint64_t *a, const uint64_t *b, bool s)
+{
+    cint_w_u128 z;
+    bool over;
+    if (s) {
+        cint_w_s128 t;
+        over = __builtin_add_overflow((cint_w_s128)cint_w2_get(a), (cint_w_s128)cint_w2_get(b), &t);
+        z = (cint_w_u128)t;
+    } else {
+        over = __builtin_add_overflow(cint_w2_get(a), cint_w2_get(b), &z);
+    }
+    cint_w2_put(r, z);
+    return over;
+}
+
+static inline bool cint_w2_sub_ovf(uint64_t *r, const uint64_t *a, const uint64_t *b, bool s)
+{
+    cint_w_u128 z;
+    bool over;
+    if (s) {
+        cint_w_s128 t;
+        over = __builtin_sub_overflow((cint_w_s128)cint_w2_get(a), (cint_w_s128)cint_w2_get(b), &t);
+        z = (cint_w_u128)t;
+    } else {
+        over = __builtin_sub_overflow(cint_w2_get(a), cint_w2_get(b), &z);
+    }
+    cint_w2_put(r, z);
+    return over;
+}
+#endif
+
 /* Overflow of a + b and a - b; *r holds the wrapped result. */
 static inline bool cint_w_add_ovf(uint64_t *r, const uint64_t *a, const uint64_t *b, unsigned n, bool s)
 {
+#if CINT_W_FAST && CINT_RT_USE_BUILTINS && defined(CINT_RT_BUILTINS_GNU)
+    if (n == 2u) return cint_w2_add_ovf(r, a, b, s);
+#endif
+#if CINT_W_FAST
+    if (n == 2u || n == 4u) {
+        /* signed: a and b of one sign, r of the other */
+        uint64_t top_a = a[n - 1u], top_b = b[n - 1u], carry = cint_w_addc(r, a, b, n);
+        return s ? (((top_a ^ r[n - 1u]) & (top_b ^ r[n - 1u])) >> 63) != 0u : carry != 0u;
+    }
+#endif
     bool an = cint_w_negative(a, n), bn = cint_w_negative(b, n);
     uint64_t carry = cint_w_addc(r, a, b, n);
     return s ? an == bn && cint_w_negative(r, n) != an : carry != 0u;
@@ -623,15 +1101,96 @@ static inline bool cint_w_add_ovf(uint64_t *r, const uint64_t *a, const uint64_t
 
 static inline bool cint_w_sub_ovf(uint64_t *r, const uint64_t *a, const uint64_t *b, unsigned n, bool s)
 {
+#if CINT_W_FAST && CINT_RT_USE_BUILTINS && defined(CINT_RT_BUILTINS_GNU)
+    if (n == 2u) return cint_w2_sub_ovf(r, a, b, s);
+#endif
+#if CINT_W_FAST
+    if (n == 2u || n == 4u) {
+        /* signed: a and b of opposite signs, r of b's */
+        uint64_t top_a = a[n - 1u], top_b = b[n - 1u], borrow = cint_w_subb(r, a, b, n);
+        return s ? (((top_a ^ top_b) & (top_a ^ r[n - 1u])) >> 63) != 0u : borrow != 0u;
+    }
+#endif
     bool an = cint_w_negative(a, n), bn = cint_w_negative(b, n);
     uint64_t borrow = cint_w_subb(r, a, b, n);
     return s ? an != bn && cint_w_negative(r, n) != an : borrow != 0u;
 }
 
+/* cint_w_mul_ovf at 2 limbs. The builtin mode of GCC and Clang multiplies the
+ * magnitudes with the overflow builtin on the unsigned 128-bit integer, which
+ * calls no support routine (the signed one would, __muloti4 under Clang).
+ * Otherwise operands whose high limbs are both nonzero overflow, and one
+ * cross product completes the low one. */
+static inline bool cint_w2_mul_ovf(uint64_t *r, const uint64_t *a, const uint64_t *b, bool s)
+{
+    uint64_t sa = s ? (uint64_t)0 - (a[1] >> 63) : 0u, sb = s ? (uint64_t)0 - (b[1] >> 63) : 0u, sr = sa ^ sb;
+    uint64_t ma[2], mb[2], p[2];
+    cint_w2_cneg(ma, a, sa);
+    cint_w2_cneg(mb, b, sb);
+#if CINT_RT_USE_BUILTINS && defined(CINT_RT_BUILTINS_GNU)
+    {
+        cint_w_u128 z;
+        if (__builtin_mul_overflow(cint_w2_get(ma), cint_w2_get(mb), &z)) return true;
+        cint_w2_put(p, z);
+    }
+#else
+    {
+        uint64_t hi, cross_hi, cross, x, y;
+        if (ma[1] != 0u && mb[1] != 0u) return true;
+        x = ma[1] | mb[1];  /* the one high limb, or 0 */
+        y = ma[1] != 0u ? mb[0] : ma[0];
+        p[0] = cint_w_mul64(ma[0], mb[0], &hi);
+        cross = cint_w_mul64(x, y, &cross_hi);
+        p[1] = hi + cross;
+        if (cross_hi != 0u || p[1] < hi) return true;
+    }
+#endif
+    /* p = |a| * |b| < 2^128: up to 2^127 - 1, or 2^127 when negative, if signed */
+    if (s && (p[1] >> 63) != 0u && !(sr != 0u && p[1] == (uint64_t)1 << 63 && p[0] == 0u)) return true;
+    cint_w2_cneg(r, p, sr);
+    return false;
+}
+
+/* cint_w_mul_ovf at 4 limbs: operands in 128 bits take the 2-limb product,
+ * which always fits (|a| * |b| <= 2^254 when signed, below 2^256 when not),
+ * and others cint_rt_wide_mul4 (section 2). */
+static inline bool cint_w4_mul_ovf(uint64_t *r, const uint64_t *a, const uint64_t *b, bool s)
+{
+    uint64_t ma[2], mb[2], p[4], sa, sb;
+    bool small = cint_w4_small(ma, a, s, &sa);
+    if (!(cint_w4_small(mb, b, s, &sb) && small)) return cint_rt_wide_mul4(r, a, b, s);
+    if ((ma[1] | mb[1]) == 0u) {  /* the product lies in 128 bits */
+        p[0] = cint_w_mul64(ma[0], mb[0], &p[1]);
+        cint_w4_put_small(r, p, sa ^ sb);
+        return false;
+    }
+    cint_w2_umul(p, ma, mb);
+    cint_w4_cneg(r, p, sa ^ sb);
+    return false;
+}
+
+/* Whether a and b of n limbs lie in 128 bits (limbs 2 and up the sign fill of
+ * limb 1, or 0); cint_wn_extend4 below writes the 4-limb t as n limbs. */
+CINT_RT_FOLD bool cint_wn_in128(const uint64_t *a, const uint64_t *b, unsigned n, bool s)
+{
+    uint64_t fa = s ? (uint64_t)0 - (a[1] >> 63) : 0u, fb = s ? (uint64_t)0 - (b[1] >> 63) : 0u, acc = 0u;
+    unsigned k;
+    for (k = 2u; k < n; k++) acc |= (a[k] ^ fa) | (b[k] ^ fb);
+    return acc == 0u;
+}
+
+CINT_RT_FOLD void cint_wn_extend4(uint64_t *r, const uint64_t *t, unsigned n, bool s)
+{
+    uint64_t f = s ? (uint64_t)0 - (t[3] >> 63) : 0u;
+    unsigned k;
+    for (k = 0u; k < 4u; k++) r[k] = t[k];
+    for (k = 4u; k < n; k++) r[k] = f;
+}
+
 /* Overflow of a * b; *r holds the product when it fits and is not written
  * when it does not. Operands of la and lb significant limbs with la + lb >
  * n + 1 overflow before any limb product. */
-static inline bool cint_w_mul_ovf(uint64_t *r, const uint64_t *a, const uint64_t *b, unsigned n, bool s)
+static inline bool cint_wn_mul_ovf(uint64_t *r, const uint64_t *a, const uint64_t *b, unsigned n, bool s)
 {
     uint64_t ma[16], mb[16], p[17];
     bool an, bn;
@@ -645,14 +1204,33 @@ static inline bool cint_w_mul_ovf(uint64_t *r, const uint64_t *a, const uint64_t
     return !cint_w_store(r, p, cint_w_len(p, la + lb), n, an != bn, s);
 }
 
+/* cint_w_mul_ovf folds into each helper with its n (rt/OPEN.md RT-OQ-69).
+ * Above 4 limbs, operands both in 128 bits have a product of at most 2^254 in
+ * magnitude, below 2^256 unsigned, which the 4-limb step gives (RT-OQ-66). */
+CINT_RT_FOLD bool cint_w_mul_ovf(uint64_t *r, const uint64_t *a, const uint64_t *b, unsigned n, bool s)
+{
+#if CINT_W_FAST
+    uint64_t t[4];
+    if (n == 2u) return cint_w2_mul_ovf(r, a, b, s);
+    if (n == 4u) return cint_w4_mul_ovf(r, a, b, s);
+    if (cint_wn_in128(a, b, n, s)) {
+        (void)cint_w4_mul_ovf(t, a, b, s);
+        cint_wn_extend4(r, t, n, s);
+        return false;
+    }
+#endif
+    return cint_wn_mul_ovf(r, a, b, n, s);
+}
+
 /* The magnitude parts of a division of a by b != 0 (the pair (MIN, -1)
  * included): kind 0 floor (SPEC-01 4.4), 1 truncating, 2 Euclidean. q and r
  * receive the n-limb quotient and remainder; the quotient of (MIN, -1), 2^(w -
  * 1), comes back wrapped to MIN, and the callers check that pair first. */
-static inline void cint_w_divide(uint64_t *q, uint64_t *r, const uint64_t *a, const uint64_t *b, unsigned n,
-                                 unsigned kind, bool s)
+static inline void cint_wn_divide(uint64_t *q, uint64_t *r, const uint64_t *a, const uint64_t *b, unsigned n,
+                                  unsigned kind, bool s)
 {
-    uint64_t ma[16], mb[16], qm[16], rm[16];
+    /* ma and mb start zeroed: GCC 16 cannot tell that n > 0 in its outlined copy of this body. */
+    uint64_t ma[16] = {0}, mb[16] = {0}, qm[16], rm[16];
     bool an = cint_w_magnitude(ma, a, n, s), bn = cint_w_magnitude(mb, b, n, s);
     bool exact;
     unsigned i;
@@ -676,6 +1254,58 @@ static inline void cint_w_divide(uint64_t *q, uint64_t *r, const uint64_t *a, co
     cint_w_copy(r, rm, n);
 }
 
+/* cint_w_divide at 2 limbs. */
+static inline void cint_w2_divide(uint64_t *q, uint64_t *r, const uint64_t *a, const uint64_t *b, unsigned kind,
+                                  bool s)
+{
+    uint64_t ma[2], mb[2], qm[2], rm[2], rs;
+    uint64_t sa = s ? (uint64_t)0 - (a[1] >> 63) : 0u, sb = s ? (uint64_t)0 - (b[1] >> 63) : 0u;
+    cint_w2_cneg(ma, a, sa);
+    cint_w2_cneg(mb, b, sb);
+    cint_w2_udivmod(qm, rm, ma, mb);
+    cint_w2_div_signs(qm, rm, mb, kind, sa, sb, &rs);
+    cint_w2_cneg(q, qm, sa ^ sb);
+    cint_w2_cneg(r, rm, rs);
+}
+
+/* cint_w_divide at 4 limbs: operands in 128 bits take cint_w2_udivmod and the
+ * signs on 2 limbs, where a quotient one step further from zero stays below
+ * 2^127, as the divisor's magnitude is at least 2 when the remainder is not 0;
+ * others take cint_rt_wide_divide4 (section 2). */
+static inline void cint_w4_divide(uint64_t *q, uint64_t *r, const uint64_t *a, const uint64_t *b, unsigned kind,
+                                  bool s)
+{
+    uint64_t ma[2], mb[2], qm[2], rm[2], sa, sb, rs;
+    bool small = cint_w4_small(ma, a, s, &sa);
+    if (!(cint_w4_small(mb, b, s, &sb) && small)) {
+        cint_rt_wide_divide4(q, r, a, b, kind, s);
+        return;
+    }
+    cint_w2_udivmod(qm, rm, ma, mb);
+    cint_w2_div_signs(qm, rm, mb, kind, sa, sb, &rs);
+    cint_w4_put_small(q, qm, sa ^ sb);
+    cint_w4_put_small(r, rm, rs);
+}
+
+/* cint_w_divide folds into each helper with its n. Above 4 limbs, operands
+ * both in 128 bits have a quotient of magnitude at most 2^127 + 1 and a
+ * remainder below the divisor's, which the 4-limb step gives (RT-OQ-69). */
+CINT_RT_FOLD void cint_w_divide(uint64_t *q, uint64_t *r, const uint64_t *a, const uint64_t *b, unsigned n,
+                               unsigned kind, bool s)
+{
+#if CINT_W_FAST
+    uint64_t qt[4], rt[4];
+    if (n == 2u) cint_w2_divide(q, r, a, b, kind, s);
+    else if (n == 4u) cint_w4_divide(q, r, a, b, kind, s);
+    else if (cint_wn_in128(a, b, n, s)) {
+        cint_w4_divide(qt, rt, a, b, kind, s);
+        cint_wn_extend4(q, qt, n, s);
+        cint_wn_extend4(r, rt, n, s);
+    } else
+#endif
+        cint_wn_divide(q, r, a, b, n, kind, s);
+}
+
 /* Whether a quotient of sign `negative` with truncated magnitude q, nonzero
  * remainder rem and divisor magnitude d rounds away from zero under mode
  * (SPEC-01 4.5, numbered as in cint_rt_builtin; cint_rt_round_up's rule). */
@@ -691,11 +1321,37 @@ static inline bool cint_w_round_up(const uint64_t *q, const uint64_t *rem, const
     return mode == 5u ? (q[0] & 1u) != 0u : mode == 6u || (mode == 8u ? !negative : mode == 9u && negative);
 }
 
+/* cint_w_div_round for n = 2 and n = 4 when both magnitudes are below 2^128:
+ * whether it decided, with the outcome in *ok. */
+static inline bool cint_w_div_round_small(uint64_t *r, const uint64_t *a, const uint64_t *b, unsigned n,
+                                          uint32_t mode, bool s, bool *ok)
+{
+    uint64_t ma[4] = {0u, 0u, 0u, 0u}, mb[4] = {0u, 0u, 0u, 0u}, q[4] = {0u, 0u, 0u, 0u}, rem[2] = {0u, 0u};
+    bool an = s && cint_w_negative(a, n), bn = s && cint_w_negative(b, n), negative = an != bn;
+    cint_w_cneg(ma, a, n, an);
+    cint_w_cneg(mb, b, n, bn);
+    if (n == 4u && (ma[2] | ma[3] | mb[2] | mb[3]) != 0u) return false;
+    *ok = false;
+    if ((mb[0] | mb[1]) == 0u) return true;
+    cint_w2_udivmod(q, rem, ma, mb);
+    if ((rem[0] | rem[1]) != 0u && cint_w_round_up(q, rem, mb, 2u, negative, mode)) {
+        uint64_t c = 1u;
+        q[0] = cint_w_adc(q[0], 0u, &c);
+        q[1] = cint_w_adc(q[1], 0u, &c);
+        q[2] = c;
+    }
+    /* q < 2^129, which 4 limbs hold either way */
+    if (n == 2u && (q[2] != 0u || (s && (q[1] >> 63) != 0u && !(negative && cint_w_is_min(q, 2u))))) return true;
+    cint_w_cneg(r, q, n, negative);
+    *ok = true;
+    return true;
+}
+
 /* a / b rounded under mode (built-in op 10, SPEC-01 4.5) over the operands'
  * significant limbs: false for b == 0 or a quotient that does not fit, r
  * written only when it does. a and b are read before r is written. */
-static inline bool cint_w_div_round(uint64_t *r, const uint64_t *a, const uint64_t *b, unsigned n, uint32_t mode,
-                                    bool s)
+static inline bool cint_wn_div_round(uint64_t *r, const uint64_t *a, const uint64_t *b, unsigned n, uint32_t mode,
+                                     bool s)
 {
     uint64_t ma[16], mb[16], q[17], rem[16];
     bool an, bn;
@@ -719,20 +1375,46 @@ static inline bool cint_w_div_round(uint64_t *r, const uint64_t *a, const uint64
     return cint_w_store(r, q, cint_w_len(q, lq), n, an != bn, s);
 }
 
+/* cint_w_div_round folds likewise; above 4 limbs, operands both in 128 bits
+ * take the 4-limb step, as |q| <= 2^128 + 1 (RT-OQ-69). */
+CINT_RT_FOLD bool cint_w_div_round(uint64_t *r, const uint64_t *a, const uint64_t *b, unsigned n, uint32_t mode,
+                                  bool s)
+{
+#if CINT_W_FAST
+    bool ok = false;
+    uint64_t t[4];
+    if ((n == 2u || n == 4u) && cint_w_div_round_small(r, a, b, n, mode, s, &ok)) return ok;
+    if (n > 4u && cint_wn_in128(a, b, n, s)) {
+        (void)cint_w_div_round_small(t, a, b, 4u, mode, s, &ok);
+        if (ok) cint_wn_extend4(r, t, n, s);
+        return ok;
+    }
+#endif
+    return cint_wn_div_round(r, a, b, n, mode, s);
+}
+
 /* ------------------------------------------------------------------------- */
 /* 4. The helpers of each width.                                              */
+/*                                                                            */
+/* A failed check passes copies of its operands to cint_rt_wide_fault, made   */
+/* where it fails: no operand's address leaves the path that does not fault,  */
+/* so the compiler can keep the operands of an inlined helper in registers    */
+/* there (rt/OPEN.md RT-OQ-62). The record is the same.                       */
 
 #define CINT_W_BODY(T, N, TAG, S)                                                                                  \
     static inline bool cint_add_##T(cint_ctx *ctx, cint_site site, const cint_##T *a, const cint_##T *b,           \
                                     cint_##T *out)                                                                 \
     {                                                                                                              \
         cint_##T r;                                                                                                \
+        CINT_W_IN((TAG), a->limb, b->limb, NULL);                                                                  \
         bool over = cint_w_add_ovf(r.limb, a->limb, b->limb, (N), (S));                                            \
         if (cint_rt_faulted(ctx)) return false;                                                                    \
         if (over) {                                                                                                \
-            (void)cint_rt_wide_fault(ctx, site, CINT_RT_OP_ADD, (TAG), 0u, 0u, a->limb, b->limb, NULL);            \
+            cint_##T fa = *a, fb = *b; /* copies: see CINT_W_BODY */                                               \
+            (void)cint_rt_wide_fault(ctx, site, CINT_RT_OP_ADD, (TAG), 0u, 0u, fa.limb, fb.limb, NULL);            \
             return false;                                                                                          \
         }                                                                                                          \
+        CINT_W_OUT((TAG), r.limb);                                                                                 \
         *out = r;                                                                                                  \
         return true;                                                                                               \
     }                                                                                                              \
@@ -740,12 +1422,15 @@ static inline bool cint_w_div_round(uint64_t *r, const uint64_t *a, const uint64
                                     cint_##T *out)                                                                 \
     {                                                                                                              \
         cint_##T r;                                                                                                \
+        CINT_W_IN((TAG), a->limb, b->limb, NULL);                                                                  \
         bool over = cint_w_sub_ovf(r.limb, a->limb, b->limb, (N), (S));                                            \
         if (cint_rt_faulted(ctx)) return false;                                                                    \
         if (over) {                                                                                                \
-            (void)cint_rt_wide_fault(ctx, site, CINT_RT_OP_SUB, (TAG), 0u, 0u, a->limb, b->limb, NULL);            \
+            cint_##T fa = *a, fb = *b; /* copies: see CINT_W_BODY */                                               \
+            (void)cint_rt_wide_fault(ctx, site, CINT_RT_OP_SUB, (TAG), 0u, 0u, fa.limb, fb.limb, NULL);            \
             return false;                                                                                          \
         }                                                                                                          \
+        CINT_W_OUT((TAG), r.limb);                                                                                 \
         *out = r;                                                                                                  \
         return true;                                                                                               \
     }                                                                                                              \
@@ -754,22 +1439,28 @@ static inline bool cint_w_div_round(uint64_t *r, const uint64_t *a, const uint64
     {                                                                                                              \
         /* cint_w_mul_ovf reads both operands before it writes out, and not on overflow. */                        \
         if (cint_rt_faulted(ctx)) return false;                                                                    \
+        CINT_W_IN((TAG), a->limb, b->limb, NULL);                                                                  \
         if (cint_w_mul_ovf(out->limb, a->limb, b->limb, (N), (S))) {                                               \
-            (void)cint_rt_wide_fault(ctx, site, CINT_RT_OP_MUL, (TAG), 0u, 0u, a->limb, b->limb, NULL);            \
+            cint_##T fa = *a, fb = *b; /* copies: see CINT_W_BODY */                                               \
+            (void)cint_rt_wide_fault(ctx, site, CINT_RT_OP_MUL, (TAG), 0u, 0u, fa.limb, fb.limb, NULL);            \
             return false;                                                                                          \
         }                                                                                                          \
+        CINT_W_OUT((TAG), out->limb);                                                                              \
         return true;                                                                                               \
     }                                                                                                              \
     static inline bool cint_neg_##T(cint_ctx *ctx, cint_site site, const cint_##T *a, cint_##T *out)               \
     {                                                                                                              \
         cint_##T r;                                                                                                \
+        CINT_W_IN((TAG), a->limb, NULL, NULL);                                                                     \
         bool over = (S) ? cint_w_is_min(a->limb, (N)) : !cint_w_is_zero(a->limb, (N));                             \
         cint_w_negate(r.limb, a->limb, (N));                                                                       \
         if (cint_rt_faulted(ctx)) return false;                                                                    \
         if (over) {                                                                                                \
-            (void)cint_rt_wide_fault(ctx, site, CINT_RT_OP_NEG, (TAG), 0u, 0u, a->limb, NULL, NULL);               \
+            cint_##T fa = *a; /* a copy: see CINT_W_BODY */                                                        \
+            (void)cint_rt_wide_fault(ctx, site, CINT_RT_OP_NEG, (TAG), 0u, 0u, fa.limb, NULL, NULL);               \
             return false;                                                                                          \
         }                                                                                                          \
+        CINT_W_OUT((TAG), r.limb);                                                                                 \
         *out = r;                                                                                                  \
         return true;                                                                                               \
     }                                                                                                              \
@@ -864,11 +1555,11 @@ static inline bool cint_w_div_round(uint64_t *r, const uint64_t *a, const uint64
     }                                                                                                              \
     static inline bool cint_eq_##T(const cint_##T *a, const cint_##T *b)                                           \
     {                                                                                                              \
-        return cint_w_ucmp(a->limb, b->limb, (N)) == 0;                                                            \
+        return cint_w_eq(a->limb, b->limb, (N));                                                                   \
     }                                                                                                              \
     static inline bool cint_ne_##T(const cint_##T *a, const cint_##T *b)                                           \
     {                                                                                                              \
-        return cint_w_ucmp(a->limb, b->limb, (N)) != 0;                                                            \
+        return !cint_w_eq(a->limb, b->limb, (N));                                                                  \
     }                                                                                                              \
     static inline bool cint_lt_##T(const cint_##T *a, const cint_##T *b)                                           \
     {                                                                                                              \
@@ -923,6 +1614,7 @@ static inline const uint64_t *cint_w_count_at(const cint_count *k)
                                     cint_##T *out)                                                         \
     {                                                                                                      \
         cint_##T r = {{0u}}, back;                                                                         \
+        CINT_W_IN((TAG), a->limb, NULL, NULL);                                                             \
         bool bad = k.bits > (uint64_t)(64u * (N) - 1u), over = false;                                      \
         if (!bad) {                                                                                        \
             cint_w_shl_raw(r.limb, a->limb, (unsigned)k.bits, (N));                                        \
@@ -935,6 +1627,7 @@ static inline const uint64_t *cint_w_count_at(const cint_count *k)
                                      cint_w_count_at(&k), NULL);                                           \
             return false;                                                                                  \
         }                                                                                                  \
+        CINT_W_OUT((TAG), r.limb);                                                                         \
         *out = r;                                                                                          \
         return true;                                                                                       \
     }                                                                                                      \
@@ -942,6 +1635,7 @@ static inline const uint64_t *cint_w_count_at(const cint_count *k)
                                          cint_##T *out)                                                    \
     {                                                                                                      \
         cint_##T r = {{0u}};                                                                               \
+        CINT_W_IN((TAG), a->limb, NULL, NULL);                                                             \
         bool bad = k.bits > (uint64_t)(64u * (N) - 1u);                                                    \
         if (!bad) cint_w_shl_raw(r.limb, a->limb, (unsigned)k.bits, (N));                                  \
         if (cint_rt_faulted(ctx)) return false;                                                            \
@@ -950,6 +1644,7 @@ static inline const uint64_t *cint_w_count_at(const cint_count *k)
                                      cint_w_count_at(&k), NULL);                                           \
             return false;                                                                                  \
         }                                                                                                  \
+        CINT_W_OUT((TAG), r.limb);                                                                         \
         *out = r;                                                                                          \
         return true;                                                                                       \
     }                                                                                                      \
@@ -957,6 +1652,7 @@ static inline const uint64_t *cint_w_count_at(const cint_count *k)
                                     cint_##T *out)                                                         \
     {                                                                                                      \
         cint_##T r = {{0u}};                                                                               \
+        CINT_W_IN((TAG), a->limb, NULL, NULL);                                                             \
         bool bad = k.bits > (uint64_t)(64u * (N) - 1u);                                                    \
         if (!bad) cint_w_shr_raw(r.limb, a->limb, (unsigned)k.bits, (N), (S));                             \
         if (cint_rt_faulted(ctx)) return false;                                                            \
@@ -965,6 +1661,7 @@ static inline const uint64_t *cint_w_count_at(const cint_count *k)
                                      cint_w_count_at(&k), NULL);                                           \
             return false;                                                                                  \
         }                                                                                                  \
+        CINT_W_OUT((TAG), r.limb);                                                                         \
         *out = r;                                                                                          \
         return true;                                                                                       \
     }                                                                                                      \
@@ -986,14 +1683,17 @@ static inline const uint64_t *cint_w_count_at(const cint_count *k)
                                     cint_##T *out)                                                                      \
     {                                                                                                                   \
         cint_##T q = {{0u}}, r;                                                                                         \
+        CINT_W_IN((TAG), a->limb, b->limb, NULL);                                                                       \
         bool bad = cint_w_is_zero(b->limb, (N)) ||                                                                      \
                    cint_w_div_overflows(a->limb, b->limb, (N), (S));                                                    \
         if (!bad) cint_w_divide(q.limb, r.limb, a->limb, b->limb, (N), 0u, (S));                                        \
         if (cint_rt_faulted(ctx)) return false;                                                                         \
         if (bad) {                                                                                                      \
-            (void)cint_rt_wide_fault(ctx, site, CINT_RT_OP_DIV, (TAG), 0u, 0u, a->limb, b->limb, NULL);                 \
+            cint_##T fa = *a, fb = *b; /* copies: see CINT_W_BODY */                                                    \
+            (void)cint_rt_wide_fault(ctx, site, CINT_RT_OP_DIV, (TAG), 0u, 0u, fa.limb, fb.limb, NULL);                 \
             return false;                                                                                               \
         }                                                                                                               \
+        CINT_W_OUT((TAG), q.limb);                                                                                      \
         *out = q;                                                                                                       \
         return true;                                                                                                    \
     }                                                                                                                   \
@@ -1001,13 +1701,16 @@ static inline const uint64_t *cint_w_count_at(const cint_count *k)
                                     cint_##T *out)                                                                      \
     {                                                                                                                   \
         cint_##T q, r = {{0u}};                                                                                         \
+        CINT_W_IN((TAG), a->limb, b->limb, NULL);                                                                       \
         bool bad = cint_w_is_zero(b->limb, (N));                                                                        \
         if (!bad) cint_w_divide(q.limb, r.limb, a->limb, b->limb, (N), 0u, (S));                                        \
         if (cint_rt_faulted(ctx)) return false;                                                                         \
         if (bad) {                                                                                                      \
-            (void)cint_rt_wide_fault(ctx, site, CINT_RT_OP_REM, (TAG), 0u, 0u, a->limb, b->limb, NULL);                 \
+            cint_##T fa = *a, fb = *b; /* copies: see CINT_W_BODY */                                                    \
+            (void)cint_rt_wide_fault(ctx, site, CINT_RT_OP_REM, (TAG), 0u, 0u, fa.limb, fb.limb, NULL);                 \
             return false;                                                                                               \
         }                                                                                                               \
+        CINT_W_OUT((TAG), r.limb);                                                                                      \
         *out = r;                                                                                                       \
         return true;                                                                                                    \
     }                                                                                                                   \
@@ -1034,21 +1737,29 @@ static inline const uint64_t *cint_w_count_at(const cint_count *k)
     {                                                                                                                   \
         cint_##T r = {{0u}}, s = {{0u}};                                                                                \
         bool ok = false;                                                                                                \
-        if (op == 10u) {                                                                                                \
+        CINT_W_IN((TAG), a->limb, b != NULL ? b->limb : NULL, c != NULL ? c->limb : NULL);                              \
+        /* Emitted code passes NULL only for an operand the operation does not take. Testing b and c                    \
+         * before reading them keeps gcc from reading through a NULL that it propagates into a clone                    \
+         * of this function (rt/OPEN.md RT-OQ-60); a call missing one is refused by the fault path. */                  \
+        if (op == 10u && b != NULL) {                                                                                   \
             /* cint_w_div_round reads both operands before it writes out, and not on a fault. */                        \
             if (cint_rt_faulted(ctx)) return false;                                                                     \
-            if (cint_w_div_round(out->limb, a->limb, b->limb, (N), mode, (S))) return true;                             \
-            (void)cint_rt_wide_fault(ctx, site, CINT_W_BUILTIN + op, (TAG), mode, 0u, a->limb, b->limb,                 \
+            if (cint_w_div_round(out->limb, a->limb, b->limb, (N), mode, (S))) {                                        \
+                CINT_W_OUT((TAG), out->limb);                                                                           \
+                return true;                                                                                            \
+            }                                                                                                           \
+            cint_##T fa = *a, fb = *b; /* copies: see CINT_W_BODY */                                                    \
+            (void)cint_rt_wide_fault(ctx, site, CINT_W_BUILTIN + op, (TAG), mode, 0u, fa.limb, fb.limb,                 \
                                      NULL);                                                                             \
             return false;                                                                                               \
         }                                                                                                               \
         if (op == 1u) {                                                                                                 \
             ok = !(S) || !cint_w_is_min(a->limb, (N));                                                                  \
             (void)cint_w_magnitude(r.limb, a->limb, (N), (S));                                                          \
-        } else if (op == 5u) {                                                                                          \
+        } else if (op == 5u && b != NULL && c != NULL) {                                                                \
             ok = cint_w_cmp(b->limb, c->limb, (N), (S)) <= 0;                                                           \
             r = cint_w_cmp(a->limb, b->limb, (N), (S)) < 0 ? *b : cint_w_cmp(a->limb, c->limb, (N), (S)) > 0 ? *c : *a; \
-        } else if (op >= 6u && op <= 9u) {                                                                              \
+        } else if (op >= 6u && op <= 9u && b != NULL) {                                                                 \
             bool rem = op == 7u || op == 9u;                                                                            \
             ok = !cint_w_is_zero(b->limb, (N)) &&                                                                       \
                  (rem || !cint_w_div_overflows(a->limb, b->limb, (N), (S)));                                            \
@@ -1079,17 +1790,23 @@ static inline const uint64_t *cint_w_count_at(const cint_count *k)
         }                                                                                                               \
         if (cint_rt_faulted(ctx)) return false;                                                                         \
         if (!ok) {                                                                                                      \
-            (void)cint_rt_wide_fault(ctx, site, CINT_W_BUILTIN + op, (TAG), mode, 0u, a->limb,                          \
-                                     b != NULL ? b->limb : NULL, c != NULL ? c->limb : NULL);                           \
+            cint_##T fa = *a, fb = b != NULL ? *b : *a, fc = c != NULL ? *c : *a; /* see CINT_W_BODY */                 \
+            (void)cint_rt_wide_fault(ctx, site, CINT_W_BUILTIN + op, (TAG), mode, 0u, fa.limb,                          \
+                                     b != NULL ? fb.limb : NULL, c != NULL ? fc.limb : NULL);                           \
             return false;                                                                                               \
         }                                                                                                               \
+        CINT_W_OUT((TAG), r.limb);                                                                                      \
         *out = r;                                                                                                       \
         return true;                                                                                                    \
     }                                                                                                                   \
     static inline bool cint_muldiv_##T(cint_ctx *ctx, cint_site site, uint32_t rtag, uint32_t mode,                     \
                                        const cint_##T *a, const cint_##T *b, const cint_##T *c, void *out)              \
     {                                                                                                                   \
-        return cint_rt_wide_muldiv(ctx, site, (TAG), rtag, mode, a->limb, b->limb, c->limb, out);                       \
+        bool ok;                                                                                                        \
+        CINT_W_IN((TAG), a->limb, b->limb, c->limb);                                                                    \
+        ok = cint_rt_wide_muldiv(ctx, site, (TAG), rtag, mode, a->limb, b->limb, c->limb, out);                         \
+        if (ok) CINT_W_OUT(rtag, (const uint64_t *)out);                                                                \
+        return ok;                                                                                                      \
     }
 
 /* Wide to wide conversions (an extension, or a checked narrowing). */
@@ -1098,13 +1815,16 @@ static inline const uint64_t *cint_w_count_at(const cint_count *k)
                                                 cint_##D *out)                                       \
     {                                                                                                \
         cint_##D r;                                                                                  \
+        CINT_W_IN((STAG), x->limb, NULL, NULL);                                                      \
         bool fits = cint_w_fits_into(x->limb, (NS), (SS), (ND), (DS));                               \
         cint_w_resize(r.limb, (ND), x->limb, (NS), (SS));                                            \
         if (cint_rt_faulted(ctx)) return false;                                                      \
         if (!fits) {                                                                                 \
-            (void)cint_rt_wide_fault(ctx, site, CINT_W_AS, (STAG), 0u, (DTAG), x->limb, NULL, NULL); \
+            cint_##SRC fx = *x; /* a copy: see CINT_W_BODY */                                        \
+            (void)cint_rt_wide_fault(ctx, site, CINT_W_AS, (STAG), 0u, (DTAG), fx.limb, NULL, NULL); \
             return false;                                                                            \
         }                                                                                            \
+        CINT_W_OUT((DTAG), r.limb);                                                                  \
         *out = r;                                                                                    \
         return true;                                                                                 \
     }                                                                                                \
@@ -1135,12 +1855,14 @@ static inline const uint64_t *cint_w_count_at(const cint_count *k)
     {                                                                                               \
         uint64_t bits = CINT_RT_BITS_##SK(x);                                                       \
         bool bad = !(DS) && CINT_RT_SIGNED_##SK && (bits >> 63) != 0u;                              \
+        CINT_W_IN((DTAG), NULL, NULL, NULL);                                                        \
         if (cint_rt_faulted(ctx)) return false;                                                     \
         if (bad) {                                                                                  \
             (void)cint_rt_wide_fault(ctx, site, CINT_W_AS, (STAG), 0u, (DTAG), &bits, NULL, NULL);  \
             return false;                                                                           \
         }                                                                                           \
         cint_w_from_narrow(out->limb, (ND), (STAG), bits);                                          \
+        CINT_W_OUT((DTAG), out->limb);                                                              \
         return true;                                                                                \
     }                                                                                               \
     static inline void cint_as_wrap_##D##_from_##SRC(CS x, cint_##D *out)                           \
@@ -1157,9 +1879,11 @@ static inline const uint64_t *cint_w_count_at(const cint_count *k)
     static inline bool cint_as_##D##_from_##SRC(cint_ctx *ctx, cint_site site, const cint_##SRC *x, CD *out) \
     {                                                                                                        \
         bool fits = cint_w_fits_narrow(x->limb, (NS), (SS), (DTAG));                                         \
+        CINT_W_IN((STAG), x->limb, NULL, NULL);                                                              \
         if (cint_rt_faulted(ctx)) return false;                                                              \
         if (!fits) {                                                                                         \
-            (void)cint_rt_wide_fault(ctx, site, CINT_W_AS, (STAG), 0u, (DTAG), x->limb, NULL, NULL);         \
+            cint_##SRC fx = *x; /* a copy: see CINT_W_BODY */                                                \
+            (void)cint_rt_wide_fault(ctx, site, CINT_W_AS, (STAG), 0u, (DTAG), fx.limb, NULL, NULL);         \
             return false;                                                                                    \
         }                                                                                                    \
         *out = (CD)CINT_RT_NARROW_##DK(x->limb[0], (DW));                                                    \
@@ -1211,6 +1935,7 @@ static inline const uint64_t *cint_w_count_at(const cint_count *k)
                                      cint_##T *out)                                                           \
     {                                                                                                         \
         cint_##T r = {{0u}};                                                                                  \
+        CINT_W_IN((TAG), a->limb, NULL, NULL);                                                                \
         bool bad = k.bits > (uint64_t)(64u * (N) - 1u);                                                       \
         if (!bad) cint_w_rotl(r.limb, a->limb, (unsigned)k.bits, (N));                                        \
         if (cint_rt_faulted(ctx)) return false;                                                               \
@@ -1218,6 +1943,7 @@ static inline const uint64_t *cint_w_count_at(const cint_count *k)
             return cint_rt_wide_fault(ctx, site, CINT_W_ROTL, (TAG), 0u, k.tag, a->limb, cint_w_count_at(&k), \
                                       NULL);                                                                  \
         }                                                                                                     \
+        CINT_W_OUT((TAG), r.limb);                                                                            \
         *out = r;                                                                                             \
         return true;                                                                                          \
     }                                                                                                         \
@@ -1225,6 +1951,7 @@ static inline const uint64_t *cint_w_count_at(const cint_count *k)
                                      cint_##T *out)                                                           \
     {                                                                                                         \
         cint_##T r = {{0u}};                                                                                  \
+        CINT_W_IN((TAG), a->limb, NULL, NULL);                                                                \
         bool bad = k.bits > (uint64_t)(64u * (N) - 1u);                                                       \
         if (!bad) cint_w_rotl(r.limb, a->limb, (unsigned)((64u * (N) - k.bits) % (64u * (N))), (N));          \
         if (cint_rt_faulted(ctx)) return false;                                                               \
@@ -1232,6 +1959,7 @@ static inline const uint64_t *cint_w_count_at(const cint_count *k)
             return cint_rt_wide_fault(ctx, site, CINT_W_ROTR, (TAG), 0u, k.tag, a->limb, cint_w_count_at(&k), \
                                       NULL);                                                                  \
         }                                                                                                     \
+        CINT_W_OUT((TAG), r.limb);                                                                            \
         *out = r;                                                                                             \
         return true;                                                                                          \
     }

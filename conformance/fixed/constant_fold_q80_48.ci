@@ -1,0 +1,14 @@
+// case: fixed/constant_fold_q80_48
+// clause: SPEC-01 IM-23, IM-61; SPEC-04 LS-37 (a Q80.48 constant expression is evaluated in fixed-point arithmetic at compile time)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 144359290658602464; prints `9460730472602171124385.71428571428571530077533680014312267303466796875 2662958889441489649521930465885739886` (AU / 7.0 rounds once, half_even, at compile time); fuel 1. Games wave G2a (OQ-292)
+
+const Q80.48 AU = 149597870700.0;
+const Q80.48 LY = 9460730472580800.0;
+const Q80.48 FAR = LY * 1000000.0 + AU / 7.0;
+
+export I64 run() {
+    "{FAR} {FAR!raw}\n";
+    return (FAR.raw >> 64) as I64;
+}

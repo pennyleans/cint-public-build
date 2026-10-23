@@ -1,0 +1,7 @@
+case services/denied_catch
+clause SPEC-04 LS-323 to LS-328; SPEC-07 SEC-CAP-1, SEC-CAP-13, SEC-OS-1, SEC-OS-12; SPEC-03 A-10, H-8a
+source reference
+outcome value
+stdout-bytes 0
+return I64 7
+fuel-consumed 3

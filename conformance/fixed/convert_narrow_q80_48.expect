@@ -1,0 +1,17 @@
+case fixed/convert_narrow_q80_48
+clause SPEC-01 IM-68, IM-106 (2^31 in Q80.48 converted to Q32.32 is out of range: E_NARROW, exact the raw value 2^63)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_NARROW
+fault.operation as.checked.q80_48.q32_32.half_even
+fault.operand Q80.48 raw 604462909807314587353088
+fault.exact 9223372036854775808
+fault.limit Q32.32 raw 9223372036854775807
+fault.position fixed/convert_narrow_q80_48.ci:9:15
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

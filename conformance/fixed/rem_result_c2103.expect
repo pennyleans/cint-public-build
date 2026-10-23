@@ -1,0 +1,7 @@
+case fixed/rem_result_c2103
+clause SPEC-01 IM-188; SPEC-04 LS-145 (`rem_result` and `shl_result` take integers only, so `rem_result` of fixed point is C2103; OQ-278 A)
+format 5
+source compile-error
+outcome compile-error
+diagnostic.code C2103
+diagnostic.position fixed/rem_result_c2103.ci:10:16

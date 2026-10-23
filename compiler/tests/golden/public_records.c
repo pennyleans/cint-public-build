@@ -485,3 +485,5 @@ static const cint_name cg_17_public_x5Frecords_rnames[5] = {
 };
 
 CINT_RT_INTERNAL const cint_module_table cg_17_public_x5Frecords_table = {&cm_17_public_x5Frecords, 2u, 4u, cg_17_public_x5Frecords_exports, cg_17_public_x5Frecords_rnames};
+
+CINT_RT_INTERNAL const cint_host_table cg_17_public_x5Frecords_host = {0u, 0u, NULL};

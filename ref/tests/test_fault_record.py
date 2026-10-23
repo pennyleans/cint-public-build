@@ -8,7 +8,10 @@ the record kind: with the compile-time kind, the 376-byte operand is accepted,
 an operand of 514 bytes is rejected, the 520-byte OQ-147 `exact` is accepted and
 an `exact` of 521 bytes is rejected; with the run-time kind, 258 bytes in either
 field and the same 520-byte `exact` are rejected. No slice 2 program produces a
-520-byte value, so its bytes are synthesized."""
+520-byte value, so its bytes are synthesized. Since the decision of 2026-10-15 on
+OQ-292 (128-bit fixed-point storage, SPEC-01I.14 IM-108 item 3) the compile-time
+`exact` bound is 528 bytes, the scaled raw value (2^4096 - 1) * 2^127 for `Q1.127`:
+an `exact` of 521 to 528 bytes is accepted and one of 529 bytes is rejected."""
 import unittest
 
 from cint_ref import expect
@@ -58,8 +61,11 @@ def narrow_record(operand: bytes, exact: bytes) -> bytes:
 Z_2P3000 = z_field(376, bytes(375) + b"\x01")
 # D-17: the OQ-147 maximum (2^4096 - 1) * 2^63: `0f 08 02 00 00`, 7 bytes 00, 80, 511 bytes ff, 7f.
 Z_EXACT_520 = z_field(520, bytes(7) + b"\x80" + b"\xff" * 511 + b"\x7f")
+# OQ-292: the maximum (2^4096 - 1) * 2^127 for Q1.127: 15 bytes 00, 80, 511 bytes ff, 7f (528 bytes).
+Z_EXACT_528 = z_field(528, bytes(15) + b"\x80" + b"\xff" * 511 + b"\x7f")
 Z_514 = z_field(514, bytes(513) + b"\x01")        # minimal, 8 * 513 + 1 magnitude bits
 Z_521 = z_field(521, bytes(520) + b"\x01")
+Z_529 = z_field(529, bytes(528) + b"\x01")
 Z_258 = z_field(258, bytes(257) + b"\x01")
 Z_SMALL = z_field(1, b"\x05")
 
@@ -114,9 +120,20 @@ class RecordKindBounds(unittest.TestCase):
         self.assertEqual(z_bytes(-(((1 << 4096) - 1) << 63))[-2:], b"\x00\x80")
         self.assertEqual(len(z_bytes(-(((1 << 4096) - 1) << 63))), 520)
 
-    def test_compile_time_rejects_an_exact_of_521_bytes(self):
-        with self.assertRaisesRegex(ValueError, "521 bytes exceeds the bound 520"):
-            decode_fault_record(narrow_record(Z_SMALL, Z_521), COMPILE_TIME)
+    def test_compile_time_accepts_the_528_byte_exact(self):
+        # OQ-292: Q1.127 raises the largest compile-time exact to (2^4096 - 1) * 2^127.
+        _, rec = decode_fault_record(narrow_record(Z_SMALL, Z_EXACT_528), COMPILE_TIME)
+        self.assertEqual(rec.exact, ((1 << 4096) - 1) << 127)
+        _, rec = decode_fault_record(narrow_record(Z_SMALL, Z_521), COMPILE_TIME)
+        self.assertEqual(rec.exact, 1 << 4160)
+
+    def test_the_negative_528_byte_exact_ends_00_80(self):
+        self.assertEqual(z_bytes(-(((1 << 4096) - 1) << 127))[-2:], b"\x00\x80")
+        self.assertEqual(len(z_bytes(-(((1 << 4096) - 1) << 127))), 528)
+
+    def test_compile_time_rejects_an_exact_of_529_bytes(self):
+        with self.assertRaisesRegex(ValueError, "529 bytes exceeds the bound 528"):
+            decode_fault_record(narrow_record(Z_SMALL, Z_529), COMPILE_TIME)
 
     def test_compile_time_operand_bound_is_not_the_exact_bound(self):
         # A single 520-byte bound is not used (IM-108): 514 to 520 bytes is never an operand.
@@ -185,7 +202,9 @@ class DecoderObligations(unittest.TestCase):
 
     def test_invalid_bool_and_q_descriptors(self):
         self.reject(narrow_record(b"\x01\x02", Z_SMALL), COMPILE_TIME)
-        self.reject(narrow_record(b"\x31\x15\x00\x00" + bytes(16), Z_SMALL), COMPILE_TIME)  # storage I128
+        decode_fault_record(narrow_record(b"\x31\x15\x30\x00" + bytes(16), Z_SMALL), COMPILE_TIME)  # Q80.48, OQ-292
+        self.reject(narrow_record(b"\x31\x15\x80\x00" + bytes(16), Z_SMALL), COMPILE_TIME)  # f 128 in I128
+        self.reject(narrow_record(b"\x31\x16\x00\x00" + bytes(32), Z_SMALL), COMPILE_TIME)  # storage I256
         self.reject(narrow_record(b"\x31\x11\x08\x00\x00", Z_SMALL), COMPILE_TIME)         # f 8 in I8
         decode_fault_record(narrow_record(b"\x31\x11\x07\x00\x00", Z_SMALL), COMPILE_TIME)  # f 7 is fine
 

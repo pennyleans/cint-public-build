@@ -1,0 +1,13 @@
+// case: services/c3042_grants_local
+// clause: SPEC-04 LS-323 to LS-328; SPEC-04 LS-326
+// subset: cint-core-1 (`Grants` as the type of a local)
+// entry: run; args: none
+// spec outcome: compile error C3042 at 11:5, `Grants h`: `Grants` is a parameter type only
+
+import fs;
+requires fs.read("/data");
+
+export I64 run(Grants g) {
+    Grants h = g;
+    return fs.stat(h, "/data/a") catch -1;
+}

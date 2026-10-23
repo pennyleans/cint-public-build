@@ -1,0 +1,14 @@
+// case: fixed/sqrt_table_q64_64
+// clause: SPEC-01 IM-67 (sqrt in Q64.64 with a 256-bit intermediate; for i >= 2 the root is always in range)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 0; prints `26087635650665564424 26087635650665564425 13043817825332782212 13043817825332782212` and `56022770974786139918731938227 56022770974786139918731938228 56022770974786139918731938228 1.4142135623730950487637880730318329369765706360340118408203125`; fuel 1. Games wave G2a (OQ-292)
+
+export I64 run() {
+    Q64.64 two = 2.0;
+    Q64.64 half = 0.5;
+    Q64.64 top = Q64.64.max;
+    "{sqrt(two, floor)!raw} {sqrt(two)!raw} {sqrt(half, floor)!raw} {sqrt(half)!raw}\n";
+    "{sqrt(top, floor)!raw} {sqrt(top, ceil)!raw} {sqrt(top, away)!raw} {sqrt(two, floor)}\n";
+    return 0;
+}

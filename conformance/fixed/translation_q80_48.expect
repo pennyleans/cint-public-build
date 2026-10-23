@@ -1,0 +1,9 @@
+case fixed/translation_q80_48
+clause SPEC-01 IM-54, IM-60, IM-61, IM-67, IM-68 (one encounter at the origin and 1,000,000 light-years out: Q80.48 positions in meters, local physics in Q32.32 on the exact difference, one digest)
+format 5
+source reference
+outcome value
+stdout-bytes 40
+stdout-sha256 75d0a8723c972fd52d4e4e8a149791b2f5ca64097b38c1379f40931279e8a4fd
+return Bool true
+fuel-consumed 8195

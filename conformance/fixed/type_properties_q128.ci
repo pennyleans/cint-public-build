@@ -1,0 +1,14 @@
+// case: fixed/type_properties_q128
+// clause: SPEC-04 LS-51; SPEC-01 IM-54 (min, max and epsilon of 128-bit fixed-point types; OQ-292)
+// subset: cint-core-1 (fixed point)
+// entry: run; args: none
+// spec outcome: value I64 1; prints the min, max and epsilon of Q64.64 (max as raw 2^127 - 1), Q80.48, Q96.32 (epsilon as raw 1), Q1.127 and Q128.0 on five lines, each value exact (Q1.127.epsilon, 2^-127, has 127 fractional digits); fuel 1. Games wave G2a (OQ-292)
+
+export I64 run() {
+    "{Q64.64.min} {Q64.64.max!raw} {Q64.64.epsilon}\n";
+    "{Q80.48.min} {Q80.48.max}\n";
+    "{Q96.32.max} {Q96.32.epsilon!raw}\n";
+    "{Q1.127.min} {Q1.127.max!raw} {Q1.127.epsilon}\n";
+    "{Q128.0.min} {Q128.0.max}\n";
+    return Q80.48.epsilon.raw as I64;
+}

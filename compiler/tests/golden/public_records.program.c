@@ -28,3 +28,8 @@ CINT_RT_EXPORT const cint_observer cint_observer_desc = {1u, 0u, &cg_program, cg
 CINT_RT_EXPORT const uint32_t cint_program_abi = CINT_ABI_VERSION;
 static const cint_module_table *const cg_tables[3] = {&cg_13_record_x5Flib_table, &cg_13_record_x5Fmid_table, &cg_17_public_x5Frecords_table};
 CINT_RT_EXPORT const cint_library cint_library_desc = {CINT_ABI_VERSION, 3u, cg_tables};
+CINT_RT_INTERNAL extern const cint_host_table cg_13_record_x5Flib_host;
+CINT_RT_INTERNAL extern const cint_host_table cg_13_record_x5Fmid_host;
+CINT_RT_INTERNAL extern const cint_host_table cg_17_public_x5Frecords_host;
+static const cint_host_table *const cg_host[3] = {&cg_13_record_x5Flib_host, &cg_13_record_x5Fmid_host, &cg_17_public_x5Frecords_host};
+CINT_RT_EXPORT const cint_host_desc cint_imports_desc = {3u, 0u, cg_host};

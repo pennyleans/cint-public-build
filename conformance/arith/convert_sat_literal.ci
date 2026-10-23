@@ -1,0 +1,23 @@
+// case: arith/convert_sat_literal
+// clause: SPEC-01 IM-26, IM-50; SPEC-04 LS-54, LS-133 (`as|` of a literal or a constant converts from its value in Z, at compile time, and never faults; OQ-272 A)
+// subset: cint-core-1 (saturating conversion, print statements)
+// entry: run; args: none
+// spec outcome: value I64 126; prints `127 0 18446744073709551615 -9223372036854775808` and `127 -128 0 65535 2147483647 99`, each with a line feed (2^65 saturates to U64.max, -2^65 to I64.min); fuel 1. Box 15, OQ-280 group 1
+
+const I64 A = 1000;
+const I8 K1 = A as| I8;
+const U8 K2 = (0 - A) as| U8;
+const U64 K3 = 36893488147419103232 as| U64;
+const I64 K4 = -36893488147419103232 as| I64;
+
+export I64 run() {
+    I8 a = 300 as| I8;
+    I8 b = -300 as| I8;
+    U8 c = -5 as| U8;
+    U16 d = 65535 as| U16;
+    I32 e = 4294967296 as| I32;
+    U32 f = 99 as| U32;
+    "{K1} {K2} {K3} {K4}\n";
+    "{a} {b} {c} {d} {e} {f}\n";
+    return K1 as I64 + a as I64 + b as I64;
+}

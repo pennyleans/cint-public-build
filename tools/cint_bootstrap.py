@@ -1,4 +1,5 @@
-"""Builds B0, seed-generated S1, B1 and cint at O0 with portable helpers.
+"""Builds B0, seed-generated S1 and B1 at O0 with portable helpers, and cint from the same S1 at O2
+with the builtin helpers.
 
     python tools/cint_bootstrap.py --leg msvc|gcc|clang [--out DIR]
 
@@ -14,12 +15,23 @@ The receipt covers this bootstrap only, through B1.
 Two toolchain files go beside cint. cint.toolchain, which cint run, cint build, cint build
 --lib and the Python loader read by default, is the release toolchain (decision 2026-10-08 on
 OQ-236): user programs and their runtime objects at -O2 (/O2) with the builtin helpers.
-cint-bootstrap.toolchain is the configuration B1 and cint were built with, -O0 (/Od) with the
-portable helpers, which `--toolchain` selects.
+cint-bootstrap.toolchain is the configuration B1 was built with, -O0 (/Od) with the portable
+helpers, which `--toolchain` selects.
+
+The repository's lib/ modules (the standard service modules, SPEC-07 SEC-CAP-13) go to lib/
+beside cint, its default standard library root (SPEC-09 RCPT-07; `--stdlib DIR` names another).
+
+cint itself is built with the release toolchain's flags (decision 2026-10-19 on OQ-298): S1,
+the runtime, the bridge, rt/cint_build.c and the CLI at -O2 (/O2) with the builtin helpers, so
+the compiler a program is built with runs at the speed of the programs it builds. The C it
+emits is the same: the fixpoint receipts give one identity for B1 at -O0 and at -O2 with either
+helper mode on every leg (FIX-04). The release compile of S1 runs beside B1's.
 """
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
+import copy
 import hashlib
 import os
 import pathlib
@@ -30,6 +42,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -63,7 +76,8 @@ def snapshot_inputs(root: pathlib.Path, dest: pathlib.Path) -> dict:
     for group, directory, suffixes in (("compiler", "compiler", (".ci",)),
                                        ("seed", "seed", (".c", ".h")),
                                        ("runtime", "rt", (".c", ".h")),
-                                       ("cli", "cli", (".c", ".h"))):
+                                       ("cli", "cli", (".c", ".h")),
+                                       ("lib", "lib", (".ci",))):
         files = {}
         source_dir = root / directory
         if source_dir.is_symlink():
@@ -194,17 +208,26 @@ class LoggedToolchain(cc.Toolchain):
     """Keeps compiler invocations and their streams beside each build."""
     def __init__(self, leg: str, logs: pathlib.Path):
         super().__init__(leg, "0", "portable", False)
-        self.logs, self.commands = logs, []
+        self.logs, self.commands, self.lock = logs, [], threading.Lock()
         logs.mkdir()
+
+    def with_flags(self, flags: list[str]) -> "LoggedToolchain":
+        """A toolchain of these flags that logs into this one's commands, for a compile that runs
+        beside this one's."""
+        other = copy.copy(self)
+        other.flags = flags
+        return other
 
     def run(self, cmd, cwd, what):
         cmd = [str(c) for c in cmd]
+        with self.lock:
+            index = len(self.commands)
+            self.commands.append(None)
         r = subprocess.run(cmd, cwd=cwd, env=self.env, capture_output=True)
-        index = len(self.commands)
         log = self.logs / ("%03d.log" % index)
         log.write_bytes(r.stdout + r.stderr)
-        self.commands.append({"argv": cmd, "exit_status": r.returncode,
-                              "log": log.name, "purpose": what})
+        self.commands[index] = {"argv": cmd, "exit_status": r.returncode,
+                                "log": log.name, "purpose": what}
         noise = r.stderr.strip() if self.leg != "msvc" else re.search(rb"\bwarning\s*(?:[A-Z]+\d+\s*)?:", r.stdout + r.stderr)
         if r.returncode != 0 or noise:
             raise cc.BuildError("%s: exit %d; log %s\n%s" %
@@ -228,9 +251,9 @@ def bootstrap(leg: str, out: pathlib.Path) -> pathlib.Path:
     tc = LoggedToolchain(leg, work / "logs")
     # Toolchain.compile uses this include root; every header is a retained input.
     cc.RT = inputs / "rt"
-    rt_dir, rt_lib_dir, rel_dir, rel_lib_dir, b0_dir, s1_dir, b1_dir, cli_dir = [
-        work / p for p in ("rt", "rt-lib", "rt-release", "rt-release-lib", "b0", "s1", "b1", "cli")]
-    for directory in (rt_dir, rt_lib_dir, rel_dir, rel_lib_dir, b0_dir, s1_dir, b1_dir, cli_dir):
+    rt_dir, rt_lib_dir, rel_dir, rel_lib_dir, b0_dir, s1_dir, s1_rel_dir, b1_dir, cli_dir = [
+        work / p for p in ("rt", "rt-lib", "rt-release", "rt-release-lib", "b0", "s1", "s1-release", "b1", "cli")]
+    for directory in (rt_dir, rt_lib_dir, rel_dir, rel_lib_dir, b0_dir, s1_dir, s1_rel_dir, b1_dir, cli_dir):
         directory.mkdir()
     times = {}
     t0 = time.monotonic_ns()
@@ -267,21 +290,26 @@ def bootstrap(leg: str, out: pathlib.Path) -> pathlib.Path:
     times["s1"] = (time.monotonic_ns() - t0) // 1000000
     print("s1: emitted", flush=True)
     t0 = time.monotonic_ns()
-    s1_obj = tc.compile([s1], s1_dir, "B1 compiler")[0]
-    host_obj = tc.compile([inputs / "compiler/tests/golden_host.c"], b1_dir, "B1 host")[0]
-    compiler_objs = [s1_obj, rt_obj, bridge_obj, build_obj]
-    b1 = tc.link_exe([host_obj] + compiler_objs, b1_dir / "cintc", "B1")
-    times["b1"] = (time.monotonic_ns() - t0) // 1000000
-    print("b1: built", flush=True)
-    t0 = time.monotonic_ns()
-    proc = "cint_proc_win.c" if leg == "msvc" else "cint_proc_posix.c"
-    tc.flags = cli_compile_flags(program_flags, leg, sha256(manifests["compiler"].read_bytes()))
-    try:
-        cli_objs = tc.compile([inputs / "cli/cint_main.c", inputs / "cli/cint_receipt.c", inputs / "cli" / proc],
-                              cli_dir, "cint CLI")
-    finally:
-        tc.flags = program_flags
-    cint = tc.link_exe(cli_objs + compiler_objs, cli_dir / "cint", "cint CLI")
+    rel_tc = tc.with_flags(rel_flags)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        # cint's compiler at the release flags (OQ-298), compiled while B1's is.
+        s1_rel = pool.submit(rel_tc.compile, [s1], s1_rel_dir, "cint compiler")
+        s1_obj = tc.compile([s1], s1_dir, "B1 compiler")[0]
+        host_obj = tc.compile([inputs / "compiler/tests/golden_host.c"], b1_dir, "B1 host")[0]
+        compiler_objs = [s1_obj, rt_obj, bridge_obj, build_obj]
+        b1 = tc.link_exe([host_obj] + compiler_objs, b1_dir / "cintc", "B1")
+        times["b1"] = (time.monotonic_ns() - t0) // 1000000
+        print("b1: built", flush=True)
+        t0 = time.monotonic_ns()
+        rel_bridge_obj, rel_build_obj = rel_tc.compile(
+            [inputs / "rt" / n for n in ("cint_bridge.c", "cint_build.c")], rel_dir, "cint runtime")
+        proc = "cint_proc_win.c" if leg == "msvc" else "cint_proc_posix.c"
+        cli_tc = tc.with_flags(cli_compile_flags(rel_flags, leg, sha256(manifests["compiler"].read_bytes())))
+        cli_objs = cli_tc.compile([inputs / "cli/cint_main.c", inputs / "cli/cint_receipt.c", inputs / "cli/cint_discover.c",
+                                   inputs / "cli" / proc],
+                                  cli_dir, "cint CLI")
+        s1_rel_obj = s1_rel.result()[0]
+    cint = tc.link_exe(cli_objs + [s1_rel_obj, rel_obj, rel_bridge_obj, rel_build_obj], cli_dir / "cint", "cint CLI")
     times["cli"] = (time.monotonic_ns() - t0) // 1000000
     paths = list(manifests.values()) + [s1_manifest, s1, cint] + rt_sources
     digest_result = tc.run([b1, "--digest", *paths], work, "B1 digest verification")
@@ -307,7 +335,7 @@ def bootstrap(leg: str, out: pathlib.Path) -> pathlib.Path:
     outcome = {"source_digest_verification": "pass"}
     observed = {"c0": tc.describe(), "commands": tc.commands,
                 "host": {"arch": platform.machine(), "os": cc.host_os()},
-                "build_inputs": {g: source_files(g) for g in ("cli", "host", "seed")},
+                "build_inputs": {g: source_files(g) for g in ("cli", "host", "lib", "seed")},
                 "b0_sha256": sha256(b0.read_bytes()), "b1_sha256": sha256(b1.read_bytes()),
                 "cint_sha256": sha256(cint.read_bytes()), "s1_tree_sha256": sha256(s1_manifest.read_bytes()),
                 "s1_files": [{"path": "main.c", "bytes": s1.stat().st_size, "sha256": sha256(s1.read_bytes())}],
@@ -332,6 +360,17 @@ def bootstrap(leg: str, out: pathlib.Path) -> pathlib.Path:
     receipt_pending = out / ("bootstrap.json.new-" + work.name)
     receipt_pending.write_bytes(receipt_path.read_bytes())
     receipt_pending.replace(out / "bootstrap.json")
+    # The standard library root beside cint (SPEC-07 SEC-CAP-13, ruling OQ-303): the snapshot of
+    # the repository's lib/ modules, which cint reads for an import of one segment that the source
+    # root does not answer (SPEC-09 RCPT-07). A new directory replaces the old one whole.
+    lib_pending, lib_old = out / ("lib.new-" + work.name), out / ("lib.old-" + work.name)
+    lib_pending.mkdir()
+    for rel, data in groups["lib"].items():
+        (lib_pending / pathlib.PurePosixPath(rel).name).write_bytes(data)
+    if (out / "lib").exists():
+        (out / "lib").replace(lib_old)
+    lib_pending.replace(out / "lib")
+    shutil.rmtree(lib_old, ignore_errors=True)
     print("cint: %s" % executable, flush=True)
     print("receipt: %s" % receipt_path, flush=True)
     return receipt_path

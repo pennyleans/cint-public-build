@@ -1,0 +1,10 @@
+// case: services/main_grants_print
+// clause: SPEC-04 LS-323 to LS-328; SPEC-04 LS-221; SPEC-07 SEC-CAP-1
+// subset: cint-core-1 (`main(Grants g)` without a `requires`, a bare string statement)
+// spec outcome: value void, stdout `hi\n`: a program may take `Grants` in `main` and call no service; the sandbox's console output needs no capability (SPEC-07 8.2)
+
+import console;
+
+export void main(Grants g) {
+    "hi\n";
+}

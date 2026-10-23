@@ -16,8 +16,8 @@ from .faults import Position, error
 
 KEYWORDS = frozenset("""
 as assert break by case catch const continue default defer do else enum error
-expect_fault export fallthrough false for if import in in_place inout kernel out
-over profile reduce return schedule static_assert struct switch test true try
+expect_fault export extern fallthrough false for if import in in_place inout kernel out
+over profile reduce requires return schedule static_assert struct switch test true try
 type var void where while distinct secret
 """.split())
 # `errdefer` is reserved with the box 12 surface (SPEC-04 LS-18, LS-189; decision 2026-10-05,

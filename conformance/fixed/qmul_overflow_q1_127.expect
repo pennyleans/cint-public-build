@@ -1,0 +1,18 @@
+case fixed/qmul_overflow_q1_127
+clause SPEC-01 IM-63, IM-106 (2.0 times 0.5 into Q1.127 is 1.0, one past the largest value: E_OVERFLOW, exact 2^127)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_OVERFLOW
+fault.operation qmul.checked.q80_48.q32_32.q1_127
+fault.operand Q80.48 raw 562949953421312
+fault.operand Q32.32 raw 2147483648
+fault.exact 170141183460469231731687303715884105728
+fault.limit Q1.127 raw 170141183460469231731687303715884105727
+fault.position fixed/qmul_overflow_q1_127.ci:10:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 0

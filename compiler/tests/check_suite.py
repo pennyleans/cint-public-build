@@ -5,7 +5,7 @@ compiler/tests/check_host.c with the C that cint-seed emits for compiler/tests/f
 and runs it over a list of sources in one process per configuration. Each source is one
 case, judged against `cint_ref` (ref/cint_ref: lexer, parser, and check.check_module, the
 same calls `cint_ref run` makes before it executes anything, on the surface of boxes 09
-and 12, arenas and pools included):
+and 12, arenas and pools included, and the fixed point of box 15):
 
   - `cint_ref` gives a diagnostic of the source text, scanner or parser: cintc gives the
     same `.expect` lines (`diagnostic.code`, `diagnostic.position`);
@@ -23,8 +23,8 @@ and 12, arenas and pools included):
     diagnostic of its front end, never a checked module.
 
 The sources are every `.ci` file under conformance/ and compiler/, the written modules,
-grid, constant and prelude-name cases of check_cases.py, and seeded mutants of the written
-modules. A fault inside the compiler (an internal error, CINTC-10) or a sanitizer report
+grid, constant, fixed-point and prelude-name cases of check_cases.py, and seeded mutants of
+the written modules. A fault inside the compiler (an internal error, CINTC-10) or a sanitizer report
 fails the case or the configuration.
 """
 import bisect
@@ -51,14 +51,17 @@ REQUIRES = ["compiler/scan.ci", "compiler/parse.ci", "compiler/fold.ci", "compil
 MUTANTS_PER_FILE = 12
 MUTANT_SEED = 2103
 RECORDS = ("scan_5_Token", "parse_4_Node", "parse_5_Frame", "limits_12_CompilerDiag", "resolve_3_Sem",
-           "resolve_3_Sym", "resolve_4_Name")
+           "resolve_3_Sym", "resolve_4_Name", "limits_4_Decl")
 NOTE_CODES = ("C3004", "C3011", "C6004")
 PRELUDE = ref_check.PRELUDE   # cintc's prelude: boxes 09 and 12
 # The integer built-ins that check.ci's mark_builtin admits (resolve.ci builtin_id): those of
-# box 07 and the result-returning forms of box 12 (`add_result` and the others), which take
-# no type argument and no mode.
+# box 07, the result-returning forms of box 12 (`add_result` and the others), which take no
+# type argument, and of which `mul_result` and `div_result` take a trailing mode on fixed point
+# (OQ-273), and the fixed-point built-ins of box 15 unit 4e, `qmul(R, a, b[, mode])` and
+# `mul_int(a, n)` among them (check.ci given_mode).
 BUILTIN_SIGS = dict(ref_check.BUILTIN_SIGS)
-BUILTIN_SIGS.update({name: ("E", 2, False, False) for name in ref_check.RESULT_BUILTINS})
+BUILTIN_SIGS.update({name: ("E", 2, False, name in ref_check.RESULT_MODES) for name in ref_check.RESULT_BUILTINS})
+BUILTIN_SIGS.update({"qmul": ("R", 3, True, "optional"), "mul_int": ("T", 2, False, False)})
 # The array built-ins of box 09 that check.ci's gate admits (check.ci mark_arrayfn); `min`
 # and `max` are BUILTIN_SIGS'. check.ci h_reshape refuses the `reshape`s of reshape_out.
 ARRAY_FNS = frozenset({"len", "extent", "size", "copy", "fill", "transpose", "reverse", "reshape", "sum",
@@ -88,6 +91,22 @@ MEMORY_REFUSALS = ("a capacity outside a module-level arena or pool declaration"
                    "an arena or pool of ", "an arena or pool in a kernel body", "a dereference with other than one",
                    "an array field of a pool element", "a member call is outside the surface", "` is not a member of ",
                    " variable without an initializer")
+# Box 15 unit 4e: the refusals of `cint_ref` for fixed point where cintc gives C9102 (check.ci
+# h_infer at a type property, a conversion and `qmul`, the reductions, `++` and `--`, and
+# format_rule_q).
+FIXED_REFUSALS = ("a fraction literal as the source of a conversion", "a mode for a `qmul` that does not round",
+                  "a mode for a `dot` that does not round", "`fold_checked(mul, ...)` on fixed point",
+                  "give no rule between an integer and a fixed-point type", "SPEC-02 R-4 keeps one format",
+                  "on a fixed-point place", "the kind `d` on a fixed-point value", "a group on a fixed-point value")
+# The conversions of a hole that check.ci's gate admits (`!raw` and `!bits`); format_ok gives
+# C9102 for either on a value that is not fixed point.
+HOLE_CONVS = (None, "raw", "bits")
+
+
+def is_q_name(name) -> bool:
+    """Whether type name `name` is spelled as a fixed-point type, `Q<i>.<f>` (SPEC-04 LS-36);
+    the checker decides C2005 for one that names none."""
+    return isinstance(name, str) and ref_check.Q_SPELLING.match(name) is not None
 
 
 # ------------------------------------------------------------------------------ the subset
@@ -105,10 +124,13 @@ class Subset:
     a type argument of `muldiv` and a trailing mode written as names are admitted whatever
     they name, and named arguments, which the checker rejects with C2063; box 12: the
     result-returning forms), no import, other built-in, string value but an `in U8` view
-    argument, fraction literal, hole conversion, format width past `I64` (which `cint_ref`
-    refuses), named arguments only to a constructor, and `T.min` and `T.max` of those
-    integer types only. A prelude name the module declares (`declared_names`, check.ci
-    `declared`) is inside: its declaration is C3001 (G-C2 review COR-4).
+    argument, hole conversion but `!raw` and `!bits` (of fixed point: HoleFormat), format
+    width past `I64` (which `cint_ref` refuses), named arguments only to a constructor, and
+    `T.min` and `T.max` of those integer types only. A prelude name the module declares
+    (`declared_names`, check.ci `declared`) is inside: its declaration is C3001 (G-C2 review
+    COR-4). At module level, an array of rank 1 to 4 of a scalar type that is not a constant
+    (box 13 MLA; check.ci shape_ok) is inside, in a script only one of rank 1 without an
+    array literal, and other arrays and structs are not.
 
     Box 12 (check.ci gate and top_union): error sets and combined sets, whatever their
     values' names; `E!T` and `E!void` as a function's result; `.name`, `Set.name`, `as?`,
@@ -118,7 +140,14 @@ class Subset:
 
     Box 12 memory lifetimes (check.ci gate and mem_admit): `Arena(T)`, `Pool(T)` and
     `Handle(T)` at MEM_SITES (mem_ok), `AllocError`, member calls `name.m(...)` and
-    dereferences `name[h]`."""
+    dereferences `name[h]`.
+
+    Box 15 unit 4e and `as|` (check.ci gate): fixed-point types `Q<i>.<f>` wherever an integer
+    type is (is_q_name; the checker decides C2005), fraction literals and their `round`
+    clauses, `as|` and a conversion's `round` clause, `Q<i>.<f>.raw(n)`, every property of a
+    fixed-point type (the checker gives C9102 for one other than `min`, `max` and `epsilon`,
+    which `cint_ref` refuses), and the fixed-point built-ins of BUILTIN_SIGS. Where `cint_ref`
+    refuses fixed point, cintc gives C9102 (FIXED_REFUSALS)."""
 
     def __init__(self, text: str, path: str):
         self.literals = []
@@ -128,6 +157,8 @@ class Subset:
         self.sizes = ()
         self.local_extents = []
         self.nd_extents = []
+        self.late = False
+        self.reshape_big = False
         self.in_function = True
         self.ints = BOOT_INTS
         self.checked = CHECKED_TYPES
@@ -136,6 +167,10 @@ class Subset:
                              if t.kind in ("int", "char", "frac")]
         except CompileError:
             pass
+
+    def scalar(self, name) -> bool:
+        """An integer type of the module's set, Bool, or (box 15 unit 4e) a fixed-point type."""
+        return name in self.checked or is_q_name(name)
 
     def type_ok(self, t, where=None) -> bool:
         if t is None:
@@ -147,7 +182,7 @@ class Subset:
             # Box 09: ranks 2 to 4 with an integer or Bool element, in a parameter or a local
             # variable (check.ci shape_ok), and (BX22-06) a struct field; an extent is `_` or
             # an expression.
-            if len(dims) > 4 or t.module is not None or t.name not in self.checked or where not in (
+            if len(dims) > 4 or t.module is not None or not self.scalar(t.name) or where not in (
                     "local", "view", "param", "field"):
                 return False
             for d in dims:
@@ -164,13 +199,13 @@ class Subset:
                 return True
             if not self.expr(t.shape):
                 return False
-            if t.name in self.checked or t.name in self.structs or (
+            if self.scalar(t.name) or t.name in self.structs or (
                     t.name not in INT_TYPES and t.name not in GATED_TYPES and t.name != "_"):
                 self.local_extents.append((t.shape, where == "local" and self.in_function))
                 return True
         if t.shape is not None or t.module is not None:
             return False
-        if t.name in self.checked:
+        if self.scalar(t.name):
             return True
         if t.name in self.structs:
             return where != "modvar"
@@ -203,8 +238,9 @@ class Subset:
         return None
 
     def lit_ok(self, e) -> bool:
-        """Not a fraction. Balanced-ternary literals are inside the subset (SPEC-04 LS-30)."""
-        return e.kind != "frac"
+        """Every literal: balanced-ternary literals (SPEC-04 LS-30) and (box 15 unit 4e) fraction
+        literals, with or without a `round` clause, are inside the subset."""
+        return True
 
     def expr(self, e, top=False) -> bool:
         """Whether expression e is inside; with `top`, e may be a `try` or a `catch` (check.ci
@@ -234,7 +270,9 @@ class Subset:
                 if x.name in PRELUDE and x.name not in self.declared:
                     return False
             elif isinstance(x, T.TypeProp):
-                if x.type_name not in self.ints or x.prop not in ("min", "max"):
+                if is_q_name(x.type_name):
+                    pass   # the checker decides: C2005, then C9102 past `min`, `max` and `epsilon`
+                elif x.type_name not in self.ints or x.prop not in ("min", "max"):
                     return False
             elif isinstance(x, T.Unary):
                 stack.append(x.operand)
@@ -252,12 +290,20 @@ class Subset:
             elif isinstance(x, T.Field):
                 stack.append(x.obj)
             elif isinstance(x, T.Convert):
-                if x.op not in ("as", "as%", "as?") or not self.type_ok(x.target):
+                if x.op not in ("as", "as%", "as|", "as?") or not self.type_ok(x.target):
                     return False
                 stack.append(x.operand)
             elif isinstance(x, T.Call) and x.qual is None and x.callee in ARRAY_FNS and x.callee not in self.declared:
                 # check.ci mark_arrayfn admits it, its named arguments (C2063) and the
                 # operation name of `fold_checked`; the checker decides them.
+                if x.callee == "reshape":
+                    # check.ci h_reshape refuses a literal extent past B1's limits where it
+                    # reaches the call, which can come before a later diagnostic of `cint_ref`
+                    # (late; reshape_out judges a module that checks).
+                    extents = [a.value for a in x.args[1:]]
+                    if any(isinstance(v, T.Lit) and v.kind == "int" and v.value > (65534 if len(extents) == 1 else 3070)
+                           for v in extents):
+                        self.reshape_big = True
                 for i, a in enumerate(x.args):
                     if not (x.callee == "fold_checked" and i == 0 and a.name is None and isinstance(a.value, T.Name)):
                         stack.append(a.value)
@@ -359,7 +405,7 @@ class Subset:
                 for h in s.parts:
                     if isinstance(h, bytes):
                         continue
-                    if h.conv is not None or not self.expr(h.expr):
+                    if h.conv not in HOLE_CONVS or not self.expr(h.expr):
                         return False
             elif isinstance(s, T.If):
                 if not self.expr(s.cond):
@@ -406,11 +452,18 @@ class Subset:
                 for h in s.message or []:
                     if isinstance(h, bytes):
                         continue
-                    if h.conv is not None or not self.expr(h.expr):
+                    if h.conv not in HOLE_CONVS or not self.expr(h.expr):
                         return False
             else:
                 return False
         return True
+
+    def ext_type_ok(self, t, where) -> bool:
+        """An extern's parameter or result type: a qualified name without an import is the
+        checker's C3006 (resolve.type_ref), not the gate's C9102."""
+        if t is not None and t.module is not None and t.shape is None:
+            return True
+        return self.type_ok(t, where)
 
     def module(self, m) -> bool:
         if m.imports:
@@ -418,8 +471,30 @@ class Subset:
         self.declared = declared_names(m)
         self.structs = {s.name for s in m.structs}
         self.funcs = {}
-        for f in m.functions:
+        for f in list(m.functions) + list(m.externs):
             self.funcs.setdefault(f.name, f)
+        for e in m.externs:
+            # An extern declaration (I/O services lane U1): the checker decides its parameter
+            # and result types (C5050, C2064, C3042, C3006); a view result stays outside
+            # (check.ci unsupported), as it does for a function.
+            result = e.result
+            if isinstance(result, T.UnionType):
+                if not self.type_ok(result.set):
+                    return False
+                result = result.value
+            if result is not None and result.shape is not None:
+                return False
+            if not self.ext_type_ok(result, "result") or not all(self.ext_type_ok(p.type, "param") for p in e.params):
+                return False
+        for r in m.requires:
+            # `requires` takes constant arguments (SEC-CAP-3): a string of at most 255 bytes
+            # (check.ci requires_args), or an expression the checker refuses with C3041.
+            for a in r.args:
+                if isinstance(a, T.StrLit):
+                    if len(bytes(a.parts[0])) > 255:
+                        return False
+                elif not self.expr(a):
+                    return False
         for s in m.structs:
             for fl in s.fields:
                 ft = fl.type
@@ -427,7 +502,7 @@ class Subset:
                     if not self.mem_ok(ft, "field"):
                         return False
                     continue
-                if ft.name not in self.checked and ft.name not in self.structs:
+                if not self.scalar(ft.name) and ft.name not in self.structs:
                     continue
                 if ft.module is not None:
                     return False   # Exercises imported fields through the multi-module driver.
@@ -481,19 +556,41 @@ class Subset:
             if not all(self.expr(c) for c in k.where) or not self.stmts(k.body.stmts):
                 return False
         self.sizes = ()
-        if any(s.type is not None and (s.type.shape is not None or s.type.name in self.structs) and not (
-                self.checked is not CHECKED_TYPES and s.type.shape is not None and not s.is_const and
-                s.type.name in self.checked and len(s.type.dims or [s.type.shape]) <= 4)
-               for s in list(m.consts) + list(m.statements) if isinstance(s, T.VarDecl)):
-            # Arrays and structs at module level or in a script: C9102 (task 2.13); in a
-            # module that names a wide type, a module-level array of rank 1 to 4 (box 13 MLA;
-            # check.ci shape_ok) is in.
+        arrays = [s for s in list(m.consts) + list(m.statements) if isinstance(s, T.VarDecl) and
+                  s.type is not None and (s.type.shape is not None or s.type.name in self.structs)]
+        if any(not (s.type.shape is not None and not s.is_const and self.scalar(s.type.name) and (
+                len(s.type.dims or [s.type.shape]) <= 4 if not script else
+                len(s.type.dims or [s.type.shape]) == 1 and not isinstance(s.init, T.ArrayLit))) and
+               not (s.type.shape is None and not s.is_const and not s.exported and not script and
+                    self.state_struct(m, s.type.name, set()))
+               for s in arrays):
+            # Arrays and structs at module level or in a script: C9102 (task 2.13), but an
+            # array of a scalar type that is not a constant is in: at module level of rank 1 to
+            # 4 (box 13 MLA; check.ci shape_ok marks its shape and literal), and in a script of
+            # rank 1 without an array literal, which the gate admits and the checker refuses
+            # with C9102 when it reaches the statement (late); and a struct variable at module
+            # level that state_struct admits (box 15, OQ-260).
             return False
+        self.late = script and bool(arrays)
         self.in_function = True
         if not all(self.stmts(t.body.stmts) for t in m.tests):
             return False   # test blocks are in the subset since task 2.14 part (c)
         self.in_function = False
         return self.stmts(list(m.consts) + list(m.statements) + list(m.static_asserts))
+
+    def state_struct(self, m, name: str, seen: set) -> bool:
+        """Whether check.ci's state_struct admits a module-level variable of the module's struct
+        `name` (box 15, OQ-260): its fields at any depth integers, fixed point (games wave G2b),
+        Bool, structs of such fields, or arrays of rank 1 to 4 of them."""
+        if name in seen:
+            return True
+        seen.add(name)
+        fields = next(d for d in m.structs if d.name == name).fields
+        return all(getattr(f.type, "inner", None) is None and f.type.module is None and
+                   len(f.type.dims or ([f.type.shape] if f.type.shape is not None else [])) <= 4 and
+                   (self.scalar(f.type.name) or
+                    (f.type.name in self.structs and self.state_struct(m, f.type.name, seen)))
+                   for f in fields)
 
 
 def declared_names(module) -> set:
@@ -510,7 +607,7 @@ def declared_names(module) -> set:
             continue
         if type(x).__module__ != T.__name__:
             continue
-        if isinstance(x, (T.FuncDecl, T.Param, T.VarDecl, T.StructDecl)):
+        if isinstance(x, (T.FuncDecl, T.ExternDecl, T.Param, T.VarDecl, T.StructDecl)):
             names.add(x.name)
         if isinstance(x, T.FuncDecl):
             names.update(n for n, _ in x.size_params)
@@ -537,6 +634,32 @@ def note_of(d) -> list:
     return [0, 0, 0]
 
 
+class HoleConversion(Exception):
+    """A hole whose conversion check.ci format_ok refuses with C9102 (HOLE_CONVS)."""
+
+
+class HoleFormat:
+    """`cint_ref`'s fmt module as Checker.check_holes sees it while outcome checks a module:
+    its check of a hole first applies check.ci format_ok's rule, a conversion of a value (an
+    element for an array) that is not fixed point is C9102 there, before its specification is
+    read. fmt's own calls of its check are unchanged."""
+
+    def __init__(self, fmt):
+        self.fmt = fmt
+
+    def __getattr__(self, name):
+        return getattr(self.fmt, name)
+
+    def check(self, spec, ty, conv, lanes):
+        if conv is not None and not ref_check.is_q(ty):
+            raise HoleConversion()
+        return self.fmt.check(spec, ty, conv, lanes)
+
+
+FMT = ref_check.fmt
+HOLE_FMT = HoleFormat(FMT)
+
+
 def outcome(data: bytes, path: str) -> dict:
     """`cint_ref`'s outcome for one module at module path `path`."""
     old = sys.getrecursionlimit()
@@ -544,7 +667,7 @@ def outcome(data: bytes, path: str) -> dict:
     try:
         try:
             text = lexer.decode_source(data, path)
-            module = parser.parse_module(text, path, box09=True, box12=True, fixed=False)   # cintc's surface: boxes 09 and 12
+            module = parser.parse_module(text, path, box09=True, box12=True)   # cintc's surface: boxes 09, 12 and 15
         except CompileError as e:
             return {"kind": "front", "lines": e.diagnostic.to_expect_lines()}
         except Refused:
@@ -556,6 +679,7 @@ def outcome(data: bytes, path: str) -> dict:
             subset.checked = CHECKED_TYPES + WIDE_TYPES
         if not subset.module(module):
             return {"kind": "out"}
+        ref_check.fmt = HOLE_FMT
         try:
             if ref_check.module_path_rule(module.path) is None:
                 ref_check.check_module(module)
@@ -566,6 +690,7 @@ def outcome(data: bytes, path: str) -> dict:
                 checker = ref_check.Checker(module, {})
                 checker.check()
                 ref_check._check_module_state_args([checker])
+                ref_check._check_capabilities([checker])
         except CompileError as e:
             d = e.diagnostic
             want = {"kind": "error", "lines": d.to_expect_lines(), "code": d.code}
@@ -575,7 +700,11 @@ def outcome(data: bytes, path: str) -> dict:
                 want["record"] = encode_fault_record(d.record(), COMPILE_TIME).hex()
             if wide or wide_mul_full(module):
                 want["wide"] = True
+            if subset.late or subset.reshape_big:
+                want["late"] = True
             return want
+        except HoleConversion:
+            return {"kind": "out"}   # check.ci format_ok: `!raw` or `!bits` of a value that is not fixed point
         except Refused as e:
             # check.ci gives C9102 at a format width past I64, after the rules of LS-213, at a
             # `reshape` to rank 5 or to a negative extent (h_reshape), and at a dimension of
@@ -586,12 +715,16 @@ def outcome(data: bytes, path: str) -> dict:
                 return {"kind": "out"}
             if any(r in e.message for r in MEMORY_REFUSALS):
                 return {"kind": "out"}   # box 12: resolve.ci mem_type_ref and check.ci h_member give C9102
+            if any(r in e.message for r in FIXED_REFUSALS) or e.message.startswith("the property Q"):
+                return {"kind": "out"}   # box 15 unit 4e: check.ci gives C9102 where `cint_ref` refuses fixed point
             if e.message.startswith("clamp with lo > hi at run time"):
                 return {"kind": "open"}   # OQ-06: cintc decides E_DOMAIN, so C6006 can come first
             m = PRELUDE_REFUSAL.match(e.message)
             if m and m.group(1) in subset.declared:
                 return {"kind": "out"}   # declared elsewhere, so past the gate: resolve.lookup's C9102
             return {"kind": "ref-refused", "why": e.message}
+        finally:
+            ref_check.fmt = FMT
         if any(e.const is not None and e.const.value > (2 ** 32 if big else 65534)
                for e, big in subset.local_extents) or any(
                 e.const is not None and e.const.value > 3070 for e in subset.nd_extents):
@@ -602,6 +735,8 @@ def outcome(data: bytes, path: str) -> dict:
             return {"kind": "out"}
         if wide or wide_mul_full(module):
             return {"kind": "ok", "wide": True}
+        if subset.late:
+            return {"kind": "ok", "late": True}
         return {"kind": "ok"}
     finally:
         sys.setrecursionlimit(old)
@@ -720,7 +855,7 @@ def prepare(gen: pathlib.Path) -> list:
     for name, data in front_cases.frozen():
         add(name, data)
     written = check_cases.written() + check_cases.grid() + check_cases.consts() + check_cases.widths()
-    written += check_cases.wide_consts()
+    written += check_cases.wide_consts() + check_cases.fixed()
     written += check_cases.nesting() + check_cases.prelude_names() + check_cases.big_extents()
     for name, data in written:
         add(name, data)
@@ -767,6 +902,8 @@ def judge(want: dict, got) -> str:
     kind = want["kind"]
     if want.get("wide") and phase == 5 and lines[:1] == ["diagnostic.code C9102"]:
         return ""   # a wide form that a later unit of box 15 lifts (WIDE_TYPES)
+    if want.get("late") and phase == 5 and lines[:1] == ["diagnostic.code C9102"]:
+        return ""   # a script's array, which check.ci refuses where it reaches it (Subset.module)
     if kind == "ok":
         if want.get("c9004") and phase in (1, 2, 3) and status == "status 0 1" and                 lines[:1] == ["diagnostic.code C9004"]:
             return ""   # beyond LS-311's 256 levels: cintc's own nesting limit (check_cases.beyond_ls311)

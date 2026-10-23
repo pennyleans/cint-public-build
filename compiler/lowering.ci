@@ -165,6 +165,9 @@ export const I32 WC_DECL = 6;
 // Box 12: a handle (SPEC-03 M-12), a cint_handle in C (rt/cint_mem.h); decl.ci's tag of a
 // memory type.
 export const I32 T_HANDLE = 0x74;
+// I/O services lane U5: a `Grants` parameter (SPEC-04 LS-326), an int64_t handle in C; the entry
+// wrappers pass 0 for it (compiler/OPEN.md CINTC-OQ-67). It is never stored, compared or returned.
+export const I32 T_GRANTS = 0x75;
 
 // Opcodes (Sir.op & OP_MASK). Fields not listed are 0, or -1 for a node reference.
 //   SO_CONST      dst = const T val
@@ -176,11 +179,14 @@ export const I32 T_HANDLE = 0x74;
 //                 result (B_ADD to B_SHL; box 12, an SO_ETAG follows)
 //   SO_UN         dst = <c>.<form f>.<ty> a; c U_NEG, U_NOT (bitwise), U_LNOT (Bool)
 //   SO_CMP        dst = cmp.<c>.<f> a, b; c a CMP_*, f the operand type; ty Bool
-//   SO_AS         dst = as.<form c>.<f>.<ty> a; f the source type, c 0 checked, 1 wrapping
+//   SO_AS         dst = as.<form c>.<f>.<ty> a; f the source type, c 0 checked, 1 wrapping,
+//                 AS_SAT saturating (`as|`), AS_RAW the storage bits
 //   SO_ARG        argument a of the next SO_CALL (one per argument, right before it); with
 //                 e 1, a is the array or view slot passed to a view parameter; with e 2,
 //                 the argument of a size parameter, the extent of slot a
-//   SO_CALL       [dst =] call function a with the c SO_ARG nodes before it
+//   SO_CALL       [dst =] call function a with the c SO_ARG nodes before it; b 1 when a is
+//                 an extern row (FN_EXTERN): the site's operation and the text form are
+//                 host.call, and back_c.ci writes cint_rt_host_call
 //   SO_FUEL       fuel.charge val: an entry's charge (first node of the function) or a
 //                 loop iteration's (after the loop's `while`)
 //   SO_RETURN     return a (b 1) or return (b 0)
@@ -316,7 +322,8 @@ export const I32 SO_BUILTIN = 59;
 //                 (SPEC-01 IM-187; ty the element type)
 //   SO_REDUCE     dst = reduction f (CINT_REDUCE_* of rt/cint_rt.h) over the view of slot a, b
 //                 the second view of dot (-1 otherwise), c the initial value (NO_OPERAND for none);
-//                 val the element type, ty the result's (rulings R5, R6)
+//                 val the element type, ty the result's (rulings R5, R6); f / 16 the rounding
+//                 mode of a dot into a fixed-point type, 0 when it does not round
 //   SO_VEXT       dst = the extent of dimension f of the view of slot a; f -1 for its size
 //   SO_CALIAS     bind.alias: the views of slot a, the `inout` argument c, and slot b,
 //                 argument f, of the call that follows (SPEC-04 LS-121)
@@ -517,8 +524,8 @@ export const I32 SK_IGLOBAL = 23;
 // Both have live 0, so no name finds them. back_c.ci writes each as a cint_error_set.
 export const I32 SK_ESET = 24;
 export const I32 SK_EVAL = 25;
-// A view of rank 1 to 4 (box 09), a cint_vdesc in C, whose ty is its element type plus 256
-// times its rank: a local, hidden for a subscript's or a built-in's view, named for a local
+// A view of rank 1 to 4 (box 09), a cint_vdesc in C, whose ty is its element type plus
+// 2^ELEM_BITS times its rank: a local, hidden for a subscript's or a built-in's view, named for a local
 // array of rank 2 to 4 or of a run-time extent and for a view variable; or a view parameter
 // of rank 2 to 4. A hidden view of an arena allocation of structs (box 12) has rank 1 and
 // ty its struct type. A view parameter (SK_VIEW or SK_NVIEW) declared `inout` has live 2.
@@ -589,11 +596,37 @@ export const I32 FN_KERNEL = 8192;
 // (func_etag). The C function takes the error tag's address after the result's.
 export const I32 FN_ERRU = 16384;
 // The function's effect class is `observe` (SPEC-03 H-2, H-7): its body prints, or calls a
-// function that does. back_c.mark_effects sets it after lowering; every other function is
-// `pure`, since cintc has no `extern` (H-1).
+// function or an extern that does. back_c.mark_effects sets it after lowering; an extern
+// row carries its declared class from declare_extern.
 export const I32 FN_OBSERVES = 32768;
 // A function that charges its local arrays to the frame arena (SO_FRAME; frame_proof).
 export const I32 FN_FRAME = 16777216;
+// An extern (I/O services lane U2; SPEC-03 A-10, A-15; compiler/OPEN.md CINTC-OQ-66): a row
+// with no SIR (first and last 0) whose parameters are slots as a function's, scalars or
+// rank-1 views, an `out` view with live 2. A call of it is an SO_CALL that back_c.ci writes
+// as `host.call` (cint_rt_host_call) with its index among the module's extern rows, local
+// rows then import rows in funcs order, which is its row in the module's host import
+// table. A local extern row keeps the value count of its error union's set in ntemp (0 for
+// no error union); an imported extern is an import row (FN_IMPORT | FN_EXTERN) whose
+// result is void or a scalar.
+export const I32 FN_EXTERN = 33554432;
+// The function's effect class is `unrestricted` (SPEC-03 H-2): an extern declared so, or a
+// function that calls one; back_c.mark_effects propagates it as FN_OBSERVES.
+export const I32 FN_UNRESTRICTED = 67108864;
+// A function or extern with a `Grants` parameter (I/O services lane U5; SPEC-03 H-8a;
+// compiler/OPEN.md CINTC-OQ-67): the parameter is a T_GRANTS slot (is_grants), an int64_t
+// handle of a grant set, 0 for the context's. The program entry and an observer entry pass 0
+// for it; an export with one gets no `cx` wrapper and no reflection row (SPEC-04 LS-326); a
+// service row's type signature leaves it out; a service call passes it on first.
+export const I32 FN_GRANTS = 134217728;
+// `main(in U8[_] args)`: the function's last parameter is the program arguments (SPEC-04 LS-221;
+// OQ-306, `rt/OPEN.md` RT-OQ-76), which the program entry reads from the context (cint_ctx_args).
+export const I32 FN_ARGS = 268435456;
+
+// Whether slot k is a `Grants` parameter (FN_GRANTS).
+export Bool is_grants(in SirSlot[_] slots, I64 k) {
+    return slots[k].kind == SK_PARAM && slots[k].ty == T_GRANTS;
+}
 
 export I32 func_etag(in SirFunc[_] funcs, I64 k) {
     return (funcs[k].flags >> 16) & 255;
@@ -705,6 +738,46 @@ export Bool is_wide(I32 ty) {
     return (ty >= T_I128 && ty <= T_I1024) || (ty >= T_U128 && ty <= T_U512);
 }
 
+// Whether a value of type ty is limbs: a wide integer, or a fixed-point type of 128 bits
+// (games wave G2b), held as an I128's two limbs.
+export Bool is_limbs(I32 ty) {
+    return fold.ty_limbs(ty as I64);
+}
+
+// Box 15 unit 4e: whether ty is a fixed-point type Q<i>.<f>, whose code is fold.ci's (TY_Q
+// and after), at most ELEM_MASK so that an array's element code holds it. A value is its raw
+// storage integer, the signed integer of its width (SPEC-01 IM-54, IM-57); of 128 bits, two
+// limbs as an I128's (is_limbs).
+export Bool is_q(I32 ty) {
+    return fold.ty_q(ty as I64);
+}
+
+// The fraction bits of ty: a fixed-point type's f, 0 for an integer.
+export I64 frac_of(I32 ty) {
+    if (is_q(ty)) {
+        return fold.q_frac(ty as I64);
+    }
+    return 0;
+}
+
+// Whether a conversion from type from to type to, one of them fixed point, rounds: it drops
+// fraction bits (SPEC-01 IM-68, IM-69), so its SIR names a mode.
+export Bool q_rounds(I32 from, I32 to) {
+    return frac_of(from) > frac_of(to);
+}
+
+// The type of a type name token tk: an identifier of class_type's, or a fixed-point type name
+// (its code in the token's sub); 0 when lowering has no such type.
+I32 name_type[t](in scan.Token[t] toks, I64 tk) {
+    if (toks[tk].kind == scan.TK_FIXED) {
+        return toks[tk].sub;
+    }
+    if (toks[tk].kind != scan.TK_IDENT) {
+        return T_NONE;
+    }
+    return class_type(toks[tk].aux & 255);
+}
+
 // The type of identifier class `cls` (scan.IDC_*), or 0 when lowering has no such type.
 I32 class_type(I32 cls) {
     switch (cls) {
@@ -733,11 +806,7 @@ export I32 type_of[t, m](in scan.Token[t] toks, in parse.Node[m] nodes, I64 tn) 
     if (tn < 0 || nodes[tn].kind != parse.N_TYPE || nodes[tn].a >= 0 || nodes[tn].b >= 0 || nodes[tn].op != 1) {
         return T_NONE;
     }
-    I64 tk = nodes[tn].tok as I64;
-    if (toks[tk].kind != scan.TK_IDENT) {
-        return T_NONE;
-    }
-    return class_type(toks[tk].aux & 255);
+    return name_type(toks, nodes[tn].tok as I64);
 }
 
 // Box 12: the lowering type of checked type ty when it is an error set, its underlying type;
@@ -764,7 +833,7 @@ I32 scalar_type(I64 ty) {
     if (resolve.is_errset(ty)) {
         return resolve.errset_under(ty) as I32;
     }
-    if (ty == fold.TY_BOOL || resolve.is_int(ty)) {
+    if (ty == fold.TY_BOOL || resolve.is_num(ty)) {
         return ty as I32;
     }
     return T_NONE;
@@ -828,13 +897,18 @@ I32 mem_slot_elem[n, t, m](in U8[n] text, in scan.Token[t] toks, in parse.Node[m
 // ---------------------------------------------------------------- arrays
 
 // Task 2.13 part (b): a local array of a scalar element type (SPEC-04 LS-62 to LS-67) is
-// a slot of kind SK_ARRAY whose ty is the element type plus 256 times the extent; it is
-// zero-filled where it is declared, and indexed by SO_ICHECK then SO_ELOAD or SO_ESTORE.
+// a slot of kind SK_ARRAY whose ty is the element type plus 2^ELEM_BITS times the extent; it
+// is zero-filled where it is declared, and indexed by SO_ICHECK then SO_ELOAD or SO_ESTORE.
+// A scalar type is at most ELEM_MASK: the fixed-point types of 128 bits reach 0x177 (games
+// wave G2b), so an element takes 9 bits.
+export const I32 ELEM_BITS = 9;
+export const I32 ELEM_MASK = 511;
+
 export I32 array_elem(I32 ty) {
     if (ty >= T_STRUCT) {
         return T_STRUCT + ((ty & 1073741823) - T_STRUCT) % SARRAY_STEP;
     }
-    return ty & 255;
+    return ty & ELEM_MASK;
 }
 
 export I64 array_extent(I32 ty) {
@@ -845,12 +919,12 @@ export I64 array_extent(I32 ty) {
         }
         return e;
     }
-    return ((ty & 268435455) >> 8) as I64;
+    return ((ty & 268435455) >> ELEM_BITS) as I64;
 }
 
 // Distinguishes fixed array fields from scalar fields and unshaped records.
 export Bool field_array(I32 ty) {
-    return ty > 255 && (ty < T_STRUCT || ty >= FIELD_RECORD_ARRAY);
+    return ty > ELEM_MASK && (ty < T_STRUCT || ty >= FIELD_RECORD_ARRAY);
 }
 
 // Marks record-array fields separately so a plain record slot above 8191 stays plain.
@@ -863,7 +937,7 @@ export const I32 FIELD_SCALAR_ARRAY = 268435456;
 
 // Whether field type ty is of rank 2 to 4.
 export Bool field_shaped(I32 ty) {
-    return ty > 255 && ty < T_STRUCT && (ty & FIELD_SCALAR_ARRAY) != 0 && array_extent(ty) > 0;
+    return ty > ELEM_MASK && ty < T_STRUCT && (ty & FIELD_SCALAR_ARRAY) != 0 && array_extent(ty) > 0;
 }
 
 // Task 2.14: an array or a view of struct elements (SPEC-04 4.3, LS-119) is an SK_ARRAY or
@@ -968,10 +1042,10 @@ I32 struct_shape_of[n, t, m](in U8[n] text, in scan.Token[t] toks, in parse.Node
 }
 
 // The slot type of a view parameter of function node f whose type node is tn, `T[k]`
-// with T scalar (SPEC-03 5.2, SPEC-04 LS-117): the element type plus 256 times the extent
-// code, k + 1 for a decimal literal k, VIEW_ANY for `_`, VIEW_SIZE + j for size
-// parameter j of f; 0 otherwise. Every view type is above 255, so it is also the context
-// that marks a view argument.
+// with T scalar (SPEC-03 5.2, SPEC-04 LS-117): the element type plus 2^ELEM_BITS times the
+// extent code, k + 1 for a decimal literal k, VIEW_ANY for `_`, VIEW_SIZE + j for size
+// parameter j of f; 0 otherwise. Every view type is above ELEM_MASK, so it is also the
+// context that marks a view argument.
 export const I32 VIEW_SIZE = 65536;
 export const I32 VIEW_ANY = 65535;
 
@@ -979,17 +1053,13 @@ I32 view_type_of[n, t, m](in U8[n] text, in scan.Token[t] toks, in parse.Node[m]
     if (tn < 0 || nodes[tn].kind != parse.N_TYPE || nodes[tn].a < 0 || nodes[tn].b >= 0 || nodes[tn].op != 1) {
         return T_NONE;
     }
-    I64 tk = nodes[tn].tok as I64;
-    if (toks[tk].kind != scan.TK_IDENT) {
-        return T_NONE;
-    }
-    I32 elem = class_type(toks[tk].aux & 255);
+    I32 elem = name_type(toks, nodes[tn].tok as I64);
     I64 e = nodes[nodes[tn].a as I64].a as I64;
     if (elem == T_NONE || e < 0 || nodes[e].next >= 0) {
         return T_NONE;
     }
     if (nodes[e].kind == parse.N_WILD) {
-        return elem | (VIEW_ANY << 8);
+        return elem | (VIEW_ANY << ELEM_BITS);
     }
     I64 et = nodes[e].tok as I64;
     if (nodes[e].kind == parse.N_NAME) {
@@ -997,7 +1067,7 @@ I32 view_type_of[n, t, m](in U8[n] text, in scan.Token[t] toks, in parse.Node[m]
         I64 z = nodes[f].d as I64;
         while (z >= 0) {
             if (same_name(text, toks, nodes[z].tok as I64, et)) {
-                return elem | ((VIEW_SIZE + (j as I32)) << 8);
+                return elem | ((VIEW_SIZE + (j as I32)) << ELEM_BITS);
             }
             j += 1;
             z = nodes[z].next as I64;
@@ -1013,7 +1083,7 @@ I32 view_type_of[n, t, m](in U8[n] text, in scan.Token[t] toks, in parse.Node[m]
     for i in s..s + nd {
         v = v * 10 + digit_value(text[i]);
     }
-    return elem | (((v + 1) as I32) << 8);
+    return elem | (((v + 1) as I32) << ELEM_BITS);
 }
 
 // The static extent of array or view slot k, or -1 when it is known at run time.
@@ -1171,16 +1241,16 @@ I64 import_record(inout U8[_] text, in scan.Token[_] toks, inout limits.Decl[_] 
     d[row].ref = (sk + 1) as U32;
     I64 r = decl.next_member(d, row);
     for j in 0..d[row].a {
-        I32 fty = d[r].tag as I32;
-        if (d[r].tag == 0x71) {
+        I32 fty = decl.row_tag(d, r) as I32;
+        if (decl.row_tag(d, r) == 0x71) {
             fty = (-1 - (d[r].ref as I64)) as I32;
         } else if (d[r].rank == 1 && d[r].ext_kind == limits.DX_LITERAL && d[r].b >= 0) {
-            fty = fty | ((d[r].b as I32) << 8);
+            fty = fty | ((d[r].b as I32) << ELEM_BITS);
             if (d[r].b == 0) { fty = fty | FIELD_SCALAR_ARRAY; }
         } else if (d[r].rank >= 2 && d[r].rank <= 4 && d[r].ext_kind == limits.DX_LITERAL &&
                 decl.row_count(d, r) > 0 && decl.row_count(d, r) <= 4096) {
             // A field of rank 2 to 4 (BX22-06), flat as declare_struct makes it.
-            fty = fty | ((decl.row_count(d, r) as I32) << 8) | FIELD_SCALAR_ARRAY;
+            fty = fty | ((decl.row_count(d, r) as I32) << ELEM_BITS) | FIELD_SCALAR_ARRAY;
         } else if (d[r].rank != 0) {
             unsupported(toks, diag, ls, tk, U_STRUCT);
             return -1;
@@ -1189,7 +1259,7 @@ I64 import_record(inout U8[_] text, in scan.Token[_] toks, inout limits.Decl[_] 
         if (name == -1) { return -1; }
         I64 fs = add_slot(toks, slots, diag, ls, name, fty, SK_FIELD, tk);
         if (fs < 0) { return -1; }
-        if (d[r].tag == 0x71 && d[r].rank == 1) {
+        if (decl.row_tag(d, r) == 0x71 && d[r].rank == 1) {
             slots[fs].kind = (-1 - d[r].b) as I32;
         }
         slots[sk].ty += 1;
@@ -1206,13 +1276,112 @@ I64 import_record(inout U8[_] text, in scan.Token[_] toks, inout limits.Decl[_] 
     return sk;
 }
 
+// The SK_ESET slot of imported set record row `row` (I/O services lane U5), or -1: its
+// `live` is row + 1 (a module's own set has 0), its name the set's name copied into `text`,
+// its SK_EVAL slots the value rows in tag order, each named by its copied name with ty -3.
+I64 find_import_set(in SirSlot[_] slots, in LState[_] ls, I64 row) {
+    for k in 0..ls[0].nslot {
+        if (slots[k].kind == SK_ESET && (slots[k].live as I64) == row + 1) {
+            return k;
+        }
+    }
+    return -1;
+}
+
+// Describes imported set record row `row` in new slots (find_import_set): the slot, or -1.
+I64 import_set_slots[tn, t](inout U8[tn] text, in scan.Token[t] toks, in limits.Decl[_] d, inout SirSlot[_] slots,
+        inout limits.CompilerDiag[_] diag, inout LState[_] ls, I64 row, I64 tk) {
+    I64 name = copy_decl_name(text, d, row, toks, diag, ls, tk);
+    if (name == -1) {
+        return -1;
+    }
+    I64 es = add_slot(toks, slots, diag, ls, name, d[row].tag as I32, SK_ESET, tk);
+    if (es < 0) {
+        return -1;
+    }
+    slots[es].live = (row + 1) as I32;
+    I64 r = decl.next_member(d, row);
+    for j in 0..d[row].a {
+        I64 vn = copy_decl_name(text, d, r, toks, diag, ls, tk);
+        if (vn == -1) {
+            return -1;
+        }
+        I64 ev = add_slot(toks, slots, diag, ls, vn, -3, SK_EVAL, tk);
+        if (ev < 0) {
+            return -1;
+        }
+        slots[ev].live = 0;
+        r = decl.next_member(d, r);
+    }
+    return es;
+}
+
+// A fresh copy of the slots of SK_ESET slot es (an imported set's), right before an entry's
+// parameters (describe_set with `fresh`): the copy, or -1.
+I64 copy_set_slots[t](in scan.Token[t] toks, inout SirSlot[_] slots, inout limits.CompilerDiag[_] diag,
+        inout LState[_] ls, I64 es, I64 tk) {
+    I64 n = set_count(slots, ls, es);
+    I64 es2 = add_slot(toks, slots, diag, ls, slots[es].name as I64, slots[es].ty, SK_ESET, tk);
+    if (es2 < 0) {
+        return -1;
+    }
+    slots[es2].live = slots[es].live;
+    for j in 0..n {
+        I64 ev = add_slot(toks, slots, diag, ls, slots[es + 1 + j].name as I64, slots[es + 1 + j].ty, SK_EVAL, tk);
+        if (ev < 0) {
+            return -1;
+        }
+        slots[ev].live = 0;
+    }
+    return es2;
+}
+
+// The values of the set SK_ESET slot es describes: its SK_EVAL slots.
+I64 set_count(in SirSlot[_] slots, in LState[_] ls, I64 es) {
+    I64 n = 0;
+    while (es + 1 + n < ls[0].nslot && slots[es + 1 + n].kind == SK_EVAL) {
+        n += 1;
+    }
+    return n;
+}
+
+// Declares the imported error sets that module-level node set 0..nn names (I/O services
+// lane U5): an `alias.E` type or `alias.E.value` the checker resolved (resolve.SEM_IMPORT
+// on a row of kind DK_ERRSET), and the set of each imported function whose result is an
+// error union (a function row of tag 0x73 with the set's row in `ref`). One group of slots
+// per set record row (import_set_slots); describe_set copies it before an entry.
+void declare_import_sets[tn, t, m, dr](inout U8[tn] text, in scan.Token[t] toks, in parse.Node[m] nodes,
+        in resolve.Sem[_] sem, I64 nn, in limits.Decl[_] decls, inout SirSlot[_] slots,
+        inout limits.CompilerDiag[dr] diag, inout LState[_] ls) {
+    for x in 0..nn {
+        if (ls[0].err != 0) { break; }
+        if ((sem[x].flags & resolve.SEM_IMPORT) == 0 || !(nodes[x].kind == parse.N_TYPE || nodes[x].kind == parse.N_FIELD)) {
+            continue;
+        }
+        I64 row = sem[x].lit_at;
+        if (row < 1) { continue; }
+        I64 set = -1;
+        if (decls[row].kind == limits.DK_ERRSET) {
+            set = row;
+        } else if (decls[row].kind == limits.DK_FUNC && decl.row_tag(decls, row) == decl.ERRUNION_TAG &&
+                decls[row].ref > 0) {
+            set = decls[row].ref as I64;
+        }
+        if (set >= 0 && find_import_set(slots, ls, set) < 0) {
+            _ = import_set_slots(text, toks, decls, slots, diag, ls, set, nodes[x].tok as I64);
+        }
+    }
+}
+
 void declare_import_structs[tn, t, m, dr](inout U8[tn] text, in scan.Token[t] toks, in parse.Node[m] nodes,
         in resolve.Sem[_] sem, I64 nn, inout limits.Decl[_] decls, inout SirSlot[_] slots,
         inout limits.CompilerDiag[dr] diag, inout LState[_] ls) {
     for x in 0..nn {
         if (ls[0].err != 0) { break; }
         I64 al = -1;
-        if ((sem[x].flags & resolve.SEM_IMPORT) != 0 && nodes[x].kind == parse.N_TYPE) {
+        if ((sem[x].flags & resolve.SEM_IMPORT) != 0 && nodes[x].kind == parse.N_TYPE &&
+                decls[sem[x].lit_at].kind == limits.DK_STRUCT) {
+            // An `alias.S` type (an `alias.E` error set is declare_import_sets').
             al = nodes[x].start as I64;
         } else if ((sem[x].flags & resolve.SEM_IMPORT) != 0 && nodes[x].kind == parse.N_FIELD &&
                 decls[sem[x].lit_at].kind == limits.DK_STRUCT) {
@@ -1234,7 +1403,7 @@ void declare_import_structs[tn, t, m, dr](inout U8[tn] text, in scan.Token[t] to
         I64 p = fn;
         I64 tk = nodes[x].tok as I64;
         for j in 0..decls[fn].a + 1 {
-            if (decls[p].tag == 0x71) {
+            if (decl.row_tag(decls, p) == 0x71) {
                 I64 row = decls[p].ref as I64;
                 if (decls[row].mode == 0) {
                     I64 name = copy_decl_name(text, decls, row, toks, diag, ls, tk);
@@ -1320,7 +1489,7 @@ void declare_struct[n, t, m, nl, r](in U8[n] text, in scan.Token[t] toks, in par
                 I64 bytes = 1;
                 if (elem != fold.TY_BOOL) { bytes = fold.ty_width(elem) / 8; }
                 if (nitems >= 0 && nitems * bytes <= 4096) {
-                    ty = (elem as I32) | ((nitems as I32) << 8);
+                    ty = (elem as I32) | ((nitems as I32) << ELEM_BITS);
                     if (nitems == 0 || resolve.array_rank(aty) > 1) { ty = ty | FIELD_SCALAR_ARRAY; }
                 }
             }
@@ -1348,11 +1517,7 @@ I32 array_type_of[n, t, m](in U8[n] text, in scan.Token[t] toks, in parse.Node[m
     if (tn < 0 || nodes[tn].kind != parse.N_TYPE || nodes[tn].a < 0 || nodes[tn].b >= 0 || nodes[tn].op != 1) {
         return T_NONE;
     }
-    I64 tk = nodes[tn].tok as I64;
-    if (toks[tk].kind != scan.TK_IDENT) {
-        return T_NONE;
-    }
-    I32 elem = class_type(toks[tk].aux & 255);
+    I32 elem = name_type(toks, nodes[tn].tok as I64);
     I64 e = nodes[nodes[tn].a as I64].a as I64;
     if (elem == T_NONE || e < 0 || nodes[e].next >= 0 || nodes[e].kind != parse.N_LIT) {
         return T_NONE;
@@ -1374,7 +1539,7 @@ I32 array_type_of[n, t, m](in U8[n] text, in scan.Token[t] toks, in parse.Node[m
     if (v * bytes > 4096) {
         return T_NONE;
     }
-    return elem | ((v as I32) << 8);
+    return elem | ((v as I32) << ELEM_BITS);
 }
 
 // ---------------------------------------------------------------- names and literals
@@ -1467,16 +1632,14 @@ I64 wrap_to(I32 ty, I64 v) {
     return fold.ty_wrap(ty as I64, v as% U64) as% I64;
 }
 
-// The value of type property x, `T.min` or `T.max` of an integer type T (SPEC-04 LS-21):
+// The value of type property x, `T.min` or `T.max` of an integer type T (SPEC-04 LS-21), or
+// those and `T.epsilon` of a fixed-point type T, raw values (LS-51):
 // res[0] its bits, res[1] its type; res[1] 0 for another property.
 void type_property[n, t, m](in U8[n] text, in scan.Token[t] toks, in parse.Node[m] nodes, I64 x, inout I64[_] res) {
     res[1] = 0;
-    I64 tk = nodes[x].tok as I64;
-    I32 ty = T_NONE;
-    if (toks[tk].kind == scan.TK_IDENT) {
-        ty = class_type(toks[tk].aux & 255);
-    }
-    if (!is_int(ty)) {
+    I32 ty = name_type(toks, nodes[x].tok as I64);
+    Bool sg = is_signed(ty) || is_q(ty);
+    if (!is_int(ty) && !is_q(ty)) {
         return;
     }
     I64 w = (fold.ty_width(ty as I64));
@@ -1486,17 +1649,20 @@ void type_property[n, t, m](in U8[n] text, in scan.Token[t] toks, in parse.Node[
     }
     I64 pt = nodes[x].c as I64;
     if (spells(text, toks, pt, "max")) {
-        if (is_signed(ty)) {
+        if (sg) {
             res[0] = (mask >> 1) as I64;
         } else {
             res[0] = mask as% I64;
         }
     } else if (spells(text, toks, pt, "min")) {
-        if (is_signed(ty)) {
+        if (sg) {
             res[0] = (~(mask >> 1)) as% I64;
         } else {
             res[0] = 0;
         }
+    } else if (is_q(ty) && spells(text, toks, pt, "epsilon")) {
+        // A fixed-point type's epsilon, raw 1 (SPEC-04 LS-51).
+        res[0] = 1;
     } else {
         return;
     }
@@ -1708,6 +1874,13 @@ Bool wide_const[n, t, m](in U8[n] text, in scan.Token[t] toks, in parse.Node[m] 
     I64[2] lit;
     while (y >= 0 && hops < 64) {
         I32 k = nodes[y].kind;
+        if (is_q(sem[y].ty as I32) && (sem[y].flags & resolve.SEM_LIT) != 0) {
+            // A fixed-point literal, or `L as T`: its raw value (check.literal, q_lit_raw).
+            sir[i].c = WC_BYTES;
+            sir[i].f = sem[y].lit_at as I32;
+            sir[i].val = sem[y].lit_len;
+            return true;
+        }
         if (k == parse.N_LIT || k == parse.N_NEGLIT) {
             I64 lt = nodes[y].tok as I64;
             if (k == parse.N_NEGLIT) {
@@ -1727,6 +1900,9 @@ Bool wide_const[n, t, m](in U8[n] text, in scan.Token[t] toks, in parse.Node[m] 
                 sir[i].c = WC_MIN;
             } else if (spells(text, toks, pt, "max")) {
                 sir[i].c = WC_MAX;
+            } else if (spells(text, toks, pt, "epsilon")) {
+                sir[i].c = WC_VAL;
+                sir[i].val = 1;
             } else {
                 return false;
             }
@@ -1891,16 +2067,34 @@ void binary_op(I32 op, inout I64[_] res) {
     }
 }
 
+// Box 15 unit 4e: the rounding mode of `half_even` (resolve.round_mode), which the operators
+// `*` and `/` on fixed point round by (SPEC-01 IM-61, IM-62).
+export const I64 MODE_HALF_EVEN = 5;
+
+// Gives SO_BIN node i, when it is a product or a quotient of fixed-point operands, the
+// rounding mode of its operator, half_even, in val.
+void q_mode(inout Sir[_] sir, I64 i) {
+    if (is_q(sir[i].ty) && (sir[i].c == B_MUL || sir[i].c == B_DIV)) {
+        sir[i].val = MODE_HALF_EVEN;
+    }
+}
+
 // Whether SO_BIN operation b in form `form` can fault, so carries a site: every checked
 // arithmetic form, division and remainder, and both shift forms (E_SHIFT); a wrapping or
 // saturating add, sub or mul never faults.
-// The operand type of SO_BUILTIN node i.
+// The operand type of SO_BUILTIN node i: bits 8 to 16 of val, or its type when they are 0.
 export I32 builtin_opty(in Sir[_] sir, I64 i) {
-    I32 s = (sir[i].val >> 8) as I32;
+    I32 s = ((sir[i].val >> 8) & 511) as I32;
     if (s == T_NONE) {
         return sir[i].ty;
     }
     return s;
+}
+
+// The type of the second value of `qmul` or `mul_int`, SO_BUILTIN node i (box 15 unit 4e):
+// bits 17 to 25 of val.
+export I32 builtin_btype(in Sir[_] sir, I64 i) {
+    return ((sir[i].val >> 17) & 511) as I32;
 }
 
 // Whether SO_BUILTIN node i can fault (SPEC-01 9.2).
@@ -2119,7 +2313,7 @@ I64 element_ref(in scan.Token[_] toks, inout Sir[_] sir, inout SirSlot[_] slots,
 // The rank of array or view slot k: an SK_NVIEW's, else 1.
 export I64 slot_rank(in SirSlot[_] slots, I64 k) {
     if (slots[k].kind == SK_NVIEW && slots[k].ty < T_STRUCT) {
-        return ((slots[k].ty >> 8) & 7) as I64;
+        return ((slots[k].ty >> ELEM_BITS) & 7) as I64;
     }
     return 1;
 }
@@ -2131,7 +2325,7 @@ I64 new_view[t, r](in scan.Token[t] toks, inout SirSlot[_] slots, inout limits.C
         // A view of struct elements, rank 1: the allocation of an arena of structs (box 12).
         return add_slot(toks, slots, diag, ls, -1, ety, SK_NVIEW, tk);
     }
-    return add_slot(toks, slots, diag, ls, -1, ety | ((rank as I32) << 8), SK_NVIEW, tk);
+    return add_slot(toks, slots, diag, ls, -1, ety | ((rank as I32) << ELEM_BITS), SK_NVIEW, tk);
 }
 
 // A new box 09 node op at token tk with slot or value operands a, b and c, payload f and val,
@@ -2293,7 +2487,7 @@ void index_step[n, t, m, ns, s, r](in U8[n] text, in scan.Token[t] toks, in pars
     if (part >= 0) {
         I32 w = T_I64;
         if (j == 0) {
-            w = VIEW_ANY << 8;
+            w = VIEW_ANY << ELEM_BITS;
         }
         _ = push(toks, st, diag, ls, K_EXPR, part, w, tk);
         return;
@@ -2464,7 +2658,7 @@ I64 arrayfn_skip(in parse.Node[_] nodes, in resolve.Sem[_] sem, I64 x) {
 
 // The values of array built-in call x that are evaluated: its arrays, initial values and the
 // value of `fill`; a dimension argument of `extent` or `reverse` and the extents of `reshape`
-// are folded constants.
+// are folded constants, and the rounding mode of `dot` (box 15 unit 4e) is the checker's.
 I64 arrayfn_values(in parse.Node[_] nodes, in resolve.Sem[_] sem, I64 x) {
     I64 id = sem[x].lit_at;
     if (id == resolve.AF_EXTENT || id == resolve.AF_REVERSE || id == resolve.AF_RESHAPE) {
@@ -2476,7 +2670,11 @@ I64 arrayfn_values(in parse.Node[_] nodes, in resolve.Sem[_] sem, I64 x) {
         nv += 1;
         g = nodes[g].next as I64;
     }
-    return nv - arrayfn_skip(nodes, sem, x);
+    nv -= arrayfn_skip(nodes, sem, x);
+    if (id == resolve.AF_DOT && nv > 2) {
+        nv = 2;
+    }
+    return nv;
 }
 
 // The CINT_REDUCE_* operation of reduction call x (rt/cint_rt.h section 14), or 0.
@@ -2529,7 +2727,7 @@ void arrayfn_step[n, t, m, ns, s, r](in U8[n] text, in scan.Token[t] toks, in pa
         return;
     }
     if (j < nv) {
-        I32 w = VIEW_ANY << 8;
+        I32 w = VIEW_ANY << ELEM_BITS;
         if (!arrayfn_array(id, j, nv)) {
             w = sem[x].opty as I32;
         }
@@ -2652,6 +2850,12 @@ void arrayfn_step[n, t, m, ns, s, r](in U8[n] text, in scan.Token[t] toks, in pa
     sir[i].c = init as I32;
     sir[i].f = op as I32;
     sir[i].val = sem[x].opty;
+    if (id == resolve.AF_DOT && is_q(rty)) {
+        // dot into a fixed-point type: its rounding mode when it rounds, else 0 (check.ci,
+        // Sem.lit_len; SPEC-01 IM-87), in f above the operation (verify.ci keeps the e of a
+        // node with a result for its enclosing structure).
+        sir[i].f += (16 * sem[x].lit_len) as I32;
+    }
     site(sir, ls, i);
     give(ls, i, rty, first, i + 1);
 }
@@ -3060,6 +3264,24 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
     }
     switch (kind) {
         case parse.N_LIT, parse.N_NEGLIT:
+            if (is_q(sem[x].ty as I32)) {
+                // A literal of a fixed-point type: its raw value, which the checker scaled and
+                // range-checked (Sem.bits; SPEC-04 LS-37).
+                I32 qty = sem[x].ty as I32;
+                I64 qi = def_sir(toks, sir, diag, ls, SO_CONST, qty, tk);
+                if (qi < 0) {
+                    return;
+                }
+                sir[qi].val = sem[x].bits as% I64;
+                if (is_limbs(qty)) {
+                    // Of 128 bits (games wave G2b): its bytes in the literal-value table.
+                    sir[qi].c = WC_BYTES;
+                    sir[qi].f = sem[x].lit_at as I32;
+                    sir[qi].val = sem[x].lit_len;
+                }
+                give(ls, qi, qty, qi, qi + 1);
+                return;
+            }
             I64 lt = tk;
             if (kind == parse.N_NEGLIT) {
                 lt = nodes[x].c as I64;
@@ -3110,7 +3332,7 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
             }
             if (k >= 0 && (slots[k].kind == SK_ARRAY || slots[k].kind == SK_VIEW || slots[k].kind == SK_NVIEW ||
                     is_struct_slot(slots, k))) {
-                if (want <= 255 && !is_struct_slot(slots, k)) {
+                if (want <= ELEM_MASK && !is_struct_slot(slots, k)) {
                     unsupported(toks, diag, ls, tk, U_VIEW);
                     return;
                 }
@@ -3139,7 +3361,7 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
                 unsupported(toks, diag, ls, tk, U_TYPE);
                 return;
             }
-            if (is_wide(cty)) {
+            if (is_limbs(cty)) {
                 I64 i = def_sir(toks, sir, diag, ls, SO_CONST, cty, tk);
                 if (i < 0) {
                     return;
@@ -3152,6 +3374,11 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
                 return;
             }
             const_value(text, toks, nodes, ls, nodes[c].b as I64, lit);
+            if (is_q(cty)) {
+                // A fixed-point constant: the raw value the checker folded (a literal's own
+                // value is not its raw).
+                lit[1] = 0;
+            }
             if (lit[1] == 0 && in_kernel(funcs, ls)) {
                 // In a kernel the checker's folded value, so that no step is counted (IM-113).
                 if ((sem[x].flags & resolve.SEM_FOLDED) != 0) {
@@ -3192,13 +3419,13 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
                 return;
             }
             sir[i].val = lit[0];
-            if (is_wide(pty) && !wide_const(text, toks, nodes, sem, ls, sir, i, x)) {
+            if (is_limbs(pty) && !wide_const(text, toks, nodes, sem, ls, sir, i, x)) {
                 unsupported(toks, diag, ls, tk, U_EXPRESSION);
                 return;
             }
             give(ls, i, pty, i, i + 1);
         case parse.N_STRING:
-            if (want <= 255 || array_elem(want) != T_U8) {
+            if (want <= ELEM_MASK || array_elem(want) != T_U8) {
                 unsupported(toks, diag, ls, tk, U_VIEW);
                 return;
             }
@@ -3210,12 +3437,22 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
             sir[sd].c = resolve.string_length(text, toks, tk, nodes[x].op as I64) as I32;
             give(ls, STR_ARG - sd, want, sd, sd + 1);
         case parse.N_ARRAY:
-            if (want <= 255) {
+            if (want <= ELEM_MASK) {
                 unsupported(toks, diag, ls, tk, U_VIEW);
                 return;
             }
             literal_step(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, f, want);
         case parse.N_FIELD:
+            if ((sem[x].flags & resolve.SEM_RAW) != 0) {
+                // `x.raw` (SPEC-01 IM-57; box 15 unit 4e): the storage integer, as.raw.
+                if (st[f].state == 0) {
+                    st[f].state = 1;
+                    _ = push(toks, st, diag, ls, K_EXPR, nodes[x].a as I64, sem[nodes[x].a as I64].ty as I32, tk);
+                    return;
+                }
+                raw_as(toks, sir, diag, ls, ls[0].rty as I32, sem[x].ty as I32, tk);
+                return;
+            }
             if (nodes[nodes[x].a as I64].kind == parse.N_INDEX &&
                     nodes[nodes[nodes[x].a as I64].a as I64].kind == parse.N_NAME &&
                     (sem[nodes[x].a as I64].flags & resolve.SEM_DEREF) == 0) {
@@ -3293,7 +3530,7 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
                     return;
                 }
                 sir[ci].val = wrap_to(ity, bits as% I64);
-                if (is_wide(ity)) {
+                if (is_limbs(ity)) {
                     // Its limbs are in its record's limb rows (CINTC-16; box 15 unit 4b).
                     sir[ci].c = WC_DECL;
                     sir[ci].f = funcs[ic].entry;
@@ -3350,7 +3587,7 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
                 give(ls, VIEW_ARG - hr, fty, bfirst, ls[0].nsir);
                 return;
             }
-            if (fty > 255) {
+            if (fty > ELEM_MASK) {
                 // A whole array field as a value (task 2.14 indexes it only).
                 unsupported(toks, diag, ls, tk, U_STRUCT);
                 return;
@@ -3492,6 +3729,7 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
             sir[i].b = ls[0].rv as I32;
             sir[i].c = bo[0] as I32;
             sir[i].f = bo[1] as I32;
+            q_mode(sir, i);
             if (bin_faults(bo[0] as I32, bo[1] as I32)) {
                 site(sir, ls, i);
             }
@@ -3591,7 +3829,8 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
             I32 op = nodes[x].op;
             I32 to = type_of(toks, nodes, nodes[x].b as I64);
             Bool trial = op == scan.OP_AS_TRY;
-            if ((op != parse.CONV_AS && op != scan.OP_AS_WRAP && !trial) || to == T_NONE || nodes[x].c >= 0) {
+            if ((op != parse.CONV_AS && op != scan.OP_AS_WRAP && op != scan.OP_AS_SAT && !trial) || to == T_NONE ||
+                    (nodes[x].c >= 0 && sem[x].lit_len == 0)) {
                 unsupported(toks, diag, ls, tk, U_OPERATOR);
                 return;
             }
@@ -3600,6 +3839,8 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
                 form = 1;
             } else if (trial) {
                 form = 2;
+            } else if (op == scan.OP_AS_SAT) {
+                form = AS_SAT;
             }
             I64 a = nodes[x].a as I64;
             if (st[f].state == 0 && !trial && (nodes[a].kind == parse.N_LIT || nodes[a].kind == parse.N_NEGLIT)) {
@@ -3621,8 +3862,27 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
                     return;
                 }
                 sir[i].val = wrap_to(to, lit[0]);
-                if (is_wide(to)) {
-                    // Its value modulo 2^w (`as%`; the checker has decided `as`).
+                if (is_q(to) || form == AS_SAT) {
+                    // Its raw value L * 2^f, or the value `as|` gives (OQ-272), which the
+                    // checker folded (fold.fold_lit_q, fold.fold_lit_convert).
+                    sir[i].val = sem[x].bits as% I64;
+                }
+                if (is_q(to) && is_limbs(to)) {
+                    // Of 128 bits: the raw value check.ci stored (check.q_lit_raw).
+                    sir[i].c = WC_BYTES;
+                    sir[i].f = sem[x].lit_at as I32;
+                    sir[i].val = sem[x].lit_len;
+                } else if (is_wide(to) && (sem[x].flags & resolve.SEM_SAT_BOUND) != 0) {
+                    // `as|` outside the type: its minimum or maximum.
+                    sir[i].val = 0;
+                    sir[i].f = 0;
+                    sir[i].c = WC_MAX;
+                    if (nodes[a].kind == parse.N_NEGLIT) {
+                        sir[i].c = WC_MIN;
+                    }
+                } else if (is_wide(to)) {
+                    // Its value modulo 2^w (`as%`; the checker has decided `as`, and `as|` that
+                    // it fits).
                     literal_form(toks, sir, i, lt, nodes[a].kind == parse.N_NEGLIT, 0);
                     sir[i].val = lit[0];
                 }
@@ -3641,7 +3901,9 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
                 settle(sir, ls[0].rfirst, ls[0].rend, T_I64);
                 from = T_I64;
             }
-            if (to == T_BOOL) {
+            if (to == T_BOOL || (trial && (is_q(to) || is_q(from)) && (is_limbs(to) || is_limbs(from)))) {
+                // `as?` with fixed point and a side of 128 bits or more is not lowered yet
+                // (games wave G2b).
                 unsupported(toks, diag, ls, tk, U_OPERATOR);
                 return;
             }
@@ -3652,6 +3914,11 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
             sir[i].a = ls[0].rv as I32;
             sir[i].c = form;
             sir[i].f = from;
+            if (q_rounds(from, to)) {
+                // Its rounding mode when it drops fraction bits (SPEC-01 IM-68, IM-69): the
+                // `round` clause's, or half_even (check.ci, Sem.lit_len); none when it is exact.
+                sir[i].val = sem[x].lit_len;
+            }
             if (form == 0 && from != T_BOOL) {
                 site(sir, ls, i);
             }
@@ -3671,6 +3938,18 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
         case parse.N_CALL:
             I64 cn = nodes[x].a as I64;
             I32 cty = T_NONE;
+            if ((sem[x].flags & resolve.SEM_RAW) != 0) {
+                // `Q<i>.<f>.raw(n)` (SPEC-01 IM-57, SPEC-04 LS-38): n, of the storage integer
+                // type, as.raw to the fixed-point type.
+                I32 qty = sem[x].ty as I32;
+                if (st[f].state == 0) {
+                    st[f].state = 1;
+                    _ = push(toks, st, diag, ls, K_EXPR, nodes[x].b as I64, fold.q_storage(qty as I64) as I32, tk);
+                    return;
+                }
+                raw_as(toks, sir, diag, ls, fold.q_storage(qty as I64) as I32, qty, tk);
+                return;
+            }
             if ((sem[x].flags & resolve.SEM_MEMBER) != 0) {
                 member_step(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, f);
                 return;
@@ -3706,6 +3985,29 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
     }
 }
 
+// The form of an SO_AS node that saturates, `as|` (`as.sat`, SPEC-01 IM-50, IM-68; OQ-272): it
+// never faults.
+export const I32 AS_SAT = 3;
+// The form of an SO_AS node that reinterprets: a fixed-point value as its storage integer, or
+// that integer as the fixed-point value (`as.raw`, SPEC-01 IM-57; box 15 unit 4e). It never
+// faults and is no counted step.
+export const I32 AS_RAW = 4;
+
+// Gives the value lowered last, of type from, as.raw in type to: one SO_AS of form AS_RAW.
+void raw_as[t, ns, r](in scan.Token[t] toks, inout Sir[ns] sir, inout limits.CompilerDiag[r] diag, inout LState[_] ls,
+        I32 from, I32 to, I64 tk) {
+    I64 first = ls[0].rfirst;
+    I64 v = ls[0].rv;
+    I64 i = def_sir(toks, sir, diag, ls, SO_AS, to, tk);
+    if (i < 0) {
+        return;
+    }
+    sir[i].a = v as I32;
+    sir[i].c = AS_RAW;
+    sir[i].f = from;
+    give(ls, i, to, first, i + 1);
+}
+
 // Argument i of call x, or -1.
 I64 call_arg(in parse.Node[_] nodes, I64 x, I64 i) {
     I64 g = nodes[x].b as I64;
@@ -3727,6 +4029,10 @@ void builtin_step[n, t, ns, s, r](in U8[n] text, in scan.Token[t] toks, in parse
         I32 want) {
     I64 x = st[f].node as I64;
     I64 tk = nodes[x].tok as I64;
+    if (fold.builtin_q_only(id) || (fold.builtin_q(id) && is_q(sem[x].opty as I32))) {
+        qbuiltin_step(toks, nodes, sem, sir, funcs, st, diag, ls, f, id);
+        return;
+    }
     I64 nv = fold.builtin_values(id);
     Bool rot = id == fold.BI_ROTL || id == fold.BI_ROTR || id == fold.BI_SHL_RESULT;
     Bool same = fold.builtin_same(id);
@@ -3767,7 +4073,13 @@ void builtin_step[n, t, ns, s, r](in U8[n] text, in scan.Token[t] toks, in parse
         } else if (w == T_NONE && same) {
             w = want;
         }
-        _ = push(toks, st, diag, ls, K_EXPR, call_arg(nodes, x, start + k), w, tk);
+        I64 v = call_arg(nodes, x, start + k);
+        if (fold.builtin_result(id) && is_q(sem[x].opty as I32)) {
+            // A fixed-point result form (OQ-273, OQ-278): each value has the type the checker
+            // gave it, a fraction literal's included.
+            w = sem[v].ty as I32;
+        }
+        _ = push(toks, st, diag, ls, K_EXPR, v, w, tk);
         return;
     }
     I32 opty = st[f].d;
@@ -3794,13 +4106,16 @@ void builtin_step[n, t, ns, s, r](in U8[n] text, in scan.Token[t] toks, in parse
     } else if (id == fold.BI_MULDIV) {
         rty = resolve.int_class(toks[nodes[call_arg(nodes, x, 0)].tok as I64].aux & 255) as I32;
     }
-    if (!is_int(opty) && opty != T_NONE) {
+    if ((!is_int(opty) && opty != T_NONE && !(is_q(opty) && fold.builtin_result(id))) ||
+            (is_q(opty) && is_limbs(opty) && fold.builtin_result(id))) {
+        // Another type, or a result form on fixed point of 128 bits (not lowered yet).
         unsupported(toks, diag, ls, tk, U_EXPRESSION);
         return;
     }
     if (fold.builtin_result(id)) {
         // A result-returning form (SPEC-01 IM-30, IM-188; box 12): SO_BIN of form 3, which
-        // never faults, and its tag, a union.
+        // never faults, and its tag, a union. On fixed point (OQ-273, OQ-278), `mul_result`
+        // and `div_result` keep the checker's mode, half_even by default, in val.
         I64 rn = def_sir(toks, sir, diag, ls, SO_BIN, opty, tk);
         if (rn < 0) {
             return;
@@ -3813,6 +4128,9 @@ void builtin_step[n, t, ns, s, r](in U8[n] text, in scan.Token[t] toks, in parse
         sir[rn].b = st[f].e;
         sir[rn].c = ((B_ADD as I64) + id - fold.BI_ADD_RESULT) as I32;
         sir[rn].f = 3;
+        if (is_q(opty)) {
+            sir[rn].val = sem[x].lit_len;
+        }
         sir[g].a = rn as I32;
         give(ls, g, T_U16, st[f].c as I64, g + 1);
         return;
@@ -3828,6 +4146,84 @@ void builtin_step[n, t, ns, s, r](in U8[n] text, in scan.Token[t] toks, in parse
     sir[i].val = mode;
     if (rty != opty) {
         sir[i].val = mode + 256 * (opty as I64);
+    }
+    if (fold.builtin_faults(id)) {
+        site(sir, ls, i);
+    }
+    kernel_step(toks, sir, funcs, diag, ls, tk);
+    give(ls, i, rty, st[f].c as I64, i + 1);
+}
+
+// A call of a fixed-point built-in id (box 15 unit 4e; SPEC-01 IM-60 to IM-67), frame f: its
+// values in written order, each with the type the checker gave it (those of `qmul` and
+// `mul_int` differ), then `mul`, `div`, `mul_wrap` and `mul_sat` as the SO_BIN of their
+// operator with the call's mode, and the others as one SO_BUILTIN: `abs`, `min` and `max`
+// of the operands' type, `sqrt` with its mode, `qmul` into R (val the mode plus 256 times
+// the type of a) and `mul_int`, with 131072 times the type of b in val for these two. The
+// checker keeps the operand type in Sem.opty and the mode, a default included, in
+// Sem.lit_len. Frame: state the values lowered, a and e the values, c the first node.
+void qbuiltin_step[t, ns, s, r](in scan.Token[t] toks, in parse.Node[_] nodes, in resolve.Sem[_] sem, inout Sir[ns] sir,
+        in SirFunc[_] funcs, inout parse.Frame[s] st, inout limits.CompilerDiag[r] diag, inout LState[_] ls, I64 f, I64 id) {
+    I64 x = st[f].node as I64;
+    I64 tk = nodes[x].tok as I64;
+    I64 start = 0;
+    if (id == fold.BI_QMUL) {
+        start = 1;
+    }
+    I64 k = st[f].state as I64;
+    if (k == 0) {
+        st[f].c = ls[0].nsir as I32;
+    } else if (k == 1) {
+        st[f].a = ls[0].rv as I32;
+    } else {
+        st[f].e = ls[0].rv as I32;
+    }
+    if (k < fold.builtin_values(id)) {
+        st[f].state = (k + 1) as I32;
+        I64 v = call_arg(nodes, x, start + k);
+        _ = push(toks, st, diag, ls, K_EXPR, v, sem[v].ty as I32, tk);
+        return;
+    }
+    I32 opty = sem[x].opty as I32;
+    I32 rty = sem[x].ty as I32;
+    I64 mode = sem[x].lit_len;
+    if (id >= fold.BI_QMUL_OP && id <= fold.BI_QMUL_SAT) {
+        I64 bn = def_sir(toks, sir, diag, ls, SO_BIN, opty, tk);
+        if (bn < 0) {
+            return;
+        }
+        sir[bn].a = st[f].a;
+        sir[bn].b = st[f].e;
+        sir[bn].c = B_MUL;
+        if (id == fold.BI_QDIV) {
+            sir[bn].c = B_DIV;
+        } else if (id == fold.BI_QMUL_WRAP) {
+            sir[bn].f = 1;
+        } else if (id == fold.BI_QMUL_SAT) {
+            sir[bn].f = 2;
+        }
+        sir[bn].val = mode;
+        if (sir[bn].f == 0) {
+            site(sir, ls, bn);
+        }
+        kernel_step(toks, sir, funcs, diag, ls, tk);
+        give(ls, bn, opty, st[f].c as I64, bn + 1);
+        return;
+    }
+    I64 i = def_sir(toks, sir, diag, ls, SO_BUILTIN, rty, tk);
+    if (i < 0) {
+        return;
+    }
+    sir[i].a = st[f].a;
+    sir[i].b = st[f].e;
+    sir[i].c = -1;
+    sir[i].f = id as I32;
+    sir[i].val = mode;
+    if (rty != opty) {
+        sir[i].val = mode + 256 * (opty as I64);
+    }
+    if (id == fold.BI_QMUL || id == fold.BI_MUL_INT) {
+        sir[i].val += 131072 * sem[call_arg(nodes, x, start + 1)].ty;
     }
     if (fold.builtin_faults(id)) {
         site(sir, ls, i);
@@ -4033,7 +4429,7 @@ void cond_step[t, m, ns, r](in scan.Token[t] toks, in parse.Node[m] nodes, in re
     } else if (ety == T_NONE && ty != T_NONE) {
         settle(sir, st[f].d as I64, ls[0].rend, ty);
     }
-    if (ty != T_NONE && !is_int(ty) && ty != T_BOOL) {
+    if (ty != T_NONE && !is_int(ty) && ty != T_BOOL && !is_q(ty)) {
         unsupported(toks, diag, ls, tk, U_EXPRESSION);
         return;
     }
@@ -4453,6 +4849,10 @@ void call_step[n, t, m, ns, s, r](in U8[n] text, in scan.Token[t] toks, in parse
         return;
     }
     sir[i].a = fn as I32;
+    sir[i].b = 0;
+    if ((funcs[fn].flags & FN_EXTERN) != 0) {
+        sir[i].b = 1;
+    }
     sir[i].c = (k + nsz) as I32;
     site(sir, ls, i);
     ls[0].sp = at - k + 1;
@@ -4577,7 +4977,8 @@ I64 convert_tag[t, ns, r](in scan.Token[t] toks, in parse.Node[_] nodes, in reso
     }
     I64[256] bases;
     I64 nb = resolve.errset_bases(nodes, sem, s, bases);
-    if (nb <= 0) {
+    if (nb <= 0 || resolve.is_import_set(s) || resolve.is_import_set(w)) {
+        // No set holds the values of another imported set (resolve.IMPORT_SET).
         unsupported(toks, diag, ls, tk, U_EXPRESSION);
         return -1;
     }
@@ -4773,6 +5174,19 @@ I64 describe_set[n, t](in U8[n] text, in scan.Token[t] toks, in parse.Node[_] no
         I64 tk) {
     I64 d = resolve.errset_node(nodes, s);
     I64 name = -1;
+    if (d <= resolve.IMPORT_BASE_MAX) {
+        // An imported set (I/O services lane U5): the group declare_import_sets made, or a
+        // copy of it before an entry.
+        I64 es0 = find_import_set(slots, ls, resolve.import_base_row(d));
+        if (es0 < 0) {
+            unsupported(toks, diag, ls, tk, U_IMPORT);
+            return -1;
+        }
+        if (!fresh) {
+            return es0;
+        }
+        return copy_set_slots(toks, slots, diag, ls, es0, tk);
+    }
     if (d >= 0) {
         name = nodes[d].tok as I64;
     } else if (d == resolve.ALLOC_BASE) {
@@ -5958,9 +6372,13 @@ I64 format_form(in I64[_] sp) {
 // right and each once, and its value kept in a value frame (G-C2 review COR-1): a call in a
 // hole that prints ends its own statement before this one is staged, as in `cint_ref`, and
 // a hole that faults stages nothing. Then begin, the pieces and the kept values in source
-// order, end. The checker has checked each hole's format specification (LS-213). A hole with
-// a conversion, or with the kind `c` (LS-209, whose E_NARROW needs a fault site per hole),
-// is C9102.
+// order, end. The checker has checked each hole's format specification (LS-213). Box 15
+// unit 4e: a fixed-point value prints its decimal (`.precision` too), and `!raw` and `!bits`
+// of one print its storage integer, as.raw; a hole that names an owned array of static
+// extent prints `[a, b, c]`, each element in row-major order with the hole's specification
+// (LS-214), its elements loaded when the hole is evaluated (frame b the array's slot, a its
+// first element's load), unless a later hole calls a function. Another conversion, the kind
+// `c` (LS-209, whose E_NARROW needs a fault site per hole), and another array are C9102.
 void lower_print[t, m, ns, r](inout U8[_] text, in scan.Token[t] toks, in parse.Node[m] nodes, in resolve.Sem[_] sem, inout Sir[ns] sir,
         in SirFunc[_] funcs, inout SirSlot[_] slots, inout parse.Frame[_] st, inout limits.CompilerDiag[r] diag,
         inout LState[_] ls, I64 x) {
@@ -5972,15 +6390,59 @@ void lower_print[t, m, ns, r](inout U8[_] text, in scan.Token[t] toks, in parse.
         if (nodes[p].kind == parse.N_HOLE) {
             I64 htk = nodes[nodes[p].a as I64].tok as I64;
             Bool spec = nodes[p].c >= 0 && parse.format_spec(text, nodes[p].c as I64, nodes[p].d as I64, sp);
-            if (nodes[p].op != 0 || (spec && sp[parse.FS_KIND] == 'c')) {
+            I32 conv = nodes[p].op & 255;
+            if ((conv != 0 && conv != parse.HOLE_RAW && conv != parse.HOLE_BITS) || (spec && sp[parse.FS_KIND] == 'c')) {
                 unsupported(toks, diag, ls, htk, U_HOLE);
                 return;
+            }
+            I64 ak = -1;
+            I64 he = nodes[p].a as I64;
+            if (nodes[he].kind == parse.N_NAME) {
+                ak = find_slot(text, toks, funcs, slots, ls, nodes[he].tok as I64);
+            }
+            if (ak >= 0 && slots[ak].kind == SK_ARRAY) {
+                I32 aty = array_elem(slots[ak].ty);
+                I64 n = array_extent(slots[ak].ty);
+                if (conv != 0 || slots[ak].ty >= T_STRUCT || is_wide(aty) || n <= 0 ||
+                        !(is_int(aty) || is_q(aty) || aty == T_BOOL)) {
+                    unsupported(toks, diag, ls, htk, U_HOLE);
+                    return;
+                }
+                I64 af = push(toks, st, diag, ls, K_VALUE, p, aty, htk);
+                if (af < 0) {
+                    return;
+                }
+                st[af].a = ls[0].nsir as I32;
+                st[af].b = ak as I32;
+                for j in 0..n {
+                    I64 ci = def_sir(toks, sir, diag, ls, SO_CONST, T_I64, htk);
+                    if (ci < 0) {
+                        return;
+                    }
+                    sir[ci].val = j;
+                    if (element(toks, sir, slots, diag, ls, ak, ci, htk) < 0) {
+                        return;
+                    }
+                }
+                p = nodes[p].next as I64;
+                continue;
             }
             if (!lower_expr(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, nodes[p].a as I64, T_NONE)) {
                 return;
             }
             I32 ty = ls[0].rty as I32;
-            if (!is_int(ty) && ty != T_BOOL) {
+            if (conv != 0 && is_q(ty)) {
+                // `!raw` and `!bits`: the storage integer (LS-201), `!bits` by the form's flag.
+                // raw_as gives its value as a frame's last step does, popping a frame; here no
+                // frame was pushed for it.
+                raw_as(toks, sir, diag, ls, ty, fold.q_storage(ty as I64) as I32, htk);
+                ls[0].sp += 1;
+                ty = ls[0].rty as I32;
+            } else if (conv != 0) {
+                unsupported(toks, diag, ls, htk, U_HOLE);
+                return;
+            }
+            if (!is_int(ty) && ty != T_BOOL && !is_q(ty)) {
                 unsupported(toks, diag, ls, htk, U_HOLE);
                 return;
             }
@@ -5994,6 +6456,19 @@ void lower_print[t, m, ns, r](inout U8[_] text, in scan.Token[t] toks, in parse.
             return;
         }
         p = nodes[p].next as I64;
+    }
+    for g in base..ls[0].sp {
+        if (st[g].b >= 0) {
+            // An array's elements are loaded when its hole is evaluated, so no later hole may
+            // call a function, which could store to it before cint_ref reads it.
+            for j in (st[g].a as I64)..ls[0].nsir {
+                I32 jk = sir[j].op & OP_MASK;
+                if (jk == SO_CALL || jk == SO_KCALL || jk == SO_MEMBER) {
+                    unsupported(toks, diag, ls, nodes[nodes[st[g].node as I64].a as I64].tok as I64, U_HOLE);
+                    return;
+                }
+            }
+        }
     }
     I64 b = add_sir(toks, sir, diag, ls, SO_PRINT_BEGIN, T_NONE, tk);
     site(sir, ls, b);
@@ -6009,24 +6484,28 @@ void lower_print[t, m, ns, r](inout U8[_] text, in scan.Token[t] toks, in parse.
             if (nm >= 0) {
                 print_text(text, toks, sir, diag, ls, nodes[nm].c as I64, nodes[nm].d as I64, true, htk);
             }
-            I64 v = add_sir(toks, sir, diag, ls, SO_PRINT_VALUE, st[h].want, htk);
-            if (v >= 0) {
-                sir[v].a = st[h].a;
-                if (spec) {
-                    sir[v].e = format_form(sp) as I32;
-                    sir[v].f = ' ';
-                    if (sp[parse.FS_FILL] >= 0) {
-                        sir[v].f = sp[parse.FS_FILL] as I32;
-                    }
-                    sir[v].val = sp[parse.FS_WIDTH];
-                    if (sp[parse.FS_WIDTH] < 0) {
-                        sir[v].val = 0;
-                    }
-                    sir[v].c = 0;
-                    if (sp[parse.FS_SCALE] >= 0) {
-                        sir[v].c = sp[parse.FS_SCALE] as I32;
-                    }
+            I64 n = 1;
+            if (st[h].b >= 0) {
+                n = array_extent(slots[st[h].b as I64].ty);
+                print_bytes(toks, sir, diag, ls, text, "[", htk);
+            }
+            for j in 0..n {
+                if (j > 0) {
+                    print_bytes(toks, sir, diag, ls, text, ", ", htk);
                 }
+                I64 v = add_sir(toks, sir, diag, ls, SO_PRINT_VALUE, st[h].want, htk);
+                if (v < 0) {
+                    return;
+                }
+                sir[v].a = st[h].a;
+                if (st[h].b >= 0) {
+                    // The load of element j: its index, its check and its load (lower_print).
+                    sir[v].a = (st[h].a as I64 + 3 * j + 2) as I32;
+                }
+                print_form(sir, v, sp, spec, (nodes[p].op & 255) == parse.HOLE_BITS);
+            }
+            if (st[h].b >= 0) {
+                print_bytes(toks, sir, diag, ls, text, "]", htk);
             }
             h += 1;
         }
@@ -6034,6 +6513,62 @@ void lower_print[t, m, ns, r](inout U8[_] text, in scan.Token[t] toks, in parse.
     }
     ls[0].sp = base;
     _ = add_sir(toks, sir, diag, ls, SO_PRINT_END, T_NONE, tk);
+}
+
+// The specification of SO_PRINT_VALUE node v: format_form of sp when spec, the fill, the width
+// and the scale (a fixed-point value's precision, CINT_FORMAT_PRECISION 8192 in the form, and
+// no kind; box 15 unit 4e); `!bits` adds CINT_FORMAT_BITS 4096, with the form of no kind when
+// there is no specification.
+void print_form(inout Sir[_] sir, I64 v, in I64[_] sp, Bool spec, Bool bits) {
+    if (spec) {
+        sir[v].e = format_form(sp) as I32;
+        if (is_q(sir[v].ty)) {
+            // A fixed-point form has no kind (cint_rt_print_format_fixed); 0 when it is empty.
+            sir[v].e -= 1;
+        }
+        sir[v].f = ' ';
+        if (sp[parse.FS_FILL] >= 0) {
+            sir[v].f = sp[parse.FS_FILL] as I32;
+        }
+        sir[v].val = sp[parse.FS_WIDTH];
+        if (sp[parse.FS_WIDTH] < 0) {
+            sir[v].val = 0;
+        }
+        sir[v].c = 0;
+        if (sp[parse.FS_SCALE] >= 0) {
+            sir[v].c = sp[parse.FS_SCALE] as I32;
+        }
+        if (sp[parse.FS_PRECISION] >= 0) {
+            sir[v].e += 8192;
+            sir[v].c = sp[parse.FS_PRECISION] as I32;
+        }
+    }
+    if (bits) {
+        if (!spec) {
+            sir[v].e = 1;
+            sir[v].f = ' ';
+        }
+        sir[v].e += 4096;
+    }
+}
+
+// SO_PRINT_BYTES of the bytes `s`, stored after the module's text.
+void print_bytes[tn, t, ns, r, k](in scan.Token[t] toks, inout Sir[ns] sir, inout limits.CompilerDiag[r] diag,
+        inout LState[_] ls, inout U8[tn] text, in U8[k] s, I64 tk) {
+    I64 at = ls[0].textn;
+    if (at + k > tn) {
+        stop_at(toks, diag, ls, limits.C_LIMIT, tk, limits.LIM_SOURCE, tn);
+        return;
+    }
+    for j in 0..k {
+        text[at + j] = s[j];
+    }
+    ls[0].textn = at + k;
+    I64 i = add_sir(toks, sir, diag, ls, SO_PRINT_BYTES, T_NONE, tk);
+    if (i >= 0) {
+        sir[i].val = at;
+        sir[i].c = k as I32;
+    }
 }
 
 // Stores value v in slot k (with the slot's type).
@@ -6099,7 +6634,7 @@ void lower_var[n, t, m, ns, nl, r](in U8[n] text, in scan.Token[t] toks, in pars
         if (nitems >= 0 && !resolve.is_struct(elem)) {
             I64 bytes = 1;
             if (elem != fold.TY_BOOL) { bytes = fold.ty_width(elem) / 8; }
-            if (nitems * bytes <= 4096) { aty = (elem as I32) | ((nitems as I32) << 8); }
+            if (nitems * bytes <= 4096) { aty = (elem as I32) | ((nitems as I32) << ELEM_BITS); }
         } else if (nitems >= 0) {
             aty = struct_shape_of(text, toks, nodes, slots, ls, nodes[x].a as I64, -1, nitems);
         }
@@ -6281,15 +6816,15 @@ void literal_step[n, t, m, ns, nl, r](in U8[n] text, in scan.Token[t] toks, in p
             return;
         }
         st[f].d = ls[0].nsir as I32;
-        I64 flat = add_slot(toks, slots, diag, ls, -1, ety | ((total as I32) << 8), SK_ARRAY, tk);
-        I64 da = add_sir(toks, sir, diag, ls, SO_LOCAL, ety | ((total as I32) << 8), tk);
+        I64 flat = add_slot(toks, slots, diag, ls, -1, ety | ((total as I32) << ELEM_BITS), SK_ARRAY, tk);
+        I64 da = add_sir(toks, sir, diag, ls, SO_LOCAL, ety | ((total as I32) << ELEM_BITS), tk);
         if (da < 0) {
             return;
         }
         sir[da].a = flat as I32;
         I64 k = flat;
         if (rk > 1) {
-            k = add_slot(toks, slots, diag, ls, -1, ety | ((rk as I32) << 8), SK_NVIEW, tk);
+            k = add_slot(toks, slots, diag, ls, -1, ety | ((rk as I32) << ELEM_BITS), SK_NVIEW, tk);
             if (view_node(toks, sir, diag, ls, SO_VBEGIN, ety, k, flat, -1, 0, packed, tk) < 0) {
                 return;
             }
@@ -6387,7 +6922,7 @@ void lower_array_var[n, t, m, ns, nl, r](in U8[n] text, in scan.Token[t] toks, i
     }
     I64 src = -1;
     if (fixed && init >= 0 && !lit) {
-        src = array_source(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, ety | (VIEW_ANY << 8), init);
+        src = array_source(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, ety | (VIEW_ANY << ELEM_BITS), init);
         if (src < 0) {
             return;
         }
@@ -6399,15 +6934,15 @@ void lower_array_var[n, t, m, ns, nl, r](in U8[n] text, in scan.Token[t] toks, i
         if (rk > 1) {
             name = -1;
         }
-        flat = add_slot(toks, slots, diag, ls, name, ety | ((total as I32) << 8), SK_ARRAY, tk);
-        I64 da = add_sir(toks, sir, diag, ls, SO_LOCAL, ety | ((total as I32) << 8), tk);
+        flat = add_slot(toks, slots, diag, ls, name, ety | ((total as I32) << ELEM_BITS), SK_ARRAY, tk);
+        I64 da = add_sir(toks, sir, diag, ls, SO_LOCAL, ety | ((total as I32) << ELEM_BITS), tk);
         if (da < 0) {
             return;
         }
         sir[da].a = flat as I32;
         k = flat;
         if (rk > 1) {
-            k = add_slot(toks, slots, diag, ls, tk, ety | ((rk as I32) << 8), SK_NVIEW, tk);
+            k = add_slot(toks, slots, diag, ls, tk, ety | ((rk as I32) << ELEM_BITS), SK_NVIEW, tk);
             if (view_node(toks, sir, diag, ls, SO_VBEGIN, ety, k, flat, -1, 0, packed, tk) < 0) {
                 return;
             }
@@ -6434,7 +6969,7 @@ void lower_array_var[n, t, m, ns, nl, r](in U8[n] text, in scan.Token[t] toks, i
             }
             g = nodes[g].next as I64;
         }
-        k = add_slot(toks, slots, diag, ls, tk, ety | ((rk as I32) << 8), SK_NVIEW, tk);
+        k = add_slot(toks, slots, diag, ls, tk, ety | ((rk as I32) << ELEM_BITS), SK_NVIEW, tk);
         for d in 0..rk {
             _ = view_node(toks, sir, diag, ls, SO_VDIM, ety, k, ext[d], -1, d, 0, tk);
         }
@@ -6442,7 +6977,7 @@ void lower_array_var[n, t, m, ns, nl, r](in U8[n] text, in scan.Token[t] toks, i
         I64 al = view_node(toks, sir, diag, ls, SO_VALLOC, ety, k, -1, -1, rk, known, tk);
         site(sir, ls, al);
         if (init >= 0) {
-            src = array_source(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, ety | (VIEW_ANY << 8), init);
+            src = array_source(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, ety | (VIEW_ANY << ELEM_BITS), init);
             if (src < 0) {
                 return;
             }
@@ -6469,7 +7004,7 @@ void lower_view_var[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in par
     }
     I32 ety = slot_elem(ty) as I32;
     I64 init = nodes[x].b as I64;
-    if (!lower_expr(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, init, ety | (VIEW_ANY << 8))) {
+    if (!lower_expr(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, init, ety | (VIEW_ANY << ELEM_BITS))) {
         return;
     }
     I64 s = view_value(toks, slots, diag, ls, ls[0].rv, nodes[init].tok as I64);
@@ -6486,7 +7021,7 @@ void lower_view_var[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in par
         slots[s].name = tk as I32;
         return;
     }
-    I64 k = add_slot(toks, slots, diag, ls, tk, ety | ((resolve.array_rank(ty) as I32) << 8), SK_NVIEW, tk);
+    I64 k = add_slot(toks, slots, diag, ls, tk, ety | ((resolve.array_rank(ty) as I32) << ELEM_BITS), SK_NVIEW, tk);
     I64 vb = view_node(toks, sir, diag, ls, SO_VBEGIN, ety, k, s, -1, 0, 0, tk);
     if (vb >= 0 && nodes[x].op == scan.KW_IN) {
         // A read-only view (SPEC-02 A-8: a dispatch's alias record says read).
@@ -6505,7 +7040,7 @@ void lower_view_assign[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in 
         unsupported(toks, diag, ls, tk, U_VIEW);
         return;
     }
-    if (!lower_expr(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, target, VIEW_ANY << 8)) {
+    if (!lower_expr(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, target, VIEW_ANY << ELEM_BITS)) {
         return;
     }
     I64 k = view_value(toks, slots, diag, ls, ls[0].rv, nodes[target].tok as I64);
@@ -6595,6 +7130,7 @@ void lower_view_element[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in
         sir[v].b = rhs as I32;
         sir[v].c = bo[0] as I32;
         sir[v].f = bo[1] as I32;
+        q_mode(sir, v);
         if (bin_faults(bo[0] as I32, bo[1] as I32)) {
             site(sir, ls, v);
         }
@@ -6732,6 +7268,7 @@ void lower_assign[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse
     sir[i].b = rhs as I32;
     sir[i].c = bo[0] as I32;
     sir[i].f = bo[1] as I32;
+    q_mode(sir, i);
     if (bin_faults(bo[0] as I32, bo[1] as I32)) {
         site(sir, ls, i);
     }
@@ -6757,7 +7294,7 @@ I64 array_source[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.
         in SirFunc[_] funcs, inout SirSlot[_] slots, inout parse.Frame[_] st, inout limits.CompilerDiag[r] diag,
         inout LState[_] ls, I32 ty, I64 e) {
     I32 want = ty;
-    if (want <= 255) { want = want | (VIEW_ANY << 8); }
+    if (want <= ELEM_MASK) { want = want | (VIEW_ANY << ELEM_BITS); }
     if (!lower_expr(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, e, want)) { return -1; }
     if (ls[0].rv > VIEW_ARG || ls[0].rv <= STR_ARG) {
         unsupported(toks, diag, ls, nodes[e].tok as I64, U_VIEW);
@@ -6925,7 +7462,7 @@ void lower_field_assign[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in
         sir[cp].c = j as I32;
         return;
     }
-    if (ty > 255) {
+    if (ty > ELEM_MASK) {
         unsupported(toks, diag, ls, tk, U_STRUCT);
         return;
     }
@@ -6984,6 +7521,7 @@ void lower_field_assign[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in
         sir[i].b = rhs as I32;
         sir[i].c = bo[0] as I32;
         sir[i].f = bo[1] as I32;
+        q_mode(sir, i);
         if (bin_faults(bo[0] as I32, bo[1] as I32)) {
             site(sir, ls, i);
         }
@@ -7106,6 +7644,7 @@ void lower_element_assign[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, 
         sir[v].b = rhs as I32;
         sir[v].c = bo[0] as I32;
         sir[v].f = bo[1] as I32;
+        q_mode(sir, v);
         if (bin_faults(bo[0] as I32, bo[1] as I32)) {
             site(sir, ls, v);
         }
@@ -7239,7 +7778,7 @@ Bool lower_simple[t, m, ns, r](inout U8[_] text, in scan.Token[t] toks, in parse
         case parse.N_REDUCE:
             lower_reduce(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, x);
         case parse.N_FALLTHROUGH, parse.N_STATIC_ASSERT, parse.N_FUNC, parse.N_TEST, parse.N_PROFILE, parse.N_IMPORT,
-                parse.N_KERNEL, parse.N_ERROR_DECL:
+                parse.N_KERNEL, parse.N_ERROR_DECL, parse.N_EXTERN, parse.N_REQUIRES:
             // fallthrough is read by the case that ends with it; static_assert has no
             // run-time part; declarations among a script's statements are lowered apart, and
             // an import is bound by the checker (task 2.13 part (iii)), as an error set is
@@ -7905,7 +8444,7 @@ void dispatch_step[n, t, m, ns, s, r](in U8[n] text, in scan.Token[t] toks, in p
         if (slots[q].kind != SK_KOUT) {
             I32 w = slots[q].ty;
             if (slots[q].kind == SK_NVIEW) {
-                w = array_elem(w) | (VIEW_ANY << 8);
+                w = array_elem(w) | (VIEW_ANY << ELEM_BITS);
             }
             _ = push(toks, st, diag, ls, K_EXPR, arg, w, tk);
             return;
@@ -7999,7 +8538,8 @@ void lower_reduce[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse
     I64 ctk = nodes[nodes[c].a as I64].tok as I64;
     I64 q = find_slot(text, toks, funcs, slots, ls, nodes[x].c as I64);
     I64 op = kernel_reduce_op(sem, x);
-    if (q < 0 || slots[q].kind != SK_KOUT || op == 0) {
+    if (q < 0 || slots[q].kind != SK_KOUT || op == 0 || (op == 4 && is_q(slots[q].ty) && is_limbs(slots[q].ty))) {
+        // fold_checked into fixed point of 128 bits is not lowered yet (games wave G2b).
         unsupported(toks, diag, ls, nodes[x].tok as I64, U_STATEMENT);
         return;
     }
@@ -8064,7 +8604,7 @@ void declare_kernel[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in par
         I32 ty = T_NONE;
         I32 kind = SK_PARAM;
         if (resolve.is_array(pt) && !resolve.is_struct(resolve.array_elem(pt)) && resolve.array_rank(pt) <= 4) {
-            ty = (slot_elem(pt) as I32) | ((resolve.array_rank(pt) as I32) << 8);
+            ty = (slot_elem(pt) as I32) | ((resolve.array_rank(pt) as I32) << ELEM_BITS);
             kind = SK_NVIEW;
         } else if (!resolve.is_array(pt)) {
             ty = type_of(toks, nodes, nodes[p].a as I64);
@@ -8076,7 +8616,7 @@ void declare_kernel[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in par
         if (resolve.is_array(pt)) {
             et = resolve.array_elem(pt);
         }
-        if ((funcs[k].flags & FN_EXPORT) != 0 && (resolve.is_errset(et) || scalar_type(et) == T_NONE)) {
+        if ((funcs[k].flags & FN_EXPORT) != 0 && (resolve.is_errset(et) || scalar_type(et) == T_NONE || fold.ty_q(et))) {
             // A public wrapper and its type signature carry Bool and the integers of 8 to
             // 64 bits (back_c.c_public_kernel; compiler/OPEN.md CINTC-OQ-58 item 8).
             ty = T_NONE;
@@ -8582,7 +9122,7 @@ Bool is_statement(in parse.Node[_] nodes, I64 x) {
     switch (nodes[x].kind) {
         case parse.N_FUNC, parse.N_STRUCT, parse.N_ENUM, parse.N_ERROR_DECL, parse.N_TYPE_DECL, parse.N_KERNEL,
                 parse.N_SCHEDULE, parse.N_TEST, parse.N_STATIC_ASSERT, parse.N_IMPORT, parse.N_PROFILE,
-                parse.N_VAR, parse.N_ATTR:
+                parse.N_VAR, parse.N_ATTR, parse.N_EXTERN, parse.N_REQUIRES:
             return false;
         default:
             return true;
@@ -8651,7 +9191,7 @@ void declare_func[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in parse
             if (resolve.is_handle(resolve.union_value(sem[x].ty))) {
                 result = T_HANDLE;
             }
-            if (result == T_NONE || is_wide(result)) {
+            if (result == T_NONE || is_limbs(result)) {
                 // A wide value in an error union is not lowered yet (box 15 unit 4).
                 unsupported(toks, diag, ls, nodes[nodes[x].a as I64].tok as I64, U_TYPE);
                 return;
@@ -8676,10 +9216,10 @@ void declare_func[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in parse
         }
     }
     Bool exported = (nodes[x].flags & parse.F_EXPORT) != 0;
-    if (exported && root && is_wide(result)) {
-        // An entry's wide result has no observer, wrapper or reflection form yet (box 15
-        // unit 4; compiler/OPEN.md CINTC-OQ-15). An export of another module needs none: it
-        // has no wrapper or reflection form, and no observer entry (box 15 unit 4c).
+    if (exported && root && (is_wide(result) || is_q(result))) {
+        // An entry's wide or fixed-point result has no observer, wrapper or reflection form
+        // yet (box 15 unit 4; compiler/OPEN.md CINTC-OQ-15). An export of another module needs
+        // none: it has no wrapper or reflection form, and no observer entry (box 15 unit 4c).
         unsupported(toks, diag, ls, nodes[nodes[x].a as I64].tok as I64, U_TYPE);
         return;
     }
@@ -8712,8 +9252,16 @@ void declare_func[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in parse
     // Aggregate exports have public wrappers only in the root module. Observer
     // entries remain scalar-only in every module (CONF-13 X-2).
     Bool aggregate = false;
+    Bool grants = false;
+    Bool args = false;
     I64 p = nodes[x].b as I64;
     while (p >= 0) {
+        // The program arguments of `main`, `in U8[_] args` (FN_ARGS): the parameter after a
+        // `Grants` one, or the first; another function's parameter of that type is a plain view.
+        args = resolve.is_array(sem[p].ty) && resolve.array_rank(sem[p].ty) == 1 &&
+            resolve.array_elem(sem[p].ty) == fold.TY_U8 && resolve.array_extent(sem[p].ty) < 0 &&
+            resolve.array_size(sem[p].ty) < 0 && nodes[p].op == scan.KW_IN &&
+            (funcs[k].nparam == 0 || (funcs[k].nparam == 1 && grants));
         if (resolve.is_mem(sem[p].ty)) {
             aggregate = true;
             if (exported || !root) {
@@ -8737,12 +9285,27 @@ void declare_func[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in parse
             p = nodes[p].next as I64;
             continue;
         }
+        if (sem[p].ty == resolve.TY_GRANTS) {
+            // A `Grants` parameter (FN_GRANTS): the handle slot, passed `in` with no shape.
+            if (nodes[p].b >= 0 || (nodes[p].op != 0 && nodes[p].op != scan.KW_IN)) {
+                unsupported(toks, diag, ls, nodes[p].tok as I64, U_VIEW);
+                return;
+            }
+            I64 gs = add_slot(toks, slots, diag, ls, nodes[p].tok as I64, T_GRANTS, SK_PARAM, nodes[p].tok as I64);
+            if (gs < 0) {
+                return;
+            }
+            grants = true;
+            funcs[k].nparam += 1;
+            p = nodes[p].next as I64;
+            continue;
+        }
         I32 ty = decl_type(toks, nodes, sem, nodes[p].a as I64, p);
         I32 kind = SK_PARAM;
-        if (exported && (is_wide(ty) || (resolve.is_array(sem[p].ty) &&
-                fold.ty_wide(resolve.array_elem(sem[p].ty))))) {
-            // Nor has an entry's wide parameter (box 15 unit 4); another module's export
-            // takes one, without an observer entry (unit 4c).
+        if (exported && (is_wide(ty) || is_q(ty) || (resolve.is_array(sem[p].ty) &&
+                (fold.ty_wide(resolve.array_elem(sem[p].ty)) || fold.ty_q(resolve.array_elem(sem[p].ty)))))) {
+            // Nor has an entry's wide or fixed-point parameter (box 15 unit 4); another
+            // module's export takes one, without an observer entry (unit 4c).
             if (root) {
                 unsupported(toks, diag, ls, nodes[p].tok as I64, U_TYPE);
                 return;
@@ -8771,7 +9334,7 @@ void declare_func[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in parse
             if (resolve.array_rank(sem[p].ty) > 1) {
                 // A view of rank 2 to 4 (box 09), passed as a descriptor.
                 if (!resolve.is_struct(elem)) {
-                    ty = (elem as I32) | ((resolve.array_rank(sem[p].ty) as I32) << 8);
+                    ty = (elem as I32) | ((resolve.array_rank(sem[p].ty) as I32) << ELEM_BITS);
                 }
             } else if (resolve.is_struct(elem)) {
                 I64 checked_extent = -2;
@@ -8783,7 +9346,7 @@ void declare_func[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in parse
                 if (nitems >= 0) { code = nitems + 1; }
                 else if (size_id >= 0) { code = (VIEW_SIZE as I64) + size_id; }
                 if (nitems < 0 || code < VIEW_ANY as I64) {
-                    ty = (elem as I32) | ((code as I32) << 8);
+                    ty = (elem as I32) | ((code as I32) << ELEM_BITS);
                 }
             }
             kind = SK_VIEW;
@@ -8812,16 +9375,165 @@ void declare_func[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in parse
     }
     if ((nodes[x].flags & parse.F_EXPORT) != 0) {
         funcs[k].flags = FN_EXPORT | FN_OBSERVE;
-        if (funcs[k].nparam > 16 || aggregate || result >= T_STRUCT || is_wide(result) ||
+        if (funcs[k].nparam > 16 || aggregate || result >= T_STRUCT || is_wide(result) || is_q(result) ||
                 resolve.is_errset(sem[x].ty)) {
             funcs[k].flags = FN_EXPORT;
         }
     }
-    if (spells(text, toks, tk, "main") && result == T_NONE && funcs[k].nparam == 0) {
+    if (spells(text, toks, tk, "main") && result == T_NONE &&
+            (funcs[k].nparam == 0 || (funcs[k].nparam == 1 && (grants || args)) ||
+                (funcs[k].nparam == 2 && grants && args))) {
+        // `main()`, `main(Grants g)`, `main(in U8[_] args)` or `main(Grants g, in U8[_] args)`
+        // (SPEC-04 LS-221; SPEC-07 SEC-CAP-1; OQ-306).
         funcs[k].flags = funcs[k].flags | FN_MAIN;
+        if (args) {
+            funcs[k].flags = funcs[k].flags | FN_ARGS;
+        }
+    }
+    if (grants) {
+        funcs[k].flags = funcs[k].flags | FN_GRANTS;
     }
     if (etag != T_NONE) {
         funcs[k].flags = funcs[k].flags | FN_ERRU | (etag << 16);
+    }
+}
+
+// Whether extern node x declares a `Grants` parameter (I/O services lane U1), which only a
+// service call passes.
+Bool extern_grants(in parse.Node[_] nodes, in resolve.Sem[_] sem, I64 x) {
+    I64 p = nodes[x].b as I64;
+    while (p >= 0) {
+        if (sem[p].ty == resolve.TY_GRANTS) {
+            return true;
+        }
+        p = nodes[p].next as I64;
+    }
+    return false;
+}
+
+// Registers extern node x as an FN_EXTERN row (I/O services lane U2; SPEC-03 A-10, A-15,
+// H-5): its result void, a scalar of at most 64 bits, or an error union of one; its
+// parameters scalars of at most 64 bits, `in` or `out` rank-1 views of them with a literal
+// extent or `_`. A wide or fixed-point scalar or element is C9102 U_TYPE, a view of rank 2
+// to 4, an `inout` view or a view with a size parameter U_VIEW (rt/OPEN.md RT-OQ-70: the
+// runtime passes a view as read or write). A `Grants` parameter is an I64 slot with live 1
+// (FN_GRANTS; I/O services lane U5), so a service extern gets a row too, whose host table
+// name is `<service>.<name>` (back_c.c_host_table); an extern with a view result gets no
+// row: a call of it is U_CALL at the call (compiler/OPEN.md CINTC-OQ-66, CINTC-OQ-67).
+void declare_extern[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in parse.Node[m] nodes,
+        in resolve.Sem[_] sem, inout SirFunc[nf] funcs, inout SirSlot[_] slots, inout limits.CompilerDiag[r] diag,
+        inout LState[_] ls, I64 x) {
+    I64 tk = nodes[x].tok as I64;
+    if (nodes[x].e >= 0) {
+        return;
+    }
+    I64 k = ls[0].nfunc;
+    if (k == nf) {
+        stop_at(toks, diag, ls, limits.C_LIMIT, tk, limits.LIM_FUNCTIONS, nf);
+        return;
+    }
+    I32 result = T_NONE;
+    I32 etag = T_NONE;
+    I64 nerr = 0;
+    if (nodes[x].a >= 0 && resolve.is_errunion(sem[x].ty)) {
+        I64 set = resolve.union_set(sem[x].ty);
+        etag = set_type(set);
+        if (resolve.union_value(sem[x].ty) != resolve.TY_VOID) {
+            result = scalar_type(resolve.union_value(sem[x].ty));
+        }
+        // The set's description, which the type signature of the row reads (back_c.sig_export,
+        // entry_set), before the parameters; its values' count (an imported set's from its
+        // slots, I/O services lane U5).
+        I64 es = describe_set(text, toks, nodes, sem, slots, diag, ls, set, true, tk);
+        if (es < 0) {
+            return;
+        }
+        nerr = set_count(slots, ls, es);
+    } else if (nodes[x].a >= 0) {
+        result = scalar_type(sem[x].ty);
+    }
+    if (nodes[x].a >= 0 && (is_limbs(result) || is_q(result) || (result == T_NONE && !(etag != T_NONE &&
+            resolve.union_value(sem[x].ty) == resolve.TY_VOID)))) {
+        unsupported(toks, diag, ls, nodes[nodes[x].a as I64].tok as I64, U_TYPE);
+        return;
+    }
+    ls[0].nfunc = k + 1;
+    funcs[k].name = tk as I32;
+    funcs[k].node = x as I32;
+    funcs[k].result = result;
+    funcs[k].pslot0 = ls[0].nslot as I32;
+    funcs[k].nparam = 0;
+    funcs[k].lslot0 = 0;
+    funcs[k].lslot_end = 0;
+    funcs[k].first = 0;
+    funcs[k].last = 0;
+    funcs[k].ntemp = nerr as I32;
+    funcs[k].entry = 0;
+    funcs[k].flags = FN_EXTERN;
+    if (nodes[x].op == parse.EFFECT_OBSERVE) {
+        funcs[k].flags = FN_EXTERN | FN_OBSERVES;
+    } else if (nodes[x].op == parse.EFFECT_UNRESTRICTED) {
+        funcs[k].flags = FN_EXTERN | FN_UNRESTRICTED;
+    }
+    if (etag != T_NONE) {
+        funcs[k].flags = funcs[k].flags | FN_ERRU | (etag << 16);
+    }
+    I64 p = nodes[x].b as I64;
+    while (p >= 0) {
+        I64 ptk = nodes[p].tok as I64;
+        I32 ty = T_NONE;
+        I32 kind = SK_PARAM;
+        if (sem[p].ty == resolve.TY_GRANTS) {
+            // The handle (FN_GRANTS): the row's parameter count counts it, its type signature
+            // leaves it out (SPEC-03 A-10 as built, RT-OQ-72).
+            I64 gs = add_slot(toks, slots, diag, ls, ptk, T_GRANTS, SK_PARAM, ptk);
+            if (gs < 0) {
+                return;
+            }
+            funcs[k].flags = funcs[k].flags | FN_GRANTS;
+            funcs[k].nparam += 1;
+            p = nodes[p].next as I64;
+            continue;
+        }
+        if (resolve.is_array(sem[p].ty)) {
+            I64 elem = resolve.array_elem(sem[p].ty);
+            I32 ety = scalar_type(elem);
+            if (ety == T_NONE || is_limbs(ety) || is_q(ety)) {
+                unsupported(toks, diag, ls, ptk, U_TYPE);
+                return;
+            }
+            if (resolve.array_rank(sem[p].ty) > 1 || resolve.array_size(sem[p].ty) >= 0 ||
+                    nodes[p].op == scan.KW_INOUT) {
+                unsupported(toks, diag, ls, ptk, U_VIEW);
+                return;
+            }
+            I64 nitems = resolve.array_extent(sem[p].ty);
+            I64 code = VIEW_ANY as I64;
+            if (nitems >= 0) {
+                code = nitems + 1;
+            }
+            if (code > VIEW_ANY as I64) {
+                unsupported(toks, diag, ls, ptk, U_VIEW);
+                return;
+            }
+            ty = ety | ((code as I32) << ELEM_BITS);
+            kind = SK_VIEW;
+        } else {
+            ty = scalar_type(sem[p].ty);
+            if (ty == T_NONE || is_limbs(ty) || is_q(ty)) {
+                unsupported(toks, diag, ls, ptk, U_TYPE);
+                return;
+            }
+        }
+        I64 ps = add_slot(toks, slots, diag, ls, ptk, ty, kind, ptk);
+        if (ps < 0) {
+            return;
+        }
+        if (kind == SK_VIEW && nodes[p].op == scan.KW_OUT) {
+            slots[ps].live = 2;
+        }
+        funcs[k].nparam += 1;
+        p = nodes[p].next as I64;
     }
 }
 
@@ -8846,6 +9558,10 @@ void declare_imports[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in pa
                 al = nodes[nodes[x].a as I64].tok as I64;
             }
             I64 row = sem[x].lit_at;
+            if (decls[row].kind == limits.DK_ERRSET) {
+                // An imported error set (I/O services lane U5): its slots, declare_import_sets.
+                continue;
+            }
             if (find_import(text, toks, funcs, ls, al, tk) < 0 && (decls[row].kind == limits.DK_STRUCT) == (pass == 0)) {
                 I64 k = ls[0].nfunc;
                 if (k == nf) {
@@ -8872,15 +9588,43 @@ void declare_imports[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in pa
                         T_STRUCT) as I32;
                     continue;
                 }
+                Bool ext = decls[row].kind == limits.DK_FUNC && (decls[row].ext_kind == limits.DF_EXTERN ||
+                    decls[row].ext_kind == limits.DF_SERVICE);
                 I64 rty = decl.type_of_row(decls, row);
+                I32 etag = T_NONE;
                 if (rty == resolve.TY_VOID) {
                     rty = T_NONE as I64;
                 }
-                if (rty == 0 && decls[row].kind == limits.DK_FUNC && decls[row].tag == 0x71 && decls[row].rank == 0) {
+                if (ext && decl.row_tag(decls, row) == decl.ERRUNION_TAG && decls[row].rank == 0 &&
+                        decls[row].ref > 0) {
+                    // An imported extern with an error union result (I/O services lane U5):
+                    // its set's slots, copied before its parameters (entry_set); its value
+                    // type from the row's `align`.
+                    I64 es0 = find_import_set(slots, ls, decls[row].ref as I64);
+                    if (es0 < 0) {
+                        unsupported(toks, diag, ls, tk, U_IMPORT);
+                        return;
+                    }
+                    if (copy_set_slots(toks, slots, diag, ls, es0, tk) < 0) {
+                        return;
+                    }
+                    funcs[k].pslot0 = ls[0].nslot as I32;
+                    etag = slots[es0].ty;
+                    I64 v = decls[row].align as I64;
+                    rty = T_NONE as I64;
+                    if (v != 0x02) {
+                        rty = scalar_type(v) as I64;
+                        if (rty == T_NONE as I64) {
+                            unsupported(toks, diag, ls, tk, U_IMPORT);
+                            return;
+                        }
+                    }
+                }
+                if (rty == 0 && decls[row].kind == limits.DK_FUNC && decl.row_tag(decls, row) == 0x71 && decls[row].rank == 0) {
                     // Uses the canonical record materialized from the signature.
                     rty = import_param_type(text, toks, funcs, slots, ls, decls, row) as I64;
                 }
-                if (resolve.is_array(rty) || (rty == 0 && decls[row].tag != 0x02)) {
+                if (resolve.is_array(rty) || (rty == 0 && decl.row_tag(decls, row) != 0x02 && etag == T_NONE)) {
                     unsupported(toks, diag, ls, tk, U_IMPORT);
                     return;
                 }
@@ -8910,6 +9654,18 @@ void declare_imports[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in pa
                     funcs[k].ntemp = decls[row].b as I32;
                     I64 p = decl.next_member(decls, row);
                     for j in 0..decls[row].a {
+                        if (ext && decl.row_tag(decls, p) == resolve.TY_GRANTS && decls[p].rank == 0) {
+                            // The `Grants` handle of an imported service extern (FN_GRANTS; I/O
+                            // services lane U5), counted among the row's parameters.
+                            I64 gs = add_slot(toks, slots, diag, ls, -1, T_GRANTS, SK_PARAM, tk);
+                            if (gs < 0) {
+                                return;
+                            }
+                            funcs[k].flags = funcs[k].flags | FN_GRANTS;
+                            funcs[k].nparam += 1;
+                            p = decl.next_member(decls, p);
+                            continue;
+                        }
                         I32 pty = import_param_type(text, toks, funcs, slots, ls, decls, p);
                         I32 kind = SK_PARAM;
                         if (pty != T_NONE && decls[p].rank == 1) {
@@ -8924,9 +9680,33 @@ void declare_imports[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in pa
                             unsupported(toks, diag, ls, tk, U_IMPORT);
                             return;
                         }
-                        _ = add_slot(toks, slots, diag, ls, -1, pty, kind, tk);
+                        if (ext && (kind == SK_SPARAM || kind == SK_SREF || is_limbs(pty) || is_q(pty) ||
+                                (kind == SK_VIEW && (is_limbs(array_elem(pty)) || is_q(array_elem(pty)))) ||
+                                (kind == SK_PARAM && decls[p].mode == 3) || (kind == SK_VIEW && decls[p].mode == 2))) {
+                            // An imported extern takes what declare_extern takes (I/O services
+                            // lane U2).
+                            unsupported(toks, diag, ls, tk, U_IMPORT);
+                            return;
+                        }
+                        I64 ps = add_slot(toks, slots, diag, ls, -1, pty, kind, tk);
+                        if (ps >= 0 && ext && decls[p].mode == 3) {
+                            slots[ps].live = 2;
+                        }
                         funcs[k].nparam += 1;
                         p = decl.next_member(decls, p);
+                    }
+                    if (ext) {
+                        // An imported extern: FN_EXTERN, with its class from the row
+                        // (back_c.mark_effects); its result is void or a scalar of at most 64
+                        // bits, with its error set's tag type above 16 (FN_ERRU, etag above).
+                        if (is_limbs(funcs[k].result) || is_q(funcs[k].result)) {
+                            unsupported(toks, diag, ls, tk, U_IMPORT);
+                            return;
+                        }
+                        funcs[k].flags = funcs[k].flags | FN_EXTERN;
+                        if (etag != T_NONE) {
+                            funcs[k].flags = funcs[k].flags | FN_ERRU | (etag << 16);
+                        }
                     }
                 }
             }
@@ -8940,7 +9720,7 @@ void declare_imports[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in pa
 // T_NONE otherwise.
 I32 import_param_type[n, t](in U8[n] text, in scan.Token[t] toks, in SirFunc[_] funcs, in SirSlot[_] slots,
         in LState[_] ls, in limits.Decl[_] decls, I64 p) {
-    I64 tag = decls[p].tag as I64;
+    I64 tag = decl.row_tag(decls, p);
     I32 elem = T_NONE;
     if (tag == 0x71) {
         for k in 0..ls[0].nfunc {
@@ -8970,7 +9750,7 @@ I32 import_param_type[n, t](in U8[n] text, in scan.Token[t] toks, in SirFunc[_] 
     }
     if (code < 0) { return T_NONE; }
     if (elem >= T_STRUCT) { return struct_shaped(elem, code); }
-    return elem | ((code as I32) << 8);
+    return elem | ((code as I32) << ELEM_BITS);
 }
 
 // Lowers the body of function k (statement list x); the entry's fuel charge first when
@@ -9035,7 +9815,7 @@ void module_views[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse
                 packed = packed + (resolve.dim_extent(ty, d) << (12 * d));
             }
             I32 ety = array_elem(slots[g].ty);
-            I64 v = add_slot(toks, slots, diag, ls, tk, ety | ((rk as I32) << 8), SK_NVIEW, open);
+            I64 v = add_slot(toks, slots, diag, ls, tk, ety | ((rk as I32) << ELEM_BITS), SK_NVIEW, open);
             if (v < 0 || view_node(toks, sir, diag, ls, SO_VBEGIN, ety, v, g, -1, 0, packed, open) < 0) {
                 return;
             }
@@ -9086,7 +9866,7 @@ void declare_globals[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in pa
                 unsupported(toks, diag, ls, tk, U_MEMORY);
                 return;
             }
-            if (ty == T_NONE || (ty != T_BOOL && !is_int(ty) && ty != T_HANDLE)) {
+            if (ty == T_NONE || (ty != T_BOOL && !is_int(ty) && !is_q(ty) && ty != T_HANDLE)) {
                 unsupported(toks, diag, ls, tk, U_MODULE_STATE);
                 return;
             }
@@ -9098,7 +9878,7 @@ void declare_globals[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in pa
             sir[c].a = k as I32;
             if (nodes[x].b >= 0 && ty != T_HANDLE) {
                 sir[c].val = wrap_to(ty, sem[nodes[x].b as I64].bits as% I64);
-                if (is_wide(ty) && !wide_const(text, toks, nodes, sem, ls, sir, c, nodes[x].b as I64)) {
+                if (is_limbs(ty) && !wide_const(text, toks, nodes, sem, ls, sir, c, nodes[x].b as I64)) {
                     // A composite initializer: its value, which check.ci kept (box 15 unit 4b).
                     if (sem[x].lit_at < 0) {
                         unsupported(toks, diag, ls, tk, U_EXPRESSION);
@@ -9121,8 +9901,9 @@ void declare_globals[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in pa
 // extents in 12-bit fields from dimension 0 when the rank is 2 to 4) whose b is the number of
 // items written after it, 0 for a zero-filled array: one SO_CONST node per item of its
 // literal, rows depth first (dst -1, a -1, b its index), with the checker's folded value.
-// More than MODULE_ARRAY_BYTES bytes of elements is C9102 U_MODULE_STATE. A function that
-// names an array of rank 2 to 4 views it (module_views).
+// More than resolve.MODULE_ARRAY_MAX elements, whatever their type, is C9102 U_MODULE_STATE
+// (decision 2026-10-19 on OQ-297). A function that names an array of rank 2 to 4 views it
+// (module_views).
 void declare_array_global[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.Node[m] nodes,
         in resolve.Sem[_] sem, inout Sir[ns] sir, inout SirSlot[_] slots, inout limits.CompilerDiag[r] diag,
         inout LState[_] ls, I64 x) {
@@ -9130,27 +9911,23 @@ void declare_array_global[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, 
     I64 ty = sem[x].ty;
     I32 ety = slot_elem(ty) as I32;
     I64 rk = resolve.array_rank(ty);
-    I64 bytes = 1;
-    if (ety != T_BOOL) {
-        bytes = fold.ty_width(ety as I64) / 8;
-    }
     // Each extent of rank 2 to 4 is at most resolve.NARRAY_EXTENT_MAX, so it fits its field.
     I64 total = 1;
     I64 packed = 0;
     Bool fits = true;
     for d in 0..rk {
         I64 e = resolve.dim_extent(ty, d);
-        fits = fits && e >= 0 && total <= MODULE_ARRAY_BYTES;
+        fits = fits && e >= 0 && total <= resolve.MODULE_ARRAY_MAX;
         if (fits) {
             total = total * e;
             packed = packed + (e << (12 * d));
         }
     }
-    if (ety == T_NONE || (ety != T_BOOL && !is_int(ety)) || !fits || total > MODULE_ARRAY_BYTES / bytes) {
+    if (ety == T_NONE || (ety != T_BOOL && !is_int(ety) && !is_q(ety)) || !fits || total > resolve.MODULE_ARRAY_MAX) {
         unsupported(toks, diag, ls, tk, U_MODULE_STATE);
         return;
     }
-    I32 aty = ety | ((total as I32) << 8);
+    I32 aty = ety | ((total as I32) << ELEM_BITS);
     I64 k = add_slot(toks, slots, diag, ls, tk, aty, SK_ARRAY, tk);
     I64 c = add_sir(toks, sir, diag, ls, SO_CONST, aty, tk);
     if (k < 0 || c < 0) {
@@ -9187,7 +9964,7 @@ void declare_array_global[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, 
             sir[v].a = -1;
             sir[v].b = sir[c].b;
             sir[v].val = wrap_to(ety, sem[g].bits as% I64);
-            if (is_wide(ety) && !wide_const(text, toks, nodes, sem, ls, sir, v, g)) {
+            if (is_limbs(ety) && !wide_const(text, toks, nodes, sem, ls, sir, v, g)) {
                 unsupported(toks, diag, ls, nodes[g].tok as I64, U_EXPRESSION);
                 return;
             }
@@ -9203,7 +9980,7 @@ export Bool module_array(in SirSlot[_] slots, I64 k) {
 }
 
 export const I32 MODULE_ARRAY = 3;
-export const I64 MODULE_ARRAY_BYTES = 65536;
+export const I64 MODULE_ARRAY_BYTES = 65536;   // a module-level struct's payload
 
 // A module-level struct (box 15; decision 2026-10-09 on OQ-260), declaration x: an SK_STRUCT
 // slot of the module state whose live is MODULE_STRUCT, then its initial value as an SO_CONST
@@ -9371,7 +10148,7 @@ Bool struct_items[n0, t, m, ns, r](in U8[n0] text, in scan.Token[t] toks, in par
             sir[q].a = -1;
             sir[q].b = sir[c].b;
             sir[q].val = wrap_to(ety, sem[g].bits as% I64);
-            if (is_wide(ety) && !wide_const(text, toks, nodes, sem, ls, sir, q, g)) {
+            if (is_limbs(ety) && !wide_const(text, toks, nodes, sem, ls, sir, q, g)) {
                 // A wide value of another form (box 15 unit 4).
                 return false;
             }
@@ -9465,6 +10242,7 @@ export I64 lower_module[t, m, ns, nf, r, s](inout U8[_] text, in scan.Token[t] t
     // module's own, whose fields may name them (task 2.14); then the items: a script, if
     // any statement; the declarations lowering covers.
     declare_import_structs(text, toks, nodes, sem, nn, decls, slots, diag, ls);
+    declare_import_sets(text, toks, nodes, sem, nn, decls, slots, diag, ls);
     I64 x = nodes[root].a as I64;
     while (x >= 0 && ls[0].err == 0) {
         if (nodes[x].kind == parse.N_STRUCT) {
@@ -9533,6 +10311,8 @@ export I64 lower_module[t, m, ns, nf, r, s](inout U8[_] text, in scan.Token[t] t
             declare_kernel(text, toks, nodes, sem, funcs, slots, diag, ls, x, is_root);
         } else if (kind == parse.N_FUNC) {
             declare_func(text, toks, nodes, sem, funcs, slots, diag, ls, x, is_root);
+        } else if (kind == parse.N_EXTERN) {
+            declare_extern(text, toks, nodes, sem, funcs, slots, diag, ls, x);
         }
         if (first_stmt < 0 && (is_statement(nodes, x) || kind == parse.N_VAR)) {
             first_stmt = x;
@@ -9583,6 +10363,10 @@ export I64 lower_module[t, m, ns, nf, r, s](inout U8[_] text, in scan.Token[t] t
         return 1;
     }
     for k in 0..nf_user {
+        if ((funcs[k].flags & FN_EXTERN) != 0) {
+            // An extern has no body (FN_EXTERN).
+            continue;
+        }
         if ((funcs[k].flags & FN_KERNEL) != 0) {
             lower_kernel(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, k, nn);
         } else {

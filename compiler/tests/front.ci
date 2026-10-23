@@ -287,6 +287,41 @@ void header[n, t, o](inout emit.Writer[_] w, inout U8[o] dst, in U8[n] src, in s
             emit.w_text(w, dst, "attr ");
             tok_text(w, dst, src, toks, tk);
             pos(w, dst, toks, tk);
+        case parse.N_EXTERN:
+            // I/O services lane U1: `(extern name@pos [export] class:<class> result [params] [attrs])`.
+            emit.w_text(w, dst, "extern ");
+            tok_text(w, dst, src, toks, tk);
+            pos(w, dst, toks, tk);
+            if ((nodes[x].flags & parse.F_EXPORT) != 0) {
+                emit.w_text(w, dst, " export");
+            }
+            emit.w_text(w, dst, " class:");
+            if (nodes[x].op == parse.EFFECT_PURE) {
+                emit.w_text(w, dst, "pure");
+            } else if (nodes[x].op == parse.EFFECT_OBSERVE) {
+                emit.w_text(w, dst, "observe");
+            } else {
+                emit.w_text(w, dst, "unrestricted");
+            }
+            if (nodes[x].e == scan.KW_IN) {
+                emit.w_text(w, dst, " view:in");
+            } else if (nodes[x].e == scan.KW_INOUT) {
+                emit.w_text(w, dst, " view:inout");
+            }
+        case parse.N_REQUIRES:
+            // `(requires @pos path:a.b@pos [args])`.
+            emit.w_text(w, dst, "requires ");
+            pos(w, dst, toks, tk);
+            emit.w_text(w, dst, " path:");
+            I64 j = nodes[x].a as I64;
+            while (j >= 0) {
+                tok_text(w, dst, src, toks, nodes[j].tok as I64);
+                j = nodes[j].next as I64;
+                if (j >= 0) {
+                    emit.w_byte(w, dst, '.');
+                }
+            }
+            pos(w, dst, toks, nodes[x].start as I64);
         case parse.N_VAR:
             emit.w_text(w, dst, "var ");
             tok_text(w, dst, src, toks, tk);
@@ -616,7 +651,28 @@ I64 child(in parse.Node[_] nodes, I64 x, I64 i) {
                 parse.N_REDUCE, parse.N_BIND:
             slots = 1;
             v = nodes[x].a as I64;
-        case parse.N_DIRECTIVE, parse.N_ATTR: slots = 1; how = list; v = nodes[x].b as I64;
+        case parse.N_DIRECTIVE, parse.N_ATTR:
+            slots = 1;
+            how = list;
+            v = nodes[x].b as I64;
+            if (kind == parse.N_ATTR && nodes[x].op == 1) {
+                // `@service`: the service name, the capability's segments, the argument kinds.
+                slots = 3;
+                if (i == 0) {
+                    how = one;
+                    v = nodes[x].a as I64;
+                } else if (i == 2) {
+                    v = nodes[x].c as I64;
+                }
+            }
+        case parse.N_EXTERN:
+            slots = 3;
+            switch (i) {
+                case 0: v = nodes[x].a as I64;
+                case 1: how = list; v = nodes[x].b as I64;
+                default: how = list; v = nodes[x].f as I64;
+            }
+        case parse.N_REQUIRES: slots = 1; how = list; v = nodes[x].b as I64;
         case parse.N_TEST: slots = 1; v = nodes[x].b as I64;
         case parse.N_STATIC_ASSERT, parse.N_ASSIGN, parse.N_BINARY, parse.N_COMPARE, parse.N_LOGICAL,
                 parse.N_ARM, parse.N_RANGE, parse.N_ERRUNION, parse.N_ASSERT, parse.N_WHILE:
