@@ -1,0 +1,14 @@
+// case: diag/c2067_inout_byte_string
+// clause: SPEC-04 LS-41, LS-119, LS-162 (a byte-string literal is a read-only view, so it is no `inout` argument; ruling OQ-307 A)
+// subset: cint-core-1 (byte strings)
+// entry: run; args: none
+// spec outcome: C2067 at 12:11 (the literal)
+
+void clear(inout U8[_] s) {
+    s[0] = 0;
+}
+
+export I64 run() {
+    clear(b"abc");
+    return 0;
+}

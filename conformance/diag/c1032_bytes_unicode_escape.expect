@@ -1,0 +1,6 @@
+case diag/c1032_bytes_unicode_escape
+clause SPEC-04 LS-42, LS-43 (`\u{...}` is a `Str` escape; in a byte-string literal it is C1032; ruling OQ-307 A)
+source compile-error
+outcome compile-error
+diagnostic.code C1032
+diagnostic.position diag/c1032_bytes_unicode_escape.ci:8:22

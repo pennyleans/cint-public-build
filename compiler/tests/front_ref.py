@@ -135,6 +135,9 @@ class Writer:
             return "(bool %s%s)" % ("true" if e.value else "false", self.expr_pos(e))
         if isinstance(e, T.StrLit):
             return "(str %s%s)" % (hexs(b"".join(e.parts)), self.expr_pos(e))
+        if isinstance(e, T.BytesLit):
+            # A byte string (ruling OQ-307 A): front.ci writes its position, not its bytes.
+            return "(bytes%s)" % self.expr_pos(e)
         if isinstance(e, T.Name):
             return "(name %s%s)" % (e.name, self.expr_pos(e))
         if isinstance(e, T.TypeArg):

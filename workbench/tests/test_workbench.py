@@ -1192,7 +1192,23 @@ class WorkbenchLeg(unittest.TestCase):
             result = run([explain, "--cint", pathlib.Path(tmp) / "no-cint", "--out", out, *argv])
             self.assertEqual((result.returncode, result.stdout), (5, b""))
             self.assertTrue(result.stderr.startswith(b"cint explain: error: cannot run "), result.stderr)
-        return 4
+            # A module of the standard library, read from `lib` beside that cint or from --stdlib DIR,
+            # as `cint` reads it (SPEC-06 3.4 --stdlib).
+            program = pathlib.Path(tmp) / "reads.ci"
+            program.write_bytes(b'import fs;\nrequires fs.read("/data");\n\nfs.FsError!void main(Grants g) {\n'
+                                b'    U8[16] buf;\n    I64 n = try fs.read(g, "/data/a.txt", 0, buf);\n    "{n}\\n";\n}\n')
+            size = (ROOT / "lib" / "fs.ci").stat().st_size
+            for extra in ([], ["--stdlib", ROOT / "lib"]):
+                result = run([explain, "--json", "--cint", cint, "--out", pathlib.Path(tmp) / "reads", *extra, program])
+                self.assertClean(result, "stdlib")
+                self.assertEqual((result.returncode, result.stderr), (0, b""), extra)
+                modules = json.loads(result.stdout)["build"]["compile_fuel"]["modules"]
+                self.assertEqual([(m["module"], m.get("bytes")) for m in modules],
+                                 [("fs.ci", size), ("reads.ci", program.stat().st_size)], extra)
+                human = run([explain, "--cint", cint, "--sir", pathlib.Path(tmp) / "reads", *extra, program])
+                self.assertEqual(human.returncode, 0, human.stderr)
+                self.assertNotIn(b"could not be read", human.stdout)
+        return 6
 
     def test_cint_still_prints_the_fixtures(self):
         if ARGS.cint is None:

@@ -1,0 +1,6 @@
+case diag/c2103_equal_scalar
+clause SPEC-04 LS-71, LS-145 (`equal` compares arrays or views, and `==` compares scalars; ruling OQ-307 A)
+source compile-error
+outcome compile-error
+diagnostic.code C2103
+diagnostic.position diag/c2103_equal_scalar.ci:9:20

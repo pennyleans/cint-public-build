@@ -13,7 +13,10 @@
 # amended 2026-10-15 (OQ-280): the 22 rows of the 11 programs of `as|` and the fixed-point
 # result forms in its group 1; amended 2026-10-15 (OQ-293): the
 # 58 rows of the 29 cases of fixed-point storage of 128 bits; amended 2026-10-16 (OQ-293,
-# OQ-294): the 56 rows of the 28 of those cases B1 compiles.
+# OQ-294): the 56 rows of the 28 of those cases B1 compiles; amended 2026-10-22 (OQ-307 A):
+# the 18 rows of the 9 cases of byte strings and `equal`, and the 2 rows of
+# boot/refuse_byte_string, compared now that its cintc expectation is frozen; amended
+# 2026-10-24 (OQ-315 A): the 4 rows of the 2 cases of the `catch` statement.
 # Required case list of stage T3 (SPEC-09 CONF-15, CONF-17; slice 2 decision patch D-14).
 # One line per case and backend: <case> <compiler> <category> [<detail>], where the
 # detail is the limit identifier of an unsupported case or the Open item of a held case,
@@ -917,8 +920,8 @@ boot/literal_octal_binary cintc compared
 boot/literal_octal_binary cintc/gpu-cuda compared
 boot/refuse_attribute cintc held I-2
 boot/refuse_attribute cintc/gpu-cuda held I-2
-boot/refuse_byte_string cintc held I-2
-boot/refuse_byte_string cintc/gpu-cuda held I-2
+boot/refuse_byte_string cintc compared
+boot/refuse_byte_string cintc/gpu-cuda compared
 boot/refuse_defer cintc compared
 boot/refuse_defer cintc/gpu-cuda compared
 boot/refuse_destructuring cintc held I-2
@@ -1101,6 +1104,8 @@ diag/c1022_leading_zero cintc compared
 diag/c1022_leading_zero cintc/gpu-cuda compared
 diag/c1023_literal_4097_bits cintc compared
 diag/c1023_literal_4097_bits cintc/gpu-cuda compared
+diag/c1032_bytes_unicode_escape cintc compared
+diag/c1032_bytes_unicode_escape cintc/gpu-cuda compared
 diag/c1032_unknown_escape cintc compared
 diag/c1032_unknown_escape cintc/gpu-cuda compared
 diag/c1040_empty_statement cintc compared
@@ -1111,6 +1116,8 @@ diag/c1042_increment_in_expression cintc compared
 diag/c1042_increment_in_expression cintc/gpu-cuda compared
 diag/c1043_if_without_braces cintc compared
 diag/c1043_if_without_braces cintc/gpu-cuda compared
+diag/c2001_equal_element_types cintc compared
+diag/c2001_equal_element_types cintc/gpu-cuda compared
 diag/c2001_implicit_widening cintc compared
 diag/c2001_implicit_widening cintc/gpu-cuda compared
 diag/c2001_range_bound_i32 cintc compared
@@ -1139,6 +1146,8 @@ diag/c2003_unsigned_minus_space cintc compared
 diag/c2003_unsigned_minus_space cintc/gpu-cuda compared
 diag/c2008_convert_sat_bool cintc compared
 diag/c2008_convert_sat_bool cintc/gpu-cuda compared
+diag/c2012_bytes_extent cintc compared
+diag/c2012_bytes_extent cintc/gpu-cuda compared
 diag/c2050_uninitialized_scalar cintc compared
 diag/c2050_uninitialized_scalar cintc/gpu-cuda compared
 diag/c2052_assign_loop_variable cintc compared
@@ -1157,6 +1166,8 @@ diag/c2055_zero_array_indirect cintc compared
 diag/c2055_zero_array_indirect cintc/gpu-cuda compared
 diag/c2056_integer_as_bool cintc compared
 diag/c2056_integer_as_bool cintc/gpu-cuda compared
+diag/c2067_inout_byte_string cintc compared
+diag/c2067_inout_byte_string cintc/gpu-cuda compared
 diag/c2101_mixed_logical cintc compared
 diag/c2101_mixed_logical cintc/gpu-cuda compared
 diag/c2101_neg_paren_as cintc compared
@@ -1165,6 +1176,8 @@ diag/c2101_shift_with_arithmetic cintc compared
 diag/c2101_shift_with_arithmetic cintc/gpu-cuda compared
 diag/c2102_chained_comparison cintc compared
 diag/c2102_chained_comparison cintc/gpu-cuda compared
+diag/c2103_equal_scalar cintc compared
+diag/c2103_equal_scalar cintc/gpu-cuda compared
 diag/c2103_rotl_signed cintc compared
 diag/c2103_rotl_signed cintc/gpu-cuda compared
 diag/c3001_duplicate_name cintc compared
@@ -1213,10 +1226,14 @@ errors/c2054_zero_filled_error_value cintc compared
 errors/c2054_zero_filled_error_value cintc/gpu-cuda compared
 errors/c4002_catch_block_completes cintc compared
 errors/c4002_catch_block_completes cintc/gpu-cuda compared
+errors/c4012_catch_statement_value cintc compared
+errors/c4012_catch_statement_value cintc/gpu-cuda compared
 errors/c4020_switch_missing_error_value cintc compared
 errors/c4020_switch_missing_error_value cintc/gpu-cuda compared
 errors/catch_bind_switch_exhaustive cintc compared
 errors/catch_bind_switch_exhaustive cintc/gpu-cuda compared
+errors/catch_statement_void_call cintc compared
+errors/catch_statement_void_call cintc/gpu-cuda compared
 errors/catch_value_and_discard cintc compared
 errors/catch_value_and_discard cintc/gpu-cuda compared
 errors/combined_set_once_at_first_position cintc compared
@@ -2165,6 +2182,8 @@ ternary/tdot_i8_lanes cintc compared
 ternary/tdot_i8_lanes cintc/gpu-cuda compared
 ternary/tdot_planes cintc compared
 ternary/tdot_planes cintc/gpu-cuda compared
+view/bytes_literal cintc compared
+view/bytes_literal cintc/gpu-cuda compared
 view/call_slices_disjoint cintc compared
 view/call_slices_disjoint cintc/gpu-cuda compared
 view/call_slices_runtime_alias cintc compared
@@ -2191,6 +2210,12 @@ view/copy_slices_overlap_c5010 cintc compared
 view/copy_slices_overlap_c5010 cintc/gpu-cuda compared
 view/copy_slices_runtime_alias cintc compared
 view/copy_slices_runtime_alias cintc/gpu-cuda compared
+view/equal_fuel cintc compared
+view/equal_fuel cintc/gpu-cuda compared
+view/equal_fuel_fault cintc compared
+view/equal_fuel_fault cintc/gpu-cuda compared
+view/equal_values cintc compared
+view/equal_values cintc/gpu-cuda compared
 view/extent_zero cintc compared
 view/extent_zero cintc/gpu-cuda compared
 view/index_checked_before_value cintc compared

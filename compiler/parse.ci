@@ -2095,6 +2095,10 @@ void h_simple[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Fram
     if (nodes[v].kind == N_UNARY && nodes[v].op == UNARY_TRY && nodes[nodes[v].a as I64].kind == N_CALL) {
         call = true;
     }
+    // `call catch (e) { ... };` (OQ-315 A): the checker takes only an `E!void` call (check.h_catch).
+    if (nodes[v].kind == N_CATCH && nodes[v].c >= 0 && nodes[nodes[v].a as I64].kind == N_CALL) {
+        call = true;
+    }
     if (!call) {
         fail(toks, diag, ps, C_STATEMENT_FORM, nodes[v].start as I64);
         return;

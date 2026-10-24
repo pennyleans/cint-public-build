@@ -1,0 +1,153 @@
+module view.bytes_literal
+sites view/bytes_literal.ci 1:9:5:fuel.charge 2:10:15:mul.checked.i64 3:10:22:index.checked.u8 4:10:26:as.checked.u8.i64 5:10:19:add.checked.i64 6:15:12:fuel.charge 7:17:13:copy.shape 8:18:18:call.enter 9:19:7:copy.shape 10:20:17:index.checked.u8 11:21:22:add.checked.i64 12:22:17:index.checked.u8 13:22:24:index.checked.u8 14:22:31:index.checked.u8 15:22:38:index.checked.u8 16:22:45:index.checked.u8 17:22:52:index.checked.u8 18:22:59:index.checked.u8 19:22:66:index.checked.u8 20:22:73:index.checked.u8 21:22:80:index.checked.u8 22:22:87:index.checked.u8 23:22:5:print 24:23:16:call.enter 25:23:5:print 26:24:12:call.enter
+func @view.bytes_literal.total(%s: U8[_]) -> I64 {
+  %t0 = const I64 0
+  local $t.0: I64
+  store.local $t.0, %t0
+  %t1 = const I64 0
+  %t2 = view.extent %s, 0
+  local $i.1: I64
+  store.local $i.1, %t1
+  loop L7 {
+    %t3 = load.local $i.1
+    %t4 = cmp.lt.i64 %t3, %t2
+    while %t4
+    fuel.charge 1                                #1 @view/bytes_literal.ci:9:5
+    %t5 = load.local $t.0
+    %t6 = const I64 7
+    %t7 = mul.checked.i64 %t5, %t6               #2 @view/bytes_literal.ci:10:15
+    %t8 = load.local $i.1
+    index.checked.u8 %s, %t8                     #3 @view/bytes_literal.ci:10:22
+    %t9 = index.load %s, %t8
+    %t10 = as.checked.u8.i64 %t9                 #4 @view/bytes_literal.ci:10:26
+    %t11 = add.checked.i64 %t7, %t10             #5 @view/bytes_literal.ci:10:19
+    store.local $t.0, %t11
+    next
+    %t12 = load.local $i.1
+    %t13 = const I64 1
+    %t14 = add.wrap.i64 %t12, %t13
+    store.local $i.1, %t14
+  }
+  %t15 = load.local $t.0
+  return %t15
+}
+export func @view.bytes_literal.run() -> I64 {
+  fuel.charge 1                                  #6 @view/bytes_literal.ci:15:12
+  %s31 = data U8[11] 97, 0, 255, 10, 9, 13, 92, 34, 39, 123, 125
+  view.begin $sc.0: U8[_], %s31, 0, 0
+  view.begin $v.1: U8[_], $sc.0, 0, 0
+  %s35 = data U8[3] 97, 98, 99
+  view.begin $sc.2: U8[_], %s35, 0, 0
+  local $a.3: U8[3]
+  view.copy $a.3, $sc.2                          #7 @view/bytes_literal.ci:17:13
+  %t0 = call @view.bytes_literal.total($a.3)     #8 @view/bytes_literal.ci:18:18
+  local $before.4: I64
+  store.local $before.4, %t0
+  %s43 = data U8[3] 120, 121, 122
+  view.begin $sc.5: U8[_], %s43, 0, 0
+  view.copy $a.3, $sc.5                          #9 @view/bytes_literal.ci:19:7
+  %s46 = data U8[2] 112, 113
+  view.begin $sc.6: U8[_], %s46, 0, 0
+  %t1 = const I64 1
+  index.checked.u8 $sc.6, %t1                    #10 @view/bytes_literal.ci:20:17
+  %t2 = view.offset $sc.6, %t1, 0
+  %t3 = index.load $sc.6, %t2
+  local $q.7: U8
+  store.local $q.7, %t3
+  %s54 = data U8[0]
+  view.begin $sc.8: U8[_], %s54, 0, 0
+  %t4 = view.extent $sc.8, 0
+  %s57 = data U8[2] 195, 169
+  view.begin $sc.9: U8[_], %s57, 0, 0
+  %t5 = view.extent $sc.9, 0
+  %t6 = add.checked.i64 %t4, %t5                 #11 @view/bytes_literal.ci:21:22
+  local $n.10: I64
+  store.local $n.10, %t6
+  %t7 = view.extent $v.1, 0
+  %t8 = const I64 0
+  index.checked.u8 $v.1, %t8                     #12 @view/bytes_literal.ci:22:17
+  %t9 = view.offset $v.1, %t8, 0
+  %t10 = index.load $v.1, %t9
+  %t11 = const I64 1
+  index.checked.u8 $v.1, %t11                    #13 @view/bytes_literal.ci:22:24
+  %t12 = view.offset $v.1, %t11, 0
+  %t13 = index.load $v.1, %t12
+  %t14 = const I64 2
+  index.checked.u8 $v.1, %t14                    #14 @view/bytes_literal.ci:22:31
+  %t15 = view.offset $v.1, %t14, 0
+  %t16 = index.load $v.1, %t15
+  %t17 = const I64 3
+  index.checked.u8 $v.1, %t17                    #15 @view/bytes_literal.ci:22:38
+  %t18 = view.offset $v.1, %t17, 0
+  %t19 = index.load $v.1, %t18
+  %t20 = const I64 4
+  index.checked.u8 $v.1, %t20                    #16 @view/bytes_literal.ci:22:45
+  %t21 = view.offset $v.1, %t20, 0
+  %t22 = index.load $v.1, %t21
+  %t23 = const I64 5
+  index.checked.u8 $v.1, %t23                    #17 @view/bytes_literal.ci:22:52
+  %t24 = view.offset $v.1, %t23, 0
+  %t25 = index.load $v.1, %t24
+  %t26 = const I64 6
+  index.checked.u8 $v.1, %t26                    #18 @view/bytes_literal.ci:22:59
+  %t27 = view.offset $v.1, %t26, 0
+  %t28 = index.load $v.1, %t27
+  %t29 = const I64 7
+  index.checked.u8 $v.1, %t29                    #19 @view/bytes_literal.ci:22:66
+  %t30 = view.offset $v.1, %t29, 0
+  %t31 = index.load $v.1, %t30
+  %t32 = const I64 8
+  index.checked.u8 $v.1, %t32                    #20 @view/bytes_literal.ci:22:73
+  %t33 = view.offset $v.1, %t32, 0
+  %t34 = index.load $v.1, %t33
+  %t35 = const I64 9
+  index.checked.u8 $v.1, %t35                    #21 @view/bytes_literal.ci:22:80
+  %t36 = view.offset $v.1, %t35, 0
+  %t37 = index.load $v.1, %t36
+  %t38 = const I64 10
+  index.checked.u8 $v.1, %t38                    #22 @view/bytes_literal.ci:22:87
+  %t39 = view.offset $v.1, %t38, 0
+  %t40 = index.load $v.1, %t39
+  print.begin                                    #23 @view/bytes_literal.ci:22:5
+  print.value I64 %t7
+  print.bytes " "
+  print.value U8 %t10
+  print.bytes " "
+  print.value U8 %t13
+  print.bytes " "
+  print.value U8 %t16
+  print.bytes " "
+  print.value U8 %t19
+  print.bytes " "
+  print.value U8 %t22
+  print.bytes " "
+  print.value U8 %t25
+  print.bytes " "
+  print.value U8 %t28
+  print.bytes " "
+  print.value U8 %t31
+  print.bytes " "
+  print.value U8 %t34
+  print.bytes " "
+  print.value U8 %t37
+  print.bytes " "
+  print.value U8 %t40
+  print.bytes "\n"
+  print.end
+  %t41 = load.local $before.4
+  %t42 = call @view.bytes_literal.total($a.3)    #24 @view/bytes_literal.ci:23:16
+  %t43 = load.local $q.7
+  %t44 = load.local $n.10
+  print.begin                                    #25 @view/bytes_literal.ci:23:5
+  print.value I64 %t41
+  print.bytes " "
+  print.value I64 %t42
+  print.bytes " "
+  print.value U8 %t43
+  print.bytes " "
+  print.value I64 %t44
+  print.bytes "\n"
+  print.end
+  %t45 = call @view.bytes_literal.total($v.1)    #26 @view/bytes_literal.ci:24:12
+  return %t45
+}

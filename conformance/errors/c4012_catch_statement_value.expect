@@ -1,0 +1,7 @@
+case errors/c4012_catch_statement_value
+clause SPEC-04 LS-131a, LS-167; OQ-315 A
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C4012
+diagnostic.position errors/c4012_catch_statement_value.ci:14:5

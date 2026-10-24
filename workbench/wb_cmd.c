@@ -47,12 +47,14 @@ static const spelling REPL = {
 
 static const spelling EXPLAIN = {
     "cint explain",
-    "usage: cint explain [--json] [--root DIR] [--cint PATH] [--out DIR | --sir DIR] FILE.ci[:NAME]\n"
+    "usage: cint explain [--json] [--root DIR] [--stdlib DIR] [--cint PATH] [--out DIR | --sir DIR] FILE.ci[:NAME]\n"
     "Shows what the compiler knows about each function of a module, or about function NAME, from\n"
     "the SIR text cintc writes. It runs `cint emit-c` (the `cint` beside it, or\n"
     "--cint PATH) into --out DIR, by default build/explain under the root, or reads the SIR\n"
     "text of a program that `cint emit-c` already wrote with --sir DIR. FILE is the module's path\n"
-    "under --root DIR, or a file whose directory is the root.\n",
+    "under --root DIR, or a file whose directory is the root. A module that is not under the root,\n"
+    "such as `fs`, is read from the standard library root, --stdlib DIR or by default `lib`\n"
+    "beside that `cint`, as `cint` reads it.\n",
     NULL};
 
 static const spelling DEBUG = {
@@ -146,8 +148,9 @@ static int run(const spelling *s, const spelling *text, int argc, char **argv)
 /* `cint explain`: options, FILE.ci[:NAME], the SIR text, and the report on stdout. */
 static int explain(int json, int argc, char **argv)
 {
-    const char *root = NULL, *cint = NULL, *out = NULL, *sir = NULL, *target = NULL, *name = NULL;
+    const char *root = NULL, *cint = NULL, *out = NULL, *sir = NULL, *target = NULL, *name = NULL, *stdlib = NULL;
     char *file = NULL, *dir = NULL, *rel = NULL, *self = NULL, *exe = NULL, *outdir = NULL, *stage = NULL;
+    char *libdir = NULL;
     int status = CINT_EXIT_INTERNAL, st = 0, given = 0;
     wb_buf err = {0}, text = {0};
     cint_sir_program *prog = NULL;
@@ -156,7 +159,8 @@ static int explain(int json, int argc, char **argv)
 
     for (int i = 1; i < argc; i++) {
         const char **slot = strcmp(argv[i], "--root") == 0 ? &root : strcmp(argv[i], "--cint") == 0 ? &cint
-                          : strcmp(argv[i], "--out") == 0 ? &out : strcmp(argv[i], "--sir") == 0 ? &sir : NULL;
+                          : strcmp(argv[i], "--out") == 0 ? &out : strcmp(argv[i], "--sir") == 0 ? &sir
+                          : strcmp(argv[i], "--stdlib") == 0 ? &stdlib : NULL;
         if (slot != NULL) {
             if (*slot != NULL || i + 1 == argc) {
                 tool_error(&EXPLAIN, json, CINT_EXIT_USAGE, "an option needs one value and is given at most once");
@@ -220,7 +224,7 @@ static int explain(int json, int argc, char **argv)
         }
         if (out == NULL && (out = outdir = wb_join(dir, "build" SEP "explain")) == NULL) goto fail;
         char *log = wb_join(out, "explain.stderr");
-        int r = log != NULL ? wb_emit(cint, json, dir, rel, out, log, &st, &err) : 1;
+        int r = log != NULL ? wb_emit(cint, json, dir, rel, stdlib, out, log, &st, &err) : 1;
         size_t len = 0;
         char *said = r == 0 ? wb_read_file(log, &len) : NULL;
         if (said != NULL) {   /* cint's diagnostics, after it ends */
@@ -277,7 +281,24 @@ static int explain(int json, int argc, char **argv)
             if (cut > 1u) (void)snprintf(dir, cut, "%s", file);
         }
     }
-    wb_source_sizes(prog, dir, bytes);
+    if (stdlib == NULL) {   /* `lib` beside the cint that builds the program, or beside this executable */
+        size_t cut = cint != NULL ? strlen(cint) : 0u;
+        while (cut > 0 && cint[cut - 1u] != '/' && cint[cut - 1u] != '\\') cut--;
+        if (cint != NULL && cut > 0) {   /* the directory, without its last separator unless it is the root */
+            size_t n = cut > 1u ? cut - 1u : cut;
+            char *d = malloc(n + 1u);
+            if (d != NULL) (void)snprintf(d, n + 1u, "%.*s", (int)n, cint);
+            libdir = d != NULL ? wb_join(d, "lib") : NULL;
+            free(d);
+        } else if (cint != NULL) {
+            libdir = wb_copy("lib");
+        } else {
+            if (self == NULL) self = cli_self_dir();
+            libdir = self != NULL ? wb_join(self, "lib") : NULL;
+        }
+        stdlib = libdir;
+    }
+    wb_source_sizes(prog, dir, stdlib, bytes);
     if (wb_explain(&text, prog, rel, name, prog->nmod <= WB_MODULES_MAX ? bytes : NULL, json, &err) != 0) {
         status = err.n ? CINT_EXIT_USAGE : CINT_EXIT_INTERNAL;
         tool_error(&EXPLAIN, json, status, err.n ? err.p : "out of memory");
@@ -299,6 +320,7 @@ done:
     free(exe);
     free(outdir);
     free(stage);
+    free(libdir);
     wb_free(&err);
     wb_free(&text);
     return status;

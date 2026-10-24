@@ -158,6 +158,8 @@ const I64 SEM_SWITCH_DEFAULT = 64;
 // The gate's marks (box 09): an item of the module's top level, and a parameter of a kernel.
 const I64 SEM_ITEM = 65536;
 const I64 SEM_KERNEL_PART = 131072;
+// A `catch` with a block that is an expression statement's whole expression (OQ-315 A, h_catch).
+const I64 SEM_CATCH_STMT = 268435456;
 
 // ---------------------------------------------------------------- small helpers
 
@@ -435,6 +437,7 @@ Bool unsupported[n, q, r](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] 
             return nodes[x].op != 0 && nodes[x].op != parse.HOLE_RAW && nodes[x].op != parse.HOLE_BITS;
         case parse.N_LIT, parse.N_NEGLIT: return false;
         case parse.N_STRING: return (sem[x].flags & resolve.SEM_STRING_OK) == 0;
+        case parse.N_BYTES: return false;
         case parse.N_UNARY: return nodes[x].op == parse.UNARY_TRY && (sem[x].flags & resolve.SEM_TOP) == 0;
         case parse.N_CONVERT: return false;
         case parse.N_CALL:
@@ -691,6 +694,24 @@ void mark_arrayfn[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes
     }
 }
 
+// The array literal of `equal(a, b)` whose other argument is none, which takes that
+// argument's type (h_equal; `cint_ref` _equal); two literals stay outside.
+void equal_literal(in parse.Node[_] nodes, inout resolve.Sem[_] sem, I64 x) {
+    I64 a = nodes[x].b as I64;
+    if (a < 0 || nodes[a].next < 0) {
+        return;
+    }
+    I64 b = nodes[a].next as I64;
+    if (nodes[b].next >= 0 || (nodes[a].kind == parse.N_ARRAY) == (nodes[b].kind == parse.N_ARRAY)) {
+        return;
+    }
+    I64 lit = a;
+    if (nodes[b].kind == parse.N_ARRAY) {
+        lit = b;
+    }
+    sem[lit].flags = sem[lit].flags | resolve.SEM_LITERAL_OK;
+}
+
 // Box 12: marks the nodes of node x that the gate admits in one position only. The
 // values of an error set may have any name (SEM_NAMED_OK); an error union is admitted as a
 // function's result, and `try` and `catch` as the whole expression of a declaration, an
@@ -878,6 +899,9 @@ Bool gate[n, q, r](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
             Bool ctor = names_struct(src, toks, nodes, root, x);
             mark_builtin(src, toks, nodes, sem, x);
             mark_arrayfn(src, toks, nodes, sem, x);
+            if ((sem[x].flags & resolve.SEM_ARRAYFN) != 0 && sem[x].lit_at == resolve.AF_EQUAL) {
+                equal_literal(nodes, sem, x);
+            }
             I64 g = nodes[x].b as I64;
             while (g >= 0) {
                 if (nodes[g].kind == parse.N_NAMEDARG && (ctor || imported || member)) {
@@ -1647,7 +1671,8 @@ void h_try[s, r](in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.Se
 // union the `catch` consumes (C2043 at the `catch` when it is no error union); then the
 // value, of the union's value type, or the binding, a variable of the union's set in a scope
 // of its own, and the block, which must not complete (C4002 at its `{`). The type is the
-// union's value type.
+// union's value type. A statement `call catch (name) { ... };` (SEM_CATCH_STMT, OQ-315 A) takes
+// only an `E!void` call (C4012 at the call otherwise), and its block may complete.
 void h_catch[n, s, r](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.Sem[_] sem,
         inout resolve.Sym[_] syms, inout resolve.Name[_] names, inout parse.Frame[s] wk,
         inout limits.CompilerDiag[r] diag, inout resolve.RState[_] rs, inout CState[_] cs, I64 f, I64 step) {
@@ -1664,6 +1689,10 @@ void h_catch[n, s, r](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] node
     if (step == 1) {
         if (!resolve.is_errunion(u)) {
             resolve.fail(toks, diag, rs, resolve.C_NOT_UNION, tok_of(nodes, x));
+            return;
+        }
+        if ((sem[x].flags & SEM_CATCH_STMT) != 0 && resolve.union_value(u) != resolve.TY_VOID) {
+            resolve.fail(toks, diag, rs, parse.C_STATEMENT_FORM, first(nodes, x));
             return;
         }
         if (c < 0) {
@@ -1685,7 +1714,7 @@ void h_catch[n, s, r](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] node
     }
     if (c >= 0) {
         resolve.scope_close(syms, names, rs, wk[f].b as I64);
-        if (completes(sem, b)) {
+        if (completes(sem, b) && (sem[x].flags & SEM_CATCH_STMT) == 0) {
             resolve.fail(toks, diag, rs, resolve.C_CATCH_COMPLETES, tok_of(nodes, b));
             return;
         }
@@ -1897,6 +1926,16 @@ void h_infer[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
                 return;
             }
             sem[x].ty = resolve.TY_ARRAY + (nb + 1) * 65536 + fold.TY_U8;
+            pop(cs);
+        case parse.N_BYTES:
+            // A byte string (SPEC-04 LS-41; ruling OQ-307 A): `in U8[L]` for its L bytes,
+            // read-only storage that no variable holds (place_root), outside a kernel.
+            I64 nbytes = resolve.string_length(src, toks, tok_of(nodes, x), 1);
+            if (nbytes > resolve.ARRAY_EXTENT_MAX || rs[0].ctx == resolve.CTX_KERNEL) {
+                resolve.fail(toks, diag, rs, resolve.C_UNSUPPORTED, tok_of(nodes, x));
+                return;
+            }
+            sem[x].ty = resolve.TY_ARRAY + (nbytes + 1) * 65536 + fold.TY_U8;
             pop(cs);
         case parse.N_DOTNAME:
             // `.name`: its context gives its set (h_expect, compare_sets).
@@ -2797,7 +2836,7 @@ void note_call(inout resolve.Sem[_] sem, in parse.Frame[_] wk, in CState[_] cs, 
 // Whether array built-in id is a reduction (SPEC-04 LS-145): `sum`, `fold_checked`,
 // `sum_wrap`, `sum_sat`, `count`, `dot`, and `min` and `max` of an array.
 Bool af_reduction(I64 id) {
-    return id >= resolve.AF_SUM;
+    return id >= resolve.AF_SUM && id <= resolve.AF_MAX;
 }
 
 // The number of arguments of array built-in call x before its values: the result type of
@@ -3001,6 +3040,56 @@ I64 reshape_count(in parse.Node[_] nodes, in resolve.Sem[_] sem, in resolve.Sym[
     return n;
 }
 
+// K_INFER on `equal(a, b)` at stage `stage` of frame f (`cint_ref` _equal; SPEC-04 LS-71;
+// ruling OQ-307 A): no named argument (C2063), two arguments (C2022), outside a kernel
+// (C9102); the first that is not an array literal inferred, an array (C2103) of integer,
+// fixed-point or Bool elements (C2103), then the other expected to have its element type
+// and rank (C2001) with any extents. Bool, opty the element type.
+void h_equal[s, r](in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.Sem[_] sem, inout parse.Frame[s] wk,
+        inout limits.CompilerDiag[r] diag, inout resolve.RState[_] rs, inout CState[_] cs, I64 f, I64 stage) {
+    I64 x = wk[f].node as I64;
+    I64 a = nodes[x].b as I64;
+    I64 g = a;
+    while (stage == 0 && g >= 0) {
+        if (nodes[g].kind == parse.N_NAMEDARG) {
+            resolve.fail(toks, diag, rs, C_NO_PARAM, tok_of(nodes, g));
+            return;
+        }
+        g = nodes[g].next as I64;
+    }
+    if (stage == 0 && list_length(nodes, a) != 2) {
+        resolve.fail(toks, diag, rs, resolve.C_ARG_COUNT, first(nodes, x));
+        return;
+    }
+    if (stage == 0 && rs[0].ctx == resolve.CTX_KERNEL) {
+        resolve.fail(toks, diag, rs, resolve.C_UNSUPPORTED, first(nodes, x));
+        return;
+    }
+    I64 one = a;
+    I64 two = nodes[a].next as I64;
+    if (nodes[a].kind == parse.N_ARRAY) {
+        one = two;
+        two = a;
+    }
+    if (stage == 0) {
+        _ = push(toks, nodes, wk, diag, rs, cs, K_INFER, one, 0);
+        return;
+    }
+    I64 t = sem[one].ty;
+    if (stage == 1) {
+        if (!resolve.is_array(t) || !(resolve.is_num(resolve.array_elem(t)) || resolve.array_elem(t) == fold.TY_BOOL)) {
+            resolve.fail(toks, diag, rs, resolve.C_NO_OPERATOR, first(nodes, one));
+            return;
+        }
+        I64 want = resolve.shaped(resolve.elem_code(t), resolve.array_rank(t), 0, 0, 0, 0);
+        _ = push(toks, nodes, wk, diag, rs, cs, K_EXPECT, two, want);
+        return;
+    }
+    sem[x].ty = fold.TY_BOOL;
+    sem[x].opty = resolve.array_elem(t);
+    pop(cs);
+}
+
 // K_INFER on a call of an array built-in, SEM_ARRAYFN with its AF_* id in lit_at (`cint_ref`
 // _len, _reduction, _array_builtin, _constant_dim, _copy_fill; SPEC-04 LS-70, LS-145;
 // rulings R4, R6), in `cint_ref`'s order:
@@ -3037,6 +3126,10 @@ void h_arrayfn[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes
     I64 stage = wk[f].c as I64;
     wk[f].c = (stage + 1) as I32;
     I64 a0 = nodes[x].b as I64;
+    if (id == resolve.AF_EQUAL) {
+        h_equal(toks, nodes, sem, wk, diag, rs, cs, f, stage);
+        return;
+    }
     if (stage == 0) {
         I64 argc = list_length(nodes, a0);
         if (id == resolve.AF_LEN) {
@@ -6481,7 +6574,9 @@ Bool size_expression[s](in scan.Token[_] toks, in parse.Node[_] nodes, in resolv
         sp -= 1;
         I64 e = wk[sp].node as I64;
         I32 k = nodes[e].kind;
-        if (k == parse.N_CALL || k == parse.N_FIELD || k == parse.N_INDEX || k == parse.N_STRING) { return false; }
+        if (k == parse.N_CALL || k == parse.N_FIELD || k == parse.N_INDEX || k == parse.N_STRING || k == parse.N_BYTES) {
+            return false;
+        }
         if (is_const(sem, e)) { continue; }
         if (k == parse.N_NAME) {
             I64 sy = sem[e].sym;
@@ -6825,7 +6920,8 @@ void h_view_var[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] node
         }
         _ = push(toks, nodes, wk, diag, rs, cs, K_EXPECT, b, sem[a].ty);
     } else if (step == 2) {
-        if (place_root(nodes, sem, syms, decls, b) < 0) {
+        // A byte string is a read-only view of static storage (SPEC-04 LS-41, LS-106).
+        if (place_root(nodes, sem, syms, decls, b) < 0 && nodes[b].kind != parse.N_BYTES) {
             resolve.fail(toks, diag, rs, resolve.C_UNSUPPORTED, first(nodes, b));
             return;
         }
@@ -7153,6 +7249,8 @@ void h_stmt[s, l, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes
                 if (k == parse.N_DISCARD) {
                     // `_ = e` consumes an error union (LS-95).
                     sem[a].flags = sem[a].flags | resolve.SEM_UNION_OK;
+                } else if (nodes[a].kind == parse.N_CATCH) {
+                    sem[a].flags = sem[a].flags | SEM_CATCH_STMT;
                 }
                 _ = push(toks, nodes, wk, diag, rs, cs, K_INFER, a, 0);
             } else if (step == 1) {

@@ -372,6 +372,8 @@ export const I64 AF_COUNT = 13;
 export const I64 AF_DOT = 14;
 export const I64 AF_MIN = 15;
 export const I64 AF_MAX = 16;
+// `equal(a, b)` (SPEC-04 LS-71; ruling OQ-307 A): two arrays or views, no reduction.
+export const I64 AF_EQUAL = 17;
 
 // The array built-in (AF_*) that src[s..s + blen) names, or 0; `min` and `max` included.
 export I64 array_builtin[n](in U8[n] src, I64 s, I64 blen) {
@@ -394,6 +396,7 @@ export I64 array_builtin[n](in U8[n] src, I64 s, I64 blen) {
     if (spells(src, s, blen, "dot")) { return AF_DOT; }
     if (spells(src, s, blen, "min")) { return AF_MIN; }
     if (spells(src, s, blen, "max")) { return AF_MAX; }
+    if (spells(src, s, blen, "equal")) { return AF_EQUAL; }
     return 0;
 }
 
@@ -1321,15 +1324,42 @@ export I64 string_next[n](in U8[n] text, I64 k, I64 end, inout I64[_] got) {
     return k + 1;
 }
 
-// The number of bytes of the string literal of the ntok string tokens from token tk.
+// string_next in a byte string (SPEC-04 LS-41, LS-42; ruling OQ-307 A), where `\xHH` is one
+// byte of any value.
+export I64 bytes_next[n](in U8[n] text, I64 k, I64 end, inout I64[_] got) {
+    if ((text[k] as I64) != 92) {
+        return string_next(text, k, end, got);
+    }
+    I64[2] esc;
+    got[0] = scan.escape_at(text, k, end, true, esc);
+    got[4] = 1;
+    return esc[0];
+}
+
+// The body of string or byte-string token q: got[0] its first byte, got[1] the byte after it.
+export void string_body[n, t](in U8[n] text, in scan.Token[t] toks, I64 q, inout I64[_] got) {
+    got[0] = (toks[q].start as I64) + 1;
+    if (toks[q].kind == scan.TK_BYTES) {
+        got[0] += 1;
+    }
+    got[1] = (toks[q].start as I64) + (toks[q].len as I64) - 1;
+}
+
+// The number of bytes of the string literal of the ntok string tokens from token tk, or of
+// the byte string of token tk (ntok 1).
 export I64 string_length[n, t](in U8[n] text, in scan.Token[t] toks, I64 tk, I64 ntok) {
     I64 total = 0;
     I64[5] bytes5;
+    I64[2] body;
     for q in tk..tk + ntok {
-        I64 k = (toks[q].start as I64) + 1;
-        I64 end = (toks[q].start as I64) + (toks[q].len as I64) - 1;
-        while (k < end) {
-            k = string_next(text, k, end, bytes5);
+        string_body(text, toks, q, body);
+        I64 k = body[0];
+        while (k < body[1]) {
+            if (toks[q].kind == scan.TK_BYTES) {
+                k = bytes_next(text, k, body[1], bytes5);
+            } else {
+                k = string_next(text, k, body[1], bytes5);
+            }
             total += bytes5[4];
         }
     }

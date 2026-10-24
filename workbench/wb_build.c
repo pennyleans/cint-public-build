@@ -219,11 +219,11 @@ void wb_modules_free(wb_modlist *ml)
     ml->n = 0;
 }
 
-int wb_emit(const char *cint, int json, const char *root, const char *rel, const char *out, const char *log,
-            int *status, wb_buf *err)
+int wb_emit(const char *cint, int json, const char *root, const char *rel, const char *stdlib, const char *out,
+            const char *log, int *status, wb_buf *err)
 {
     static wb_modlist ml;
-    const char *argv[WB_MODULES_MAX + 8u];
+    const char *argv[WB_MODULES_MAX + 10u];
     int n = 0, r = 1;
     if (wb_modules(root, rel, &ml, err) != 0) return 2;
     argv[n++] = cint;
@@ -233,6 +233,10 @@ int wb_emit(const char *cint, int json, const char *root, const char *rel, const
     argv[n++] = root;
     argv[n++] = "--out";
     argv[n++] = out;
+    if (stdlib != NULL) {
+        argv[n++] = "--stdlib";
+        argv[n++] = stdlib;
+    }
     for (uint32_t i = 0; i < ml.n; i++) argv[n++] = ml.path[i];
     argv[n] = NULL;
     cli_proc proc = {argv, NULL, log, NULL, NULL, NULL, NULL, 0};
@@ -242,13 +246,20 @@ int wb_emit(const char *cint, int json, const char *root, const char *rel, const
     return r;
 }
 
-/* The source bytes of each module under root, -1 for one that cannot be read. */
-void wb_source_sizes(const cint_sir_program *p, const char *root, int64_t *bytes)
+/* The source bytes of each module under root, or under stdlib for a module of one path segment
+ * absent under root, as `cint` reads an import (SPEC-06 3.4 --stdlib; SPEC-07 SEC-CAP-13); -1
+ * for one that cannot be read. */
+void wb_source_sizes(const cint_sir_program *p, const char *root, const char *stdlib, int64_t *bytes)
 {
     for (uint32_t k = 0; k < p->nmod && k < WB_MODULES_MAX; k++) {
         size_t len = 0;
         char *path = wb_join(root, p->mods[k].path);
         char *text = path != NULL ? wb_read_file(path, &len) : NULL;
+        if (text == NULL && path != NULL && stdlib != NULL && strchr(p->mods[k].path, '/') == NULL) {
+            free(path);
+            path = wb_join(stdlib, p->mods[k].path);
+            text = path != NULL ? wb_read_file(path, &len) : NULL;
+        }
         bytes[k] = text != NULL && len <= (size_t)INT64_MAX ? (int64_t)len : -1;
         free(text);
         free(path);

@@ -10,7 +10,7 @@
 # Unsupported seed limits become B1 comparison obligations under CINTC-02/LS-311.
 # Approval covers these rows and exclusions; a later change to either needs a new
 # approval. Stage acceptance still needs the fresh receipts of STAGE-01.
-# The following 635 core-only IDs (541 programs and tables, 18 saturating anchors,
+# The following 646 core-only IDs (552 programs and tables, 18 saturating anchors,
 # 76 built-in anchors) are explicitly outside this boot scope. We assign no
 # outside_subset category to B1. This is not full T2 coverage. B1 compares the 18
 # saturating anchors since task 2.14b and the 76 built-in anchors since box 07.
@@ -86,6 +86,12 @@
 # 2026-10-22, I/O services lane (approved 2026-10-22, OQ-304; OQ-174 amendment): the 11
 # conformance/services/ cases are excluded, as extern, requires and Grants are outside
 # cint-boot-1; B1 compares or refuses them under T2; no other row or exclusion changes.
+# 2026-10-22, I/O services lane (OQ-307 A; OQ-174 amendment): 9 programs excluded, the
+# cases of byte strings and `equal`, which are outside cint-boot-1; B1 compares them under
+# T2; no other row or exclusion changes.
+# 2026-10-24 (OQ-315 A; OQ-174 amendment): 2 programs excluded, the cases of the `catch`
+# statement, as error sets are outside cint-boot-1; B1 compares them under T2; no other
+# row or exclusion changes.
 # Boot scope exclusion: anchors/abs.checked.i64.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
 # Boot scope exclusion: anchors/abs.checked.i64.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
 # Boot scope exclusion: anchors/abs.checked.i8.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
@@ -257,9 +263,14 @@
 # Boot scope exclusion: control/test_block_entry_passes SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
 # Boot scope exclusion: determinism/unicode_column SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
 # Boot scope exclusion: diag/block_comment_nested SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
+# Boot scope exclusion: diag/c1032_bytes_unicode_escape SPEC-09 BOOT-01 excludes byte strings and the LS-145 built-ins (`equal`); I/O services lane (OQ-307 A); B1 under T2
+# Boot scope exclusion: diag/c2001_equal_element_types SPEC-09 BOOT-01 excludes byte strings and the LS-145 built-ins (`equal`); I/O services lane (OQ-307 A); B1 under T2
 # Boot scope exclusion: diag/c2002_assert_integer_condition SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
 # Boot scope exclusion: diag/c2003_skipped_arm SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
 # Boot scope exclusion: diag/c2008_convert_sat_bool SPEC-09 BOOT-01 conv_op admits `as` and `as%` only, not `as|`; frozen, box 15 (OQ-280)
+# Boot scope exclusion: diag/c2012_bytes_extent SPEC-09 BOOT-01 excludes byte strings and the LS-145 built-ins (`equal`); I/O services lane (OQ-307 A); B1 under T2
+# Boot scope exclusion: diag/c2067_inout_byte_string SPEC-09 BOOT-01 excludes byte strings and the LS-145 built-ins (`equal`); I/O services lane (OQ-307 A); B1 under T2
+# Boot scope exclusion: diag/c2103_equal_scalar SPEC-09 BOOT-01 excludes byte strings and the LS-145 built-ins (`equal`); I/O services lane (OQ-307 A); B1 under T2
 # Boot scope exclusion: diag/c2103_rotl_signed SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
 # Boot scope exclusion: diag/c3004_script_selected_by_print SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
 # Boot scope exclusion: diag/c3007_rounding_mode SPEC-09 5.5; seed inventory outside_subset; T2 scalar/stage policy
@@ -278,8 +289,10 @@
 # Boot scope exclusion: errors/c2044_shared_name_short_form SPEC-09 BOOT-01 excludes error sets, combined error sets and error unions; held I-2 (box 12)
 # Boot scope exclusion: errors/c2054_zero_filled_error_value SPEC-09 BOOT-01 excludes error sets; held I-2 (box 12)
 # Boot scope exclusion: errors/c4002_catch_block_completes SPEC-09 BOOT-01 excludes error sets, error unions and `catch`; held I-2 (box 12)
+# Boot scope exclusion: errors/c4012_catch_statement_value SPEC-09 BOOT-01 excludes error sets, error unions and `catch`; OQ-315 A; B1 under T2
 # Boot scope exclusion: errors/c4020_switch_missing_error_value SPEC-09 BOOT-01 excludes error sets, error unions and `catch`; held I-2 (box 12)
 # Boot scope exclusion: errors/catch_bind_switch_exhaustive SPEC-09 BOOT-01 excludes error sets, error unions and `catch`; held I-2 (box 12)
+# Boot scope exclusion: errors/catch_statement_void_call SPEC-09 BOOT-01 excludes error sets, error unions and `catch`; OQ-315 A; B1 under T2
 # Boot scope exclusion: errors/catch_value_and_discard SPEC-09 BOOT-01 excludes error sets, error unions and `catch`; held I-2 (box 12)
 # Boot scope exclusion: errors/combined_set_once_at_first_position SPEC-09 BOOT-01 excludes error sets, combined error sets, error unions and `try`; held I-2 (box 12)
 # Boot scope exclusion: errors/combined_try_converts_tag SPEC-09 BOOT-01 excludes error sets, combined error sets, error unions and `try`; held I-2 (box 12)
@@ -633,6 +646,7 @@
 # Boot scope exclusion: ternary/pt5_table SPEC-09 5.5; seed inventory outside_subset; t27 set 1, print statements
 # Boot scope exclusion: ternary/tdot_i8_lanes SPEC-09 5.5; seed inventory outside_subset; t27 set 1, print statements
 # Boot scope exclusion: ternary/tdot_planes SPEC-09 5.5; seed inventory outside_subset; t27 set 1, print statements
+# Boot scope exclusion: view/bytes_literal SPEC-09 BOOT-01 excludes byte strings and the LS-145 built-ins (`equal`); I/O services lane (OQ-307 A); B1 under T2
 # Boot scope exclusion: view/call_slices_disjoint SPEC-09 BOOT-01 excludes array slices; held I-2 (box 09, R0)
 # Boot scope exclusion: view/call_slices_runtime_alias SPEC-09 BOOT-01 excludes array slices; held I-2 (box 09, R0)
 # Boot scope exclusion: view/copy_same_view_noop SPEC-09 BOOT-01 excludes array slices and the built-in copy; held I-2 (box 09, R0)
@@ -642,6 +656,9 @@
 # Boot scope exclusion: view/copy_slices_disjoint_gcd SPEC-09 BOOT-01 excludes array slices and the built-in copy; held I-2 (box 09, R0)
 # Boot scope exclusion: view/copy_slices_overlap_c5010 SPEC-09 BOOT-01 excludes array slices and the built-in copy; held I-2 (box 09, R0)
 # Boot scope exclusion: view/copy_slices_runtime_alias SPEC-09 BOOT-01 excludes array slices and the built-in copy; held I-2 (box 09, R0)
+# Boot scope exclusion: view/equal_fuel SPEC-09 BOOT-01 excludes byte strings and the LS-145 built-ins (`equal`); I/O services lane (OQ-307 A); B1 under T2
+# Boot scope exclusion: view/equal_fuel_fault SPEC-09 BOOT-01 excludes byte strings and the LS-145 built-ins (`equal`); I/O services lane (OQ-307 A); B1 under T2
+# Boot scope exclusion: view/equal_values SPEC-09 BOOT-01 excludes byte strings and the LS-145 built-ins (`equal`); I/O services lane (OQ-307 A); B1 under T2
 # Boot scope exclusion: view/negative_extent_runtime SPEC-09 BOOT-01 excludes run-time local extents; held I-2 (box 09, R0)
 # Boot scope exclusion: view/nested_array_field_inner_fault SPEC-09 BOOT-01; declaration excludes module-level variables
 # Boot scope exclusion: view/nested_array_field_order SPEC-09 BOOT-01; declaration excludes module-level variables

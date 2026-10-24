@@ -1,0 +1,18 @@
+// case: errors/c4012_catch_statement_value
+// clause: SPEC-04 LS-131a, LS-167; OQ-315 A
+// subset: cint-core-1 (error sets, error unions, `catch`)
+// entry: run; args: none
+// spec outcome: compile error C4012 at 14:5, the call `parse()`: a `catch` statement takes only a call whose result is `E!void` (position: first character of the offending construct)
+
+error ParseError { empty, bad_digit }
+
+ParseError!I64 parse() {
+    return .empty;
+}
+
+export I64 run() {
+    parse() catch (e) {
+        return 1;
+    };
+    return 0;
+}

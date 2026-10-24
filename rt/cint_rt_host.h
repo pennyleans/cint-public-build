@@ -576,6 +576,11 @@ int cint_program_run_args(const cint_program *program, cint_main_fn main_fn, int
 int cint_program_run_argv(const cint_program *program, cint_main_fn main_fn, int64_t fuel, int argc,
                           char **argv, const cint_host_desc *imports, const cint_state_table *state,
                           uint32_t flags);
+/* The program's `requires` lines of SPEC-07 SEC-CAP-6, LF-terminated (RT-OQ-80), which a       */
+/* generated main passes first. A run given no "--grant" then grants each line that names no    */
+/* fs root, and an fs line on root "/argK" with the directory of argument K, which becomes      */
+/* "/argK/NAME". */
+void cint_program_requires(const char *lines);
 
 /* ------------------------------------------------------------------------- */
 /* 14. The view descriptors of a dispatch's E_ALIAS record (rt/OPEN.md        */

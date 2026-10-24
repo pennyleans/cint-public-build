@@ -373,32 +373,32 @@ int cint_program_run_fuel(const cint_program *program, cint_main_fn main_fn, int
 static int program_run(const cint_program *program, cint_main_fn main_fn, int64_t fuel, const char *fault_dest,
                        const char *fuel_dest, const char *state_dest, const cint_state_table *state, bool width,
                        const cint_host_desc *imports, const uint8_t *grants, size_t grants_length,
-                       const uint8_t *args, size_t args_length);
+                       const uint8_t *args, size_t args_length, int64_t frame_arena_bytes);
 
 int cint_program_run_state(const cint_program *program, cint_main_fn main_fn, int64_t fuel, const char *fault_dest,
                            const char *fuel_dest, const char *state_dest, const cint_state_table *state)
 {
-    return program_run(program, main_fn, fuel, fault_dest, fuel_dest, state_dest, state, false, NULL, NULL, 0u, NULL, 0u);
+    return program_run(program, main_fn, fuel, fault_dest, fuel_dest, state_dest, state, false, NULL, NULL, 0u, NULL, 0u, 0);
 }
 
 /* The width report's entry points (cint_rt_internal.h). */
 int cint_program_run_width(const cint_program *program, cint_main_fn main_fn, int64_t fuel, const char *fault_dest,
                            const char *fuel_dest)
 {
-    return program_run(program, main_fn, fuel, fault_dest, fuel_dest, NULL, NULL, true, NULL, NULL, 0u, NULL, 0u);
+    return program_run(program, main_fn, fuel, fault_dest, fuel_dest, NULL, NULL, true, NULL, NULL, 0u, NULL, 0u, 0);
 }
 
 int cint_program_run_width_state(const cint_program *program, cint_main_fn main_fn, int64_t fuel,
                                  const char *fault_dest, const char *fuel_dest, const char *state_dest,
                                  const cint_state_table *state)
 {
-    return program_run(program, main_fn, fuel, fault_dest, fuel_dest, state_dest, state, true, NULL, NULL, 0u, NULL, 0u);
+    return program_run(program, main_fn, fuel, fault_dest, fuel_dest, state_dest, state, true, NULL, NULL, 0u, NULL, 0u, 0);
 }
 
 static int program_run(const cint_program *program, cint_main_fn main_fn, int64_t fuel, const char *fault_dest,
                        const char *fuel_dest, const char *state_dest, const cint_state_table *state, bool width,
                        const cint_host_desc *imports, const uint8_t *grants, size_t grants_length,
-                       const uint8_t *args, size_t args_length)
+                       const uint8_t *args, size_t args_length, int64_t frame_arena_bytes)
 {
     cint_ctx_config cfg;
     cint_ctx *ctx = NULL;
@@ -423,6 +423,7 @@ static int program_run(const cint_program *program, cint_main_fn main_fn, int64_
     cfg.grants_length = grants_length;
     cfg.args = args;
     cfg.args_length = args_length;
+    cfg.frame_arena_bytes = frame_arena_bytes;   /* 0: the default of SPEC-06 1.4 */
     st = cint_ctx_create(&cfg, &ctx);
     if (st == CINT_REFUSED && (imports != NULL || grants != NULL)) {
         /* A grant line the runtime does not take, or a host import that does not resolve
@@ -478,23 +479,134 @@ static int program_run(const cint_program *program, cint_main_fn main_fn, int64_
  * followed by one line, anywhere and any number of times, is a grant line of SPEC-07 SEC-CAP-6
  * (rt/cint_fs.c: `<text>` or `<text>=<host dir>`); "--arg" followed by one argument, anywhere and
  * any number of times, and every argument after "--", are the program's arguments (OQ-306);
- * every other argument after argv[0] is a destination, in order the fault, fuel and state
- * destinations of cint_program_run_state, "-" for none. A third destination without `state`, a
- * fourth, a "--grant" with no line or an empty line after it, a "--arg" with nothing after it,
- * or a program argument when the program's `main` takes none (CINT_PROGRAM_ARGS is not in
- * `flags`) returns CINT_EXIT_USAGE and runs nothing. The lines, joined by LF, are the context's
- * grants, the arguments, each followed by one NUL, its `args`, and `imports` its host import
- * tables (cint_ctx_config), so that the program's service calls resolve, the grants cover them
- * and `main(in U8[_] args)` reads its arguments. */
+ * "--frame-arena" followed by a count of elements, anywhere before "--" and the last one in
+ * force, is the frame-arena capacity (OQ-308, RT-OQ-78; frame_arena_value); every other argument
+ * after argv[0] is a destination, in order the fault, fuel and state destinations of
+ * cint_program_run_state, "-" for none. A third destination without `state`, a fourth, a
+ * "--grant" with no line or an empty line after it, a "--arg" with nothing after it, a
+ * "--frame-arena" without a count, or a program argument when the program's `main` takes none
+ * (CINT_PROGRAM_ARGS is not in `flags`) returns CINT_EXIT_USAGE and runs nothing. The lines,
+ * joined by LF, are the context's grants, the arguments, each followed by one NUL, its `args`,
+ * the count times 8 its `frame_arena_bytes`, and `imports` its host import tables
+ * (cint_ctx_config), so that the program's service calls resolve, the grants cover them and
+ * `main(in U8[_] args)` reads its arguments. */
+/* A frame-arena capacity in elements: decimal digits with no sign and no leading zero, 1 to
+ * 2^50 - 1, so that the capacity in bytes, eight to an element, which cint_ctx_config holds and a
+ * receipt records, is exact as a JSON number (SPEC-09 RCPT-02). 0 when `text` is not one. */
+static int64_t frame_arena_value(const char *text)
+{
+    int64_t v = 0;
+    if (text[0] < '1' || text[0] > '9') return 0;
+    for (; *text != '\0'; text++) {
+        if (*text < '0' || *text > '9' || v > ((((int64_t)1 << 50) - 1) - (*text - '0')) / 10) return 0;
+        v = v * 10 + (*text - '0');
+    }
+    return v;
+}
+
+/* The program's capability manifest (cint_program_requires; rt/OPEN.md RT-OQ-80), NULL for none. */
+static const char *program_requires;
+
+void cint_program_requires(const char *lines)
+{
+    program_requires = lines;
+}
+
+/* K of a root "/argK", K from 1 to 99999 with no leading zero; 0 for any other root. */
+static size_t arg_root(const char *root, size_t len)
+{
+    size_t k = 0u;
+    if (len < 5u || len > 9u || memcmp(root, "/arg", 4u) != 0 || root[4] == '0') return 0u;
+    for (size_t i = 4u; i < len; i++) {
+        if (root[i] < '0' || root[i] > '9') return 0u;
+        k = k * 10u + (size_t)(root[i] - '0');
+    }
+    return k;
+}
+
+/* The grants of a run given no "--grant", from the manifest (RT-OQ-80): each line that names no
+ * fs root as it stands; an fs.read or fs.write line on root "/argK", when argument K is a host
+ * path whose last part is a logical segment (SPEC-07 SEC-OS-5), with that path's directory after
+ * '=' ("." for none), and argument K becomes "/argK/<last part>"; no other fs line, since no host
+ * directory backs it. Replaces *args, and sets *grants to the lines joined by LF with a final
+ * NUL; false when memory runs out. */
+static bool derive_grants(uint8_t **grants, size_t *gbytes, uint8_t **args, size_t *abytes)
+{
+    static const char seg[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.";
+    const char *req = program_requires;
+    size_t nlines = 1u, nargs = 0u, at = 0u, gat = 0u, rlen = strlen(req);
+    for (size_t i = 0u; i < rlen; i++) nlines += req[i] == '\n';
+    for (size_t i = 0u; i < *abytes; i++) nargs += (*args)[i] == '\0';
+    const char **av = (const char **)calloc(nargs + 1u, sizeof *av);
+    size_t *last = (size_t *)calloc(nargs + 1u, sizeof *last);   /* where the last part starts, or SIZE_MAX */
+    uint8_t *g = (uint8_t *)malloc(rlen + nlines * (*abytes + 3u)), *a = (uint8_t *)malloc(*abytes + nargs * 16u + 1u);
+    if (av == NULL || last == NULL || g == NULL || a == NULL) {
+        free(av), free(last), free(g), free(a);
+        return false;
+    }
+    for (size_t k = 0u, i = 0u; k < nargs; i += strlen(av[k++]) + 1u) av[k] = (const char *)*args + i, last[k] = SIZE_MAX;
+    for (const char *line = req; *line != '\0'; line += strcspn(line, "\n") + (line[strcspn(line, "\n")] != '\0')) {
+        size_t len = strcspn(line, "\n"), name = strcspn(line, ":"), k = 0u, cut = 0u, dir = 0u;
+        bool fs = name < len && ((name == 7u && memcmp(line, "fs.read", 7u) == 0) ||
+                                 (name == 8u && memcmp(line, "fs.write", 8u) == 0));
+        if (fs) {
+            if ((k = arg_root(line + name + 1u, len - name - 1u)) == 0u || k > nargs) continue;
+            const char *p = av[k - 1u];
+            size_t plen = strlen(p);
+            for (cut = plen; cut > 0u && p[cut - 1u] != '/'
+#if defined(_WIN32)
+                             && p[cut - 1u] != '\\'
+#endif
+                 ; cut--) {}
+            if (cut == plen || plen - cut > 255u || strspn(p + cut, seg) != plen - cut || strcmp(p + cut, ".") == 0 ||
+                strcmp(p + cut, "..") == 0) continue;
+            dir = cut > 1u && p[cut - 2u] != ':' ? cut - 1u : cut;   /* "/x" keeps "/", a path under a drive letter keeps the drive's root */
+            last[k - 1u] = cut;
+        }
+        if (len == 0u) continue;
+        if (gat > 0u) g[gat - 1u] = (uint8_t)'\n';
+        memcpy(g + gat, line, len);
+        gat += len;
+        if (fs) g[gat++] = (uint8_t)'=', g[gat] = (uint8_t)'.', memcpy(g + gat, av[k - 1u], dir), gat += dir > 0u ? dir : 1u;
+        g[gat++] = (uint8_t)'\0';
+    }
+    for (size_t k = 0u; k < nargs; k++) {
+        const char *tail = av[k] + (last[k] != SIZE_MAX ? last[k] : 0u);
+        size_t tlen = strlen(tail) + 1u;   /* with its NUL */
+        if (last[k] != SIZE_MAX) {   /* "/arg<K>/": K at most 99999 (arg_root) */
+            char digits[8];
+            size_t nd = 0u;
+            for (size_t v = k + 1u; v > 0u; v /= 10u) digits[nd++] = (char)('0' + v % 10u);
+            memcpy(a + at, "/arg", 4u), at += 4u;
+            while (nd > 0u) a[at++] = (uint8_t)digits[--nd];
+            a[at++] = (uint8_t)'/';
+        }
+        memcpy(a + at, tail, tlen);
+        at += tlen;
+    }
+    free(av), free(last), free(*args);
+    if (nargs == 0u) free(a), a = NULL;
+    if (gat == 0u) free(g), g = NULL;
+    *args = a, *abytes = at, *grants = g, *gbytes = gat;
+    return true;
+}
+
 static int program_run_args(const cint_program *program, cint_main_fn main_fn, int64_t fuel, int argc, char **argv,
                             const cint_host_desc *imports, const cint_state_table *state, bool width, uint32_t flags)
 {
     const char *dests[3] = {NULL, NULL, NULL};
     uint8_t *grants = NULL, *args = NULL;
     size_t gbytes = 0u, abytes = 0u, at = 0u;
+    int64_t arena = 0;   /* elements; 0 for the default */
     int i, nd = 0, status, tail = argc;   /* tail: the first argument after "--" */
     for (i = 1; i < argc && i < tail; i++) {
-        if (strcmp(argv[i], "--grant") == 0) {
+        if (strcmp(argv[i], "--frame-arena") == 0) {
+            if (i + 1 >= argc || (arena = frame_arena_value(argv[++i])) == 0) {
+                err_str("usage: --frame-arena takes a count of elements, 1 to 1125899906842623\n");
+                (void)fflush(stderr);
+                return CINT_EXIT_USAGE;
+            }
+        } else if (strcmp(argv[i], "--grant") == 0) {
             if (i + 1 >= argc || argv[i + 1][0] == '\0') return CINT_EXIT_USAGE;   /* no line, or an empty one */
             gbytes += strlen(argv[++i]) + 1u;
         } else if (strcmp(argv[i], "--arg") == 0) {
@@ -517,7 +629,10 @@ static int program_run_args(const cint_program *program, cint_main_fn main_fn, i
     if (gbytes > 0u) {
         if ((grants = (uint8_t *)malloc(gbytes)) == NULL) return CINT_EXIT_ENVIRONMENT;
         for (i = 1; i < tail; i++) {
-            if (strcmp(argv[i], "--grant") != 0) { i += strcmp(argv[i], "--arg") == 0; continue; }
+            if (strcmp(argv[i], "--grant") != 0) {   /* the value of --arg or --frame-arena is not a grant */
+                i += strcmp(argv[i], "--arg") == 0 || strcmp(argv[i], "--frame-arena") == 0;
+                continue;
+            }
             i++;
             if (at > 0u) grants[at - 1u] = (uint8_t)'\n';
             memcpy(grants + at, argv[i], strlen(argv[i]) + 1u);
@@ -528,15 +643,19 @@ static int program_run_args(const cint_program *program, cint_main_fn main_fn, i
         if ((args = (uint8_t *)malloc(abytes)) == NULL) { free(grants); return CINT_EXIT_ENVIRONMENT; }
         at = 0u;
         for (i = 1; i < argc; i++) {
-            if (i < tail && strcmp(argv[i], "--grant") == 0) { i++; continue; }
+            if (i < tail && (strcmp(argv[i], "--grant") == 0 || strcmp(argv[i], "--frame-arena") == 0)) { i++; continue; }
             if (i < tail && strcmp(argv[i], "--arg") == 0) i++;
             else if (i < tail) continue;
             memcpy(args + at, argv[i], strlen(argv[i]) + 1u);
             at += strlen(argv[i]) + 1u;
         }
     }
+    if (gbytes == 0u && program_requires != NULL && !derive_grants(&grants, &gbytes, &args, &abytes)) {
+        free(args);
+        return CINT_EXIT_ENVIRONMENT;
+    }
     status = program_run(program, main_fn, fuel, dests[0], dests[1], dests[2], state, width, imports, grants,
-                         gbytes > 0u ? gbytes - 1u : 0u, args, abytes);   /* the LF-joined lines without the final NUL */
+                         gbytes > 0u ? gbytes - 1u : 0u, args, abytes, arena * 8);   /* the LF-joined lines without the final NUL */
     free(grants);
     free(args);
     return status;

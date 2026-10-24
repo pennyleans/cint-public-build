@@ -71,18 +71,20 @@ typedef struct wb_modlist {
 } wb_modlist;
 int wb_modules(const char *root, const char *rel, wb_modlist *out, wb_buf *err);
 void wb_modules_free(wb_modlist *ml);
-/* Runs `cint [--json] emit-c --root ROOT --out OUT` on the modules of ROOT/REL, with its
- * standard error in the file LOG. Returns 0 with *status its exit status (-1 when it ended
- * without one), 1 when it could not be started, or 2 when the root module cannot be read; err
- * says why. */
-int wb_emit(const char *cint, int json, const char *root, const char *rel, const char *out, const char *log,
-            int *status, wb_buf *err);
+/* Runs `cint [--json] emit-c --root ROOT --out OUT [--stdlib STDLIB]` on the modules of
+ * ROOT/REL, with its standard error in the file LOG; STDLIB NULL leaves cint its default.
+ * Returns 0 with *status its exit status (-1 when it ended without one), 1 when it could not be
+ * started, or 2 when the root module cannot be read; err says why. */
+int wb_emit(const char *cint, int json, const char *root, const char *rel, const char *stdlib, const char *out,
+            const char *log, int *status, wb_buf *err);
 /* The program directory of an output set: the stage its MANIFEST.ref names beside it, or the
  * directory itself when it has no MANIFEST.ref (SPEC-09 CINTC-06). malloc'd, or NULL. */
 char *wb_stage_of(const char *dir);
-/* The source bytes of each module of p under root, -1 for one that cannot be read. */
+/* The source bytes of each module of p under root, or, for a module of one path segment absent
+ * there, under the standard library root stdlib when it is not NULL (SPEC-06 3.4 --stdlib); -1
+ * for one that cannot be read. */
 struct cint_sir_program;
-void wb_source_sizes(const struct cint_sir_program *p, const char *root, int64_t *bytes);
+void wb_source_sizes(const struct cint_sir_program *p, const char *root, const char *stdlib, int64_t *bytes);
 
 /* ------------------------------------------------------------------------- */
 /* Exact integers of display (wb_num.c; BX14-02 B, BX14-11).                  */

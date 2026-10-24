@@ -16,9 +16,10 @@ CONF = ROOT / "conformance"
 # `defer` and error sets: frozen from cint_ref, which runs them since box 12 (ref/OPEN.md I-8, the
 # box 12 freeze), and compared since B1's box 12 work (compiler/OPEN.md CINTC-OQ-63). Kernels:
 # frozen from cint_ref, which runs them since box 09 (ref/OPEN.md I-7, the box 09 freeze), and
-# compared since B1's box 09 work (decision 2026-10-06 on OQ-193).
+# compared since B1's box 09 work (decision 2026-10-06 on OQ-193). Byte strings: frozen from cint_ref and
+# compared since the I/O services lane's unit of ruling OQ-307 A (compiler/OPEN.md CINTC-OQ-70).
 COMPARED = {"print", "profile_line", "static_assert", "ternary_literal", "test_block", "defer", "error_union",
-            "kernel"}
+            "kernel", "byte_string"}
 # A frozen cintc expectation that B1 refuses with C9102 under CINTC-OQ-15; none since box 09.
 UNSUPPORTED = set()
 
@@ -85,7 +86,7 @@ class CintcExpectations(unittest.TestCase):
         for name, p in programs.items():
             self.assertEqual([f.name for f, _, _ in p.frozen], [name[5:] + ".cintc.expect"])
             self.assertFalse(p.seed_only)
-        self.assertEqual(len(cats), 8)
+        self.assertEqual(len(cats), 7)
         self.assertTrue(all(c == ("held", {"open_item": "I-2"}) for c in cats.values()))
 
     def test_seed_keeps_its_own_frozen_files(self):

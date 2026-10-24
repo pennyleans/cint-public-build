@@ -31,7 +31,8 @@
 /* The fault codes of each operation (SPEC-01 IM-104, IM-39, IM-45, IM-52, IM-49, IM-130,
  * IM-134), by the first word of its identifier. `signed_only` codes need a signed operand: an
  * unsigned quotient never overflows, and an unsigned operand is never negative. A reduction
- * charges fuel for its terms (IM-139), and `arena.alloc` names a charge of the frame arena. */
+ * charges fuel for its terms (IM-139), as `equal` does (ruling OQ-307 A), and `arena.alloc`
+ * names a charge of the frame arena. */
 typedef struct op_codes {
     const char *word;
     unsigned codes, signed_only;
@@ -43,8 +44,8 @@ static const op_codes OPS[] = {
     {"copy", BIT(4), 0}, {"count", BIT(9), 0}, {"decl", BIT(3) | BIT(4), 0}, {"dispatch", BIT(9), 0},
     {"div", BIT(1) | BIT(2), BIT(1)}, {"div_euclid", BIT(1) | BIT(2), BIT(1)},
     {"div_round", BIT(1) | BIT(2), BIT(1)}, {"div_trunc", BIT(1) | BIT(2), BIT(1)},
-    {"dot", BIT(1) | BIT(4) | BIT(9), 0}, {"fold_checked", BIT(1) | BIT(9), 0}, {"fuel", BIT(9), 0},
-    {"index", BIT(3), 0}, {"isqrt", BIT(11), BIT(11)}, {"isqrt_round", BIT(1) | BIT(11), BIT(11)},
+    {"dot", BIT(1) | BIT(4) | BIT(9), 0}, {"equal", BIT(9), 0}, {"fold_checked", BIT(1) | BIT(9), 0},
+    {"fuel", BIT(9), 0}, {"index", BIT(3), 0}, {"isqrt", BIT(11), BIT(11)}, {"isqrt_round", BIT(1) | BIT(11), BIT(11)},
     {"mul", BIT(1), 0}, {"muldiv", BIT(1) | BIT(2), 0}, {"neg", BIT(1), 0}, {"reduce_max", BIT(4) | BIT(9), 0},
     {"reduce_min", BIT(4) | BIT(9), 0}, {"rem", BIT(2), 0}, {"rem_euclid", BIT(2), 0}, {"rem_trunc", BIT(2), 0},
     {"rotl", BIT(5), 0}, {"rotr", BIT(5), 0}, {"shl", BIT(1) | BIT(5), 0}, {"shr", BIT(5), 0},

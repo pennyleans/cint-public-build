@@ -25,7 +25,10 @@
 # conformance/services/ cases of the I/O services lane, 6 of them B1's first unsupported rows
 # since OQ-193 (compiler/OPEN.md CINTC-OQ-66 item 8); amended 2026-10-22 (OQ-305): the 3
 # cintc rows of those cases whose expected compile error B1 reaches since U5b, and the 3 of
-# the run-time cases once cpu-sir-interp runs service calls (U5c).
+# the run-time cases once cpu-sir-interp runs service calls (U5c); amended 2026-10-22
+# (OQ-307 A): the 18 rows of the 9 cases of byte strings and `equal`, and the cintc row of
+# boot/refuse_byte_string, compared now that its expectation is frozen; amended 2026-10-24
+# (OQ-315 A): the 4 rows of the 2 cases of the `catch` statement.
 # SPEC-09 CONF-14, CONF-15, STAGE-01; D-15; plan tasks 2.12b, 2.13, 2.14, 2.18.
 # Requirements only. These categories are obligations, not new measured outcomes.
 # Seed requirements retain the reviewed T1 classifications of the available suite.
@@ -1838,8 +1841,8 @@ boot/refuse_attribute cint-seed outside_subset
 boot/refuse_attribute cintc held I-2
 # Reference: boot/refuse_byte_string cint-seed SPEC-09 CONF-14.4; SPEC-09 BOOT-01 (BYTES), SEED-06; SPEC-04 LS-41
 boot/refuse_byte_string cint-seed outside_subset
-# Reference: boot/refuse_byte_string cintc SPEC-09 CONF-14.3, CONF-11 rule 7 (decision 26 item 2); held.txt boot/refuse_byte_string.cintc; SPEC-09 BOOT-01 (BYTES), SEED-06; SPEC-04 LS-41
-boot/refuse_byte_string cintc held I-2
+# Reference: boot/refuse_byte_string cintc SPEC-09 CONF-14.1, CONF-11 rule 7 (decision 26 item 2); boot/refuse_byte_string.cintc.expect frozen from cint_ref (OQ-307 A); compiler/OPEN.md CINTC-OQ-70; SPEC-09 BOOT-01 (BYTES), SEED-06; SPEC-04 LS-41
+boot/refuse_byte_string cintc compared
 # Reference: boot/refuse_defer cint-seed SPEC-09 CONF-14.4; SPEC-09 BOOT-01 (defer_stmt), SEED-06; SPEC-04 LS-185, LS-186
 boot/refuse_defer cint-seed outside_subset
 # Reference: boot/refuse_defer cintc SPEC-09 CONF-14.1, CONF-11 rule 7 (decision 26 item 2); boot/refuse_defer.cintc.expect frozen from cint_ref (I-8, OQ-206); compiler/OPEN.md CINTC-OQ-63; SPEC-09 BOOT-01 (defer_stmt), SEED-06; SPEC-04 LS-185, LS-186
@@ -2204,6 +2207,10 @@ diag/c1022_leading_zero cintc compared
 diag/c1023_literal_4097_bits cint-seed compared
 # Reference: diag/c1023_literal_4097_bits cintc SPEC-09 CONF-14.1; SPEC-04 LS-31, LS-311; owner decision 2026-10-03, slice 2 patch D-17
 diag/c1023_literal_4097_bits cintc compared
+# Reference: diag/c1032_bytes_unicode_escape cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5 (BYTES); measured C9100 at 8:18 (the byte-string literal); frozen from cint_ref, I/O services lane (OQ-307 A)
+diag/c1032_bytes_unicode_escape cint-seed outside_subset
+# Reference: diag/c1032_bytes_unicode_escape cintc SPEC-09 CONF-14.1; SPEC-04 LS-41, LS-42, 17.2 (C1032); compiler/OPEN.md CINTC-OQ-70; frozen from cint_ref, I/O services lane (OQ-307 A)
+diag/c1032_bytes_unicode_escape cintc compared
 # Reference: diag/c1032_unknown_escape cint-seed SPEC-09 CONF-14.1; SPEC-04 3.8 (escapes), LS-278; seed/OPEN.md SEED-OQ-09
 diag/c1032_unknown_escape cint-seed compared
 # Reference: diag/c1032_unknown_escape cintc SPEC-09 CONF-14.1; SPEC-04 3.8 (escapes), LS-278; seed/OPEN.md SEED-OQ-09
@@ -2224,6 +2231,10 @@ diag/c1042_increment_in_expression cintc compared
 diag/c1043_if_without_braces cint-seed compared
 # Reference: diag/c1043_if_without_braces cintc SPEC-09 CONF-14.1; SPEC-04 8.2; SPEC-04 17.1, 17.2
 diag/c1043_if_without_braces cintc compared
+# Reference: diag/c2001_equal_element_types cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:16 (an array literal); frozen from cint_ref, I/O services lane (OQ-307 A)
+diag/c2001_equal_element_types cint-seed outside_subset
+# Reference: diag/c2001_equal_element_types cintc SPEC-09 CONF-14.1; SPEC-04 LS-71, LS-145, 17.2 (C2001); compiler/OPEN.md CINTC-OQ-70; frozen from cint_ref, I/O services lane (OQ-307 A)
+diag/c2001_equal_element_types cintc compared
 # Reference: diag/c2001_implicit_widening cint-seed SPEC-09 CONF-14.1; SPEC-04 6.6; SPEC-01 4.1; SPEC-04 17.1, 17.2
 diag/c2001_implicit_widening cint-seed compared
 # Reference: diag/c2001_implicit_widening cintc SPEC-09 CONF-14.1; SPEC-04 6.6; SPEC-01 4.1; SPEC-04 17.1, 17.2
@@ -2280,6 +2291,10 @@ diag/c2003_unsigned_minus_space cintc compared
 diag/c2008_convert_sat_bool cint-seed outside_subset
 # Reference: diag/c2008_convert_sat_bool cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 (OQ-280); frozen from cint_ref, box 15 (OQ-280)
 diag/c2008_convert_sat_bool cintc compared
+# Reference: diag/c2012_bytes_extent cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5 (BYTES); measured C9100 at 8:15 (the byte-string literal); frozen from cint_ref, I/O services lane (OQ-307 A)
+diag/c2012_bytes_extent cint-seed outside_subset
+# Reference: diag/c2012_bytes_extent cintc SPEC-09 CONF-14.1; SPEC-04 LS-41, LS-42, LS-70, 17.2 (C2012); compiler/OPEN.md CINTC-OQ-70; frozen from cint_ref, I/O services lane (OQ-307 A)
+diag/c2012_bytes_extent cintc compared
 # Reference: diag/c2050_uninitialized_scalar cint-seed SPEC-09 CONF-14.1; SPEC-04 5.1; SPEC-04 17.1, 17.2
 diag/c2050_uninitialized_scalar cint-seed compared
 # Reference: diag/c2050_uninitialized_scalar cintc SPEC-09 CONF-14.1; SPEC-04 5.1; SPEC-04 17.1, 17.2
@@ -2316,6 +2331,10 @@ diag/c2055_zero_array_indirect cintc compared
 diag/c2056_integer_as_bool cint-seed compared
 # Reference: diag/c2056_integer_as_bool cintc SPEC-09 CONF-14.1; SPEC-01 2.3; SPEC-04 6.6; SPEC-04 17.1, 17.2
 diag/c2056_integer_as_bool cintc compared
+# Reference: diag/c2067_inout_byte_string cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5 (BYTES); measured C9100 at 12:11 (the byte-string literal); frozen from cint_ref, I/O services lane (OQ-307 A)
+diag/c2067_inout_byte_string cint-seed outside_subset
+# Reference: diag/c2067_inout_byte_string cintc SPEC-09 CONF-14.1; SPEC-04 LS-41, LS-42, LS-106, 17.2 (C2067); compiler/OPEN.md CINTC-OQ-70; frozen from cint_ref, I/O services lane (OQ-307 A)
+diag/c2067_inout_byte_string cintc compared
 # Reference: diag/c2101_mixed_logical cint-seed SPEC-09 CONF-14.1; SPEC-04 7.2; SPEC-04 17.1, 17.2
 diag/c2101_mixed_logical cint-seed compared
 # Reference: diag/c2101_mixed_logical cintc SPEC-09 CONF-14.1; SPEC-04 7.2; SPEC-04 17.1, 17.2
@@ -2332,6 +2351,10 @@ diag/c2101_shift_with_arithmetic cintc compared
 diag/c2102_chained_comparison cint-seed compared
 # Reference: diag/c2102_chained_comparison cintc SPEC-09 CONF-14.1; SPEC-01 4.8; SPEC-04 7.3; SPEC-04 17.1, 17.2
 diag/c2102_chained_comparison cintc compared
+# Reference: diag/c2103_equal_scalar cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 9:14 (the built-in `equal`); frozen from cint_ref, I/O services lane (OQ-307 A)
+diag/c2103_equal_scalar cint-seed outside_subset
+# Reference: diag/c2103_equal_scalar cintc SPEC-09 CONF-14.1; SPEC-04 LS-71, LS-145, 17.2 (C2103); compiler/OPEN.md CINTC-OQ-70; frozen from cint_ref, I/O services lane (OQ-307 A)
+diag/c2103_equal_scalar cintc compared
 # Reference: diag/c2103_rotl_signed cint-seed SPEC-09 CONF-14.4; SPEC-01 2.4, 4.6; SPEC-04 17.2 (C2103)
 diag/c2103_rotl_signed cint-seed outside_subset
 # Reference: diag/c2103_rotl_signed cintc SPEC-09 CONF-14.1; SPEC-01 2.4, 4.6; SPEC-04 17.2 (C2103)
@@ -2428,6 +2451,10 @@ errors/c2054_zero_filled_error_value cintc compared
 errors/c4002_catch_block_completes cint-seed outside_subset
 # Reference: errors/c4002_catch_block_completes cintc SPEC-09 CONF-14.1; OQ-206; compiler/OPEN.md CINTC-OQ-63; SPEC-04 LS-131
 errors/c4002_catch_block_completes cintc compared
+# Reference: errors/c4012_catch_statement_value cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (`error` at module level); frozen from cint_ref (OQ-315 A)
+errors/c4012_catch_statement_value cint-seed outside_subset
+# Reference: errors/c4012_catch_statement_value cintc SPEC-09 CONF-14.1; SPEC-04 LS-131a, LS-167, 17.2 (C4012); compiler/OPEN.md CINTC-OQ-71; frozen from cint_ref (OQ-315 A)
+errors/c4012_catch_statement_value cintc compared
 # Reference: errors/c4020_switch_missing_error_value cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (`error` at module level); box 12 freeze OQ-206
 errors/c4020_switch_missing_error_value cint-seed outside_subset
 # Reference: errors/c4020_switch_missing_error_value cintc SPEC-09 CONF-14.1; OQ-206; compiler/OPEN.md CINTC-OQ-63; SPEC-04 LS-182, LS-314; decision 2026-10-05, BX12-09
@@ -2436,6 +2463,10 @@ errors/c4020_switch_missing_error_value cintc compared
 errors/catch_bind_switch_exhaustive cint-seed outside_subset
 # Reference: errors/catch_bind_switch_exhaustive cintc SPEC-09 CONF-14.1; OQ-206; compiler/OPEN.md CINTC-OQ-63; SPEC-04 LS-95, LS-131, LS-182, LS-314; decision 2026-10-05, BX12-09
 errors/catch_bind_switch_exhaustive cintc compared
+# Reference: errors/catch_statement_void_call cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (`error` at module level); frozen from cint_ref (OQ-315 A)
+errors/catch_statement_void_call cint-seed outside_subset
+# Reference: errors/catch_statement_void_call cintc SPEC-09 CONF-14.1; SPEC-04 LS-131, LS-131a, LS-167; compiler/OPEN.md CINTC-OQ-71; frozen from cint_ref (OQ-315 A)
+errors/catch_statement_void_call cintc compared
 # Reference: errors/catch_value_and_discard cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (`error` at module level); box 12 freeze OQ-206
 errors/catch_value_and_discard cint-seed outside_subset
 # Reference: errors/catch_value_and_discard cintc SPEC-09 CONF-14.1; OQ-206; compiler/OPEN.md CINTC-OQ-63; SPEC-04 LS-95, LS-130, LS-132
@@ -4332,6 +4363,10 @@ ternary/tdot_i8_lanes cintc compared
 ternary/tdot_planes cint-seed outside_subset
 # Reference: ternary/tdot_planes cintc SPEC-09 CONF-14.1; SPEC-05 TR-DOT-1, TR-DOT-2, TR-DOT-7, 9.3, 12.4; t27 set 1 (TT-01)
 ternary/tdot_planes cintc compared
+# Reference: view/bytes_literal cint-seed SPEC-09 CONF-14.4; SPEC-09 5.3; measured C9100 at 21:30 (a non-ASCII source character); frozen from cint_ref, I/O services lane (OQ-307 A)
+view/bytes_literal cint-seed outside_subset
+# Reference: view/bytes_literal cintc SPEC-09 CONF-14.1; SPEC-04 LS-41, LS-42, LS-70; compiler/OPEN.md CINTC-OQ-70; frozen from cint_ref, I/O services lane (OQ-307 A)
+view/bytes_literal cintc compared
 # Reference: view/call_slices_disjoint cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 12:12 (an array slice); box 09 freeze OQ-197
 view/call_slices_disjoint cint-seed outside_subset
 # Reference: view/call_slices_disjoint cintc SPEC-09 CONF-14.1; OQ-197; compiler/OPEN.md CINTC-OQ-42 (box 09 forms); SPEC-04 LS-121; SPEC-02 A-5 T1
@@ -4384,6 +4419,18 @@ view/copy_slices_overlap_c5010 cintc compared
 view/copy_slices_runtime_alias cint-seed outside_subset
 # Reference: view/copy_slices_runtime_alias cintc SPEC-09 CONF-14.1; OQ-197; compiler/OPEN.md CINTC-OQ-42 (box 09 forms); SPEC-04 LS-70; SPEC-01 IM-187; SPEC-02 A-5
 view/copy_slices_runtime_alias cintc compared
+# Reference: view/equal_fuel cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 13:9 (the built-in `equal`); frozen from cint_ref, I/O services lane (OQ-307 A)
+view/equal_fuel cint-seed outside_subset
+# Reference: view/equal_fuel cintc SPEC-09 CONF-14.1; SPEC-04 LS-71, LS-145; SPEC-01 IM-139; rt/OPEN.md RT-OQ-79; compiler/OPEN.md CINTC-OQ-70; frozen from cint_ref, I/O services lane (OQ-307 A)
+view/equal_fuel cintc compared
+# Reference: view/equal_fuel_fault cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 11:9 (the built-in `equal`); frozen from cint_ref, I/O services lane (OQ-307 A)
+view/equal_fuel_fault cint-seed outside_subset
+# Reference: view/equal_fuel_fault cintc SPEC-09 CONF-14.1; SPEC-04 LS-71, LS-145; SPEC-01 IM-139; rt/OPEN.md RT-OQ-79, IM-141; compiler/OPEN.md CINTC-OQ-70; frozen from cint_ref, I/O services lane (OQ-307 A)
+view/equal_fuel_fault cintc compared
+# Reference: view/equal_values cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5 (FIXED_TYPE); measured C9100 at 25:5 (a fixed-point type); frozen from cint_ref, I/O services lane (OQ-307 A)
+view/equal_values cint-seed outside_subset
+# Reference: view/equal_values cintc SPEC-09 CONF-14.1; SPEC-04 LS-71, LS-145; SPEC-01 IM-139; rt/OPEN.md RT-OQ-79; SPEC-04 LS-41, LS-42; compiler/OPEN.md CINTC-OQ-70; frozen from cint_ref, I/O services lane (OQ-307 A)
+view/equal_values cintc compared
 # Reference: view/extent_zero cint-seed SPEC-09 CONF-14.1; SPEC-04 LS-68 (`I64[0]` is valid; any index faults E_BOUNDS); SPEC-01 IM-186
 view/extent_zero cint-seed compared
 # Reference: view/extent_zero cintc SPEC-09 CONF-14.1; SPEC-04 LS-68 (`I64[0]` is valid; any index faults E_BOUNDS); SPEC-01 IM-186

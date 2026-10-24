@@ -1,0 +1,42 @@
+// case: view/equal_values
+// clause: SPEC-04 LS-71, LS-145 (`equal(a, b)` of two arrays or views of one element type and one rank; other shapes are not equal; ruling OQ-307 A)
+// subset: cint-core-1 (array views, byte strings)
+// entry: run; args: none
+// spec outcome: value I64 7125 (bits 0, 2, 4, 6, 7, 8, 9, 11 and 12)
+
+Bool same(in U8[_] a, in U8[_] b) {
+    return equal(a, b);
+}
+
+I64 bit(Bool b, I64 k) {
+    if (b) {
+        return 1 << k;
+    }
+    return 0;
+}
+
+export I64 run() {
+    I32[3] x = [1, 2, 3];
+    I32[3] y = [1, 2, 3];
+    I32[2] z = [1, 2];
+    Bool[2] m = [true, false];
+    I64[2, 2] g = [[1, 2], [3, 4]];
+    I64[2, 2] h = [[1, 2], [3, 5]];
+    Q8.8[2] p = [Q8.8.raw(1), Q8.8.raw(-2)];
+    U8[4] c = b"abba";
+    I64 r = bit(equal(x, y), 0);
+    r = r + bit(equal(x, z), 1);
+    r = r + bit(equal(x[0..2], z), 2);
+    r = r + bit(equal(x, [1, 2, 4]), 3);
+    r = r + bit(equal(m, [true, false]), 4);
+    r = r + bit(equal(g, h), 5);
+    r = r + bit(equal(g, g), 6);
+    r = r + bit(equal(h[0..1, 0..2], g[0..1, 0..2]), 7);
+    r = r + bit(equal(p, [Q8.8.raw(1), Q8.8.raw(-2)]), 8);
+    r = r + bit(equal(c[0..2], b"ab"), 9);
+    r = r + bit(equal(c[2..4], b"ab"), 10);
+    r = r + bit(same(c, b"abba"), 11);
+    r = r + bit(same(b"", c[1..1]), 12);
+    r = r + bit(equal(b"ab", b"abc"), 13);
+    return r;
+}

@@ -227,8 +227,9 @@ export const I32 T_GRANTS = 0x75;
 //   SO_SHAPE      bind.shape: the extent of view argument slot a, the argument at position b
 //                 of the call that follows, equals that of slot c, or val when c is -1
 //                 (E_SHAPE, the entry check of SPEC-04 LS-123; task 2.14)
-//   SO_SDATA      the bytes of a string literal passed to a view: tok its first token, f
-//                 its token count, c its byte count (SO_ARG e 4 passes it, e 5 its length)
+//   SO_SDATA      the bytes of a string literal passed to a view, or of a byte string: tok
+//                 its first token, f its token count, c its byte count (SO_ARG e 4 passes
+//                 it, e 5 its length; SO_VBEGIN e 3 views it)
 //   SO_ASSERT     assert.checked.bool a (SPEC-04 LS-191; E_ASSERT at the condition's first
 //                 token, tok): a the Bool condition; b 1 when a is the SO_CMP of a
 //                 comparison, whose two operands the fault record carries (`cint_ref` _assert)
@@ -306,7 +307,9 @@ export const I32 SO_BUILTIN = 59;
 // node's slot operands are SK_ARRAY, SK_VIEW, SK_APLACE or SK_NVIEW slots.
 //   SO_VBEGIN     view a := the view of slot b; with b a flat SK_ARRAY or (BX22-06) an
 //                 SK_APLACE and a of rank 2 to 4, b's elements in row-major order with the
-//                 extents in val's 12-bit fields from dimension 0
+//                 extents in val's 12-bit fields from dimension 0; with e 2 read-only; with
+//                 e 3 (ruling OQ-307 A) b -1, the read-only view of rank 1 of the bytes of
+//                 SO_SDATA node val
 //   SO_VPICK      index b (I64, checked before) into dimension f of view a: its origin moves
 //                 b strides of that dimension (ruling R1)
 //   SO_VSLICE     slice.checked.<E>: dimension f % 8 of view a, low bound b and high bound c
@@ -2633,13 +2636,13 @@ void index_step[n, t, m, ns, s, r](in U8[n] text, in scan.Token[t] toks, in pars
     give(ls, VIEW_ARG - h, slots[h].ty, first, ls[0].nsir);
 }
 
-// Whether part j of array built-in call x (after af_skip) is an array: both of `copy` and
-// `dot`, the first of `fill`, else the last value.
+// Whether part j of array built-in call x (after af_skip) is an array: both of `copy`, `dot`
+// and `equal`, the first of `fill`, else the last value.
 Bool arrayfn_array(I64 id, I64 j, I64 nv) {
     if (id == resolve.AF_FILL) {
         return j == 0;
     }
-    return id == resolve.AF_COPY || id == resolve.AF_DOT || j == nv - 1;
+    return id == resolve.AF_COPY || id == resolve.AF_DOT || id == resolve.AF_EQUAL || j == nv - 1;
 }
 
 // The arguments of array built-in call x before its values: a written result type of
@@ -2677,7 +2680,8 @@ I64 arrayfn_values(in parse.Node[_] nodes, in resolve.Sem[_] sem, I64 x) {
     return nv;
 }
 
-// The CINT_REDUCE_* operation of reduction call x (rt/cint_rt.h section 14), or 0.
+// The CINT_REDUCE_* operation of reduction call x (rt/cint_rt.h section 14), 10 for `equal`
+// (cint_rt_equal; ruling OQ-307 A), or 0.
 I64 reduce_op(in resolve.Sem[_] sem, I64 x) {
     switch (sem[x].lit_at) {
         case resolve.AF_SUM: return 1;
@@ -2692,6 +2696,7 @@ I64 reduce_op(in resolve.Sem[_] sem, I64 x) {
         case resolve.AF_MAX: return 7;
         case resolve.AF_COUNT: return 8;
         case resolve.AF_DOT: return 9;
+        case resolve.AF_EQUAL: return 10;
         default: return 0;
     }
 }
@@ -2824,7 +2829,7 @@ void arrayfn_step[n, t, m, ns, s, r](in U8[n] text, in scan.Token[t] toks, in pa
     }
     I64 ys = -1;
     I64 init = NO_OPERAND;
-    if (id == resolve.AF_DOT) {
+    if (id == resolve.AF_DOT || id == resolve.AF_EQUAL) {
         ys = k;
         k = view_value(toks, slots, diag, ls, st[v0].a as I64, tk);
         if (k < 0 || !lease_check(toks, sir, slots, diag, ls, k, tk)) {
@@ -3436,6 +3441,22 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
             sir[sd].f = nodes[x].op;
             sir[sd].c = resolve.string_length(text, toks, tk, nodes[x].op as I64) as I32;
             give(ls, STR_ARG - sd, want, sd, sd + 1);
+        case parse.N_BYTES:
+            // A byte string (ruling OQ-307 A): its bytes (SO_SDATA) and a read-only view of
+            // them, a hidden SK_NVIEW of rank 1 (SO_VBEGIN e 3, the data node in val).
+            I64 bd = add_sir(toks, sir, diag, ls, SO_SDATA, T_NONE, tk);
+            I64 bh = new_view(toks, slots, diag, ls, T_U8, 1, tk);
+            if (bd < 0 || bh < 0) {
+                return;
+            }
+            sir[bd].f = 1;
+            sir[bd].c = resolve.string_length(text, toks, tk, 1) as I32;
+            I64 bv = view_node(toks, sir, diag, ls, SO_VBEGIN, T_U8, bh, -1, -1, 0, bd, tk);
+            if (bv < 0) {
+                return;
+            }
+            sir[bv].e = 3;
+            give(ls, VIEW_ARG - bh, slots[bh].ty, bd, bv + 1);
         case parse.N_ARRAY:
             if (want <= ELEM_MASK) {
                 unsupported(toks, diag, ls, tk, U_VIEW);
@@ -4696,6 +4717,7 @@ void call_step[n, t, m, ns, s, r](in U8[n] text, in scan.Token[t] toks, in parse
                 !(nodes[arg].kind == parse.N_CALL && slots[p0 + k].kind == SK_SPARAM) &&
                 !(nodes[arg].kind == parse.N_STRING && slots[p0 + k].kind == SK_VIEW &&
                 array_elem(slots[p0 + k].ty) == T_U8) &&
+                !(nodes[arg].kind == parse.N_BYTES && (slots[p0 + k].kind == SK_VIEW || slots[p0 + k].kind == SK_NVIEW)) &&
                 !(nodes[arg].kind == parse.N_ARRAY && (slots[p0 + k].kind == SK_VIEW || slots[p0 + k].kind == SK_NVIEW))) {
             unsupported(toks, diag, ls, nodes[arg].tok as I64, U_VIEW);
             return;
@@ -8370,8 +8392,8 @@ void element_read[t, ns, r](in scan.Token[t] toks, inout Sir[ns] sir, in SirFunc
 
 // Whether the view of slot s, an argument of a dispatch, may be written (SPEC-02 A-8; the
 // permission its alias record shows): a local array, a view parameter declared `inout`, or
-// a view formed from one; a view of an `in` parameter or of an `in` view variable (SO_VBEGIN
-// e 2) is read-only.
+// a view formed from one; a view of an `in` parameter, of an `in` view variable (SO_VBEGIN
+// e 2) or of a byte string (e 3) is read-only.
 Bool view_writable(in Sir[_] sir, in SirFunc[_] funcs, in SirSlot[_] slots, in LState[_] ls, I64 s) {
     I64 fn = ls[0].func;
     I64 p0 = funcs[fn].pslot0 as I64;
@@ -8388,7 +8410,7 @@ Bool view_writable(in Sir[_] sir, in SirFunc[_] funcs, in SirSlot[_] slots, in L
         while (i >= funcs[fn].first as I64 && src < 0) {
             I32 op = sir[i].op & OP_MASK;
             if ((op == SO_VBEGIN || op == SO_VTRANS || op == SO_VREV || op == SO_VRESHAPE) && sir[i].a as I64 == k) {
-                if (sir[i].e == 2) {
+                if (sir[i].e == 2 || sir[i].e == 3) {
                     return false;
                 }
                 src = sir[i].b as I64;
@@ -9754,10 +9776,11 @@ I32 import_param_type[n, t](in U8[n] text, in scan.Token[t] toks, in SirFunc[_] 
 }
 
 // Lowers the body of function k (statement list x); the entry's fuel charge first when
-// the function is an entry (an export, `main`, or the script), at token `at`.
+// the function is an entry (an export, `main`, or the script), at token `at`. The module
+// has nn nodes.
 void lower_func[t, m, ns, nf, r](inout U8[_] text, in scan.Token[t] toks, in parse.Node[m] nodes, in resolve.Sem[_] sem,
         inout Sir[ns] sir, inout SirFunc[nf] funcs, inout SirSlot[_] slots, inout parse.Frame[_] st,
-        inout limits.CompilerDiag[r] diag, inout LState[_] ls, I64 k, I64 x, I64 at) {
+        inout limits.CompilerDiag[r] diag, inout LState[_] ls, I64 k, I64 x, I64 at, I64 nn) {
     ls[0].func = k;
     ls[0].temps = 0;
     funcs[k].first = ls[0].nsir as I32;
@@ -9771,7 +9794,7 @@ void lower_func[t, m, ns, nf, r](inout U8[_] text, in scan.Token[t] toks, in par
         site(sir, ls, c);
         funcs[k].entry = sir[c].site;
     }
-    module_views(text, toks, nodes, sem, sir, slots, diag, ls, x);
+    module_views(text, toks, nodes, sem, sir, slots, diag, ls, x, nn);
     lower_stmts(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, x);
     for i in (funcs[k].first as I64)..ls[0].nsir {
         if ((sir[i].op & OP_MASK) == SO_VALLOC) {
@@ -9786,11 +9809,12 @@ void lower_func[t, m, ns, nf, r](inout U8[_] text, in scan.Token[t] toks, in par
 // The views of the module-level arrays of rank 2 to 4 that body x of a function names (box 13
 // MLA): for each, an SK_NVIEW of the array's name over its flat slot (SO_VBEGIN, its extents
 // packed as declare_array_global packs them), which find_slot finds before the module's
-// slot. A body names an array when a token up to the `}` that closes it is the array's name
-// (a parameter or a local of that name is C3001). Bound: O(a * (n + s)) for a such arrays,
-// n tokens of the body and s slots.
+// slot. A body names an array when a token up to the `}` that closes it, or a token of a
+// hole of a string there, is the array's name (a parameter or a local of that name is
+// C3001). Bound: O(a * (n + s)) for a such arrays, n tokens and nodes of the body, the
+// tokens of its holes included, and s slots.
 void module_views[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.Node[m] nodes, in resolve.Sem[_] sem,
-        inout Sir[ns] sir, inout SirSlot[_] slots, inout limits.CompilerDiag[r] diag, inout LState[_] ls, I64 x) {
+        inout Sir[ns] sir, inout SirSlot[_] slots, inout limits.CompilerDiag[r] diag, inout LState[_] ls, I64 x, I64 nn) {
     if (ls[0].script != 0 || x < 0 || nodes[x].kind != parse.N_BLOCK) {
         return;
     }
@@ -9800,7 +9824,8 @@ void module_views[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse
         I64 tk = nodes[y].tok as I64;
         I64 g = -1;
         if (nodes[y].kind == parse.N_VAR && (nodes[y].flags & parse.F_CONST) == 0 && !resolve.is_memory_decl(nodes, y) &&
-                resolve.is_array(sem[y].ty) && resolve.array_rank(sem[y].ty) > 1 && body_names(text, toks, open, tk)) {
+                resolve.is_array(sem[y].ty) && resolve.array_rank(sem[y].ty) > 1 &&
+                body_names(text, toks, nodes, x, nn, open, tk)) {
             for q in 0..ls[0].nslot {
                 if (module_array(slots, q) && (slots[q].name as I64) == tk) {
                     g = q;
@@ -9824,9 +9849,13 @@ void module_views[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse
     }
 }
 
-// Whether an identifier token after `{` token open, up to the `}` that closes it, is the
-// name of token tk.
-Bool body_names[n, t](in U8[n] text, in scan.Token[t] toks, I64 open, I64 tk) {
+// Whether an identifier token after `{` token open of body x, up to the `}` that closes it,
+// or a token of a hole of a string there, is the name of token tk. The parser appends a
+// hole's tokens after the module's, ended by TK_EOF or TK_ERROR (parse.hole_begin), and
+// makes body x's nodes, its N_HOLE nodes among them, after x and before the first node
+// whose token starts past that `}`; the module has nn nodes.
+Bool body_names[n, t, m](in U8[n] text, in scan.Token[t] toks, in parse.Node[m] nodes, I64 x, I64 nn, I64 open,
+        I64 tk) {
     I64 depth = 1;
     I64 j = open + 1;
     while (j < t && depth > 0 && toks[j].kind != scan.TK_EOF) {
@@ -9838,6 +9867,23 @@ Bool body_names[n, t](in U8[n] text, in scan.Token[t] toks, I64 open, I64 tk) {
             return true;
         }
         j += 1;
+    }
+    I64 end = toks[j - 1].start as I64;
+    I64 h = x + 1;
+    while (h < nn && nodes[h].tok >= 0 && (toks[nodes[h].tok as I64].start as I64) <= end) {
+        if (nodes[h].kind == parse.N_HOLE && nodes[h].a >= 0) {
+            I64 k = nodes[nodes[h].a as I64].tok as I64;
+            while (k > 0 && toks[k - 1].kind != scan.TK_EOF && toks[k - 1].kind != scan.TK_ERROR) {
+                k -= 1;
+            }
+            while (k < t && toks[k].kind != scan.TK_EOF && toks[k].kind != scan.TK_ERROR) {
+                if (toks[k].kind == scan.TK_IDENT && same_name(text, toks, k, tk)) {
+                    return true;
+                }
+                k += 1;
+            }
+        }
+        h += 1;
     }
     return false;
 }
@@ -10167,10 +10213,11 @@ Bool struct_items[n0, t, m, ns, r](in U8[n0] text, in scan.Token[t] toks, in par
 // after the other functions, each charged as an entry at its `test` token (decision OQ-17).
 // A module with no script, no `main` and no export whose only entry is one test takes that
 // test as its program entry, as `cint_ref run` selects it (ref/cint_ref/exec.py
-// _select_entry; compiler/OPEN.md CINTC-OQ-56).
+// _select_entry; compiler/OPEN.md CINTC-OQ-56). The module has nn nodes.
 void lower_tests[t, m, ns, nf, r](inout U8[_] text, in scan.Token[t] toks, in parse.Node[m] nodes,
         in resolve.Sem[_] sem, inout Sir[ns] sir, inout SirFunc[nf] funcs, inout SirSlot[_] slots,
-        inout parse.Frame[_] st, inout limits.CompilerDiag[r] diag, inout LState[_] ls, I64 root, I64 nf_user) {
+        inout parse.Frame[_] st, inout limits.CompilerDiag[r] diag, inout LState[_] ls, I64 root, I64 nf_user,
+        I64 nn) {
     I64 j = 0;
     I64 only = -1;
     I64 x = nodes[root].a as I64;
@@ -10190,7 +10237,7 @@ void lower_tests[t, m, ns, nf, r](inout U8[_] text, in scan.Token[t] toks, in pa
             funcs[k].entry = 0;
             funcs[k].flags = FN_TEST;
             lower_func(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, k, nodes[x].b as I64,
-                nodes[x].tok as I64);
+                nodes[x].tok as I64, nn);
             only = k;
             j += 1;
         }
@@ -10371,7 +10418,7 @@ export I64 lower_module[t, m, ns, nf, r, s](inout U8[_] text, in scan.Token[t] t
             lower_kernel(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, k, nn);
         } else {
             lower_func(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, k, nodes[funcs[k].node as I64].c as I64,
-                funcs[k].name as I64);
+                funcs[k].name as I64, nn);
         }
         if (ls[0].err != 0) {
             return 1;
@@ -10392,7 +10439,7 @@ export I64 lower_module[t, m, ns, nf, r, s](inout U8[_] text, in scan.Token[t] t
         funcs[k].entry = 0;
         funcs[k].flags = FN_SCRIPT;
         lower_func(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, k, nodes[root].a as I64,
-            nodes[first_stmt].start as I64);
+            nodes[first_stmt].start as I64, nn);
         ls[0].entry = k;
     } else {
         for k in 0..nf_user {
@@ -10404,7 +10451,7 @@ export I64 lower_module[t, m, ns, nf, r, s](inout U8[_] text, in scan.Token[t] t
     if (ls[0].err != 0) {
         return 1;
     }
-    lower_tests(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, root, nf_user);
+    lower_tests(text, toks, nodes, sem, sir, funcs, slots, st, diag, ls, root, nf_user, nn);
     if (ls[0].err != 0) {
         return 1;
     }

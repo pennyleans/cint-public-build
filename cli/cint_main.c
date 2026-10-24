@@ -2,8 +2,8 @@
  * (task 2.15), `cint emit-c` (task 2.12a), and `cint <name>`, which runs `cint-<name>` from this
  * executable's directory (SPEC-06 3.1, BX13-15; handoff below).
  *
- *   cint run [--json] [--receipt PATH | --width-report PATH] [--root DIR] [--stdlib DIR] [--toolchain FILE] [--cache DIR] [--grant LINE]... FILE.ci
- *   cint build [--json] [--receipt PATH | --width-report] [--root DIR] [--out DIR] [--stdlib DIR] [--toolchain FILE] [--cache DIR] [FILE.ci | DIR]
+ *   cint run [--json] [--receipt PATH | --width-report PATH] [--rebuild] [--root DIR] [--stdlib DIR] [--toolchain FILE] [--cache DIR] [--grant LINE]... FILE.ci
+ *   cint build [--json] [--receipt PATH | --width-report] [--root DIR] [--out DIR] [--lib | --app] [--stdlib DIR] [--toolchain FILE] [--cache DIR] [--frame-arena N] [FILE.ci | DIR]
  *   cint test [--json] [--receipt PATH] [--root DIR] [--stdlib DIR] [--toolchain FILE] [--cache DIR] [--grant LINE]... [FILE.ci | DIR]
  *
  * Each reads FILE.ci through the bridge reader (rt/cint_bridge.h; the identity comes from the
@@ -44,7 +44,7 @@
  *
  * Without --root, FILE's directory is the project root and its name the module path; with
  * --root DIR, FILE is the module path under DIR (CINTC-12). The toolchain file (default:
- * cint.toolchain beside this executable) is written by tools/cint_bootstrap.py.
+ * cint.toolchain beside this executable, symlinks resolved) is written by tools/cint_bootstrap.py.
  * An import of one segment (`import fs;`) whose path is absent under the source root is probed
  * under the standard library root, --stdlib DIR or by default `lib` beside this executable,
  * where tools/cint_bootstrap.py copies the repository's lib/ (SPEC-07 SEC-CAP-13, ruling
@@ -71,9 +71,14 @@
  * the program with exit status 4. When a line names `console.input`, the program inherits this
  * process's stdin in place of the null device. A built executable takes the same arguments.
  *
+ * A run with no --receipt and no --width-report reuses the program an earlier run compiled from
+ * the same modules, cint and toolchain, and compiles nothing (OQ-313; cli/cint_cache.c);
+ * --rebuild compiles anyway and replaces the kept program.
+ *
  * Receipt and JSON writing live in cli/cint_receipt.c, module discovery (the import scan, the
- * standard library root, the source snapshot) in cli/cint_discover.c, and the state all three
- * share in cli/cint_receipt.h (decision 26; SPEC-09 4.2 rows). */
+ * standard library root, the source snapshot) in cli/cint_discover.c, the toolchain file and the
+ * run cache in cli/cint_cache.c, and the state all four share in cli/cint_receipt.h (decision 26;
+ * SPEC-09 4.2 rows). */
 #define _CRT_SECURE_NO_WARNINGS 1
 #if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L
@@ -124,8 +129,8 @@ static void free_diag_paths(void)
 }
 
 static const char USAGE[] =
-    "usage: cint [--json] run [--receipt PATH | --width-report PATH] [--root DIR] [--stdlib DIR] [--toolchain FILE] [--cache DIR] [--grant LINE]... FILE.ci [-- ARG...]\n"
-    "       cint [--json] build [--receipt PATH | --width-report] [--root DIR] [--out DIR] [--lib] [--stdlib DIR] [--toolchain FILE] [--cache DIR] [FILE.ci | DIR]\n"
+    "usage: cint [--json] run [--receipt PATH | --width-report PATH] [--rebuild] [--root DIR] [--stdlib DIR] [--toolchain FILE] [--cache DIR] [--grant LINE]... [--frame-arena N] FILE.ci [-- ARG...]\n"
+    "       cint [--json] build [--receipt PATH | --width-report] [--root DIR] [--out DIR] [--lib | --app] [--stdlib DIR] [--toolchain FILE] [--cache DIR] [--frame-arena N] [FILE.ci | DIR]\n"
     "       cint [--json] test [--receipt PATH] [--root DIR] [--stdlib DIR] [--toolchain FILE] [--cache DIR] [--grant LINE]... [FILE.ci | DIR]\n"
     "       cint [--json] emit-c --root DIR --out DIR [--stdlib DIR] [--toolchain FILE] MODULE.ci...\n"
     "       cint [--json] NAME [ARG...]: runs cint-NAME from cint's directory, as cint debug or cint workbench\n";
@@ -134,6 +139,16 @@ static int usage(const char *why)
 {
     if (!json_mode) fputs(USAGE, stderr);
     return tool_error(CINT_EXIT_USAGE, NULL, 0, NULL, "%s", why);
+}
+
+/* `--frame-arena N` (SPEC-06 3.4; OQ-308, rt/OPEN.md RT-OQ-78): digits with no sign or leading zero, 1 to 2^50 - 1,
+ * as rt/cint_program.c frame_arena_value reads them, so the receipt's frame_arena_bytes is an exact JSON number. */
+static int64_t arena_count(const char *text)
+{
+    int64_t v = text[0] >= '1' && text[0] <= '9' ? 0 : -1;
+    for (; v >= 0 && *text != '\0'; text++)
+        v = *text >= '0' && *text <= '9' && v <= ((((int64_t)1 << 50) - 1) - (*text - '0')) / 10 ? v * 10 + (*text - '0') : -1;
+    return v > 0 ? v : 0;   /* 0: not a count */
 }
 
 int read_file(const char *path, uint8_t **bytes, size_t *len)
@@ -176,52 +191,6 @@ const char *basename_utf8(const char *path)
         if (*p == '/' || *p == '\\') name = p + 1;
     }
     return name;
-}
-
-static int by_basename(const void *a, const void *b)
-{
-    return strcmp(basename_utf8(*(char *const *)a), basename_utf8(*(char *const *)b));
-}
-
-/* The toolchain file: `cint-toolchain-1`, then `key value` lines. */
-static int load_toolchain(const char *path)
-{
-    uint8_t *bytes;
-    size_t len;
-    char *line, *next;
-    toolchain *t = &g.tc;
-    if (read_file(path, &bytes, &len) != 0 || len < 16u || memcmp(bytes, "cint-toolchain-1\n", 16) != 0) return -1;
-    for (line = (char *)bytes + 16; *line != '\0'; line = next) {
-        char *sp, *val;
-        if ((next = strchr(line, '\n')) == NULL) next = line + strlen(line);
-        else *next++ = '\0';
-        if ((sp = strchr(line, ' ')) == NULL) continue;
-        *sp = '\0';
-        val = sp + 1;
-        if (strcmp(line, "flag") == 0 && t->nflags < 64u) {
-            t->flags[t->nflags++] = val;
-        } else if (strcmp(line, "runtime_source") == 0 && t->nrt <= CLI_MAX_RT) {
-            t->rt_sources[t->nrt++] = val;
-        } else if (strcmp(line, "env") == 0 && strchr(val, '=') != NULL) {
-            char *eq = strchr(val, '=');
-            *eq = '\0';
-            if (cli_setenv(val, eq + 1) != 0) return -1;
-        } else {
-            static const char *const keys[] = {"leg", "cc", "cc_version", "include", "runtime_object", "cache", "host",
-                                               "compiler_sources", "executable_sha256", "runtime_library_object"};
-            char **slots[] = {&t->leg, &t->cc, &t->cc_version, &t->include, &t->runtime_object, &t->cache, &t->host,
-                              &t->compiler_sources, &t->executable_sha256, &t->runtime_library_object};
-            for (size_t k = 0; k < sizeof keys / sizeof keys[0]; k++) {
-                if (strcmp(line, keys[k]) == 0) *slots[k] = val;
-            }
-        }
-    }
-    qsort(t->rt_sources, t->nrt, sizeof t->rt_sources[0], by_basename);
-    return t->leg != NULL && t->cc != NULL && t->include != NULL && t->runtime_object != NULL && t->cache != NULL &&
-                   t->compiler_sources != NULL && t->executable_sha256 != NULL &&
-                   strlen(t->executable_sha256) == 64u && t->nrt > 0u && t->nrt <= CLI_MAX_RT && t->nflags > 0u
-               ? 0
-               : -1;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -925,32 +894,48 @@ static int read_tests(const outset *set, cli_module *m, sbuf *decl, sbuf *table)
     return 0;
 }
 
-/* The test driver (cint-test.c): the program file with its C main renamed, then a main that
- * runs test argv[1] through cint_program_run_args with fuel 1,000,000,000 (SPEC-06 1.4), the
- * fault and fuel destinations and the `--grant` lines that follow (rt/OPEN.md RT-OQ-74) and the
- * program's host import tables. NULL when a test cannot be read. */
+/* The driver, compiled in place of the program file, which it includes with its C main renamed. cint-test.c: a main
+ * that runs test argv[1] through cint_program_run_args with fuel 1,000,000,000 (SPEC-06 1.4), the fault and fuel
+ * destinations and the `--grant` lines that follow (RT-OQ-74) and the program's host import tables. cint-main.c
+ * (`cint build --frame-arena N`, `--app`): a main that puts `--frame-arena N`, so that a later one replaces it
+ * (SPEC-03 5.3; RT-OQ-78), then with --app `--` (OQ-318), before the executable's own arguments, so that every one
+ * is a program argument. NULL when a test cannot be read or the file cannot be written. */
 static char *write_driver(const outset *set, const char *cache)
 {
     sbuf decl = {0}, table = {0}, d = {0};
-    int count;
-    cli_module **sorted = sorted_modules(0, &count);
+    int count = 0, test = g.mode == MODE_TEST;
+    cli_module **sorted = test ? sorted_modules(0, &count) : NULL;
     for (int k = 0; sorted != NULL && k < count; k++) {
         if (read_tests(set, sorted[k], &decl, &table) != 0) count = -1;
     }
     free(sorted);
-    if (sorted == NULL || count < 0) return NULL;
-    sb_s(&d, "/* cint-test.c: the tests of this build, written by `cint test` (SPEC-06 3.5). */\n"
-             "#define main cint_program_main\nint cint_program_main(int argc, char **argv);\n"
+    if ((test && sorted == NULL) || count < 0) return NULL;
+    sb_s(&d, test ? "/* cint-test.c: the tests of this build, written by `cint test` (SPEC-06 3.5). */\n"
+                  : "/* cint-main.c: written by `cint build --frame-arena` or `--app` (SPEC-06 3.4). */\n#include <stdlib.h>\n");
+    sb_s(&d, "#define main cint_program_main\nint cint_program_main(int argc, char **argv);\n"
              "#include \"cint-program.c\"\n#undef main\n");
-    sb_put(&d, decl.p, decl.n);
-    sb_f(&d, "static const cint_main_fn cint_tests[%d] = {%s};\n\nint main(int argc, char **argv)\n{\n"
-             "    unsigned long k = 0u;\n    if (argc < 2) return CINT_EXIT_USAGE;\n"
-             "    for (const char *p = argv[1]; *p >= '0' && *p <= '9'; p++) k = k * 10u + (unsigned long)(*p - '0');\n"
-             "    return k < %du ? cint_program_run_args(&cg_program, cint_tests[k], INT64_C(1000000000), argc - 1, argv + 1,\n"
-             "                                          &cint_imports_desc, NULL)\n"
-             "                  : CINT_EXIT_USAGE;\n}\n", g.ntests, table.p, g.ntests);
-    char *path = join(cache, "cint-test.c");
-    int ok = cint_commit_output(path, (const uint8_t *)d.p, d.n, (size_t)1 << 30);
+    if (test) {
+        sb_put(&d, decl.p, decl.n);
+        sb_f(&d, "static const cint_main_fn cint_tests[%d] = {%s};\n\nint main(int argc, char **argv)\n{\n"
+                 "    unsigned long k = 0u;\n    if (argc < 2) return CINT_EXIT_USAGE;\n"
+                 "    for (const char *p = argv[1]; *p >= '0' && *p <= '9'; p++) k = k * 10u + (unsigned long)(*p - '0');\n"
+                 "    return k < %du ? cint_program_run_args(&cg_program, cint_tests[k], INT64_C(1000000000), argc - 1, argv + 1,\n"
+                 "                                          &cint_imports_desc, NULL)\n"
+                 "                  : CINT_EXIT_USAGE;\n}\n", g.ntests, table.p, g.ntests);
+    } else {
+        sb_s(&d, "\nint main(int argc, char **argv)\n{\n");
+        if (g.arena != NULL) sb_f(&d, "    static char flag[] = \"--frame-arena\", count[] = \"%s\";\n", g.arena);
+        if (g.app) sb_s(&d, "    static char tail[] = \"--\";\n");
+        sb_f(&d, "    static char *const head[] = {%s};\n    const int k = (int)(sizeof head / sizeof head[0]);\n"
+                 "    char **v = argc < 1 ? NULL : (char **)malloc(((size_t)argc + 4u) * sizeof *v);\n"
+                 "    if (v == NULL) return argc < 1 ? cint_program_main(argc, argv) : CINT_EXIT_ENVIRONMENT;\n"
+                 "    v[0] = argv[0];\n    for (int i = 0; i < k; i++) v[i + 1] = head[i];\n"
+                 "    for (int i = 1; i <= argc; i++) v[i + k] = argv[i];   /* argv[argc] is NULL */\n"
+                 "    return cint_program_main(argc + k, v);\n}\n",
+             g.arena == NULL ? "tail" : g.app ? "flag, count, tail" : "flag, count");
+    }
+    char *path = join(cache, test ? "cint-test.c" : "cint-main.c");
+    int ok = d.p != NULL && cint_commit_output(path, (const uint8_t *)d.p, d.n, (size_t)1 << 30);
     free(decl.p);
     free(table.p);
     free(d.p);
@@ -958,13 +943,14 @@ static char *write_driver(const outset *set, const char *cache)
 }
 
 /* Runs the program or a test: stdin is the null device (this process's stdin when a grant names
- * console.input), stdout goes to `sink` (NULL: drained), and the fault or error record and the
+ * console.input, or when a run with no --grant, receipt or width report may take console.input
+ * from the program's manifest, RT-OQ-80), stdout goes to `sink` (NULL: drained), and the fault or error record and the
  * fuel record go through inherited handles (SPEC-06 3.4a). Zero with *st its exit status, or a
  * tool error's status: `what` (the program, the test program) could not start, or wrote to
  * stderr. */
-/* argv for the program or the test driver: `head` (NULL-terminated), then `--grant LINE` for
- * each grant (SPEC-06 3.2) and `--arg ARG` for each program argument after `--` (SPEC-06 3.1;
- * cint_program_run_argv, OQ-306); the record destinations follow, appended by cli_proc_run. The
+/* argv for the program or the test driver: `head` (NULL-terminated), then `--grant LINE` for each grant (SPEC-06
+ * 3.2), `--frame-arena N` when given (SPEC-06 3.4; RT-OQ-78) and `--arg ARG` for each program argument after `--`
+ * (SPEC-06 3.1; cint_program_run_argv, OQ-306); the record destinations follow, appended by cli_proc_run. The
  * array is static: one child runs at a time. */
 static const char **child_argv(const char *const *head)
 {
@@ -972,13 +958,14 @@ static const char **child_argv(const char *const *head)
     size_t n = 0, nhead = 0;
     while (head[nhead] != NULL) nhead++;
     free((void *)argv);
-    argv = malloc((nhead + 2u * (size_t)g.ngrants + 2u * (size_t)g.nargs + 1u) * sizeof *argv);
+    argv = malloc((nhead + 2u * (size_t)g.ngrants + 2u * (size_t)g.nargs + 3u) * sizeof *argv);
     if (argv == NULL) abort();
     while (n < nhead) { argv[n] = head[n]; n++; }
     for (int k = 0; k < g.ngrants; k++) {
         argv[n++] = "--grant";
         argv[n++] = g.grants[k];
     }
+    if (g.arena != NULL && g.mode == MODE_RUN) argv[n++] = "--frame-arena", argv[n++] = g.arena;
     for (int k = 0; k < g.nargs; k++) {
         argv[n++] = "--arg";
         argv[n++] = g.args[k];
@@ -990,7 +977,7 @@ static const char **child_argv(const char *const *head)
 static int start_child(const char *what, const char *const *argv, cli_sink sink, void *user, int *st)
 {
     cli_proc pr = {.argv = argv, .err_path = epath, .fault_path = fpath, .fuel_path = upath, .sink = sink, .user = user,
-                   .inherit_stdin = g.stdin_inherit};
+                   .inherit_stdin = g.stdin_inherit || (g.ngrants == 0 && run_cacheable())};
     uint8_t *bytes = NULL;
     size_t len = 0u;
     if (cli_proc_run(&pr, st) != 0) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot start %s %s", what, argv[0]);
@@ -1007,7 +994,7 @@ static int start_child(const char *what, const char *const *argv, cli_sink sink,
     if (!bad) return 0;
     if (*st == CINT_EXIT_USAGE && (g.ngrants > 0 || g.nargs > 0)) {   /* the runtime's one usage line (cint_program_run_args; RT-OQ-74) */
         return tool_error(CINT_EXIT_USAGE, argv[0], *st, epath, g.nargs > 0 && g.ngrants == 0
-                          ? "the program's main takes no arguments, so none may follow `--` (SPEC-04 LS-221); see %s"
+                          ? "the program's main takes no arguments, so none may follow `--` (SPEC-04 LS-221), or an argument names a file in a directory that cannot be opened; see %s"
                           : "a --grant line is one the runtime does not take, or names a directory it cannot open, or the program's main takes no arguments; see %s", epath);
     }
     return tool_error(CINT_EXIT_INTERNAL, argv[0], *st, epath, g.width != NULL ? "%s wrote no width report, or more than one, to stderr; see %s"
@@ -1275,7 +1262,7 @@ static int ready(void)
 /* Copies every module discovery read into `dir`, so the source digests name the bytes the
  * build reads, and opens it as the build's root. Zero on success. */
 /* The host C compiler, with the EMIT-26 flags (SPEC-09 7.7); its output goes to the log. A
- * test build compiles the driver, which includes the program file, in its place. */
+ * test build or a --frame-arena build compiles the driver (write_driver) in the program file's place. */
 static int compile_c(outcome *oc, const outset *set, const char *driver, const char *bin, const char *log)
 {
     const char **argv = malloc((g.tc.nflags + set->n + 17u) * sizeof *argv);
@@ -1468,6 +1455,8 @@ static int publish(outcome *oc, const char *src_hex)
     return finish(oc, src_hex);
 }
 
+static int run_exe(outcome *poc, const char *exe, const char *src_hex);
+
 static int run(void)
 {
     cint_bridge_root *root = NULL, *snap = NULL;
@@ -1522,6 +1511,13 @@ static int run(void)
     upath = join(cache, "fuel.bin");
     (void)snprintf(g.cachedir, sizeof g.cachedir, "%s", cache);
     if (cli_mkdirs(bin) != 0) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot create the cache directory %s", cache);
+    char *hit = run_cacheable() ? run_cache_lookup() : NULL;   /* OQ-313 */
+    if (hit != NULL) {
+        cint_bridge_root_close(root);
+        cint_bridge_root_close(lib_root);
+        lib_root = NULL;
+        return run_exe(&oc, hit, src_hex);
+    }
     char *snapshot = join(cache, "input");
     if (snapshot_inputs(snapshot, &snap) != 0) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot write the source snapshot %s", snapshot);
     if (g.receipt != NULL) source_metadata();
@@ -1561,8 +1557,9 @@ static int run(void)
         free(text);
         if (entry == g.lib) return usage(g.lib ? "--lib builds a library, whose root module has no main and no script statements" : "the root module has no main and no script statements, so there is no program; `cint test` runs its tests");
     }
-    if (g.mode == MODE_TEST && (driver = write_driver(&set, cache)) == NULL) {
-        return tool_error(CINT_EXIT_INTERNAL, NULL, 0, NULL, "the tests of the output set under %s are unreadable", set.stage);
+    if ((g.mode == MODE_TEST || (g.mode == MODE_BUILD && (g.arena != NULL || g.app))) && (driver = write_driver(&set, cache)) == NULL) {
+        return g.mode == MODE_TEST ? tool_error(CINT_EXIT_INTERNAL, NULL, 0, NULL, "the tests of the output set under %s are unreadable", set.stage)
+                                   : tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot write the program driver under %s", cache);
     }
     if (g.mode == MODE_TEST && g.ntests == 0) return run_tests(&oc, NULL, src_hex);
     exe = join(bin, strcmp(g.tc.leg, "msvc") != 0 ? "program" : g.lib ? "program.dll" : "program.exe");
@@ -1570,12 +1567,21 @@ static int run(void)
     if ((st = compile_c(&oc, &set, driver, bin, log)) != 0) return st;
     if (g.mode == MODE_BUILD) return publish(&oc, src_hex);
     if (g.mode == MODE_TEST) return run_tests(&oc, exe, src_hex);
-    /* The program, with stdout relayed byte for byte. */
+    char *kept = run_cacheable() ? run_cache_store(exe) : NULL;
+    return run_exe(&oc, kept != NULL ? kept : exe, src_hex);
+}
+
+/* Runs the program `exe`, with stdout relayed byte for byte, and reports its outcome. */
+static int run_exe(outcome *poc, const char *exe, const char *src_hex)
+{
+    outcome oc = *poc;
+    int st = 0, found;
     const char *head[2] = {exe, NULL};
+    oc.exe = exe;
     oc.t_run = now_ns();
-    if ((found = start_child("the program", child_argv(head), relay, &out, &st)) != 0) return found;
+    if ((found = start_child("the program", child_argv(head), relay, oc.out, &st)) != 0) return found;
     oc.t_run = now_ns() - oc.t_run;
-    if (fflush(stdout) != 0 || out.failed) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot write to stdout");
+    if (fflush(stdout) != 0 || oc.out->failed) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot write to stdout");
     /* The fuel record, written before exit by the runtime (cint_program_run_args; SPEC-06 3.4a). Without it, a
      * fault or an error is reported after its record, which is checked first. */
     if ((st == CINT_EXIT_OK || st == CINT_EXIT_FAULT || st == CINT_EXIT_ERROR_VALUE) && !read_fuel(&oc.fuel)) oc.fuel = -2;
@@ -1722,12 +1728,20 @@ int main(int argc, char **argv)
                             : strcmp(a, "--out") == 0 && (g.emit || g.mode == MODE_BUILD) ? &g.out
                             : strcmp(a, "--width-report") == 0 && g.mode == MODE_RUN ? &g.width
                                                             : NULL;
-        if (strcmp(a, "--json") == 0 || (strcmp(a, "--lib") == 0 && g.mode == MODE_BUILD && (g.lib = 1) != 0)) {
+        if (strcmp(a, "--json") == 0 || (strcmp(a, "--lib") == 0 && g.mode == MODE_BUILD && (g.lib = 1) != 0) ||
+            (strcmp(a, "--app") == 0 && g.mode == MODE_BUILD && (g.app = 1) != 0) ||
+            (strcmp(a, "--rebuild") == 0 && g.mode == MODE_RUN && (g.rebuild = 1) != 0)) {
             continue;
         }
         if (strcmp(a, "--width-report") == 0 && g.mode == MODE_BUILD) {
             if (g.width != NULL) return usage("an option needs one value and is given at most once");
             g.width = "";
+            continue;
+        }
+        if (strcmp(a, "--frame-arena") == 0 && (g.mode == MODE_RUN || g.mode == MODE_BUILD)) {
+            if (i + 1 >= argc || g.arena != NULL || (g.arena_elements = arena_count(argv[i + 1])) == 0)
+                return usage("--frame-arena takes one count of elements, 1 to 1125899906842623, at most once");
+            g.arena = argv[++i];
             continue;
         }
         if (strcmp(a, "--grant") == 0 && (g.mode == MODE_RUN || g.mode == MODE_TEST)) {
@@ -1757,6 +1771,8 @@ int main(int argc, char **argv)
     if (g.width != NULL && (g.receipt != NULL || g.lib || (g.mode == MODE_RUN && g.width[0] == '\0'))) {
         return usage("--width-report takes no --receipt or --lib, and on run a path");
     }
+    if (g.arena != NULL && g.lib) return usage("--frame-arena sets a program's capacity; a library's host sets cint_ctx_config");
+    if (g.app && g.lib) return usage("--app sets how a program reads its command line; a library has none");
     int status = !g.emit ? run() : g.receipt != NULL || g.cache != NULL ? usage("emit-c takes no --receipt or --cache") : emit_c();
     free_diag_paths();
     return status;

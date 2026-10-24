@@ -1,0 +1,7 @@
+case boot/refuse_byte_string
+clause SPEC-09 BOOT-01 (BYTES), SEED-06; SPEC-04 LS-41
+source reference
+outcome value
+stdout-bytes 0
+return I64 255
+fuel-consumed 2

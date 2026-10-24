@@ -1,5 +1,5 @@
-/* cint_receipt.h: what cli/cint_main.c, cli/cint_receipt.c and cli/cint_discover.c share
- * (decision 26).
+/* cint_receipt.h: what cli/cint_main.c, cli/cint_receipt.c, cli/cint_discover.c and cli/cint_cache.c
+ * share (decision 26).
  *
  * Internal to the `cint` command. cint_receipt.c writes canonical JSON strings, this tool's
  * errors, the fault, error, diagnostic and test objects, the receipts, and the retained fault of a
@@ -62,18 +62,23 @@ typedef struct toolchain {
     char *runtime_library_object;   /* the runtime compiled with CINT_RT_LIBRARY, for `build --lib` */
     char *flags[64], *rt_sources[CLI_MAX_RT + 1u];   /* one row more than the most, so load_toolchain refuses it */
     size_t nflags, nrt;
+    char file_hex[65];   /* SHA-256 of the toolchain file's bytes, part of the run cache key (OQ-313) */
 } toolchain;
 
 typedef struct cli_state {
     const char *receipt, *root, *toolchain, *cache, *file, *out;
     const char *stdlib;  /* --stdlib DIR: the standard library root (default: lib beside this executable) */
     char *files[64];
-    int nfiles, emit, mode, lib;   /* lib: `build --lib` (SPEC-06 3.1) */
+    int nfiles, emit, mode, lib, app;   /* lib: `build --lib`; app: `build --app` (SPEC-06 3.1; OQ-318) */
+    int rebuild;        /* `run --rebuild`: compile even when the run cache holds the program (OQ-313) */
     const char *width;  /* `run --width-report PATH`, or "" for `build --width-report` (rt/OPEN.md RT-OQ-64) */
     const char *grants[64];  /* `run --grant LINE` and `test --grant LINE`, in order (SPEC-06 3.2, ruling OQ-300) */
     int ngrants, stdin_inherit;  /* stdin_inherit: a grant names console.input, so the program reads this stdin */
     const char *const *args;  /* `run FILE.ci -- ARG...`: the program arguments of `main` (SPEC-04 LS-221; OQ-306) */
     int nargs;
+    const char *arena;  /* `run` and `build --frame-arena N`: the frame-arena capacity in elements, NULL for the
+                         * default 2,097,152 (SPEC-06 1.4, 3.4; ruling OQ-308, rt/OPEN.md RT-OQ-78) */
+    int64_t arena_elements;
     cli_module *mods;   /* mods[0] is the root module; the rest in discovery order */
     int nmods;
     const char **order; /* the present modules in dependency order, the root last (D-13) */
@@ -185,6 +190,12 @@ int digest(const uint8_t *data, size_t n, char hex[65]);
 size_t blank(const uint8_t *s, size_t n, size_t i);
 size_t ident(const uint8_t *s, size_t n, size_t i);
 int word(const uint8_t *s, size_t n, size_t i, const char *w);
+
+/* cint_cache.c: the toolchain file and the run cache (OQ-313) */
+int load_toolchain(const char *path);
+int run_cacheable(void);
+char *run_cache_lookup(void);
+char *run_cache_store(const char *exe);
 
 /* cint_discover.c */
 extern cint_bridge_root *lib_root;  /* the standard library root; NULL when there is none */

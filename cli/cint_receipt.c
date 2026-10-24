@@ -19,7 +19,7 @@
 #include "cint_proc.h"
 #include "cint_receipt.h"
 
-#define TOOL_VERSION "0.2.3"
+#define TOOL_VERSION "0.2.4"
 #define RUNTIME_CONTRACT "cint-rt-3"
 
 /* ------------------------------------------------------------------------- */
@@ -297,6 +297,43 @@ typedef struct lookup { const char *key; int present, owned; } lookup;
 
 static int by_key(const void *a, const void *b) { return strcmp(((const lookup *)a)->key, ((const lookup *)b)->key); }
 
+/* The capability text of a grant line, its bytes before `=` (SPEC-07 SEC-CAP-6). */
+static size_t cap_len(const char *line) { return strcspn(line, "="); }
+
+static int by_cap(const void *a, const void *b)
+{
+    const char *x = *(const char *const *)a, *y = *(const char *const *)b;
+    size_t nx = cap_len(x), ny = cap_len(y);
+    int c = memcmp(x, y, nx < ny ? nx : ny);
+    return c != 0 ? c : nx < ny ? -1 : nx > ny;
+}
+
+/* identity.method of a run or a test (SPEC-06 1.4, 3.4, 12.2): the depth limit, the frame-arena
+ * capacity in bytes (eight to an element: 16,777,216 for the default 2,097,152 elements, or
+ * `--frame-arena N` times 8; ruling OQ-308), the fuel budget and model, `grants`, the capability
+ * texts of the `--grant` lines in byte order without repeats and without their host directories,
+ * which are paths of this machine (SPEC-07 SEC-CAP-6; ruling OQ-300), and `stdin`, "inherited"
+ * when a grant names console.input, so that the program reads the command's standard input,
+ * else "null" (SPEC-06 3.4a). */
+static int run_method(sbuf *b)
+{
+    const char *sorted[64];
+    int n = g.ngrants;
+    /* (void *): MSVC warns (C4090) when an array of const pointers converts to void * */
+    memcpy((void *)sorted, g.grants, (size_t)n * sizeof sorted[0]);
+    qsort((void *)sorted, (size_t)n, sizeof sorted[0], by_cap);
+    sb_f(b, ",\"method\":{\"depth_limit\":256,\"frame_arena_bytes\":%lld,\"fuel_budget\":\"%s\","
+            "\"fuel_model\":\"fuel-v1\",\"grants\":[",
+         g.arena != NULL ? (long long)g.arena_elements * 8 : 16777216LL, g.mode == MODE_TEST ? "1000000000" : "none");
+    for (int k = 0, written = 0; k < n; k++) {
+        if (k > 0 && by_cap(&sorted[k - 1], &sorted[k]) == 0) continue;
+        sb_s(b, written++ > 0 ? "," : "");
+        sb_jstr(b, sorted[k], cap_len(sorted[k]));
+    }
+    sb_f(b, "],\"stdin\":\"%s\"}", g.stdin_inherit ? "inherited" : "null");
+    return 0;
+}
+
 static char *module_key_dup(const cli_module *m)
 {
     size_t n = strlen(m->rel) + 8u;
@@ -357,9 +394,13 @@ static int write_identity(sbuf *b, const char *source_hex, outset *set)
         free(l);
         free(v);
     }
-    if (g.mode == MODE_BUILD) sb_s(b, ",\"method\":null");
-    else sb_f(b, ",\"method\":{\"depth_limit\":256,\"frame_arena_bytes\":16777216,\"fuel_budget\":\"%s\","
-                 "\"fuel_model\":\"fuel-v1\",\"stdin\":\"null\"}", g.mode == MODE_TEST ? "1000000000" : "none");
+    if (g.mode == MODE_BUILD && g.arena == NULL) {
+        sb_s(b, ",\"method\":null");   /* a build runs nothing */
+    } else if (g.mode == MODE_BUILD) {   /* the capacity its executable runs with (cint-main.c; OQ-308) */
+        sb_f(b, ",\"method\":{\"frame_arena_bytes\":%lld}", (long long)g.arena_elements * 8);
+    } else if (run_method(b) != 0) {
+        return -1;
+    }
     sb_s(b, ",\"profile\":\"cint-core-1\",\"runtime\":{\"contract\":\"" RUNTIME_CONTRACT "\",\"files\":{");
     for (size_t i = 0; i < g.tc.nrt; i++) {
         if (digest_file(g.tc.rt_sources[i], hex) != 0) return -1;

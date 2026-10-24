@@ -1,0 +1,8 @@
+case errors/catch_statement_void_call
+clause SPEC-04 LS-131a, LS-167; OQ-315 A
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 2021
+fuel-consumed 13

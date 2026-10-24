@@ -1290,7 +1290,7 @@ static int view_op(cint_sir_image *x, cint_ctx *ctx, ex_frame *fr, const si_node
     case OP_REDUCE: {
         /* each element is the low bytes of its cell (IM-146), so offsets count in cells; a wide one
          * is its limbs, so they count in elements (box 15) */
-        int dot = n->sub == CINT_REDUCE_DOT, wide = is_wide(n->t1) || is_wide(n->t2);
+        int eq = n->sub == REDUCE_EQUAL, dot = n->sub == CINT_REDUCE_DOT || eq, wide = is_wide(n->t1) || is_wide(n->t2);
         uint64_t q = is_wide(n->t1) ? 1u : n->t1 == SC_BOOL ? 8u : 64u / width(n->t1);
         uint64_t init = n->form && !is_wide(n->t1) ? vget(fr, o + 1 + dot) : 0u;
         cint_vdesc xv = vdesc(a, q), yv;
@@ -1298,7 +1298,11 @@ static int view_op(cint_sir_image *x, cint_ctx *ctx, ex_frame *fr, const si_node
         yv = vdesc(&b, q);
         if (!inside(a) || !inside(&b))
             return cint_index_check(ctx, s, ICHECK[0], a->origin, a->span);
-        if (wide) {   /* cint_rt_reduce_wide (rt/OPEN.md RT-OQ-54); a narrow result is its C object */
+        if (eq) {   /* equal (ruling OQ-307 A): a Bool */
+            bool same = false;
+            st = cint_rt_equal(ctx, s, tag_of(n->t1), &xv, &yv, &same);
+            r = same;
+        } else if (wide) {   /* cint_rt_reduce_wide (rt/OPEN.md RT-OQ-54); a narrow result is its C object */
             ex_obj u;
             uint64_t *w = n->wide ? fr->w + fr->wat[n->dst] : &u.u64;
             const void *iv = !n->form ? NULL : is_wide(n->t1) ? (const void *)wget(fr, o + 1 + dot) : &init;

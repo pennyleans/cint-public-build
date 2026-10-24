@@ -3135,6 +3135,36 @@ bool cint_rt_reduce(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t elem, u
     return reduce_mode(ctx, site, op, elem, result, 0u, xs, ys, has_init, init, out);
 }
 
+bool cint_rt_equal(cint_ctx *ctx, cint_site site, uint32_t elem, const cint_vdesc *xs, const cint_vdesc *ys, bool *out)
+{
+    size_t size = cint_rt_tag_width(elem) / 8u;
+    view_walk wx, wy;
+    uint64_t n;
+    unsigned k;
+    if (cint_rt_faulted(ctx)) return false;
+    if (xs == NULL || ys == NULL || out == NULL || xs->rank < 1 || xs->rank > CINT_MAX_RANK || ys->rank != xs->rank ||
+        (elem != CINT_TAG_BOOL && !fq_limbs_ok(elem))) {
+        return fault_refused(ctx, site);
+    }
+    *out = false;
+    for (k = 0; k < view_rank(xs); k++) {
+        if (xs->shape[k] != ys->shape[k]) return true;  /* other shapes: no element is read */
+    }
+    n = view_count(xs);
+    if (n > 0u && !cint_fuel_charge(ctx, site, n / REDUCE_FUEL_BLOCK + (n % REDUCE_FUEL_BLOCK != 0u ? 1u : 0u)))
+        return false;
+    if (n > 0u) {
+        walk_start(&wx, xs);
+        walk_start(&wy, ys);
+        do {
+            if (memcmp(walk_at(&wx, size), walk_at(&wy, size), size) != 0) return true;
+            (void)walk_next(&wy);
+        } while (walk_next(&wx));
+    }
+    *out = true;
+    return true;
+}
+
 bool cint_rt_dot_fixed(cint_ctx *ctx, cint_site site, uint32_t elem, uint32_t result, uint32_t mode,
                        const cint_vdesc *xs, const cint_vdesc *ys, uint64_t *out)
 {

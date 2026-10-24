@@ -1435,8 +1435,12 @@ void sir_func[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, i
                 emit.w_i64(w, dst, i - o[0].first);
                 w_str(w, dst, " = data U8[");
                 emit.w_i64(w, dst, sir[i].c as I64);
-                w_str(w, dst, "] ");
-                c_string_bytes(w, dst, text, toks, sir[i].tok as I64, sir[i].f as I64);
+                emit.w_byte(w, dst, ']');
+                if (sir[i].c > 0) {
+                    // No byte, no space (`%s3 = data U8[0]`; an empty byte string).
+                    emit.w_byte(w, dst, ' ');
+                    c_string_bytes(w, dst, text, toks, sir[i].tok as I64, sir[i].f as I64);
+                }
             case lowering.SO_SCOPY, lowering.SO_ACOPY:
                 if (k == lowering.SO_ACOPY) { w_str(w, dst, "array.copy "); }
                 else { w_str(w, dst, "struct.copy "); }
@@ -3525,6 +3529,7 @@ void reduce_name[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] 
         case 6: w_str(w, dst, "reduce_min.checked.");
         case 7: w_str(w, dst, "reduce_max.checked.");
         case 8: w_str(w, dst, "count.");
+        case 10: w_str(w, dst, "equal.");
         default: w_str(w, dst, "dot.checked.");
     }
     ty_suffix(w, dst, sir[i].val as I32);
@@ -3620,7 +3625,15 @@ void c_view_node[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text
             c_slot(w, dst, text, toks, funcs, slots, fn, a);
             w_str(w, dst, " = ");
             I64 rk = lowering.slot_rank(slots, a);
-            if ((slots[bb].kind == lowering.SK_ARRAY || slots[bb].kind == lowering.SK_APLACE) && rk > 1) {
+            if (sir[i].e == 3) {
+                // A byte string (ruling OQ-307 A): the view of rank 1 of the static bytes of
+                // its SO_SDATA node, val.
+                w_str(w, dst, "(cint_vdesc){{(void *)s");
+                emit.w_i64(w, dst, sir[i].val - o[0].first);
+                w_str(w, dst, ", INT64_C(0), INT64_C(1), {{INT64_C(");
+                emit.w_i64(w, dst, sir[sir[i].val].c as I64);
+                w_str(w, dst, "), 0, 0, 0}}, {{INT64_C(1), 0, 0, 0}}}}");
+            } else if ((slots[bb].kind == lowering.SK_ARRAY || slots[bb].kind == lowering.SK_APLACE) && rk > 1) {
                 // A local array of rank 2 to 4, or (BX22-06) an array field of that rank, over
                 // its flat elements, in row-major order.
                 I64[4] ext;
@@ -3908,6 +3921,20 @@ void c_view_node[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text
             emit.w_byte(w, dst, ')');
             fault_tail(w, dst, o);
         case lowering.SO_REDUCE:
+            if ((d & 15) == 10) {
+                // equal (ruling OQ-307 A): two views of element type val, a Bool result.
+                w_str(w, dst, "    if (!cint_rt_equal(ctx, ");
+                c_site(w, dst, o, sir[i].site as I64);
+                w_str(w, dst, ", ");
+                tag_name(w, dst, sir[i].val as I32);
+                w_str(w, dst, ", ");
+                c_desc_ref(w, dst, text, toks, funcs, slots, fn, a);
+                w_str(w, dst, ", ");
+                c_desc_ref(w, dst, text, toks, funcs, slots, fn, bb);
+                c_out(w, dst, sir, i);
+                fault_tail(w, dst, o);
+                return;
+            }
             if (lowering.is_q(ty) && (lowering.is_limbs(ty) || lowering.is_limbs(sir[i].val as I32))) {
                 c_reduce_q_limbs(w, dst, text, toks, sir, funcs, slots, o, i);
                 return;
@@ -4141,6 +4168,10 @@ void sir_view_node[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] te
     } else if (k != lowering.SO_VEXT && k != lowering.SO_VALLOC && bb >= 0) {
         w_str(w, dst, ", ");
         sir_slot(w, dst, text, toks, funcs, slots, fn, bb);
+    } else if (k == lowering.SO_VBEGIN && sir[i].e == 3) {
+        // A byte string's view of its data (ruling OQ-307 A): `view.begin $v: U8[_], %s3, 0, 0`.
+        w_str(w, dst, ", %s");
+        emit.w_i64(w, dst, sir[i].val - o[0].first);
     }
     if (k == lowering.SO_REDUCE && (sir[i].c as I64) != lowering.NO_OPERAND) {
         w_str(w, dst, ", ");
@@ -4160,7 +4191,9 @@ void sir_view_node[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] te
         w_str(w, dst, ", ");
         emit.w_i64(w, dst, sir[i].f as I64);
     }
-    if (k == lowering.SO_VBEGIN || k == lowering.SO_VSLICE || k == lowering.SO_VEND || k == lowering.SO_AINIT) {
+    if (k == lowering.SO_VBEGIN && sir[i].e == 3) {
+        w_str(w, dst, ", 0");
+    } else if (k == lowering.SO_VBEGIN || k == lowering.SO_VSLICE || k == lowering.SO_VEND || k == lowering.SO_AINIT) {
         w_str(w, dst, ", ");
         emit.w_i64(w, dst, sir[i].val);
     }
@@ -4323,11 +4356,16 @@ void c_string_bytes[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] t
         I64 tk, I64 ntok) {
     Bool more = false;
     I64[5] bytes5;
+    I64[2] body;
     for q in tk..tk + ntok {
-        I64 k = (toks[q].start as I64) + 1;
-        I64 end = (toks[q].start as I64) + (toks[q].len as I64) - 1;
-        while (k < end) {
-            k = resolve.string_next(text, k, end, bytes5);
+        resolve.string_body(text, toks, q, body);
+        I64 k = body[0];
+        while (k < body[1]) {
+            if (toks[q].kind == scan.TK_BYTES) {
+                k = resolve.bytes_next(text, k, body[1], bytes5);
+            } else {
+                k = resolve.string_next(text, k, body[1], bytes5);
+            }
             for u in 0..bytes5[4] {
                 if (more) {
                     w_str(w, dst, ", ");
@@ -11549,9 +11587,57 @@ export Bool revision_ready(in PMod[_] pm) {
     return pm[0].path_at > 0 && pm[0].flags == pm[0].path_at;
 }
 
+// Byte i of the name of declaration row `row`, through its continuation rows.
+U8 decl_byte(in limits.Decl[_] d, I64 row, I64 i) {
+    return d[row + i / 32].name[i % 32];
+}
+
+// The program's capability manifest (SPEC-07 SEC-CAP-1, SEC-CAP-6; rt/OPEN.md RT-OQ-80,
+// compiler/OPEN.md CINTC-OQ-72): the canonical text of each `requires` row of the declaration
+// table, in table order, its name, then `:` and its arguments separated by `,` when it has
+// any, each line followed by LF, as the C string `cg_requires`, which the C `main` passes to
+// cint_program_requires. The rows' bytes are segment characters and `/` (check.capabilities),
+// so none needs an escape. Returns whether the program has any, writing nothing when not.
+Bool requires_manifest[b](inout emit.Writer[_] w, inout U8[b] dst, in limits.Decl[_] d) {
+    if (d[0].kind != limits.DK_HEADER) {
+        return false;
+    }
+    Bool any = false;
+    for row in 1..d[0].a {
+        if (d[row].kind == limits.DK_REQ) {
+            if (!any) {
+                w_str(w, dst, "static const char cg_requires[] = \"");
+                any = true;
+            }
+            for i in 0..(d[row].name_len as I64) {
+                emit.w_byte(w, dst, decl_byte(d, row, i));
+            }
+            I64 arg = decl.next_member(d, row);
+            for j in 0..(d[row].ref as I64) {
+                if (j == 0) {
+                    emit.w_byte(w, dst, 58);
+                } else {
+                    emit.w_byte(w, dst, 44);
+                }
+                for i in 0..(d[arg].name_len as I64) {
+                    emit.w_byte(w, dst, decl_byte(d, arg, i));
+                }
+                arg = decl.next_member(d, arg);
+            }
+            w_str(w, dst, "\\n");
+        }
+    }
+    if (any) {
+        w_str(w, dst, "\";");
+        nl(w, dst);
+    }
+    return any;
+}
+
 // The program-level C file (D-2, CONF-13 X-2): the program table, the two observer
 // exports, and the C `main` of a program whose root module (the last) has an entry.
-export void write_program[b, p](inout emit.Writer[_] w, inout U8[b] dst, in PMod[_] pm, in U8[p] pbytes) {
+export void write_program[b, p](inout emit.Writer[_] w, inout U8[b] dst, in PMod[_] pm, in U8[p] pbytes,
+        in limits.Decl[_] decls) {
     I64 m = pm[0].path_at;
     I64 root = m - 1;
     I64 obs = -1;
@@ -11706,6 +11792,7 @@ export void write_program[b, p](inout emit.Writer[_] w, inout U8[b] dst, in PMod
     if (nstate > 0 || mem) {
         program_state(w, dst, pm, pbytes, nstate, mem);
     }
+    Bool reqs = run && requires_manifest(w, dst, decls);
     if (run) {
         nl(w, dst);
         w_str(w, dst, "int main(int argc, char **argv)");
@@ -11718,6 +11805,10 @@ export void write_program[b, p](inout emit.Writer[_] w, inout U8[b] dst, in PMod
         // A `main` that takes the program arguments (lowering.FN_ARGS; OQ-306, RT-OQ-76) calls
         // cint_program_run_argv with CINT_PROGRAM_ARGS, so that `--arg` pairs and the `--` tail
         // reach it; every other program keeps cint_program_run_args.
+        if (reqs) {
+            w_str(w, dst, "    cint_program_requires(cg_requires);");
+            nl(w, dst);
+        }
         if (main_args) {
             w_str(w, dst, "    return cint_program_run_argv(&cg_program, cg");
         } else {
@@ -11843,7 +11934,7 @@ void render[b](inout emit.Writer[_] w, inout U8[b] dst, I64 mi, I64 k, in PMod[_
     o[0].nslot = ls[0].nslot;
     if (mi == nmod) {
         if (k == 0) {
-            write_program(w, dst, pm, pbytes);
+            write_program(w, dst, pm, pbytes, decls);
         } else {
             write_program_sites(w, dst, pm, pbytes);
         }

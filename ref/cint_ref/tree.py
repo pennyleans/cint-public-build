@@ -57,6 +57,11 @@ class StrLit(Expr):
 
 
 @dataclass(eq=False)
+class BytesLit(Expr):
+    data: bytes = b""           # `b"..."` decoded (SPEC-04 LS-41, LS-42)
+
+
+@dataclass(eq=False)
 class Name(Expr):
     name: str = ""
 

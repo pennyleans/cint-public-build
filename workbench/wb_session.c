@@ -801,7 +801,7 @@ static void retire(session *s, cint_sir_program *p)
 static int compile(session *s, const decl *pending, wb_buf *b, int *only_c2001)
 {
     wb_buf err = {0};
-    int status = -1, r = wb_emit(s->o->cint, 1, s->src, "session.ci", s->build, s->log, &status, &err);
+    int status = -1, r = wb_emit(s->o->cint, 1, s->src, "session.ci", NULL, s->build, s->log, &status, &err);
     size_t len = 0;
     char *said = r == 0 && !g_stop ? wb_read_file(s->log, &len) : NULL;
     *only_c2001 = 0;
@@ -2971,7 +2971,7 @@ static void cmd_explain(session *s, char *arg, wb_buf *b)
     }
     wb_buf err = {0};
     static int64_t bytes[WB_MODULES_MAX];
-    wb_source_sizes(s->prog, s->src, bytes);
+    wb_source_sizes(s->prog, s->src, NULL, bytes);
     if (wb_explain(b, s->prog, module, *name != '\0' ? name : NULL, s->prog->nmod <= WB_MODULES_MAX ? bytes : NULL, 0,
                    &err) != 0) {
         wb_f(b, ":explain: %s\n", err.n != 0 ? err.p : "out of memory");

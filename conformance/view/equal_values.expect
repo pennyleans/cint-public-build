@@ -1,0 +1,7 @@
+case view/equal_values
+clause SPEC-04 LS-71, LS-145 (`equal(a, b)` of two arrays or views of one element type and one rank; other shapes are not equal; ruling OQ-307 A)
+source reference
+outcome value
+stdout-bytes 0
+return I64 7125
+fuel-consumed 28

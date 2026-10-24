@@ -1598,6 +1598,14 @@ class Checker:
         e.ty = BOOL
         return BOOL
 
+    def _infer_BytesLit(self, e):
+        """`b"..."`: a read-only view of its bytes in static storage, `in U8[n]` with n its
+        length (SPEC-04 LS-41; OQ-307 A). Static storage is outside a kernel body's surface."""
+        if self.ctx == "kernel":
+            raise Refused("a byte string in a kernel body is outside the surface cint_ref implements", e.start)
+        e.ty = array_of("U8", [len(e.data)], False, True)
+        return e.ty
+
     def _infer_StrLit(self, e):
         raise Refused("a string value outside a print statement or an `in U8` argument is outside the surface "
                       "cint_ref implements", e.start)
@@ -2011,6 +2019,8 @@ class Checker:
         if not local and name == "len" and "len" not in self.globals:
             return self._len(e)
         if not local and self.box09:
+            if name == "equal":
+                return self._equal(e)
             if name in REDUCTIONS or (name in ("min", "max") and self._array_form(e)):
                 return self._reduction(e)
             if name in VIEW_FUNCTIONS or name in ("copy", "fill", "extent", "size"):
@@ -2249,6 +2259,38 @@ class Checker:
         e.target = result
         e.ty = result
         return result
+
+    def _equal(self, e):
+        """`equal(a, b)` (SPEC-04 LS-71, LS-145; ruling OQ-307 A): two arrays or views of one
+        element type and one rank (C2001), of integer, fixed-point or `Bool` elements (C2103).
+        An array literal takes the type of the other argument, and a byte string is a `U8`
+        view. The extents are not checked: views of other shapes are not equal."""
+        named = next((a for a in e.args if a.name is not None), None)
+        if named is not None:
+            error("C2063", named.pos, "`equal` takes no named arguments")
+        if len(e.args) != 2:
+            error("C2022", e.start, "`equal` takes 2 arguments")
+        if self.ctx == "kernel":
+            raise Refused("the built-in `equal` in a kernel body is outside the surface cint_ref implements", e.start)
+        a, b = (x.value for x in e.args)
+        for x in (a, b):
+            if isinstance(x, P.StrLit):
+                raise Refused("a string literal in `equal` (Str is outside the surface cint_ref implements; "
+                              "`b\"...\"` is a byte view)", x.start)
+        first, second = (b, a) if isinstance(a, P.ArrayLit) else (a, b)
+        t = self.infer(first)
+        if not isinstance(t, ArrayType):
+            error("C2103", first.start, "`equal` needs an array or a view, found %s"
+                  % (type_name(t) if t is not None else "a literal"))
+        if not (is_num(t.elem) or t.elem == BOOL):
+            error("C2103", first.start, "`equal` is defined on integer, fixed-point and Bool elements, not on %s"
+                  % type_name(t.elem))
+        self.expect_array(second, ArrayType(t.elem, [Dim() for _ in t.dims], False, True))
+        e.kind = "equal"
+        e.values = [a, b]
+        e.elem = t.elem
+        e.ty = BOOL
+        return BOOL
 
     def _array_builtin(self, e):
         """The array built-ins of SPEC-04 LS-145 that box 09 adds: the view functions
@@ -2995,7 +3037,8 @@ class Checker:
                           "implements)", s.type.pos)
         got = self.expect_array(s.init, t)
         root = place_root(s.init)
-        if root is None:
+        # A byte string is a read-only view of static storage (SPEC-04 LS-41, LS-106).
+        if root is None and not isinstance(s.init, P.BytesLit):
             raise Refused("a view of storage that no variable holds: no clause gives the diagnostic", s.init.start)
         if s.mode == "inout" and not self._writable_place(s.init):
             error("C2067", s.init.start, "an `inout` view of storage that is not writable (SPEC-04 LS-162)")
@@ -3004,8 +3047,8 @@ class Checker:
         dims = [dt if dt.extent is not None else dg for dt, dg in zip(t.dims, got.dims)]
         t = ArrayType(t.elem, dims, s.mode == "inout", True)
         sym = Sym("view", s.name, t, s.name_pos, s, mode=s.mode)
-        sym.base = place_path(s.init)
-        sym.base_sym = root.sym.base_sym if root.sym.kind == "view" else root.sym
+        sym.base = place_path(s.init) if root is not None else None
+        sym.base_sym = None if root is None else root.sym.base_sym if root.sym.kind == "view" else root.sym
         s.ty = t
         self.declare(s.name, s.name_pos, sym)
 
@@ -3096,6 +3139,9 @@ class Checker:
         s.ty = t
 
     def _stmt_ExprStmt(self, s):
+        if getattr(s.expr, "statement", False):
+            self._catch_statement(s.expr)
+            return
         t = self.infer(s.expr)
         if t is None:
             self.settle(s.expr, "I64")
@@ -3104,6 +3150,25 @@ class Checker:
             call = s.expr.operand if isinstance(s.expr, P.Try) else s.expr
             error("C4011", s.expr.start, "the result of `%s` must be used or discarded with `_ =`" % call.callee)
         self.fold(s.expr)
+
+    def _catch_statement(self, e):
+        """`call catch (name) { ... };` (OQ-315 A, SPEC-04 LS-131a): the call's result is
+        `E!void`, so there is no value to define and the block may complete (no C4002); any
+        other error union is C4012 at the call."""
+        e.left._consumed = True
+        u = self.infer(e.left)
+        if not isinstance(u, ErrorUnion):
+            raise Refused("`catch` applied to an expression that is not an error union: no clause gives the "
+                          "diagnostic (ref/OPEN.md REF-OQ-44)", e.pos)
+        if u.value != VOID:
+            error("C4012", e.start, "a `catch` statement takes a call whose result is `E!void`: give the value a "
+                  "name, `T v = f() catch ...`, or discard it with `_ =` (SPEC-04 LS-131a)")
+        self.scopes.append({})
+        self.declare(e.bind, e.bind_pos, Sym("errbind", e.bind, u.set, e.bind_pos))
+        self.check_block(e.block.stmts)
+        self.scopes.pop()
+        e.ty = VOID
+        return VOID
 
     def _stmt_Discard(self, s):
         s.expr._consumed = True         # `_ =` discards the value and any error (SPEC-04 LS-132)

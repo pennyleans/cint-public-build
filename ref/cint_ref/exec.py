@@ -742,6 +742,9 @@ class Machine:
         data = e.parts[0]
         return ArrayVal.owned("U8", (len(data),), list(data), False)
 
+    def _byteslit(self, e):
+        return ArrayVal.owned("U8", (len(e.data),), list(e.data), False)
+
     def _arraylit(self, e):
         items = []
 
@@ -789,6 +792,8 @@ class Machine:
             return self.member(e)
         if kind == "reduce":
             return self.reduction(e)
+        if kind == "equal":
+            return self.equal(e)
         if kind == "shape":
             a = self.eval(e.values[0])
             if e.callee == "size":
@@ -1086,6 +1091,19 @@ class Machine:
             else:
                 dst.buf[off] = src
         return None
+
+    def equal(self, e):
+        """`equal(a, b)` (SPEC-04 LS-71; ruling OQ-307 A): both arguments left to right; views of
+        other shapes are not equal and charge no fuel; otherwise the charge of a reduction over
+        their elements (IM-139), then the elements in logical order. Faults are at the callee."""
+        a, b = (self.eval(x) for x in e.values)
+        for v in (a, b):
+            if v.lease is not None:
+                self.check_lease(v, e.pos)
+        if tuple(a.shape) != tuple(b.shape):
+            return False
+        self.charge_elements(views.count(a.shape), e.pos)
+        return all(x == y for x, y in zip(a.values(), b.values()))
 
     def reduction(self, e):
         """A reduction over an array or view (SPEC-01 IM-77 to IM-87; SPEC-04 LS-145; box 09
@@ -1425,7 +1443,14 @@ class Machine:
         self.step()
 
     def _exprstmt(self, s):
-        self.eval(s.expr)
+        e = s.expr
+        if getattr(e, "statement", False):     # `call catch (name) { ... };` (OQ-315 A): the block may complete
+            v = self.eval(e.left)
+            if isinstance(v, Failure):
+                self.frame[e.bind] = v.value
+                self.exec_list(e.block.stmts)
+            return
+        self.eval(e)
 
     def _discard(self, s):
         self.eval(s.expr)
@@ -1573,7 +1598,7 @@ _EVAL = {
     P.Lit: Machine._lit, P.BoolLit: Machine._bool, P.TypeProp: Machine._typeprop, P.Name: Machine._name,
     P.Unary: Machine._unary, P.Binary: Machine._binary, P.Compare: Machine._compare,
     P.Logical: Machine._logical, P.Cond: Machine._cond, P.Convert: Machine._convert,
-    P.Field: Machine._field, P.Call: Machine._call, P.Index: Machine._index, P.StrLit: Machine._strlit,
+    P.Field: Machine._field, P.Call: Machine._call, P.Index: Machine._index, P.StrLit: Machine._strlit, P.BytesLit: Machine._byteslit,
     P.ArrayLit: Machine._arraylit, P.ErrorLit: Machine._errorlit, P.Try: Machine._try, P.Catch: Machine._catch,
 }
 _EXEC = {

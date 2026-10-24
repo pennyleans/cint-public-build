@@ -71,9 +71,10 @@
 # programs: boot/refuse_fixed_point and boot/refuse_fraction_literal run to the values
 # their headers state, and their cintc expectations stay held until a ruling approves
 # their rows. struct/layout_static_assert stays held for its bit fields.
+# The I/O services lane (ruling OQ-307 A) gives cint_ref byte-string literals:
+# boot/refuse_byte_string runs to value I64 255, and its cintc expectation is frozen.
 
 boot/refuse_attribute.cintc I-2 the cintc expectation (decision 26 item 2): an attribute is outside the surface that cint_ref implements, so no reference outcome can be frozen (CONF-11 rule 7); the seed's frozen file is unchanged
-boot/refuse_byte_string.cintc I-2 the cintc expectation (decision 26 item 2): a byte-string literal is outside the surface that cint_ref implements, so no reference outcome can be frozen (CONF-11 rule 7); the seed's frozen file is unchanged
 boot/refuse_destructuring.cintc I-2 the cintc expectation (decision 26 item 2): destructuring is outside the surface that cint_ref implements, so no reference outcome can be frozen (CONF-11 rule 7); the seed's frozen file is unchanged
 boot/refuse_enum.cintc I-2 the cintc expectation (decision 26 item 2): `enum` declarations are outside the surface that cint_ref implements, so no reference outcome can be frozen (CONF-11 rule 7); the seed's frozen file is unchanged
 boot/refuse_fixed_point.cintc I-2 the cintc expectation (decision 26 item 2): cint_ref runs it since box 15 unit 1 (value I64 3; ref/OPEN.md REF-OQ-47), and it is held until a ruling approves its rows; the seed's frozen file is unchanged

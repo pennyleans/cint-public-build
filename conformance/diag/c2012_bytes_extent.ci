@@ -1,0 +1,10 @@
+// case: diag/c2012_bytes_extent
+// clause: SPEC-04 LS-41, LS-70 (a byte-string literal of 4 bytes initializes no `U8[3]`; ruling OQ-307 A)
+// subset: cint-core-1 (byte strings)
+// entry: run; args: none
+// spec outcome: C2012 at 8:15 (the literal)
+
+export I64 run() {
+    U8[3] a = b"abcd";
+    return a[0] as I64;
+}

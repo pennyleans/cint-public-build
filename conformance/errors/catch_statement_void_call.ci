@@ -1,0 +1,39 @@
+// case: errors/catch_statement_void_call
+// clause: SPEC-04 LS-131a, LS-167; OQ-315 A
+// subset: cint-core-1 (error sets, error unions, `catch`)
+// entry: run; args: none
+// spec outcome: value I64 2021: the statement `check(...) catch (e) { ... };` runs its block for the two `bad` and the one `empty` of four calls, and the block completes; the second loop's block leaves by `continue` and `return`; fuel 13
+
+error ParseError { bad, empty }
+
+ParseError!void check(I64 x) {
+    if (x < 0) {
+        return .bad;
+    }
+    if (x == 0) {
+        return .empty;
+    }
+}
+
+export I64 run() {
+    I64 n = 0;
+    for i in 0..4 {
+        check(i - 2) catch (e) {
+            if (e == ParseError.bad) {
+                n += 10;
+            } else {
+                n += 1;
+            }
+        };
+    }
+    for j in 0..10 {
+        check(j - 1) catch (e) {
+            if (e == ParseError.bad) {
+                continue;
+            }
+            return n + 2000;
+        };
+        n += 100;
+    }
+    return n;
+}

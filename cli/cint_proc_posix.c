@@ -83,17 +83,18 @@ char *cli_self_path(void)
 {
     char *buf = malloc(4096);
 #if defined(__APPLE__)
+    /* _NSGetExecutablePath gives the launch path, a symlink when cint is linked from ~/.local/bin;
+     * cint.toolchain and lib/ sit beside the real file, so resolve it (/proc/self/exe already is). */
     uint32_t size = 4096;
-    ssize_t n = buf != NULL && _NSGetExecutablePath(buf, &size) == 0 ? (ssize_t)strlen(buf) : -1;
+    char *real = buf != NULL && _NSGetExecutablePath(buf, &size) == 0 ? realpath(buf, NULL) : NULL;
+    free(buf);
+    return real;
 #else
     ssize_t n = buf != NULL ? readlink("/proc/self/exe", buf, 4095) : -1;
-#endif
-    if (n <= 0) {
-        free(buf);
-        return NULL;
-    }
+    if (n <= 0) { free(buf); return NULL; }
     buf[n] = '\0';
     return buf;
+#endif
 }
 
 char *cli_self_dir(void)

@@ -65,7 +65,7 @@ BUILTIN_SIGS.update({"qmul": ("R", 3, True, "optional"), "mul_int": ("T", 2, Fal
 # The array built-ins of box 09 that check.ci's gate admits (check.ci mark_arrayfn); `min`
 # and `max` are BUILTIN_SIGS'. check.ci h_reshape refuses the `reshape`s of reshape_out.
 ARRAY_FNS = frozenset({"len", "extent", "size", "copy", "fill", "transpose", "reverse", "reshape", "sum",
-                       "fold_checked", "sum_wrap", "sum_sat", "count", "dot"})
+                       "fold_checked", "sum_wrap", "sum_sat", "count", "dot", "equal"})
 BUILTIN_TYPES = ref_check.BUILTIN_TYPES | ref_check.BOX12_TYPES
 # The built-in type names that check.ci's gate refuses, each a scanner class of its own.
 # compiler/scan.ci classes only the contextual `round`, so B1 takes `Round` for an ordinary
@@ -266,6 +266,12 @@ class Subset:
                     return False
             elif isinstance(x, (T.BoolLit, T.TypeArg)):
                 pass
+            elif isinstance(x, T.BytesLit):
+                # A byte string (ruling OQ-307 A): check.ci types one of at most 65,534 bytes
+                # (resolve.ARRAY_EXTENT_MAX) and gives C9102 past it (and in a kernel body, which
+                # `cint_ref` refuses; outcome).
+                if len(x.data) > 65534:
+                    return False
             elif isinstance(x, T.Name):
                 if x.name in PRELUDE and x.name not in self.declared:
                     return False
@@ -296,6 +302,19 @@ class Subset:
             elif isinstance(x, T.Call) and x.qual is None and x.callee in ARRAY_FNS and x.callee not in self.declared:
                 # check.ci mark_arrayfn admits it, its named arguments (C2063) and the
                 # operation name of `fold_checked`; the checker decides them.
+                lits = [a for a in x.args if a.name is None and isinstance(a.value, T.ArrayLit)]
+                if x.callee == "equal" and len(x.args) == 2 and len(lits) == 1:
+                    # check.ci equal_literal: the array literal of `equal` whose other argument
+                    # is none, its rows included (ruling OQ-307 A).
+                    rows = [lits[0].value]
+                    while rows:
+                        v = rows.pop()
+                        if isinstance(v, T.ArrayLit):
+                            rows += v.items
+                        else:
+                            stack.append(v)
+                    stack += [a.value for a in x.args if a is not lits[0]]
+                    continue
                 if x.callee == "reshape":
                     # check.ci h_reshape refuses a literal extent past B1's limits where it
                     # reaches the call, which can come before a later diagnostic of `cint_ref`
@@ -702,6 +721,8 @@ def outcome(data: bytes, path: str) -> dict:
                 want["wide"] = True
             if subset.late or subset.reshape_big:
                 want["late"] = True
+            if past_extent(subset, d.position):
+                return {"kind": "out"}   # an extent past B1's limits that check.ci reaches first
             return want
         except HoleConversion:
             return {"kind": "out"}   # check.ci format_ok: `!raw` or `!bits` of a value that is not fixed point
@@ -717,6 +738,8 @@ def outcome(data: bytes, path: str) -> dict:
                 return {"kind": "out"}   # box 12: resolve.ci mem_type_ref and check.ci h_member give C9102
             if any(r in e.message for r in FIXED_REFUSALS) or e.message.startswith("the property Q"):
                 return {"kind": "out"}   # box 15 unit 4e: check.ci gives C9102 where `cint_ref` refuses fixed point
+            if e.message.startswith(("a byte string in a kernel body", "the built-in `equal` in a kernel body")):
+                return {"kind": "out"}   # ruling OQ-307 A: check.ci gives C9102 in a kernel body
             if e.message.startswith("clamp with lo > hi at run time"):
                 return {"kind": "open"}   # OQ-06: cintc decides E_DOMAIN, so C6006 can come first
             m = PRELUDE_REFUSAL.match(e.message)
@@ -725,11 +748,7 @@ def outcome(data: bytes, path: str) -> dict:
             return {"kind": "ref-refused", "why": e.message}
         finally:
             ref_check.fmt = FMT
-        if any(e.const is not None and e.const.value > (2 ** 32 if big else 65534)
-               for e, big in subset.local_extents) or any(
-                e.const is not None and e.const.value > 3070 for e in subset.nd_extents):
-            # resolve.ARRAY_EXTENT_MAX at rank 1, BIG_EXTENT_MAX for a function's local array
-            # (decision 2026-10-06 on OQ-213), NARRAY_EXTENT_MAX above
+        if past_extent(subset):
             return {"kind": "out"}
         if reshape_out(module):
             return {"kind": "out"}
@@ -740,6 +759,18 @@ def outcome(data: bytes, path: str) -> dict:
         return {"kind": "ok"}
     finally:
         sys.setrecursionlimit(old)
+
+
+def past_extent(subset, before=None) -> bool:
+    """Whether a folded array extent of the module is past B1's limits: resolve.ARRAY_EXTENT_MAX
+    at rank 1, BIG_EXTENT_MAX for a function's local array (decision 2026-10-06 on OQ-213),
+    NARRAY_EXTENT_MAX above. With position `before`, only an extent that comes before it, which
+    check.ci refuses with C9102 where it reaches it, ahead of `cint_ref`'s later diagnostic."""
+    def early(e):
+        return before is None or (e.pos.line, e.pos.column) < (before.line, before.column)
+    return any(e.const is not None and e.const.value > (2 ** 32 if big else 65534) and early(e)
+               for e, big in subset.local_extents) or any(
+        e.const is not None and e.const.value > 3070 and early(e) for e in subset.nd_extents)
 
 
 WIDE_RE = re.compile(r"\b(?:%s)\b" % "|".join(WIDE_TYPES))

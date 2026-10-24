@@ -305,7 +305,7 @@ def bootstrap(leg: str, out: pathlib.Path) -> pathlib.Path:
             [inputs / "rt" / n for n in ("cint_bridge.c", "cint_build.c")], rel_dir, "cint runtime")
         proc = "cint_proc_win.c" if leg == "msvc" else "cint_proc_posix.c"
         cli_tc = tc.with_flags(cli_compile_flags(rel_flags, leg, sha256(manifests["compiler"].read_bytes())))
-        cli_objs = cli_tc.compile([inputs / "cli/cint_main.c", inputs / "cli/cint_receipt.c", inputs / "cli/cint_discover.c",
+        cli_objs = cli_tc.compile([inputs / "cli/cint_main.c", inputs / "cli/cint_receipt.c", inputs / "cli/cint_discover.c", inputs / "cli/cint_cache.c",
                                    inputs / "cli" / proc],
                                   cli_dir, "cint CLI")
         s1_rel_obj = s1_rel.result()[0]

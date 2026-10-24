@@ -2,25 +2,23 @@
  * H-8a, A-10; SPEC-07 SEC-OS-10, SEC-OS-12, catalog rows `console.input` and `console.raw`;
  * ruling OQ-299; I/O services lane U3; rt/OPEN.md RT-OQ-73).
  *
- * rt/cint_rt.c includes this file after rt/cint_fs.c, so the code is part of the cint_rt
- * library, counted in its own SPEC-09 4.2 row, and the standard service table at the end of
- * this file (cint_rt_service_find) joins the rows of fs/1 with the rows here. The rows are `console/1.raw`, `read`, `write`,
- * `window` and `read_line`, each with the I64 Grants handle first (SEC-OS-1a). `write` hands
- * its bytes to the host's output sink, the `output` function of cint_ctx_config that print
- * statements reach, so a host that captures the program's output captures console writes too
- * and stdout stays the host's (SPEC-06 3.4a); it needs no grant. `read`, `read_line` and
- * `window` need a `console.input` line in the grant set and use the process's standard input
- * and its terminal; `raw` needs `console.raw` and switches the terminal of the standard input
- * to raw mode: no echo, no canonical mode, no signals, no flow control, no CR to NL, no output
- * processing. The terminal is a process-wide resource, so raw mode is kept in one static of the
- * process, held by one context at a time, and restored when that context turns it off, when it
- * is destroyed, when it faults (cint_rt_record_begin), at exit, and on a signal that ends the
- * process while the default disposition held (SIGHUP, SIGINT, SIGQUIT, SIGTERM; the console
- * control handler on Windows). Every failure of an operation is a value of lib/console.ci's
- * ConsoleError, in tag order denied 1, closed 2, unavailable 3; a contract violation (a handle
- * other than 0, a view of another type or stride) is CINT_REFUSED, the boundary fault
- * host.error.<name> (A-6). The Windows path is written to the same rules and compiled on the
- * MSVC leg; it has not run here.
+ * rt/cint_rt.c includes this file after rt/cint_fs.c, so the code is part of the cint_rt library,
+ * counted in its own SPEC-09 4.2 row, and the standard service table at the end of this file
+ * (cint_rt_service_find) joins the rows of fs/1 with the rows here. The rows are `console/1.raw`,
+ * `read`, `write`, `window` and `read_line`, each with the I64 Grants handle first (SEC-OS-1a).
+ * `write` hands its bytes to the host's output sink, the `output` function of cint_ctx_config that
+ * print statements reach, so a host that captures the program's output captures console writes too
+ * and stdout stays the host's (SPEC-06 3.4a); it needs no grant. `read`, `read_line` and `window`
+ * need a `console.input` line in the grant set and use the process's standard input and its
+ * terminal; `raw` needs `console.raw` and switches the terminal of the standard input to raw mode:
+ * no echo, no canonical mode, no signals, no flow control, no CR to NL, no output processing. The
+ * terminal is a process-wide resource, so raw mode is kept in one static of the process, held by
+ * one context at a time, and restored when that context turns it off, when it is destroyed, when it
+ * faults (cint_rt_record_begin), at exit, and on a signal that ends the process while the default
+ * disposition held (SIGHUP, SIGINT, SIGQUIT, SIGTERM; the console control handler on Windows).
+ * Every failure of an operation is a value of lib/console.ci's ConsoleError, in tag order denied 1,
+ * closed 2, unavailable 3; a contract violation (a handle other than 0, a view of another type or
+ * stride) is CINT_REFUSED, the boundary fault host.error.<name> (A-6).
  */
 
 #include <signal.h>
@@ -44,7 +42,7 @@ typedef struct con_raw_state {
     cint_ctx *owner;             /* the context that holds raw mode */
 #if defined(_WIN32)
     HANDLE in, out;
-    DWORD in_mode, out_mode;
+    DWORD in_mode, out_mode, out_cp;   /* out_cp: the output code page before raw mode, or 0 */
     int out_saved;
 #else
     struct termios saved;
@@ -81,24 +79,23 @@ static bool con_input_granted(const cint_ctx *ctx)
 
 /* ------------------------------------------------------------------------ restoring raw mode */
 
-/* Restores the terminal when raw mode is on. Called from the exit hook and from the signal
- * handler, so it calls only functions that are safe there. */
-/* The C library's stdout buffer, flushed before a wait for input and after a write. A host that
- * runs the program as a child of `cint run` or of an editor reads its stdout through a pipe,
- * which the C library buffers in full, so without this a prompt or a redrawn screen reached the
- * terminal only at exit (RT-OQ-77). Print statements stay buffered between waits. A host whose
- * output sink is not stdout loses nothing: the flush moves no byte of its own. */
+/* The C library's stdout buffer, flushed before a wait for input and after a write: a host that
+ * reads the program's stdout through a pipe (`cint run`, an editor) gets a prompt or a redrawn
+ * screen before exit (RT-OQ-77). Print statements stay buffered between waits. */
 static void con_flush_out(void)
 {
     (void)fflush(stdout);
 }
 
+/* Restores the terminal when raw mode is on. Called from the exit hook and from the signal
+ * handler, so it calls only functions that are safe there. */
 static void con_restore_now(void)
 {
     if (!con_raw.on) return;
 #if defined(_WIN32)
     (void)SetConsoleMode(con_raw.in, con_raw.in_mode);
     if (con_raw.out_saved) (void)SetConsoleMode(con_raw.out, con_raw.out_mode);
+    if (con_raw.out_cp != 0u) (void)SetConsoleOutputCP((UINT)con_raw.out_cp);
 #else
     (void)tcsetattr(STDIN_FILENO, TCSANOW, &con_raw.saved);
 #endif
@@ -199,6 +196,7 @@ static int con_enter(cint_ctx *ctx)
             return CON_UNAVAILABLE;
         }
     }
+    if ((con_raw.out_cp = GetConsoleOutputCP()) != 0u) (void)SetConsoleOutputCP(CP_UTF8);   /* writes are UTF-8 */
     if (!con_raw.hooks) {
         con_raw.hooks = 1;
         (void)atexit(con_at_exit);
@@ -228,6 +226,49 @@ static int con_enter(cint_ctx *ctx)
 
 /* ------------------------------------------------------------------------------- reading */
 
+#if defined(_WIN32)
+static size_t utf8_encode(uint32_t c, uint8_t out[4]);   /* rt/cint_rt.c */
+
+/* The process's console: bytes of a read past its buffer, a high surrogate before its low half. */
+static uint8_t con_pend[16];
+static size_t con_pend_at, con_pend_n;
+static uint32_t con_high;
+
+/* The units of an input record into u, and their count (RT-OQ-73, Windows console): a key press's
+ * character, or the xterm sequence of a key without one; an Alt release's character, which is how
+ * Windows Terminal sends a character past U+FFFF (a surrogate half per release). */
+static DWORD con_key(const INPUT_RECORD *r, WCHAR u[6])
+{
+    const KEY_EVENT_RECORD *k = &r->Event.KeyEvent;
+    DWORD vk = k->wVirtualKeyCode, s = k->dwControlKeyState, m = 1u, n = 0u;
+    char f = vk == VK_F3 ? 'R' : vk - 0x21u < 14u ? "56FHDACB....23"[vk - 0x21u] : '.';   /* VK_PRIOR to VK_DELETE */
+    if (r->EventType != KEY_EVENT || (!k->bKeyDown && vk != VK_MENU)) return 0u;
+    u[0] = k->uChar.UnicodeChar;
+    if (u[0] != 0 || !k->bKeyDown || f == '.') return u[0] != 0 ? 1u : 0u;
+    m += ((s & SHIFT_PRESSED) != 0u ? 1u : 0u) + ((s & (LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED)) != 0u ? 2u : 0u);
+    m += (s & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) != 0u ? 4u : 0u;
+    u[n++] = 0x1b;
+    u[n++] = (WCHAR)(f == 'R' && m == 1u ? 'O' : '[');   /* F3 alone: SS3 R */
+    if (f <= '9' || m > 1u) u[n++] = (WCHAR)(f <= '9' ? f : '1');
+    if (m > 1u) { u[n++] = ';'; u[n++] = (WCHAR)('0' + m); }
+    u[n++] = (WCHAR)(f <= '9' ? '~' : f);
+    return n;
+}
+
+/* Whether the queue holds a record with units. Others (a resize, focus, menu or mouse event, a key
+ * release) wake the wait but not a read, so they are taken off. 1 ready, 0 not, -1 gone away. */
+static int con_console_ready(HANDLE in)
+{
+    INPUT_RECORD recs[64];
+    WCHAR u[6];
+    DWORD n = 0u;
+    if (!PeekConsoleInputW(in, recs, 64u, &n)) return -1;
+    for (DWORD i = 0u; i < n; i++) if (con_key(&recs[i], u) != 0u) return 1;
+    if (n > 0u && !ReadConsoleInputW(in, recs, n, &n)) return -1;
+    return 0;
+}
+#endif
+
 /* Whether input is ready within `wait_ms` (negative: no limit): 1 ready, 0 timed out, -1 the
  * input has gone away. */
 #if defined(_WIN32)
@@ -247,7 +288,7 @@ static int con_wait(int64_t wait_ms)
             Sleep(1u);
         }
     }
-    if (kind != FILE_TYPE_CHAR) return 1;   /* a file: the read decides */
+    if (kind != FILE_TYPE_CHAR || con_pend_at < con_pend_n) return 1;   /* a file, or bytes left over */
     for (;;) {
         DWORD span = INFINITE, r;
         if (wait_ms >= 0) {
@@ -256,18 +297,63 @@ static int con_wait(int64_t wait_ms)
             span = left > 0x7fffffff ? 0x7fffffffu : (DWORD)left;
         }
         r = WaitForSingleObject(in, span);
-        if (r == WAIT_OBJECT_0) return 1;
+        if (r == WAIT_OBJECT_0) { int ready = con_console_ready(in); if (ready != 0) return ready; continue; }
         if (r != WAIT_TIMEOUT) return -1;
         if (wait_ms >= 0) return 0;
     }
+}
+
+/* A console's input as UTF-8, at most n bytes, the rest (at most 8) kept for the next read
+ * (RT-OQ-73, Windows console): con_key of each input record in raw mode, ReadConsoleW in line mode. */
+static int64_t con_read_console(HANDLE in, DWORD mode, uint8_t *dst, size_t n)
+{
+    uint8_t buf[9u * 256u + 3u];
+    size_t len = 0u, out = 0u;
+    while (con_pend_at < con_pend_n && out < n) dst[out++] = con_pend[con_pend_at++];
+    if (out > 0u) return (int64_t)out;
+    while (len == 0u) {
+        WCHAR units[7u * 256u], u[6];
+        INPUT_RECORD recs[256];
+        DWORD want = n >= 9u * 256u ? 256u : n < 9u ? 1u : (DWORD)(n / 9u), got = 0u, nu = 0u;
+        if ((mode & ENABLE_LINE_INPUT) != 0u) {
+            if (!ReadConsoleW(in, units, want, &nu, NULL)) return -1;
+            if (nu == 0u || (units[0] == 0x1a && con_high == 0u)) return 0;
+        } else {
+            if (!ReadConsoleInputW(in, recs, want, &got)) return -1;
+            for (DWORD i = 0u; i < got; i++) {
+                DWORD m = con_key(&recs[i], u), reps = recs[i].Event.KeyEvent.wRepeatCount;
+                for (DWORD t = 0u; m != 0u && (t == 0u || (t < reps && nu + m <= want)); t++) {
+                    for (DWORD j = 0u; j < m; j++) units[nu++] = u[j];
+                }
+            }
+        }
+        for (DWORD i = 0u; i < nu; i++) {
+            uint32_t c = units[i];
+            if (con_high != 0u && c >= 0xdc00u && c <= 0xdfffu) {
+                c = 0x10000u + ((con_high - 0xd800u) << 10) + (c - 0xdc00u);
+            } else if (con_high != 0u) {
+                len += utf8_encode(0xfffdu, buf + len);
+            }
+            con_high = 0u;
+            if (c >= 0xd800u && c <= 0xdbffu) con_high = c;
+            else len += utf8_encode(c >= 0xdc00u && c <= 0xdfffu ? 0xfffdu : c, buf + len);
+        }
+    }
+    out = len < n ? len : n;
+    memcpy(dst, buf, out);
+    memcpy(con_pend, buf + out, len - out);
+    con_pend_at = 0u;
+    con_pend_n = len - out;
+    return (int64_t)out;
 }
 
 /* Bytes of the standard input, at most n: the count, 0 at its end, -1 when it has gone away. */
 static int64_t con_read_some(uint8_t *dst, size_t n)
 {
     HANDLE in = GetStdHandle(STD_INPUT_HANDLE);
-    DWORD got = 0u;
+    DWORD got = 0u, mode = 0u;
     if (in == INVALID_HANDLE_VALUE || in == NULL) return -1;
+    if (GetFileType(in) == FILE_TYPE_CHAR && GetConsoleMode(in, &mode)) return con_read_console(in, mode, dst, n);
     if (!ReadFile(in, dst, n > 0x7fffffffu ? 0x7fffffffu : (DWORD)n, &got, NULL)) {
         return GetLastError() == ERROR_BROKEN_PIPE ? 0 : -1;
     }

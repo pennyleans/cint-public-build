@@ -499,7 +499,7 @@ static int record_program(dbg *d, const locate_opts *o, int json, wb_buf *err)
         }
         if (out == NULL && (out = outdir = wb_join(dir, "build" SEP "debug")) == NULL) goto done;
         char *log = wb_join(out, "debug.stderr");
-        int e = log != NULL ? wb_emit(cint, json, dir, rel, out, log, &st, err) : 1;
+        int e = log != NULL ? wb_emit(cint, json, dir, rel, NULL, out, log, &st, err) : 1;
         size_t len = 0;
         char *said = e == 0 ? wb_read_file(log, &len) : NULL;
         if (said != NULL) {   /* cint's diagnostics, after it ends */

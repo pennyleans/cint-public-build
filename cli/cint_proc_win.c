@@ -54,13 +54,9 @@ int cli_init(int *argc, char ***argv)
     int n = 0, i;
     wchar_t **w = CommandLineToArgvW(GetCommandLineW(), &n);
     char **a = w != NULL ? calloc((size_t)n + 1u, sizeof *a) : NULL;
-    if (a == NULL) {
-        return -1;
-    }
+    if (a == NULL) return -1;
     for (i = 0; i < n; i++) {
-        if ((a[i] = narrow(w[i])) == NULL) {
-            return -1;
-        }
+        if ((a[i] = narrow(w[i])) == NULL) return -1;
     }
     LocalFree(w);
     *argc = n;
@@ -85,9 +81,7 @@ int cli_mkdirs(const char *path)
     wchar_t *w = widen(path);
     size_t i, n;
     int ok;
-    if (w == NULL) {
-        return -1;
-    }
+    if (w == NULL) return -1;
     n = wcslen(w);
     for (i = 1; i <= n; i++) {
         if (i == n || w[i] == L'\\' || w[i] == L'/') {
@@ -127,12 +121,16 @@ char *cli_self_path(void)
 {
     wchar_t buf[32768];
     DWORD n = GetModuleFileNameW(NULL, buf, 32768u);
-    char *s;
-    if (n == 0u || n >= 32768u) {
-        return NULL;
-    }
-    s = narrow(buf);
-    return s;
+    /* GetModuleFileNameW gives the launch path, a symlink when cint.exe is linked; cint.toolchain and
+     * lib/ sit beside the real file, so resolve it. The \\?\ prefix goes; a UNC path keeps its \\. */
+    HANDLE h = n != 0u && n < 32768u ? CreateFileW(buf, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                                   NULL, OPEN_EXISTING, 0, NULL) : INVALID_HANDLE_VALUE;
+    if (h == INVALID_HANDLE_VALUE) return NULL;
+    n = GetFinalPathNameByHandleW(h, buf, 32768u, FILE_NAME_NORMALIZED);
+    CloseHandle(h);
+    if (n == 0u || n >= 32768u) return NULL;
+    if (wcsncmp(buf, L"\\\\?\\UNC\\", 8) == 0) { buf[6] = L'\\'; return narrow(buf + 6); }
+    return narrow(wcsncmp(buf, L"\\\\?\\", 4) == 0 ? buf + 4 : buf);
 }
 
 char *cli_self_dir(void)

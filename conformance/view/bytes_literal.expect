@@ -1,0 +1,8 @@
+case view/bytes_literal
+clause SPEC-04 LS-41, LS-42, LS-44, LS-106 (a byte-string literal is a read-only `U8` view of static storage; ruling OQ-307 A)
+source reference
+outcome value
+stdout-bytes 53
+stdout-sha256 d5532d9c143f71a2b92f7197c3c79fc17805210b96ea30a224b1915974e6e658
+return I64 28879871621
+fuel-consumed 21

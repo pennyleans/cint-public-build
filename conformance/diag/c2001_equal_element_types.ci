@@ -1,0 +1,12 @@
+// case: diag/c2001_equal_element_types
+// clause: SPEC-04 LS-71, LS-145 (the arguments of `equal` have one element type; ruling OQ-307 A)
+// subset: cint-core-1 (arrays)
+// entry: run; args: none
+// spec outcome: C2001 at 10:23 (the second argument)
+
+export I64 run() {
+    I32[3] x = [1, 2, 3];
+    I64[3] y = [1, 2, 3];
+    Bool p = equal(x, y);
+    return 0;
+}

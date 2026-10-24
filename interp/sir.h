@@ -25,6 +25,7 @@ enum { SC_NONE, SC_BOOL, SC_I8, SC_I16, SC_I32, SC_I64, SC_U8, SC_U16, SC_U32, S
        SC_I128, SC_I256, SC_I512, SC_I1024, SC_U128, SC_U256, SC_U512 };
 #define SC_COUNT 17
 #define SC_Q SC_COUNT
+#define REDUCE_EQUAL 10u   /* OP_REDUCE's sub for `equal.<T>` (cint_rt_equal; ruling OQ-307 A) */
 
 static inline int sc_is_q(int sc)
 {
@@ -166,7 +167,8 @@ enum { CM_EQ, CM_NE, CM_LT, CM_LE, CM_GT, CM_GE };
 
 typedef struct si_node {
     uint8_t op;
-    uint8_t sub;    /* BO_*, CM_*, or the built-in's number (cint_rt.h section 13) */
+    uint8_t sub;    /* BO_*, CM_*, the built-in's number (cint_rt.h section 13), or a reduction's
+                     * CINT_REDUCE_* code (section 14), REDUCE_EQUAL for `equal` */
     uint8_t form;   /* FM_* */
     uint16_t t1;    /* operand scalar of the operation name; switch: the scrutinee's;
                        struct.copy: 1 where it fills a hidden slot */

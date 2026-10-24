@@ -1,0 +1,7 @@
+case view/equal_fuel
+clause SPEC-04 LS-71; SPEC-01 IM-139 (`equal` charges a reduction's fuel, ceil(n / 64), for views of one shape, and none for views of other shapes; ruling OQ-307 A)
+source reference
+outcome value
+stdout-bytes 0
+return I64 4
+fuel-consumed 9

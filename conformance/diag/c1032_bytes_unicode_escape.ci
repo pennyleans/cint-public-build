@@ -1,0 +1,10 @@
+// case: diag/c1032_bytes_unicode_escape
+// clause: SPEC-04 LS-42, LS-43 (`\u{...}` is a `Str` escape; in a byte-string literal it is C1032; ruling OQ-307 A)
+// subset: cint-core-1 (byte strings)
+// entry: run; args: none
+// spec outcome: C1032 at 8:22 (the backslash)
+
+export I64 run() {
+    in U8[_] v = b"ab\u{41}";
+    return len(v);
+}

@@ -1,0 +1,23 @@
+// case: view/equal_fuel
+// clause: SPEC-04 LS-71; SPEC-01 IM-139 (`equal` charges a reduction's fuel, ceil(n / 64), for views of one shape, and none for views of other shapes; ruling OQ-307 A)
+// subset: cint-core-1 (arrays)
+// entry: run; args: none
+// spec outcome: value I64 4; fuel 9 (entry 1, `equal(x, z)` 0, `equal(x, y)` 4, the slices of 199 elements 4)
+
+export I64 run() {
+    I32[200] x;
+    I32[200] y;
+    I32[3] z;
+    y[199] = 1;
+    I64 r = 0;
+    if (equal(x, z)) {
+        r = r + 1;
+    }
+    if (equal(x, y)) {
+        r = r + 2;
+    }
+    if (equal(x[0..199], y[0..199])) {
+        r = r + 4;
+    }
+    return r;
+}

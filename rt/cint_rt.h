@@ -2318,6 +2318,12 @@ CINT_RT_REDUCE(u16, uint16_t, CINT_TAG_U16, U, 16u)
 CINT_RT_REDUCE(u32, uint32_t, CINT_TAG_U32, U, 32u)
 CINT_RT_REDUCE(u64, uint64_t, CINT_TAG_U64, U, 64u)
 
+/* equal(a, b) at its callee (exec.py Machine.equal; ruling OQ-307 A): views of one rank and
+ * of elements `elem` (Bool, any integer or fixed-point type). Other extents write false and
+ * charge no fuel; else ceil(N / 64) fuel units at `site`, then the elements in logical order,
+ * each its tag's width in bytes (a Bool one byte). */
+bool cint_rt_equal(cint_ctx *ctx, cint_site site, uint32_t elem, const cint_vdesc *xs, const cint_vdesc *ys, bool *out);
+
 /* Kernel dispatch (SPEC-02 F-1 to F-8; ruling R9; CONF-11 format 4).
  *
  * cint_rt_dispatch_number returns the current entry's next dispatch number

@@ -1,0 +1,25 @@
+// case: view/bytes_literal
+// clause: SPEC-04 LS-41, LS-42, LS-44, LS-106 (a byte-string literal is a read-only `U8` view of static storage; ruling OQ-307 A)
+// subset: cint-core-1 (byte strings)
+// entry: run; args: none
+// spec outcome: value I64 28879871621; stdout `11 97 0 255 10 9 13 92 34 39 123 125` and `5538 6849 113 2`
+
+I64 total(in U8[_] s) {
+    I64 t = 0;
+    for i in 0..len(s) {
+        t = t * 7 + s[i] as I64;
+    }
+    return t;
+}
+
+export I64 run() {
+    in U8[_] v = b"a\x00\xff\n\t\r\\\"\'{{}}";
+    U8[3] a = b"abc";
+    I64 before = total(a);
+    a = b"xyz";
+    U8 q = b"pq"[1];
+    I64 n = len(b"") + len(b"é");
+    "{len(v)} {v[0]} {v[1]} {v[2]} {v[3]} {v[4]} {v[5]} {v[6]} {v[7]} {v[8]} {v[9]} {v[10]}\n";
+    "{before} {total(a)} {q} {n}\n";
+    return total(v);
+}

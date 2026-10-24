@@ -194,17 +194,20 @@ static bool take_args(int *argc, char **argv)
     return true;
 }
 
-/* `run DIR [fault_dest [fuel_dest [state_dest]]]`, with `--grant LINE`, `--arg TEXT` and a `--`
- * tail anywhere after DIR, as a compiled program's C main (compiler/back_c.ci; CINTC-OQ-63 for
- * the state destination; cint_program_run_argv, RT-OQ-74 to RT-OQ-76). */
+/* `run DIR [fault_dest [fuel_dest [state_dest]]]`, with `--grant LINE`, `--arg TEXT`,
+ * `--frame-arena N` and a `--` tail anywhere after DIR, as a compiled program's C main
+ * (compiler/back_c.ci; CINTC-OQ-63 for the state destination; cint_program_run_argv, RT-OQ-74 to
+ * RT-OQ-76, RT-OQ-78). */
 static int run_program(int argc, char **argv)
 {
     int nd = 0;
     for (int i = 2; i < argc && strcmp(argv[i], "--") != 0; i++)
-        nd += strcmp(argv[i], "--grant") == 0 || strcmp(argv[i], "--arg") == 0 ? (i++, 0) : 1;
+        nd += strcmp(argv[i], "--grant") == 0 || strcmp(argv[i], "--arg") == 0 || strcmp(argv[i], "--frame-arena") == 0
+                  ? (i++, 0)
+                  : 1;
     if (argc < 2 || nd > 3) {
-        fprintf(stderr, "cint-interp: run takes DIR [fault_dest [fuel_dest [state_dest]]], --grant LINE, --arg TEXT "
-                        "and -- ARG...\n");
+        fprintf(stderr, "cint-interp: run takes DIR [fault_dest [fuel_dest [state_dest]]], --grant LINE, --arg TEXT, "
+                        "--frame-arena N and -- ARG...\n");
         return CINT_EXIT_USAGE;
     }
     int st = load_dir(argv[1]);
@@ -851,7 +854,7 @@ static int interp(int argc, char **argv)
     } else {
         fprintf(stderr, "usage: cint-interp [--trace PATH] observe DIR <cint-harness options>\n"
                         "       cint-interp [--trace PATH] run DIR [fault_dest [fuel_dest [state_dest]]]\n"
-                        "                                  [--grant LINE]...\n"
+                        "                                  [--grant LINE]... [--frame-arena N] [-- ARG...]\n"
                         "       cint-interp [--trace PATH] run --record [--boundary entry|dispatch] PATH DIR\n"
                         "       cint-interp [--trace PATH] run --case [--boundary entry|dispatch] PATH\n"
                         "                                  --source SRC DIR\n"

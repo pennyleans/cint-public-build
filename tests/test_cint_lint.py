@@ -45,6 +45,7 @@ class CintLint(unittest.TestCase):
             "cli/cint_main.c": "int main(void) { return 0; }\n",
             "cli/cint_receipt.c": "int receipt;\n",
             "cli/cint_discover.c": "int discover;\n",
+            "cli/cint_cache.c": "int cache;\n",
             "cli/cint_proc.h": "int cli_process(void);\n",
             "interp/sir_read.c": "int sir;\n",
             "workbench/wb.h": "int wb(void);\n",
@@ -124,7 +125,7 @@ class CintLint(unittest.TestCase):
         self.write("cli/tests/helper.c", "\n" * 3000)
         code, out = self.run_lint()
         self.assertEqual(code, 0, out)
-        self.assertIn("PASS size cint CLI (cli/*.c except cli/cint_receipt.c and cli/cint_discover.c): 1,500 lines "
+        self.assertIn("PASS size cint CLI (cli/*.c except cli/cint_receipt.c, cli/cint_discover.c and cli/cint_cache.c): 1,500 lines "
                       "(target 1,500, ceiling 2,500)", out)
         self.assertIn("INFO size cli headers (cli/*.h): 9,000 lines", out)
         self.write("cli/cint_proc_posix.c", "\n" * 301)
@@ -138,7 +139,7 @@ class CintLint(unittest.TestCase):
         self.write("cli/cint_receipt.c", "\n" * 400)
         code, out = self.run_lint()
         self.assertEqual(code, 0, out)
-        self.assertIn("PASS size cint CLI (cli/*.c except cli/cint_receipt.c and cli/cint_discover.c): 1,500 lines", out)
+        self.assertIn("PASS size cint CLI (cli/*.c except cli/cint_receipt.c, cli/cint_discover.c and cli/cint_cache.c): 1,500 lines", out)
         self.assertIn("PASS size cint CLI receipts (cli/cint_receipt.c): 400 lines (target 400, ceiling 600)", out)
         self.write("cli/cint_receipt.c", "\n" * 401)
         code, out = self.run_lint()

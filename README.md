@@ -93,11 +93,11 @@ cint is not CINT, the C/C++ interpreter of CERN's ROOT, which Cling replaced in 
 
 ## Specifications
 
-SPEC-04P.3, the cint language, holds the whole language in one document. SPEC-01P.3 states the byte encodings and identities, and the index in [docs/spec/README.md](docs/spec/README.md) lists the other editions. An edition does not change once released. A correction that changes no meaning is listed in `docs/spec/ERRATA.md`, and a change of meaning is a new edition. Code comments and conformance cases cite clauses by their identifiers, such as `SPEC-04 LS-17`.
+SPEC-04P.4, the cint language, holds the whole language in one document. SPEC-01P.3 states the byte encodings and identities, and the index in [docs/spec/README.md](docs/spec/README.md) lists the other editions. An edition does not change once released. A correction that changes no meaning is listed in `docs/spec/ERRATA.md`, and a change of meaning is a new edition. Code comments and conformance cases cite clauses by their identifiers, such as `SPEC-04 LS-17`.
 
 ## Status
 
-`cintc` refuses some forms the reference runs, among them several forms on the wide types and an export or extern with a wide or fixed-point parameter or result, with error C9102. SPEC-09P.2 clause 12 lists each one. The standard library has two services, `fs` and `console`, and a service call works only under a grant given with `cint run --grant`. Known limitations, with the cases they concern, are listed in each component's `OPEN.md`.
+`cintc` refuses some forms the reference runs, among them several forms on the wide types and an export or extern with a wide or fixed-point parameter or result, with error C9102. SPEC-09P.3 clause 12 lists each one. The standard library has two services, `fs` and `console`, and a service call works only under a grant, given with `cint run --grant` or taken from the program's manifest. Known limitations, with the cases they concern, are listed in each component's `OPEN.md`.
 
 ## How the work was done
 

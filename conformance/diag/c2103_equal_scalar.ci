@@ -1,0 +1,11 @@
+// case: diag/c2103_equal_scalar
+// clause: SPEC-04 LS-71, LS-145 (`equal` compares arrays or views, and `==` compares scalars; ruling OQ-307 A)
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: C2103 at 9:20 (the first argument)
+
+export I64 run() {
+    I64 x = 3;
+    Bool p = equal(x, x);
+    return 0;
+}

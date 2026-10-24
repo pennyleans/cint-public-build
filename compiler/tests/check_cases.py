@@ -574,6 +574,43 @@ MODULES = [
     ("main_args_inout", "void main(inout U8[_] args) {\n}\n"),
     ("main_args_fixed", "void main(in U8[4] args) {\n}\n"),
     ("main_args_two_grants", "void main(Grants g, Grants h) {\n}\n"),
+    # Ruling OQ-307 A (SPEC-04 LS-41, LS-71): byte strings as read-only `U8` views of static
+    # storage, and `equal`. Last, so that the seeded mutants of the earlier modules keep their texts.
+    ("bytes_values", 'I64 width(in U8[_] v) {\n    return len(v);\n}\n\nexport I64 run() {\n'
+     '    in U8[_] v = b"a\\x00\\xff\\n{{}}";\n    U8[3] a = b"abc";\n    a = b"xyz";\n'
+     '    U8 q = b"pq"[1];\n    I64 n = width(b"") + width(v) + len(b"\u00e9");\n'
+     '    Bool e = equal(a, b"xyz") && !equal(v, b"a");\n    return n + q as I64 + v[2] as I64;\n}\n'),
+    ("bytes_extent", 'export void run() {\n    U8[3] a = b"abcd";\n}\n'),
+    ("bytes_element", 'export void run() {\n    I8[3] a = b"abc";\n}\n'),
+    ("bytes_inout_arg", 'void put(inout U8[_] v) {\n    v[0] = 1;\n}\n\nexport void run() {\n    put(b"abc");\n}\n'),
+    ("bytes_inout_var", 'export void run() {\n    inout U8[_] v = b"abc";\n}\n'),
+    ("bytes_escape", 'export void run() {\n    in U8[_] v = b"\\u{41}";\n}\n'),
+    ("bytes_brace", 'export void run() {\n    in U8[_] v = b"a{b";\n}\n'),
+    ("bytes_kernel", 'kernel k[n](in U8[n] a, out I64[n] b) over [i: n] {\n    b[i] = b"xy"[0] as I64;\n}\n'),
+    ("equal_values", 'export I64 run() {\n    I32[3] x = [1, 2, 3];\n    I64[2, 2] g = [[1, 2], [3, 4]];\n'
+     '    Bool[2] m = [true, false];\n    Q8.8[1] f = [Q8.8.raw(3)];\n'
+     '    Bool p = equal(x, [1, 2, 3]) && equal([1, 2], x[0..2]) && equal(g, g) && equal(m, m) && equal(f, f);\n'
+     '    return 0;\n}\n'),
+    ("equal_element_types", 'export void run() {\n    I32[3] x;\n    I64[3] y;\n    Bool p = equal(x, y);\n}\n'),
+    ("equal_ranks", 'export void run() {\n    I32[3] x;\n    I32[1, 3] y;\n    Bool p = equal(x, y);\n}\n'),
+    ("equal_scalar", 'export void run() {\n    I32 x = 3;\n    Bool p = equal(x, x);\n}\n'),
+    ("equal_count", 'export void run() {\n    I32[3] x;\n    Bool p = equal(x);\n}\n'),
+    ("equal_result", 'export void run() {\n    I32[3] x;\n    I32 p = equal(x, x);\n}\n'),
+    ("equal_structs", 'struct P {\n    I32 a;\n}\n\nexport void run() {\n    P[2] x;\n    Bool p = equal(x, x);\n}\n'),
+    ("equal_literals", 'export void run() {\n    Bool p = equal([1, 2], [1, 2]);\n}\n'),
+    ("equal_string", 'export void run() {\n    Bool p = equal(b"ab", "ab");\n}\n'),
+    ("equal_kernel", 'kernel k[n](in I64[n] a, out I64[n] b) over [i: n] {\n    b[i] = 0;\n'
+     '    if (equal(a, a)) {\n        b[i] = 1;\n    }\n}\n'),
+    # Ruling OQ-315 A (SPEC-04 LS-131a): `call catch (e) { ... };` for an `E!void` call, whose block
+    # may complete; any other error union is C4012 at the call.
+    ("catch_statement", 'error E {\n    bad,\n    worse,\n}\n\nE!void f(I64 x) {\n    if (x < 0) {\n        return .bad;\n    }\n}\n\nE!I64 g() {\n    return .worse;\n}\n\nexport I64 run() {\n    I64 n = 0;\n    for i in 0..3 {\n'
+     '        f(i - 1) catch (e) {\n            if (e == E.bad) {\n                n += 1;\n                continue;\n'
+     '            }\n            n += 2;\n        };\n        n += 10;\n    }\n    f(-1) catch (e) {\n        n += 100;\n    };\n'
+     '    return n;\n}\n'),
+    ("catch_statement_value", 'error E {\n    bad,\n    worse,\n}\n\nE!void f(I64 x) {\n    if (x < 0) {\n        return .bad;\n    }\n}\n\nE!I64 g() {\n    return .worse;\n}\n\nexport void run() {\n    g() catch (e) {\n        return;\n    };\n}\n'),
+    ("catch_statement_value_completes", 'error E {\n    bad,\n    worse,\n}\n\nE!void f(I64 x) {\n    if (x < 0) {\n        return .bad;\n    }\n}\n\nE!I64 g() {\n    return .worse;\n}\n\nexport void run() {\n    g() catch (e) {\n    };\n}\n'),
+    ("catch_statement_not_call", 'error E {\n    bad,\n    worse,\n}\n\nE!void f(I64 x) {\n    if (x < 0) {\n        return .bad;\n    }\n}\n\nE!I64 g() {\n    return .worse;\n}\n\nexport void run() {\n    I64 v = 0;\n    v catch (e) {\n    };\n}\n'),
+    ("catch_statement_bind_scope", 'error E {\n    bad,\n    worse,\n}\n\nE!void f(I64 x) {\n    if (x < 0) {\n        return .bad;\n    }\n}\n\nE!I64 g() {\n    return .worse;\n}\n\nexport void run() {\n    f(1) catch (e) {\n    };\n    E x = e;\n}\n'),
 ]
 
 

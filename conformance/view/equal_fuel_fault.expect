@@ -1,0 +1,14 @@
+case view/equal_fuel_fault
+clause SPEC-04 LS-71; SPEC-01 IM-139 (the fuel of `equal` is charged at the call before any element is read; ruling OQ-307 A)
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 1
+fault.code E_FUEL
+fault.operation fuel.charge
+fault.exact none
+fault.limit I64 4
+fault.position view/equal_fuel_fault.ci:11:9
+fault.revision self
+fault.address none
+fault.stack-depth 0

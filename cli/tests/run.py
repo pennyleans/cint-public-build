@@ -149,9 +149,11 @@ class RunTests(unittest.TestCase):
         if tc is not None:
             options += ["--toolchain", str(tc)]
         command = [str(self.exe), "run", *options, *map(str, args)]
+        # An empty stdin unless the test gives one: a run with no --grant hands the program
+        # cint's stdin (RT-OQ-80), which reads as end of file here.
         result = subprocess.run(command, cwd=ROOT, env=env or self.env,
-                                input=input_bytes, capture_output=True, check=False,
-                                timeout=120)
+                                input=b"" if input_bytes is None else input_bytes, capture_output=True,
+                                check=False, timeout=120)
         (self.out / (name + ".stdout")).write_bytes(result.stdout)
         (self.out / (name + ".stderr")).write_bytes(result.stderr)
         (self.out / (name + ".json")).write_bytes(canonical({
@@ -196,7 +198,7 @@ class RunTests(unittest.TestCase):
                          "meaning": None, "revision": None, "source_map": None})
         self.assertEqual(identity["source"]["files"][module], sha(source.read_bytes()))
         self.assertEqual(identity["method"], {"depth_limit": 256, "frame_arena_bytes": 16777216,
-                         "fuel_budget": "none", "fuel_model": "fuel-v1", "stdin": "null"})
+                         "fuel_budget": "none", "fuel_model": "fuel-v1", "grants": [], "stdin": "null"})
         self.assertEqual(outcome["exit_status"], status)
         self.assertEqual(outcome["fuel_consumed"], fuel)
         self.assertEqual(outcome["stdout"], {"bytes": len(stdout), "sha256": sha(stdout)})
@@ -259,6 +261,24 @@ class RunTests(unittest.TestCase):
         self.assertEqual(len(result.stdout), 23)
         self.assertEqual(result.stderr, b"")
         self.assertEqual(set(cwd.rglob("*")), before)
+
+    def test_hello_through_symlink(self):
+        """Launched through a symlink in another directory, cint still finds cint.toolchain and lib/
+        beside the real executable (macOS took the launch path from _NSGetExecutablePath)."""
+        with tempfile.TemporaryDirectory(prefix="cint-symlink-") as temp:
+            link = pathlib.Path(temp) / self.exe.name
+            try:
+                os.symlink(self.exe, link)
+            except OSError as error:
+                if os.name == "nt":
+                    self.skipTest("symlinks are unavailable here: %s" % error)
+                raise
+            result = subprocess.run([str(link), "run", "--cache", str(self.out / "cache"),
+                                     str(ROOT / "examples/hello.ci")], cwd=temp, env=self.env,
+                                    capture_output=True, check=False, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, (ROOT / "examples/hello.stdout").read_bytes())
+        self.assertEqual(result.stderr, b"")
 
     def test_hello_human_receipt(self):
         receipt = self.out / "hello human.json"
@@ -921,7 +941,8 @@ class RunTests(unittest.TestCase):
     def fake(self, mode):
         tc = self.clone_toolchain(self.helper, "fake.toolchain")
         env = dict(self.env, CINT_TEST_MODE=mode)
-        return self.invoke(["--json", "examples/hello.ci"], tc=tc, env=env,
+        # The fake compiler's output depends on CINT_TEST_MODE, which no run key sees (OQ-313).
+        return self.invoke(["--json", "--rebuild", "examples/hello.ci"], tc=tc, env=env,
                            input_bytes=b"the program must not read this\n")
 
     def test_host_rejection_captures_both_channels(self):
@@ -971,10 +992,18 @@ class RunTests(unittest.TestCase):
                     self.assertEqual(result.stderr, b"")
 
     def test_program_stdin_is_null_compiler_output_captured(self):
-        result = self.fake("stdin")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, b"stdin:null\n")
-        self.assertEqual(result.stderr, b"")
+        # A run with a receipt, or with a --grant line that names no console.input, gives the program
+        # the null device; a run with neither may take console.input from the program's manifest, so
+        # its stdin is cint's own (OQ-314, RT-OQ-80).
+        tc = self.clone_toolchain(self.helper, "fake.toolchain")
+        env = dict(self.env, CINT_TEST_MODE="stdin")
+        for extra, want in (((), b"stdin:inherited\n"), (("--receipt", self.out / "stdin-null.json"), b"stdin:null\n")):
+            with self.subTest(extra=extra):
+                result = self.invoke(["--json", "--rebuild", *extra, "examples/hello.ci"], tc=tc, env=env,
+                                     input_bytes=b"the program must not read this\n")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, want)
+                self.assertEqual(result.stderr, b"")
 
     def test_program_unrecognized_status(self):
         result = self.fake("bad-status")
@@ -1026,6 +1055,114 @@ class RunTests(unittest.TestCase):
         self.assertNotEqual(records[0]["observations"]["cache"], records[1]["observations"]["cache"])
         self.assertEqual(records[0]["identity"], records[1]["identity"])
         self.assertEqual(records[0]["outcome"], records[1]["outcome"])
+
+    ARGDEMO_PROJECT = {"main.ci": b'''import fs;
+requires fs.read("/arg1");
+requires fs.write("/arg1");
+
+export fs.FsError!void main(Grants g, in U8[_] args) {
+    in U8[_] p = args[0..len(args) - 1];
+    U8[64] buf;
+    I64 n = try fs.read(g, p, 0, buf);
+    "read {n} bytes\\n";
+    try fs.put(g, p, b"new text\\n");
+    return;
+}
+'''}
+
+    def test_grants_from_arguments(self):
+        """OQ-314 A (SPEC-07 SEC-CAP-6a): with no --grant, a `requires` on /arg1 is backed by the
+        directory of program argument 1, which the program reads as /arg1/<name>; one --grant turns
+        that off; a built executable takes the same arguments after `--`."""
+        root = self.project("arg-grants", self.ARGDEMO_PROJECT)
+        data = self.out / "arg-grants-data"
+        data.mkdir(exist_ok=True)
+        note = data / "note.txt"
+        note.write_bytes(b"hello\n")
+        result = self.invoke([root / "main.ci", "--", note])
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"read 6 bytes\n", b""))
+        self.assertEqual(note.read_bytes(), b"new text\n")
+        # A last part that is not a logical segment is no grant, and the program gets the path as given.
+        odd = data / "a b.txt"
+        odd.write_bytes(b"x")
+        result = self.invoke(["--json", root / "main.ci", "--", odd])
+        self.one_json(result, "CINT-ERROR-1", 6)
+        self.assertEqual(odd.read_bytes(), b"x")
+        # One --grant line is the whole grant: the argument stays as given and /arg1 is not backed.
+        note.write_bytes(b"hello\n")
+        result = self.invoke(["--json", "--grant", "fs.read:/arg1=%s" % data, root / "main.ci", "--", note])
+        self.one_json(result, "CINT-ERROR-1", 6)
+        self.assertEqual(note.read_bytes(), b"hello\n")
+        out = self.out / "arg-grants-out"
+        built = self.command("build", ["--out", out, root / "main.ci"])
+        self.assertEqual(built.returncode, 0, built.stderr)
+        program = out / ("main.exe" if CONFIG.leg == "msvc" else "main")
+        ran = subprocess.run([str(program), "--", str(note)], capture_output=True, check=False, timeout=60)
+        self.assertEqual((ran.returncode, ran.stdout, ran.stderr), (0, b"read 6 bytes\n", b""))
+        self.assertEqual(note.read_bytes(), b"new text\n")
+
+    APP_ECHO = {"echo.ci": b'export void main(in U8[_] args) {\n    for i in 0..len(args) {\n        "{args[i]} ";\n    }\n'
+                           b'    "\\n";\n}\n'}
+
+    def test_build_app(self):
+        """OQ-318 A (SPEC-06 3.1): with `build --app` every word after the executable's name is a
+        program argument, as after `--`, so `main FILE` takes FILE and the manifest's grant on /arg1
+        follows it; options of the executable's own are arguments too; --lib refuses --app."""
+        root = self.project("build-app", self.ARGDEMO_PROJECT)
+        data = self.out / "build-app-data"
+        data.mkdir(exist_ok=True)
+        note = data / "note.txt"
+        note.write_bytes(b"hello\n")
+        out = self.out / "build-app-out"
+        built = self.command("build", ["--app", "--out", out, root / "main.ci"])
+        self.assertEqual(built.returncode, 0, built.stderr)
+        program = out / ("main.exe" if CONFIG.leg == "msvc" else "main")
+        ran = subprocess.run([str(program), str(note)], capture_output=True, check=False, timeout=60)
+        self.assertEqual((ran.returncode, ran.stdout, ran.stderr), (0, b"read 6 bytes\n", b""))
+        self.assertEqual(note.read_bytes(), b"new text\n")
+        echo = self.project("build-app-echo", self.APP_ECHO)
+        for extra in ([], ["--frame-arena", "3000000"]):
+            with self.subTest(extra=extra):
+                out = self.out / ("build-app-echo-out%d" % len(extra))
+                built = self.command("build", ["--app", *extra, "--out", out, echo / "echo.ci"])
+                self.assertEqual(built.returncode, 0, built.stderr)
+                words = ["--grant", "fs.read:/x", "--frame-arena", "5", "--arg", "--", "-", "a b", ""]
+                ran = subprocess.run([str(out / ("echo.exe" if CONFIG.leg == "msvc" else "echo")), *words],
+                                     capture_output=True, check=False, timeout=60)
+                joined = b"".join(w.encode() + b"\0" for w in words)
+                self.assertEqual((ran.returncode, ran.stdout, ran.stderr),
+                                 (0, b"".join(b"%d " % c for c in joined) + b"\n", b""))
+        self.tool_error(self.command("build", ["--json", "--app", "--lib", root / "main.ci"]), 4)
+
+    def test_run_cache(self):
+        """OQ-313 (SPEC-06 4.2): a second run of unchanged modules runs the kept executable and
+        compiles nothing; a changed module, --rebuild, a corrupted entry and --receipt compile."""
+        cache = self.out / "run cache"
+        source = self.out / "run-cache-src"
+        source.mkdir(exist_ok=True)
+        (source / "main.ci").write_bytes(b'export void main() {\n    "one\\n";\n}\n')
+
+        def run(*extra):
+            before = set(cache.glob("*/run-*/out")) if cache.exists() else set()
+            result = self.invoke([*extra, source / "main.ci"], cache=cache)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return result.stdout, len(set(cache.glob("*/run-*/out")) - before)
+
+        self.assertEqual(run(), (b"one\n", 1))
+        entries = list(cache.glob("exe/*/program" + (".exe" if CONFIG.leg == "msvc" else "")))
+        self.assertEqual(len(entries), 1)
+        record = entries[0].parent / "program.sha256"
+        self.assertEqual(record.read_text(), sha(entries[0].read_bytes()))
+        self.assertEqual(run(), (b"one\n", 0))
+        self.assertEqual(run("--rebuild"), (b"one\n", 1))
+        self.assertEqual(run("--receipt", self.out / "run-cache.json"), (b"one\n", 1))
+        record.write_text("0" * 64)
+        self.assertEqual(run(), (b"one\n", 1))
+        self.assertEqual(record.read_text(), sha(entries[0].read_bytes()))
+        (source / "main.ci").write_bytes(b'export void main() {\n    "two\\n";\n}\n')
+        self.assertEqual(run(), (b"two\n", 1))
+        self.assertEqual(run(), (b"two\n", 0))
+        self.assertEqual(len(list(cache.glob("exe/*/program" + (".exe" if CONFIG.leg == "msvc" else "")))), 2)
 
     def fault_record(self, operands=(), exact=None, path=b"hello.ci", kernel=None, version=2,
                      operation=b"add.checked.i64"):
@@ -1596,6 +1733,64 @@ class RunTests(unittest.TestCase):
                                  ("run", [ROOT / "cli/tests/fixtures/three_tests.ci"])):
             with self.subTest(subcommand=subcommand, args=args):
                 self.tool_error(self.command(subcommand, ["--json", *args]), 4)
+
+    ARENA_PROJECT = {"big.ci": b'void main() {\n    U8[3000000] a;\n    a[2999999] = 7;\n    "{a[2999999]}\\n";\n}\n'}
+
+    def test_frame_arena_and_receipt_method(self):
+        # Ruling OQ-308 A (rt/OPEN.md RT-OQ-78): `run --frame-arena N` sets the frame-arena capacity
+        # to N elements, and the run receipt's method records it in bytes, with the grants' capability
+        # texts and whether the program reads this stdin (SPEC-06 3.4a, 12.2).
+        root = self.project("frame-arena", self.ARENA_PROJECT)
+        fault = self.one_json(self.invoke(["--json", root / "big.ci"]), "CINT-FAULT-1", 1)
+        self.assertEqual((fault["code"], fault["operation"]), ("E_BOUNDS", "arena.alloc"))
+        self.assertEqual(fault["operands"][-1], {"t": "I64", "v": "2097152"})
+        fault = self.one_json(self.invoke(["--json", "--frame-arena", "2999999", root / "big.ci"]), "CINT-FAULT-1", 1)
+        self.assertEqual((fault["code"], fault["operands"][-1]), ("E_BOUNDS", {"t": "I64", "v": "2999999"}))
+        receipt_path = self.out / "frame-arena.json"
+        data = self.out / "frame-arena-data"
+        data.mkdir(exist_ok=True)
+        result = self.invoke(["--receipt", receipt_path, "--frame-arena", "3000000", "--grant", "fs.read:/d=%s" % data,
+                              "--grant", "console.input", "--grant", "console.input", root / "big.ci"],
+                             input_bytes=b"")
+        self.assertEqual((result.returncode, result.stdout), (0, b"7\n"), result.stderr)
+        method = self.receipt_of(receipt_path, "run")["identity"]["method"]
+        self.assertEqual(method, {"depth_limit": 256, "frame_arena_bytes": 24000000, "fuel_budget": "none",
+                                  "fuel_model": "fuel-v1", "grants": ["console.input", "fs.read:/d"],
+                                  "stdin": "inherited"})
+        # The host directory as the receipt's JSON spells it, each `\` of a Windows path doubled.
+        self.assertNotIn(json.dumps(str(data), ensure_ascii=False)[1:-1],
+                         receipt_path.read_text(encoding="utf-8").split('"observations"')[0])
+        for args in (["--frame-arena", "0"], ["--frame-arena", "x"], ["--frame-arena", "012"],
+                     ["--frame-arena", "1125899906842624"], ["--frame-arena", "5", "--frame-arena", "6"],
+                     ["--frame-arena"]):
+            with self.subTest(args=args):
+                self.tool_error(self.invoke(["--json", *args, root / "big.ci"]), 4)
+        self.tool_error(self.command("test", ["--json", "--frame-arena", "5", root / "big.ci"]), 4)
+        self.tool_error(self.command("build", ["--json", "--lib", "--frame-arena", "5", root / "big.ci"]), 4)
+
+    def test_build_frame_arena(self):
+        # `build --frame-arena N`: the executable runs with N elements, a later --frame-arena on its
+        # own command line replaces it (SPEC-03 5.3), and the build receipt's method records it.
+        root = self.project("build-frame-arena", self.ARENA_PROJECT)
+        out = self.out / "build-frame-arena-out"
+        receipt_path = self.out / "build-frame-arena.json"
+        result = self.command("build", ["--receipt", receipt_path, "--frame-arena", "3000000", "--out", out,
+                                        root / "big.ci"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        program = out / ("big.exe" if CONFIG.leg == "msvc" else "big")
+        ran = subprocess.run([str(program)], capture_output=True, check=False, timeout=60)
+        self.assertEqual((ran.returncode, ran.stdout, ran.stderr), (0, b"7\n", b""))
+        ran = subprocess.run([str(program), "--frame-arena", "2999999"], capture_output=True, check=False, timeout=60)
+        self.assertEqual((ran.returncode, ran.stdout), (1, b""))
+        self.assertIn(b"arena.alloc", ran.stderr)
+        self.assertEqual(self.receipt_of(receipt_path, "build")["identity"]["method"], {"frame_arena_bytes": 24000000})
+        plain = self.out / "build-frame-arena-plain"
+        self.assertEqual(self.command("build", ["--out", plain, root / "big.ci"]).returncode, 0)
+        ran = subprocess.run([str(plain / program.name)], capture_output=True, check=False, timeout=60)
+        self.assertEqual(ran.returncode, 1)
+        ran = subprocess.run([str(plain / program.name), "--frame-arena", "3000000"], capture_output=True, check=False,
+                             timeout=60)
+        self.assertEqual((ran.returncode, ran.stdout), (0, b"7\n"))
 
     WIDTH_PROJECT = {
         "main.ci": b'import util.wmath;\n\nvoid main() {\n    I1024 a = 1000000007 as I1024;\n'

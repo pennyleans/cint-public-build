@@ -344,14 +344,15 @@ def _int_value(word: str, pos: Position) -> int:
     return value
 
 
-def _escape_value(body: str, pos: Position, in_str: bool) -> int:
-    """The scalar value of one escape (SPEC-04 3.8). `in_str` admits `\\u{...}`."""
+def _escape_value(body: str, pos: Position, in_str: bool, in_bytes: bool = False) -> int:
+    """The scalar value of one escape (SPEC-04 3.8). `in_str` admits `\\u{...}`; `in_bytes`
+    admits `\\x80` to `\\xFF` (LS-42)."""
     simple = {"\\\\": 0x5C, '\\"': 0x22, "\\'": 0x27, "\\n": 0x0A, "\\r": 0x0D, "\\t": 0x09, "\\0": 0x00}
     if body in simple:
         return simple[body]
     if body.startswith("\\x") and len(body) == 4:
         v = int(body[2:], 16)
-        if v <= 0x7F:
+        if v <= 0x7F or in_bytes:
             return v
         error("C1032", pos, "\\x escapes in strings and characters are 00 to 7F")
     if in_str and body.startswith("\\u{") and body.endswith("}") and 1 <= len(body) - 4 <= 6:
@@ -434,3 +435,31 @@ def string_parts(tok: Token, allow_holes: bool) -> list:
     if buf or not parts:
         parts.append(bytes(buf))
     return parts
+
+
+def bytes_value(tok: Token) -> bytes:
+    """The bytes of a byte-string literal `b"..."` (SPEC-04 LS-41 to LS-44): its characters in
+    UTF-8, the escapes of LS-42 with `\\x00` to `\\xFF` and no `\\u{...}`, `{{` and `}}` as one
+    brace; a lone `{` is C1033 (holes are for print statements, LS-44) and a lone `}` C1039.
+    Positions count from the character after `b"`, as `compiler/parse.ci` string_pass does."""
+    raw = tok.value
+    path_pos = lambda k: Position(tok.path, tok.line, tok.col + 2 + k)
+    buf = bytearray()
+    k = 0
+    while k < len(raw):
+        ch = raw[k]
+        if ch == "\\":
+            body = Lexer(raw[k:], "", tok.line, tok.col + 2 + k)._escape_text()
+            buf.append(_escape_value(body, path_pos(k), in_str=False, in_bytes=True))
+            k += len(body)
+        elif ch in "{}" and raw[k + 1:k + 2] == ch:
+            buf += ch.encode("ascii")
+            k += 2
+        elif ch == "{":
+            error("C1033", path_pos(k), "interpolation hole outside a print statement, format call or assert message")
+        elif ch == "}":
+            error("C1039", path_pos(k), "a literal `}` is written `}}`")
+        else:
+            buf += ch.encode("utf-8")
+            k += 1
+    return bytes(buf)

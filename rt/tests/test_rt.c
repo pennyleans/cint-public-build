@@ -3121,6 +3121,22 @@ static cint_status p_args(cint_ctx *ctx, int64_t fuel)
     return cint_rt_entry_end(ctx);
 }
 
+/* A run-time local array of 3,000,000 one-byte elements, then "arena\n": past the default
+ * frame-arena capacity of 2,097,152 elements, so it runs only under `--frame-arena` with a
+ * count of at least 3,000,000 (OQ-308, RT-OQ-78). */
+static cint_status p_arena(cint_ctx *ctx, int64_t fuel)
+{
+    void *p = NULL;
+    cint_status st = cint_rt_entry_begin(ctx, p_site(1u), fuel, CINT_DEPTH_FROM_CONFIG);
+    if (st != CINT_OK) {
+        return st;
+    }
+    if (cint_rt_scratch(ctx, p_site(1u), 3000000, 1u, &p)) {
+        (void)p_text(ctx, "arena\n");
+    }
+    return cint_rt_entry_end(ctx);
+}
+
 /* I64 big = MAX; "partial: big={big}"; I64 c = big + 1; "never\n"; */
 static cint_status p_print_then_fault(cint_ctx *ctx, int64_t fuel)
 {
@@ -3261,6 +3277,7 @@ static const struct {
     {"state_fault", p_state_fault, CINT_FUEL_UNBOUNDED, &p_states},
     {"state_bad_table", p_state_error, CINT_FUEL_UNBOUNDED, &p_states_bad},
     {"args", p_args, CINT_FUEL_UNBOUNDED, NULL},
+    {"arena", p_arena, CINT_FUEL_UNBOUNDED, NULL},
 };
 
 /* dests: the fault destination, then (cint_program_run_state) the fuel and
@@ -4162,6 +4179,65 @@ static void test_reductions(void)
     CHECK(cint_rt_reduce(ctx, S_OP, CINT_REDUCE_SUM, CINT_TAG_I64, CINT_TAG_I64, &xs, NULL, false, 0u, &out) &&
           out == 0u, "no elements");
     CHECK(cint_rt_entry_end(ctx) == CINT_OK && fuel_of(ctx) == 1, "no elements: no charge");
+
+    /* equal (ruling OQ-307 A): other extents are false with no fuel, else a reduction's charge. */
+    {
+        bool eq = false;
+        for (i = 0; i < 70; i++) {
+            a64[i] = i % 3;
+        }
+        xs = vd1(a64, 0, 65, 1);
+        ys = vd1(a64, 3, 65, 1);
+        CHECK(cint_rt_entry_begin(ctx, S_FUEL, 3, 8) == CINT_OK, "entry");
+        CHECK(cint_rt_equal(ctx, S_OP, CINT_TAG_I64, &xs, &ys, &eq) && eq, "65 equal elements");
+        CHECK(cint_rt_entry_end(ctx) == CINT_OK && fuel_of(ctx) == 3, "two units");
+        ys = vd1(a64, 1, 65, 1);
+        CHECK(cint_rt_entry_begin(ctx, S_FUEL, 3, 8) == CINT_OK, "entry");
+        CHECK(cint_rt_equal(ctx, S_OP, CINT_TAG_I64, &xs, &ys, &eq) && !eq, "a first element that differs");
+        CHECK(cint_rt_entry_end(ctx) == CINT_OK, "entry end");
+        ys = vd1(a64, 0, 64, 1);
+        CHECK(cint_rt_entry_begin(ctx, S_FUEL, 1, 8) == CINT_OK, "entry");
+        CHECK(cint_rt_equal(ctx, S_OP, CINT_TAG_I64, &xs, &ys, &eq) && !eq, "65 and 64 elements");
+        CHECK(cint_rt_entry_end(ctx) == CINT_OK && fuel_of(ctx) == 1, "other extents: no charge");
+        CHECK(cint_rt_entry_begin(ctx, S_FUEL, 2, 8) == CINT_OK, "entry");
+        CHECK(!cint_rt_equal(ctx, S_OP, CINT_TAG_I64, &xs, &xs, &eq), "out of fuel");
+        CHECK(cint_rt_entry_end(ctx) == CINT_FAULT && fuel_of(ctx) == 1, "the failed charge is not counted");
+        CHECK_REC(ctx, "9 fuel.charge | limit I64 2", "equal's E_FUEL");
+        truth[0] = true;
+        truth[1] = false;
+        truth[2] = true;
+        truth[3] = false;
+        m16[0] = 1;
+        m16[1] = 2;
+        m16[2] = 3;
+        m16[3] = 1;
+        m16[4] = 3;
+        m16[5] = 2;
+        CHECK(cint_rt_entry_begin(ctx, S_FUEL, 8, 8) == CINT_OK, "entry");
+        xs = vd1(truth, 0, 2, 1);
+        ys = vd1(truth, 2, 2, 1);
+        CHECK(cint_rt_equal(ctx, S_OP, CINT_TAG_BOOL, &xs, &ys, &eq) && eq, "Bool elements");
+        xs = vd2(m16, 0, 2, 2, 2, 1);
+        ys = vd2(m16, 0, 2, 2, 1, 2);
+        CHECK(cint_rt_equal(ctx, S_OP, CINT_TAG_I16, &xs, &ys, &eq) && !eq, "a view and its transpose differ");
+        CHECK(cint_rt_equal(ctx, S_OP, CINT_TAG_I16, &xs, &xs, &eq) && eq, "a view equals itself");
+        xs = vd2(m16, 1, 1, 2, 2, 1);
+        ys = vd2(m16, 5, 1, 2, 2, -1);
+        CHECK(cint_rt_equal(ctx, S_OP, CINT_TAG_I16, &xs, &ys, &eq) && eq, "logical order through a reversed view");
+        ys = vd2(m16, 1, 2, 1, 1, 1);
+        CHECK(cint_rt_equal(ctx, S_OP, CINT_TAG_I16, &xs, &ys, &eq) && !eq, "extents 1x2 and 2x1");
+        CHECK(cint_rt_entry_end(ctx) == CINT_OK && fuel_of(ctx) == 5, "one unit for each compared view pair");
+        CHECK(cint_rt_entry_begin(ctx, S_FUEL, 8, 8) == CINT_OK, "entry");
+        ys.rank = 1;
+        CHECK(!cint_rt_equal(ctx, S_OP, CINT_TAG_I16, &xs, &ys, &eq), "ranks");
+        CHECK(cint_rt_entry_end(ctx) == CINT_FAULT, "a refused rank faults");
+        CHECK_REC(ctx, "10 dispatch.admit", "views of two ranks are refused");
+        CHECK(cint_rt_entry_begin(ctx, S_FUEL, 8, 8) == CINT_OK, "entry");
+        xs = vd1(a64, 0, 3, 1);
+        CHECK(!cint_rt_equal(ctx, S_OP, CINT_TAG_Z, &xs, &xs, &eq), "a Z element");
+        CHECK(cint_rt_entry_end(ctx) == CINT_FAULT, "a refused element type faults");
+        CHECK_REC(ctx, "10 dispatch.admit", "an element type of no array is refused");
+    }
 
     /* Arguments no emitted code passes, and a faulted context. */
     xs = vd1(a64, 0, 3, 1);

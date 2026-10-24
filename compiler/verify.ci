@@ -625,8 +625,14 @@ export I64 check_func[nf](inout lowering.Sir[_] sir, in lowering.SirFunc[nf] fun
                     ok = operand(sir, funcs, slots, fn, i, sir[i].c as I64, ta) && ta[0] == bo;
                 }
             case lowering.SO_VBEGIN, lowering.SO_VTRANS, lowering.SO_VREV, lowering.SO_VEND:
-                ok = view_local(funcs, slots, fn, a, ty) && elements_of(funcs, slots, fn, b, ty) && sir[i].dst < 0 &&
-                    sir[i].f >= 0 && sir[i].f < 5;
+                ok = view_local(funcs, slots, fn, a, ty) && sir[i].dst < 0 && sir[i].f >= 0 && sir[i].f < 5;
+                if (k == lowering.SO_VBEGIN && sir[i].e == 3) {
+                    // A byte string's view (ruling OQ-307 A): rank 1 of U8 over SO_SDATA node val.
+                    ok = ok && b == -1 && ty == lowering.T_U8 && lowering.slot_rank(slots, a) == 1 &&
+                        string_node(sir, funcs, fn, i, sir[i].val);
+                } else {
+                    ok = ok && elements_of(funcs, slots, fn, b, ty);
+                }
             case lowering.SO_VPICK:
                 ok = view_local(funcs, slots, fn, a, ty) && operand(sir, funcs, slots, fn, i, b, tb) &&
                     tb[0] == lowering.T_I64 as I64 && elements_of(funcs, slots, fn, sir[i].c as I64, ty) &&
@@ -652,10 +658,14 @@ export I64 check_func[nf](inout lowering.Sir[_] sir, in lowering.SirFunc[nf] fun
                 I64 rop = (sir[i].f & 15) as I64;
                 I64 rmode = (sir[i].f >> 4) as I64;
                 ok = sir[i].dst >= 0 && scalar(ty) && elements_of(funcs, slots, fn, a, sir[i].val as I32) &&
-                    (b == -1 || elements_of(funcs, slots, fn, b, sir[i].val as I32)) && rop >= 1 && rop <= 9 &&
+                    (b == -1 || elements_of(funcs, slots, fn, b, sir[i].val as I32)) && rop >= 1 && rop <= 10 &&
                     ((sir[i].c as I64) == lowering.NO_OPERAND ||
                      (operand(sir, funcs, slots, fn, i, sir[i].c as I64, ta) && ta[0] == sir[i].val));
-                if (ok && (lowering.is_q(ty) || lowering.is_q(sir[i].val as I32))) {
+                if (ok && rop == 10) {
+                    // equal (ruling OQ-307 A): two views of one element type and rank, a Bool.
+                    ok = ty == lowering.T_BOOL && b >= 0 && (sir[i].c as I64) == lowering.NO_OPERAND && rmode == 0 &&
+                        lowering.slot_rank(slots, a) == lowering.slot_rank(slots, b);
+                } else if (ok && (lowering.is_q(ty) || lowering.is_q(sir[i].val as I32))) {
                     // Fixed point (box 15 unit 4e; RT-OQ-57): the element's format, not count or
                     // fold_checked(mul); dot into a fixed-point type with a mode, f / 16, when it
                     // rounds.

@@ -2,6 +2,37 @@
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), with one section added: **Compiler coverage**, the conformance counts for the release and the cases that moved from unsupported to compared. Versions follow [Semantic Versioning](https://semver.org/); before 1.0, a minor version may break anything.
 
+## [0.2.4] - 2026-10-24
+
+### Added
+
+- `cint run` keeps the executable it built, and a later run of the same program starts it without building it. `--rebuild` builds anyway. A run with `--receipt` or `--width-report` always builds (SPEC-06P.3 5.4).
+- A run takes its grants from the program when no `--grant` line is given. Those grants are a capability with no path root and a file capability on `/argK`, which backs the directory of program argument K. An executable that `cint build` writes does the same (SPEC-06P.3 5.4, SPEC-04P.4 6.9.9).
+- The language has byte-string literals, `b"abc"`, and the built-in function `equal(a, b)` (SPEC-04P.4 6.4.8, 7.4).
+- A `catch` statement handles a call whose result is `E!void`, as in `f() catch (e) { ... };`, and its block may complete (SPEC-04P.4 6.11.4).
+- `cint build --app`: the executable takes every word after its name as a program argument, so it needs no launcher (SPEC-06P.3 5.5).
+- `--frame-arena N` sets the capacity of the frame arena for `cint run` and `cint build`.
+- A run receipt names the `--grant` lines and says whether standard input was the null device. `cint explain --stdlib DIR` names the standard library root.
+- The release publishes five specification editions: SPEC-03P.3, SPEC-04P.4, SPEC-06P.3, SPEC-09P.3 and GLOSSARY-P.4. SPEC-01P.3 and SPEC-02P.2 stay in force.
+
+### Fixed
+
+- `cintc` accepts an element of a module-level array of rank 2 to 4 that a function reads only inside a hole of a print string.
+- `cint` finds `cint.toolchain` and `lib/` beside the real executable when it is started through a symbolic link.
+- On the Windows console in raw mode, a window resize no longer holds up a timed `read`, and Ctrl+Z, Ctrl+Y and Ctrl+C reach the program as 0x1A, 0x19 and 0x03. The arrows, Home, End, Page Up, Page Down, Insert, Delete and F3 arrive as xterm sequences, and input and output are UTF-8.
+
+### Compiler coverage
+
+`cintc` refuses the forms that SPEC-09P.3 clause 12 lists with C9102; the `catch` statement and the `catch` expression on a call of a function of an imported module are among them. The suite holds 935 programs and 1,868,178 records. The agreement of `cintc` and the interpreter with the reference was not measured again for 0.2.4; the counts of 0.2.3 hold for the 0.2.2 sources and are not claimed here.
+
+### Known issues
+
+- The workbench, `cint repl` and `cint debug` refuse a module that declares an extern or a `requires` (C4012).
+- On the Windows console, F1, F2 and F4 to F12 reach a program as nothing. Outside raw mode the console's own output code page applies, and in line mode a Ctrl+Z at the start of a read ends the input.
+- A receipt records the grants given with `--grant`. It does not record the grants a run takes from its program or the program arguments.
+- `cint test` takes `--grant` lines, but a test holds no `Grants` value, so they grant no call.
+- `fs` does not list, create, remove or rename; a grant set cannot be narrowed.
+
 ## [0.2.3] - 2026-10-23
 
 0.2.3 takes in 0.2.1 and 0.2.2, which were not published on their own; 0.2.3 is 0.2.2 with one fix.

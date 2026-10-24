@@ -1,0 +1,15 @@
+// case: view/equal_fuel_fault
+// clause: SPEC-04 LS-71; SPEC-01 IM-139 (the fuel of `equal` is charged at the call before any element is read; ruling OQ-307 A)
+// subset: cint-core-1 (arrays)
+// entry: run; args: none; fuel 4
+// spec outcome: fault E_FUEL at 11:9 (the call of `equal`)
+
+export I64 run() {
+    I32[200] x;
+    I32[200] y;
+    I64 r = 0;
+    if (equal(x, y)) {
+        r = 1;
+    }
+    return r;
+}

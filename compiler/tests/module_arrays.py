@@ -66,6 +66,12 @@ VALUES = {
     'rank2_with_rank1': 'I64[2] xs = [5, 6];\nI64 n = 2;\nI64[2, 2] m = [[1, 2], [3, 4]];\n'
                         'export I64 run() { m[1, 1] = xs[0] + n; xs[1] = m[0, 1]; return m[1, 1] * 100 + xs[1] * 10 + n; }',
     'rank2_unnamed': 'I64[2, 2] m;\nI64 other() { return 1; }\nexport I64 run() { return other(); }',
+    # A function that names the array only in a print hole views it too: the hole's tokens
+    # follow the module's (lowering.body_names).
+    'rank2_print_hole': 'I64[2, 3] m = [[1, 2, 3], [4, 5, 6]];\nvoid show() { "{m[1, 2]} {m[0, 0] + m[1, 0]}\\n"; }\n'
+                        'export I64 run() { show(); "{m[0, 1]:>3}\\n"; return 0; }',
+    'rank3_print_hole': 'U8[2, 2, 2] c = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]];\n'
+                        'export I64 run() { "{c[1, 0, 1]} {c[0, 1, 1] as I64 * 2}\\n"; return 1; }',
     'rank2_bounds_fault': 'I64[2, 2] m;\nexport I64 run() { I64 k = 2; return m[0, k]; }',
     'rank2_overflow_fault': 'I8[1, 1] m = [[127]];\nexport I64 run() { m[0, 0] += 1; return 0; }',
     # Up to 65,536 elements whatever their type (OQ-297; rt/OPEN.md RT-OQ-61).

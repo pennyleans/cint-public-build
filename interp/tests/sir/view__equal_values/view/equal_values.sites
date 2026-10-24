@@ -1,0 +1,228 @@
+module view.equal_values
+sites view/equal_values.ci 1:8:12:equal.u8 2:13:18:shl.checked.i64 3:18:12:fuel.charge 4:26:13:copy.shape 5:27:17:equal.i32 6:27:13:call.enter 7:28:17:equal.i32 8:28:13:call.enter 9:28:11:add.checked.i64 10:29:24:slice.checked.i32 11:29:17:equal.i32 12:29:13:call.enter 13:29:11:add.checked.i64 14:30:17:equal.i32 15:30:13:call.enter 16:30:11:add.checked.i64 17:31:17:equal.bool 18:31:13:call.enter 19:31:11:add.checked.i64 20:32:17:equal.i64 21:32:13:call.enter 22:32:11:add.checked.i64 23:33:17:equal.i64 24:33:13:call.enter 25:33:11:add.checked.i64 26:34:24:slice.checked.i64 27:34:24:slice.checked.i64 28:34:39:slice.checked.i64 29:34:39:slice.checked.i64 30:34:17:equal.i64 31:34:13:call.enter 32:34:11:add.checked.i64 33:35:17:equal.q8_8 34:35:13:call.enter 35:35:11:add.checked.i64 36:36:24:slice.checked.u8 37:36:17:equal.u8 38:36:13:call.enter 39:36:11:add.checked.i64 40:37:24:slice.checked.u8 41:37:17:equal.u8 42:37:13:call.enter 43:37:11:add.checked.i64 44:38:17:call.enter 45:38:13:call.enter 46:38:11:add.checked.i64 47:39:28:slice.checked.u8 48:39:17:call.enter 49:39:13:call.enter 50:39:11:add.checked.i64 51:40:17:equal.u8 52:40:13:call.enter 53:40:11:add.checked.i64
+func @view.equal_values.same(%a: U8[_], %b: U8[_]) -> Bool {
+  %t0 = equal.u8 %a, %b                          #1 @view/equal_values.ci:8:12
+  return %t0
+}
+func @view.equal_values.bit(%b: Bool, %k: I64) -> I64 {
+  if {
+    arm {
+    } then %b {
+      %t0 = const I64 1
+      %t1 = shl.checked.i64 %t0, %k              #2 @view/equal_values.ci:13:18
+      return %t1
+    }
+  }
+  %t2 = const I64 0
+  return %t2
+}
+export func @view.equal_values.run() -> I64 {
+  fuel.charge 1                                  #3 @view/equal_values.ci:18:12
+  local $x.0: I32[3]
+  %t0 = const I32 1
+  array.init $x.0, %t0, 0, 0
+  %t1 = const I32 2
+  array.init $x.0, %t1, 0, 1
+  %t2 = const I32 3
+  array.init $x.0, %t2, 0, 2
+  local $y.1: I32[3]
+  %t3 = const I32 1
+  array.init $y.1, %t3, 0, 0
+  %t4 = const I32 2
+  array.init $y.1, %t4, 0, 1
+  %t5 = const I32 3
+  array.init $y.1, %t5, 0, 2
+  local $z.2: I32[2]
+  %t6 = const I32 1
+  array.init $z.2, %t6, 0, 0
+  %t7 = const I32 2
+  array.init $z.2, %t7, 0, 1
+  local $m.3: Bool[2]
+  %t8 = const Bool true
+  array.init $m.3, %t8, 0, 0
+  %t9 = const Bool false
+  array.init $m.3, %t9, 0, 1
+  local $sc.4: I64[4]
+  view.begin $g.5: I64[_, _], $sc.4, 0, 8194
+  %t10 = const I64 1
+  array.init $sc.4, %t10, 0, 0
+  %t11 = const I64 2
+  array.init $sc.4, %t11, 0, 1
+  %t12 = const I64 3
+  array.init $sc.4, %t12, 0, 2
+  %t13 = const I64 4
+  array.init $sc.4, %t13, 0, 3
+  local $sc.6: I64[4]
+  view.begin $h.7: I64[_, _], $sc.6, 0, 8194
+  %t14 = const I64 1
+  array.init $sc.6, %t14, 0, 0
+  %t15 = const I64 2
+  array.init $sc.6, %t15, 0, 1
+  %t16 = const I64 3
+  array.init $sc.6, %t16, 0, 2
+  %t17 = const I64 5
+  array.init $sc.6, %t17, 0, 3
+  local $p.8: Q8.8[2]
+  %t18 = const I16 1
+  %t19 = as.raw.i16.q8_8 %t18
+  array.init $p.8, %t19, 0, 0
+  %t20 = const I16 -2
+  %t21 = as.raw.i16.q8_8 %t20
+  array.init $p.8, %t21, 0, 1
+  %s73 = data U8[4] 97, 98, 98, 97
+  view.begin $sc.9: U8[_], %s73, 0, 0
+  local $c.10: U8[4]
+  view.copy $c.10, $sc.9                         #4 @view/equal_values.ci:26:13
+  %t22 = equal.i32 $x.0, $y.1                    #5 @view/equal_values.ci:27:17
+  %t23 = const I64 0
+  %t24 = call @view.equal_values.bit(%t22, %t23) #6 @view/equal_values.ci:27:13
+  local $r.11: I64
+  store.local $r.11, %t24
+  %t25 = load.local $r.11
+  %t26 = equal.i32 $x.0, $z.2                    #7 @view/equal_values.ci:28:17
+  %t27 = const I64 1
+  %t28 = call @view.equal_values.bit(%t26, %t27) #8 @view/equal_values.ci:28:13
+  %t29 = add.checked.i64 %t25, %t28              #9 @view/equal_values.ci:28:11
+  store.local $r.11, %t29
+  %t30 = load.local $r.11
+  %t31 = const I64 0
+  %t32 = const I64 2
+  view.begin $sc.12: I32[_], $x.0, 0, 0
+  slice.checked.i32 $sc.12, %t31, %t32, 192, 1   #10 @view/equal_values.ci:29:24
+  view.end $sc.12, $x.0, 1, 0
+  %t33 = equal.i32 $sc.12, $z.2                  #11 @view/equal_values.ci:29:17
+  %t34 = const I64 2
+  %t35 = call @view.equal_values.bit(%t33, %t34) #12 @view/equal_values.ci:29:13
+  %t36 = add.checked.i64 %t30, %t35              #13 @view/equal_values.ci:29:11
+  store.local $r.11, %t36
+  %t37 = load.local $r.11
+  local $sc.13: I32[3]
+  %t38 = const I32 1
+  array.init $sc.13, %t38, 0, 0
+  %t39 = const I32 2
+  array.init $sc.13, %t39, 0, 1
+  %t40 = const I32 4
+  array.init $sc.13, %t40, 0, 2
+  %t41 = equal.i32 $x.0, $sc.13                  #14 @view/equal_values.ci:30:17
+  %t42 = const I64 3
+  %t43 = call @view.equal_values.bit(%t41, %t42) #15 @view/equal_values.ci:30:13
+  %t44 = add.checked.i64 %t37, %t43              #16 @view/equal_values.ci:30:11
+  store.local $r.11, %t44
+  %t45 = load.local $r.11
+  local $sc.14: Bool[2]
+  %t46 = const Bool true
+  array.init $sc.14, %t46, 0, 0
+  %t47 = const Bool false
+  array.init $sc.14, %t47, 0, 1
+  %t48 = equal.bool $m.3, $sc.14                 #17 @view/equal_values.ci:31:17
+  %t49 = const I64 4
+  %t50 = call @view.equal_values.bit(%t48, %t49) #18 @view/equal_values.ci:31:13
+  %t51 = add.checked.i64 %t45, %t50              #19 @view/equal_values.ci:31:11
+  store.local $r.11, %t51
+  %t52 = load.local $r.11
+  %t53 = equal.i64 $g.5, $h.7                    #20 @view/equal_values.ci:32:17
+  %t54 = const I64 5
+  %t55 = call @view.equal_values.bit(%t53, %t54) #21 @view/equal_values.ci:32:13
+  %t56 = add.checked.i64 %t52, %t55              #22 @view/equal_values.ci:32:11
+  store.local $r.11, %t56
+  %t57 = load.local $r.11
+  %t58 = equal.i64 $g.5, $g.5                    #23 @view/equal_values.ci:33:17
+  %t59 = const I64 6
+  %t60 = call @view.equal_values.bit(%t58, %t59) #24 @view/equal_values.ci:33:13
+  %t61 = add.checked.i64 %t57, %t60              #25 @view/equal_values.ci:33:11
+  store.local $r.11, %t61
+  %t62 = load.local $r.11
+  %t63 = const I64 0
+  %t64 = const I64 1
+  %t65 = const I64 0
+  %t66 = const I64 2
+  view.begin $sc.15: I64[_, _], $h.7, 0, 0
+  slice.checked.i64 $sc.15, %t63, %t64, 192, 1   #26 @view/equal_values.ci:34:24
+  slice.checked.i64 $sc.15, %t65, %t66, 201, 1   #27 @view/equal_values.ci:34:24
+  view.end $sc.15, $h.7, 2, 0
+  %t67 = const I64 0
+  %t68 = const I64 1
+  %t69 = const I64 0
+  %t70 = const I64 2
+  view.begin $sc.16: I64[_, _], $g.5, 0, 0
+  slice.checked.i64 $sc.16, %t67, %t68, 192, 1   #28 @view/equal_values.ci:34:39
+  slice.checked.i64 $sc.16, %t69, %t70, 201, 1   #29 @view/equal_values.ci:34:39
+  view.end $sc.16, $g.5, 2, 0
+  %t71 = equal.i64 $sc.15, $sc.16                #30 @view/equal_values.ci:34:17
+  %t72 = const I64 7
+  %t73 = call @view.equal_values.bit(%t71, %t72) #31 @view/equal_values.ci:34:13
+  %t74 = add.checked.i64 %t62, %t73              #32 @view/equal_values.ci:34:11
+  store.local $r.11, %t74
+  %t75 = load.local $r.11
+  local $sc.17: Q8.8[2]
+  %t76 = const I16 1
+  %t77 = as.raw.i16.q8_8 %t76
+  array.init $sc.17, %t77, 0, 0
+  %t78 = const I16 -2
+  %t79 = as.raw.i16.q8_8 %t78
+  array.init $sc.17, %t79, 0, 1
+  %t80 = equal.q8_8 $p.8, $sc.17                 #33 @view/equal_values.ci:35:17
+  %t81 = const I64 8
+  %t82 = call @view.equal_values.bit(%t80, %t81) #34 @view/equal_values.ci:35:13
+  %t83 = add.checked.i64 %t75, %t82              #35 @view/equal_values.ci:35:11
+  store.local $r.11, %t83
+  %t84 = load.local $r.11
+  %t85 = const I64 0
+  %t86 = const I64 2
+  view.begin $sc.18: U8[_], $c.10, 0, 0
+  slice.checked.u8 $sc.18, %t85, %t86, 192, 1    #36 @view/equal_values.ci:36:24
+  view.end $sc.18, $c.10, 1, 0
+  %s194 = data U8[2] 97, 98
+  view.begin $sc.19: U8[_], %s194, 0, 0
+  %t87 = equal.u8 $sc.18, $sc.19                 #37 @view/equal_values.ci:36:17
+  %t88 = const I64 9
+  %t89 = call @view.equal_values.bit(%t87, %t88) #38 @view/equal_values.ci:36:13
+  %t90 = add.checked.i64 %t84, %t89              #39 @view/equal_values.ci:36:11
+  store.local $r.11, %t90
+  %t91 = load.local $r.11
+  %t92 = const I64 2
+  %t93 = const I64 4
+  view.begin $sc.20: U8[_], $c.10, 0, 0
+  slice.checked.u8 $sc.20, %t92, %t93, 192, 1    #40 @view/equal_values.ci:37:24
+  view.end $sc.20, $c.10, 1, 0
+  %s209 = data U8[2] 97, 98
+  view.begin $sc.21: U8[_], %s209, 0, 0
+  %t94 = equal.u8 $sc.20, $sc.21                 #41 @view/equal_values.ci:37:17
+  %t95 = const I64 10
+  %t96 = call @view.equal_values.bit(%t94, %t95) #42 @view/equal_values.ci:37:13
+  %t97 = add.checked.i64 %t91, %t96              #43 @view/equal_values.ci:37:11
+  store.local $r.11, %t97
+  %t98 = load.local $r.11
+  %s219 = data U8[4] 97, 98, 98, 97
+  view.begin $sc.22: U8[_], %s219, 0, 0
+  %t99 = call @view.equal_values.same($c.10, $sc.22) #44 @view/equal_values.ci:38:17
+  %t100 = const I64 11
+  %t101 = call @view.equal_values.bit(%t99, %t100) #45 @view/equal_values.ci:38:13
+  %t102 = add.checked.i64 %t98, %t101            #46 @view/equal_values.ci:38:11
+  store.local $r.11, %t102
+  %t103 = load.local $r.11
+  %s231 = data U8[0]
+  view.begin $sc.23: U8[_], %s231, 0, 0
+  %t104 = const I64 1
+  %t105 = const I64 1
+  view.begin $sc.24: U8[_], $c.10, 0, 0
+  slice.checked.u8 $sc.24, %t104, %t105, 192, 1  #47 @view/equal_values.ci:39:28
+  view.end $sc.24, $c.10, 1, 0
+  %t106 = call @view.equal_values.same($sc.23, $sc.24) #48 @view/equal_values.ci:39:17
+  %t107 = const I64 12
+  %t108 = call @view.equal_values.bit(%t106, %t107) #49 @view/equal_values.ci:39:13
+  %t109 = add.checked.i64 %t103, %t108           #50 @view/equal_values.ci:39:11
+  store.local $r.11, %t109
+  %t110 = load.local $r.11
+  %s248 = data U8[2] 97, 98
+  view.begin $sc.25: U8[_], %s248, 0, 0
+  %s250 = data U8[3] 97, 98, 99
+  view.begin $sc.26: U8[_], %s250, 0, 0
+  %t111 = equal.u8 $sc.25, $sc.26                #51 @view/equal_values.ci:40:17
+  %t112 = const I64 13
+  %t113 = call @view.equal_values.bit(%t111, %t112) #52 @view/equal_values.ci:40:13
+  %t114 = add.checked.i64 %t110, %t113           #53 @view/equal_values.ci:40:11
+  store.local $r.11, %t114
+  %t115 = load.local $r.11
+  return %t115
+}

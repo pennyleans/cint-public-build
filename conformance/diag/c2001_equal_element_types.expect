@@ -1,0 +1,6 @@
+case diag/c2001_equal_element_types
+clause SPEC-04 LS-71, LS-145 (the arguments of `equal` have one element type; ruling OQ-307 A)
+source compile-error
+outcome compile-error
+diagnostic.code C2001
+diagnostic.position diag/c2001_equal_element_types.ci:10:23

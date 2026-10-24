@@ -36,7 +36,7 @@ from __future__ import annotations
 import re
 
 from .faults import FAULT_CODES, Position, Refused, error
-from .lexer import BOX12_KEYWORDS, KEYWORDS, Hole, Lexer, Token, string_parts, tokenize
+from .lexer import BOX12_KEYWORDS, KEYWORDS, Hole, Lexer, Token, bytes_value, string_parts, tokenize
 from .tree import *  # noqa: F401,F403  (other modules use the nodes as P.<Node>)
 from .types import INT_TYPES
 
@@ -1013,8 +1013,12 @@ class Parser:
         nt = self.peek()
         if nt.kind == "op" and nt.text in ASSIGN_OPS:
             error("C2058", e.start, "the left side of an assignment must be a variable or field")
-        if not isinstance(e, Call) and not (isinstance(e, Try) and isinstance(e.operand, Call)):
+        # `call catch (e) { ... };` stands as a statement too (OQ-315 A; the checker takes only an `E!void` call).
+        statement = isinstance(e, Catch) and e.block is not None and isinstance(e.left, Call)
+        if not statement and not isinstance(e, Call) and not (isinstance(e, Try) and isinstance(e.operand, Call)):
             error("C4012", e.start, "only calls, assignments, increments, print statements and declarations may stand as statements")
+        if statement:
+            e.statement = True
         return ExprStmt(e.start, e)
 
     def parse_condition(self, keyword: Token, paren_code) -> Expr:
@@ -1538,7 +1542,9 @@ class Parser:
             self.next()
             return ErrorLit(p, p, self.expect_ident().text)
         if t.kind == "bytes":
-            self.refuse(t, "a byte-string literal")
+            # `b"..."`: a read-only `U8` view of static storage (SPEC-04 LS-41; OQ-307 A).
+            self.next()
+            return BytesLit(p, p, bytes_value(t))
         error("C1050", p, "expected an expression, found %s" % self.describe(t))
 
 

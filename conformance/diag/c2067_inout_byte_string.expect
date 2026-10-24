@@ -1,0 +1,6 @@
+case diag/c2067_inout_byte_string
+clause SPEC-04 LS-41, LS-119, LS-162 (a byte-string literal is a read-only view, so it is no `inout` argument; ruling OQ-307 A)
+source compile-error
+outcome compile-error
+diagnostic.code C2067
+diagnostic.position diag/c2067_inout_byte_string.ci:12:11

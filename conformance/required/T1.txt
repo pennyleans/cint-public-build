@@ -12,6 +12,8 @@
 # 2026-10-05: 11 built-in cases (box 07) measured with the seed: all outside_subset.
 # 2026-10-22 (OQ-304): the 11 conformance/services/ cases of the I/O services lane measured with the seed: all outside_subset (C9100 at the first extern, requires, error set, catch or print).
 # 2026-10-22 (OQ-305 A): services/denied_try_main imports fs and services/main_grants_print drops its `entry: main` header line; remeasured with the seed, both stay outside_subset (C9100 at 7:1, the `requires` declaration, and at 9:5, the print statement).
+# 2026-10-22 (OQ-307 A): the 9 cases of byte strings and `equal` measured with the seed: all outside_subset (C9100 at the first byte string, `equal`, array literal, fixed-point type or non-ASCII character).
+# 2026-10-24 (OQ-315 A): the 2 cases of the `catch` statement measured with the seed: both outside_subset (C9100 at 7:1, `error` at module level).
 # 2026-10-05: box 09 adds 17 reference cases, measured on the seed at d6d3e85
 # (scratch runs, no receipt): 15 compared, 2 outside_subset; and 88 cases held
 # under I-2 (docs/design/notes/2026-10-05-box09-arrays-views-kernels.md).
@@ -580,11 +582,15 @@ diag/c1020_uppercase_hex_prefix cint-seed compared
 diag/c1021_doubled_separator cint-seed compared
 diag/c1022_leading_zero cint-seed compared
 diag/c1023_literal_4097_bits cint-seed compared
+# Reference: diag/c1032_bytes_unicode_escape cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5 (BYTES); measured C9100 at 8:18 (the byte-string literal); frozen from cint_ref, I/O services lane (OQ-307 A)
+diag/c1032_bytes_unicode_escape cint-seed outside_subset
 diag/c1032_unknown_escape cint-seed compared
 diag/c1040_empty_statement cint-seed compared
 diag/c1041_assignment_in_condition cint-seed compared
 diag/c1042_increment_in_expression cint-seed compared
 diag/c1043_if_without_braces cint-seed compared
+# Reference: diag/c2001_equal_element_types cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:16 (an array literal); frozen from cint_ref, I/O services lane (OQ-307 A)
+diag/c2001_equal_element_types cint-seed outside_subset
 diag/c2001_implicit_widening cint-seed compared
 diag/c2001_range_bound_i32 cint-seed compared
 diag/c2001_shift_left_operand_rule4 cint-seed compared
@@ -599,6 +605,8 @@ diag/c2003_skipped_or cint-seed compared
 diag/c2003_unsigned_minus_one cint-seed compared
 diag/c2003_unsigned_minus_space cint-seed compared
 diag/c2008_convert_sat_bool cint-seed outside_subset
+# Reference: diag/c2012_bytes_extent cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5 (BYTES); measured C9100 at 8:15 (the byte-string literal); frozen from cint_ref, I/O services lane (OQ-307 A)
+diag/c2012_bytes_extent cint-seed outside_subset
 diag/c2050_uninitialized_scalar cint-seed compared
 diag/c2052_assign_loop_variable cint-seed compared
 diag/c2055_nested_direct cint-seed compared
@@ -610,10 +618,14 @@ diag/c2055_zero_array_direct cint-seed compared
 # Reference: diag/c2055_zero_array_indirect cint-seed SPEC-09 CONF-14.1; SPEC-04 LS-68, LS-73, LS-313
 diag/c2055_zero_array_indirect cint-seed compared
 diag/c2056_integer_as_bool cint-seed compared
+# Reference: diag/c2067_inout_byte_string cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5 (BYTES); measured C9100 at 12:11 (the byte-string literal); frozen from cint_ref, I/O services lane (OQ-307 A)
+diag/c2067_inout_byte_string cint-seed outside_subset
 diag/c2101_mixed_logical cint-seed compared
 diag/c2101_neg_paren_as cint-seed compared
 diag/c2101_shift_with_arithmetic cint-seed compared
 diag/c2102_chained_comparison cint-seed compared
+# Reference: diag/c2103_equal_scalar cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 9:14 (the built-in `equal`); frozen from cint_ref, I/O services lane (OQ-307 A)
+diag/c2103_equal_scalar cint-seed outside_subset
 diag/c2103_rotl_signed cint-seed outside_subset
 diag/c3001_duplicate_name cint-seed compared
 diag/c3004_script_selected_by_print cint-seed outside_subset
@@ -638,8 +650,12 @@ errors/c2043_try_not_error_union cint-seed outside_subset
 errors/c2044_shared_name_short_form cint-seed outside_subset
 errors/c2054_zero_filled_error_value cint-seed outside_subset
 errors/c4002_catch_block_completes cint-seed outside_subset
+# Reference: errors/c4012_catch_statement_value cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (`error` at module level); frozen from cint_ref (OQ-315 A)
+errors/c4012_catch_statement_value cint-seed outside_subset
 errors/c4020_switch_missing_error_value cint-seed outside_subset
 errors/catch_bind_switch_exhaustive cint-seed outside_subset
+# Reference: errors/catch_statement_void_call cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (`error` at module level); frozen from cint_ref (OQ-315 A)
+errors/catch_statement_void_call cint-seed outside_subset
 errors/catch_value_and_discard cint-seed outside_subset
 errors/combined_set_once_at_first_position cint-seed outside_subset
 errors/combined_try_converts_tag cint-seed outside_subset
@@ -1129,6 +1145,8 @@ ternary/pt4_planes cint-seed outside_subset
 ternary/pt5_table cint-seed outside_subset
 ternary/tdot_i8_lanes cint-seed outside_subset
 ternary/tdot_planes cint-seed outside_subset
+# Reference: view/bytes_literal cint-seed SPEC-09 CONF-14.4; SPEC-09 5.3; measured C9100 at 21:30 (a non-ASCII source character); frozen from cint_ref, I/O services lane (OQ-307 A)
+view/bytes_literal cint-seed outside_subset
 view/call_slices_disjoint cint-seed outside_subset
 view/call_slices_runtime_alias cint-seed outside_subset
 view/constant_extent_parameter cint-seed compared
@@ -1142,6 +1160,12 @@ view/copy_shape_zero_elements cint-seed unsupported SEED-OQ-06
 view/copy_slices_disjoint_gcd cint-seed outside_subset
 view/copy_slices_overlap_c5010 cint-seed outside_subset
 view/copy_slices_runtime_alias cint-seed outside_subset
+# Reference: view/equal_fuel cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 13:9 (the built-in `equal`); frozen from cint_ref, I/O services lane (OQ-307 A)
+view/equal_fuel cint-seed outside_subset
+# Reference: view/equal_fuel_fault cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 11:9 (the built-in `equal`); frozen from cint_ref, I/O services lane (OQ-307 A)
+view/equal_fuel_fault cint-seed outside_subset
+# Reference: view/equal_values cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5 (FIXED_TYPE); measured C9100 at 25:5 (a fixed-point type); frozen from cint_ref, I/O services lane (OQ-307 A)
+view/equal_values cint-seed outside_subset
 view/extent_zero cint-seed compared
 view/index_checked_before_value cint-seed compared
 view/index_compound_place_first cint-seed compared

@@ -536,6 +536,35 @@ class RuntimeLeg(unittest.TestCase):
                 run = run_args("args", *args)
                 self.assertEqual((run.returncode, run.stdout), (4, b""), args)
             checked += 1
+        with self.subTest(scenario="args: the frame-arena capacity"):
+            # `--frame-arena N` before `--`, the last one in force, sets the capacity to N elements
+            # (rt/OPEN.md RT-OQ-78; OQ-308): the arena scenario takes 3,000,000 elements.
+            dests[0].unlink(missing_ok=True)
+            run = run_args("arena", str(dests[0]))
+            self.assertEqual((run.returncode, run.stdout, run.stderr), (1, b"", b""), "the default 2,097,152")
+            self.assertIn(b"arena.alloc", dests[0].read_bytes())
+            for args in (("--frame-arena", "3000000"), (str(dests[0]), "--frame-arena", "3000000", "-"),
+                         ("--frame-arena", "1", "--frame-arena", "3000000"),
+                         ("--frame-arena", "1125899906842623")):
+                run = run_args("arena", *args)
+                self.assertEqual((run.returncode, run.stdout, run.stderr), (0, b"arena\n", b""), args)
+            dests[0].unlink(missing_ok=True)
+            run = run_args("arena", "--frame-arena", "2999999", str(dests[0]))
+            self.assertEqual((run.returncode, run.stdout), (1, b""))
+            self.assertIn(b"arena.alloc", dests[0].read_bytes())
+            run = run_args("hello", "--frame-arena", "4", "--grant", "console.input", "-")
+            self.assertEqual((run.returncode, run.stdout, run.stderr), (0, hello, b""))
+            run = run_args("args", "--frame-arena", "5", "--arg", "x", "--", "--frame-arena", "7")
+            self.assertEqual((run.returncode, run.stdout, run.stderr), (0, b"x\0--frame-arena\0" b"7\0", b""))
+            run = run_args("args", "--arg", "--frame-arena", "--frame-arena", "9")
+            self.assertEqual((run.returncode, run.stdout, run.stderr), (0, b"--frame-arena\0", b""))
+            for args in (("--frame-arena",), ("--frame-arena", "0"), ("--frame-arena", "-1"), ("--frame-arena", "+1"),
+                         ("--frame-arena", "012"), ("--frame-arena", "1125899906842624"), ("--frame-arena", "x"),
+                         ("--frame-arena", "")):
+                run = run_args("hello", *args)
+                self.assertEqual((run.returncode, run.stdout), (4, b""), args)
+                self.assertIn(b"--frame-arena", run.stderr, args)
+            checked += 1
         return checked
 
     def check_program_state(self, exe, outdir: pathlib.Path, env, hello: bytes, io_full: bytes) -> int:

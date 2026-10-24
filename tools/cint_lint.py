@@ -5,8 +5,8 @@ literals in the C sources of rt/, seed/, harness/, cli/, interp/, workbench/ and
 (tests included) and in the Python of ref/cint_ref/, python/cint/, games/ and the game math kit's
 tools/gamekit_*.py; it refuses any CR byte in conformance/, compiler/, cli/, interp/, workbench/,
 games/ and rt/*.h; it fails a component over its SPEC-09 4.2 ceiling and reports one over its
-target. The CLI size rows count cli/*.c, with cli/cint_receipt.c in its own row (decision 26) and
-cli/cint_discover.c in its own (I/O services lane U4);
+target. The CLI size rows count cli/*.c, with cli/cint_receipt.c (decision 26), cli/cint_discover.c
+(I/O services lane U4) and cli/cint_cache.c (OQ-313) each in its own row;
 the CLI headers are reported separately. The workbench row counts workbench/*.c and
 workbench/*.h (box 14 ruling BX14-03 A); workbench/tests/ is not counted.
 Python test drivers under rt/, seed/, harness/, cli/, interp/ and workbench/, and python/tests/, are
@@ -80,10 +80,11 @@ SIZE_ROWS = (
     # Decision 2026-10-16 on OQ-295: set again from measured counts for fixed point of 128-bit storage.
     ("cint_fixed (rt/cint_fixed.c, rt/cint_fixed.h)", ("rt/cint_fixed.c", "rt/cint_fixed.h"), 1000, 1200),
     ("cint-harness (harness/*.c, harness/*.h)", ("harness/*.c", "harness/*.h"), 600, 1000),
-    ("cint CLI (cli/*.c except cli/cint_receipt.c and cli/cint_discover.c)",
-     ("cli/*.c", "!cli/cint_receipt.c", "!cli/cint_discover.c"), 1500, 2500),
+    ("cint CLI (cli/*.c except cli/cint_receipt.c, cli/cint_discover.c and cli/cint_cache.c)",
+     ("cli/*.c", "!cli/cint_receipt.c", "!cli/cint_discover.c", "!cli/cint_cache.c"), 1500, 2500),
     ("cint CLI receipts (cli/cint_receipt.c)", ("cli/cint_receipt.c",), 400, 600),
     ("cint CLI discovery (cli/cint_discover.c)", ("cli/cint_discover.c",), 250, 350),
+    ("cint CLI toolchain and run cache (cli/cint_cache.c)", ("cli/cint_cache.c",), 200, 300),
     # Decisions 2026-10-06 on OQ-218 (BX13-21) and 2026-10-10 on OQ-279: set again from measured counts.
     ("cint-interp (interp/*.c, interp/*.h)", ("interp/*.c", "interp/*.h"), 8000, 10000),
     # Decision 2026-10-08 on OQ-231 (BX14-S1): set again from the counts of box 14's units.

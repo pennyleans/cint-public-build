@@ -1436,6 +1436,18 @@ static int small(rd *r, int64_t max, int neg)
 }
 
 /* A place that is a view of box 09 (box09 1), or an array or a view. */
+/* A byte string's data, `%s<k>`, as the place of view.begin (ruling OQ-307 A): U8 of rank 1. */
+static int data_place(rd *r, si_type *ty)
+{
+    si_opd o;
+    size_t at = r->pos;
+    int st = percent(r, &o, &at);
+    if (st == CINT_SIR_OK && o.kind != OD_DATA) st = fail_at(r, at, "expected data");
+    if (st != CINT_SIR_OK) return st;
+    *ty = type_of(r, o);
+    return add_opd(r, o);
+}
+
 static int view_place(rd *r, si_type *ty, int box09)
 {
     size_t at = r->pos;
@@ -1456,14 +1468,14 @@ static int view_dest(rd *r, si_type *ty)
     return add_opd(r, o);
 }
 
-/* A reduction's word (compiler/back_c.ci, reduce_name): sub the CINT_REDUCE_* code, t1 the
- * element, t2 the result. */
+/* A reduction's word (compiler/back_c.ci, reduce_name): sub the CINT_REDUCE_* code or
+ * REDUCE_EQUAL, t1 the element, t2 the result. */
 static int reduce_word(const uint8_t *t, si_name w, si_node *n)
 {
     static const char *const pre[] = {"", "sum.checked.", "sum_wrap.", "sum_sat.", "fold_checked.add.",
                                       "fold_checked.mul.", "reduce_min.checked.", "reduce_max.checked.", "count.",
-                                      "dot.checked."};
-    for (int k = 1; k < 10; k++) {
+                                      "dot.checked.", "equal."};
+    for (int k = 1; k < 11; k++) {
         size_t l = strlen(pre[k]);
         parts p;
         if (w.len <= l || memcmp(t + w.at, pre[k], l) != 0) {
@@ -1472,6 +1484,14 @@ static int reduce_word(const uint8_t *t, si_name w, si_node *n)
         si_name rest = {w.at + (uint32_t)l, w.len - (uint32_t)l};
         if (!split(t, rest, &p) || p.n < (k == 1 || k == 9 ? 2u : 1u) || p.n > (k == 9 ? 3u : k == 1 ? 2u : 1u))
             return 0;
+        if (k == (int)REDUCE_EQUAL) {   /* one element type: Bool, an integer or fixed point; a Bool */
+            int e = scalar_of(t, p.p[0], 1);
+            n->op = OP_REDUCE;
+            n->sub = (uint8_t)k;
+            n->t1 = (uint16_t)(e & 0xFFFF);
+            n->t2 = SC_BOOL;
+            return e == SC_BOOL || is_arith(e) || sc_is_q(e);
+        }
         int e = scalar_of(t, p.p[0], 1), res = p.n >= 2u ? scalar_of(t, p.p[1], 1) : e;
         int md = p.n == 3u ? lookup(t, p.p[2], MODE_NAMES, 10) : 0;
         n->op = OP_REDUCE;
@@ -1502,7 +1522,9 @@ static int view_body(rd *r, si_node *n, si_name word)
         int begin = t[word.at + 5] == 'b', rev = t[word.at + 5] == 'r';
         n->op = begin ? OP_VBEGIN : rev ? OP_VREV : OP_VTRANS;
         if ((st = expect(r, " ")) != CINT_SIR_OK || (st = view_dest(r, &a)) != CINT_SIR_OK ||
-            (st = sep(r)) != CINT_SIR_OK || (st = view_place(r, &b, !begin && !rev)) != CINT_SIR_OK ||
+            (st = sep(r)) != CINT_SIR_OK ||
+            (st = begin && peek(r) == '%' && peek_at(r, 1) == 's' && is_digit(peek_at(r, 2)) ? data_place(r, &b)
+                                                                                            : view_place(r, &b, !begin && !rev)) != CINT_SIR_OK ||
             (begin && ((st = sep(r)) != CINT_SIR_OK || (st = imm(r)) != CINT_SIR_OK || (st = sep(r)) != CINT_SIR_OK ||
                        (st = imm(r)) != CINT_SIR_OK)) ||
             (rev && ((st = sep(r)) != CINT_SIR_OK || (st = small(r, rank_of(b), 0)) != CINT_SIR_OK))) {
@@ -1590,12 +1612,14 @@ static int view_body(rd *r, si_node *n, si_name word)
         return CINT_SIR_OK;
     }
     if (reduce_word(t, word, n)) {
-        int dot = n->sub == CINT_REDUCE_DOT, fold = n->sub == CINT_REDUCE_FOLD_ADD || n->sub == CINT_REDUCE_FOLD_MUL;
+        int eq = n->sub == REDUCE_EQUAL, dot = n->sub == CINT_REDUCE_DOT || eq;
+        int fold = n->sub == CINT_REDUCE_FOLD_ADD || n->sub == CINT_REDUCE_FOLD_MUL;
         if ((st = expect(r, " ")) != CINT_SIR_OK || (st = view_place(r, &a, 0)) != CINT_SIR_OK ||
             (dot && ((st = sep(r)) != CINT_SIR_OK || (st = view_place(r, &b, 0)) != CINT_SIR_OK))) {
             return st;
         }
-        if (a.scalar != n->t1 || (dot && (b.scalar != n->t1 || rank_of(a) != 1u || rank_of(b) != 1u)))
+        /* dot's views have rank 1, equal's one rank */
+        if (a.scalar != n->t1 || (dot && (b.scalar != n->t1 || rank_of(a) != rank_of(b) || (!eq && rank_of(a) != 1u))))
             return fail_at(r, s, "the reduction names another element type or rank");
         if ((fold || n->sub == CINT_REDUCE_MIN || n->sub == CINT_REDUCE_MAX) && take(r, ", ")) {
             st = val(r, scalar_type(n->t1));   /* the initial value */
@@ -1903,7 +1927,7 @@ static int kernel_body(rd *r, si_node *n, si_name word)
         w.at = (uint32_t)r->pos;
         while (r->pos < r->eol && (is_ident(peek(r)) || peek(r) == '.')) r->pos++;
         w.len = (uint32_t)(r->pos - w.at);
-        if (!reduce_word(t, w, n) || n->sub == CINT_REDUCE_FOLD_MUL || n->sub == CINT_REDUCE_DOT)
+        if (!reduce_word(t, w, n) || n->sub == CINT_REDUCE_FOLD_MUL || n->sub == CINT_REDUCE_DOT || n->sub == REDUCE_EQUAL)
             return fail_at(r, w.at, "no reduction of a kernel '%.*s'", (int)w.len, (const char *)t + w.at);
         n->op = k == 11 ? OP_KRED : OP_KEPI;
         n->fmt[0] = w.at;   /* the reduction, which its site names */
