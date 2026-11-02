@@ -19,7 +19,7 @@
 #include "cint_proc.h"
 #include "cint_receipt.h"
 
-#define TOOL_VERSION "0.2.4"
+#define TOOL_VERSION "0.2.8"
 #define RUNTIME_CONTRACT "cint-rt-3"
 
 /* ------------------------------------------------------------------------- */

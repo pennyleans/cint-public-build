@@ -159,14 +159,14 @@ class Bootstrap(unittest.TestCase):
 
 
 class Identity(unittest.TestCase):
-    def test_runtime_header_digest_covers_both_headers(self):
+    def test_runtime_header_digest_covers_the_headers(self):
         # The Python receipt names the runtime headers as tools/cint_check.py does (rt/OPEN.md RT-OQ-47).
         with patch.object(cint_bootstrap, "compiler_closure", return_value={}), \
                 patch.object(cint_bootstrap, "source_manifest", return_value=b""):
             identity = cint_python.identity_of()
         rt = ROOT / "rt"
         self.assertEqual(identity["runtime_header_sha256"],
-                         cint_check.files_digest([rt / "cint_rt.h", rt / "cint_rt_host.h"]))
+                         cint_check.files_digest([rt / "cint_rt.h", rt / "cint_rt_host.h", rt / "cint_rt_lean.h"]))
 
 
 class Compare(unittest.TestCase):

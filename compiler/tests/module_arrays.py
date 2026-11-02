@@ -1,9 +1,9 @@
 """Compares module-level arrays (SPEC-04 LS-113, OQ-233; rt/OPEN.md RT-OQ-49) with cint_ref:
 zero-filled and initialized arrays of integers and Bool, of rank 1 to 4, read and written by
-several functions, passed as views, copied, reduced and faulting; the initializers cint_ref
-refuses; and the forms cintc refuses with C9102 that cint_ref runs (more than 65,536 elements,
-an extent that is not a literal, another module's array). Module-level structs are
-compiler/tests/module_structs.py's."""
+several functions, passed as views, copied, reduced and faulting; extents that are constant
+expressions (CINTC-OQ-74); the initializers cint_ref refuses; and the forms cintc refuses with
+C9102 that cint_ref runs (more than 65,536 elements, another module's array), written with a
+literal and with a constant. Module-level structs are compiler/tests/module_structs.py's."""
 import argparse
 import json
 import pathlib
@@ -80,6 +80,28 @@ VALUES = {
                 'return (room[8767] * 10 + room[65535]) * 100000 + len(room); }',
     'i1024_large': 'I1024[9000] w;\nexport I64 run() { w[8999] = 3; w[8999] *= w[8999]; return (w[8999] as I64) * 10000 + len(w); }',
     'rank2_large': 'I64[100, 100] big;\nexport I64 run() { big[99, 99] = 4; return big[99, 99] * 100000 + size(big); }',
+    # Extents that are constant expressions, each with the code of the literal of its value
+    # (CINTC-OQ-74).
+    'named_extent': 'const I64 N = 3;\nI64[N] xs = [1, 2, 3];\n'
+                    'export I64 run() { xs[2] += 40; return xs[2] * 10 + len(xs); }',
+    'named_forward': 'I64[N] xs;\nconst I64 N = 3;\nexport I64 run() { xs[2] = 4; return xs[2] * 10 + len(xs); }',
+    'product_extent': 'const I64 A = 2;\nconst I64 B = 3;\nI64[A * B] xs;\n'
+                      'export I64 run() { xs[5] = 4; return xs[5] * 10 + len(xs); }',
+    'hex_extent': 'I64[0x10] xs;\nexport I64 run() { xs[15] = 4; return xs[15] * 100 + len(xs); }',
+    'named_zero': 'const I64 N = 0;\nI64[N] xs;\nexport I64 run() { return len(xs); }',
+    'named_used_before': 'export I64 run() { xs[1] = 4; return xs[1] * 10 + len(xs); }\nI64[N] xs;\nconst I64 N = 2;',
+    'named_most': 'const I64 N = 65536;\nU8[N] bs;\n'
+                  'export I64 run() { bs[65535] = 7; return bs[65535] as I64 * 100000 + len(bs); }',
+    'named_wide_most': 'const I64 W = 256;\nI64[W * W] room;\n'
+                       'export I64 run() { room[65535] = 6; return room[65535] * 100000 + len(room); }',
+    'named_above_code': 'const I64 N = 65535;\nU8[N] bs;\n'
+                        'export I64 run() { bs[65534] = 7; return bs[65534] as I64 * 100000 + len(bs); }',
+    'named_view_argument': DIGITS + 'const I64 N = 3;\nI64[N] xs = [4, 5, 6];\nexport I64 run() { return digits(xs); }',
+    'rank2_named_extent': 'const I64 N = 2;\nI64[N, 2] m;\nexport I64 run() { m[1, 0] = 5; return m[1, 0]; }',
+    'rank3_expression_extents': 'const I64 N = 2;\nI16[N, N + 1, 2] c;\n'
+                                'export I64 run() { c[1, 2, 1] = 5; return c[1, 2, 1] as I64 * 100 + size(c); }',
+    'rank2_named_most': 'const I64 N = 256;\nU8[N, N] bs;\n'
+                        'export I64 run() { bs[255, 255] = 5; return bs[255, 255] as I64 * 100000 + size(bs); }',
 }
 DIAGNOSTICS = {
     'call_item': 'I64 one() { return 1; }\nI64[2] xs = [one(), 2];\nexport I64 run() { return xs[0]; }',
@@ -95,13 +117,18 @@ DIAGNOSTICS = {
     'rank2_local_named_alike': 'I64[2, 2] m;\nexport I64 run() { I64 m = 1; return m; }',
 }
 # cint_ref runs these; cintc refuses them with C9102 at the token it names (OQ-233, OQ-297):
-# a rank-1 extent above 65,536, the declaration's name for more than 65,536 elements of rank
-# 2 to 4, the extent that is not a literal, or the imported name.
+# a rank-1 extent above 65,536, an extent of rank 2 to 4 above 3,070, the declaration's name
+# for more than 65,536 elements of rank 2 to 4, or the imported name. A constant takes the
+# limits, and the position, of the literal of its value (CINTC-OQ-74).
 BOUNDARIES = {
     'rank1_elements': ('U8[65537] big;\nexport I64 run() { return big[1] as I64; }', '65537]'),
     'rank1_wide_elements': ('I64[65537] big;\nexport I64 run() { return big[1]; }', '65537]'),
     'rank2_elements': ('I64[300, 300] big;\nexport I64 run() { return big[1, 0]; }', 'big;'),
-    'rank2_named_extent': ('const I64 N = 2;\nI64[N, 2] m;\nexport I64 run() { return m[1, 0]; }', 'N, 2]'),
+    'rank1_named_elements': ('const I64 N = 65537;\nU8[N] big;\nexport I64 run() { return big[1] as I64; }', 'N] big'),
+    'rank1_product_elements': ('const I64 W = 256;\nI64[W * W + 1] big;\nexport I64 run() { return big[1]; }', 'W * W'),
+    'rank2_named_elements': ('const I64 N = 300;\nI64[N, N] big;\nexport I64 run() { return big[1, 0]; }', 'big;'),
+    'rank2_extent_limit': ('I64[3071, 1] big;\nexport I64 run() { return big[1, 0]; }', '3071,'),
+    'rank2_named_extent_limit': ('const I64 N = 3071;\nI64[N, 1] big;\nexport I64 run() { return big[1, 0]; }', 'N, 1]'),
     'imported_array': ('export I64 run() { return records.shared[1]; }', 'shared['),
 }
 LIBRARY = 'export I64 first(in I64[_] xs) { return xs[0]; }\nexport I64[2] shared = [7, 8];\n'

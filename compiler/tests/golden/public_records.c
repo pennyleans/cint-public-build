@@ -133,7 +133,7 @@ static bool ci_17_public_x5Frecords_5_touch(cint_ctx *ctx, cs_17_public_x5Frecor
         goto fault;
     }
     t5 = v_a[o_a + t4 * s_a].f_value;
-    if (!cint_as_i64_from_i32(ctx, cs5, t5, &t6)) goto fault;
+    t6 = (int64_t)t5;
     *result = t6;
     return true;
 fault:
@@ -242,9 +242,9 @@ static bool ci_17_public_x5Frecords_7_aliases(cint_ctx *ctx, int64_t *result)
     l3_b.f_code = 0;
     l3_b = l2;
     t4 = l1_a.f_code;
-    if (!cint_as_i64_from_u8(ctx, cs11, t4, &t5)) goto fault;
+    t5 = (int64_t)t4;
     t6 = l3_b.f_code;
-    if (!cint_as_i64_from_u8(ctx, cs12, t6, &t7)) goto fault;
+    t7 = (int64_t)t6;
     if (!cint_add_i64(ctx, cs13, t5, t7, &t8)) goto fault;
     if (!cint_rt_call_enter(ctx, cs14)) goto fault;
     if (!ci_13_record_x5Fmid_8_observed(ctx, &t9)) goto fault;

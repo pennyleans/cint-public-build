@@ -59,6 +59,8 @@
  * the buffer registry, the observer and reflection tables, program processes)
  * is in rt/cint_rt_host.h, which this header includes at its end (decision
  * 2026-10-08 on OQ-229); its sections keep their numbers.
+ * The lean checked forms (OQ-321) are in rt/cint_rt_lean.h, which section 10
+ * includes after the instances of CINT_RT_ARITH.
  *
  * Helper modes (SPEC-09 EMIT-04, EMIT-05, CONF-03). Define at most one:
  *   CINT_RT_HELPERS_PORTABLE  range checks in standard C17 only.
@@ -207,10 +209,11 @@ CINT_RT_STATIC_ASSERT(sizeof(void *) == 8, "cint-rt-3 supports 64-bit hosts only
 #define CINT_RT_HELPER_MODE "portable"
 #endif
 
-/* A helper whose body folds to one branch only where it is inlined with
- * constant arguments (cint_builtin_<r>, section 13). GCC, Clang and MSVC keep
- * it out of line at some call sites unless told, so the builtin mode tells
- * them; MSVC ignores the request under /Od. */
+/* A helper that pays only where it is inlined: one whose body folds to one
+ * branch with constant arguments (cint_builtin_<r>, section 13), and each
+ * check an emitted statement makes (OQ-320). GCC, Clang and MSVC keep it out of
+ * line at some call sites unless told, more of them as a function grows, so the
+ * builtin mode tells them; MSVC ignores the request under /Od. */
 #if CINT_RT_USE_BUILTINS && defined(CINT_RT_BUILTINS_GNU)
 #define CINT_RT_FOLD static inline __attribute__((always_inline))
 #elif CINT_RT_USE_BUILTINS
@@ -1027,12 +1030,12 @@ CINT_RT_STATIC_ASSERT(sizeof(cint_rt_head) == 72 && offsetof(cint_rt_head, stack
                           offsetof(cint_rt_head, state) == 56 && offsetof(cint_rt_head, module_count) == 64,
                       "cint_rt_head");
 
-static inline cint_rt_head *cint_rt_head_of(cint_ctx *ctx)
+CINT_RT_FOLD cint_rt_head *cint_rt_head_of(cint_ctx *ctx)
 {
     return (cint_rt_head *)(void *)ctx;
 }
 
-static inline bool cint_rt_faulted(cint_ctx *ctx)
+CINT_RT_FOLD bool cint_rt_faulted(cint_ctx *ctx)
 {
     return cint_rt_head_of(ctx)->faulted != 0u;
 }
@@ -1041,7 +1044,7 @@ static inline bool cint_rt_faulted(cint_ctx *ctx)
  * iterations charge 1. A charge that would exceed the allowance faults E_FUEL
  * and is not counted. With no allowance, a charge that would carry the count
  * past INT64_MAX faults E_FUEL (rt/OPEN.md RT-OQ-04). */
-static inline bool cint_fuel_charge(cint_ctx *ctx, cint_site site, uint64_t units)
+CINT_RT_FOLD bool cint_fuel_charge(cint_ctx *ctx, cint_site site, uint64_t units)
 {
     cint_rt_head *h = cint_rt_head_of(ctx);
     uint64_t room;
@@ -1083,11 +1086,30 @@ static inline void cint_rt_call_leave(cint_ctx *ctx)
     }
 }
 
+/* The lean call (OQ-320): into a function of the lean set, which is closed
+ * under calls, so every heavy frame stays on the stack and in the depth. It
+ * writes neither. cint_rt_lean_enter is a heavy caller's check and charge.
+ * Lean code makes the check inline with its local count `fu` and depth room
+ * `dr`; a check that fails calls cint_rt_lean_fail, which writes the record
+ * through cint_rt_call_enter_slow. A caller whose lean callee failed calls
+ * cint_rt_lean_unwind with its site, which adds it to the record. */
+void cint_rt_lean_fail(cint_ctx *ctx, cint_site site, int64_t dr, int64_t fu);
+void cint_rt_lean_unwind(cint_ctx *ctx, cint_site site);
+CINT_RT_FOLD bool cint_rt_lean_enter(cint_ctx *ctx, cint_site site)
+{
+    cint_rt_head *h = cint_rt_head_of(ctx);
+    uint64_t room = h->fuel_limit >= 0 ? (uint64_t)(h->fuel_limit - h->fuel_used)
+                                       : (uint64_t)(INT64_MAX - h->fuel_used);
+    if (h->faulted != 0u || h->depth >= h->depth_limit || room == 0u) return cint_rt_call_enter_slow(ctx, site);
+    h->fuel_used += 1;
+    return true;
+}
+
 /* cint_rt_state (6b), inline (rt/OPEN.md RT-OQ-68): a block already created
  * is returned here; its first access and a refused descriptor take
  * cint_rt_state_slow, which creates it or records the fault. */
 void *cint_rt_state_slow(cint_ctx *ctx, const cint_state *s);
-static inline void *cint_rt_state(cint_ctx *ctx, const cint_state *s)
+CINT_RT_FOLD void *cint_rt_state(cint_ctx *ctx, const cint_state *s)
 {
     const cint_rt_head *h = cint_rt_head_of(ctx);
     if (h->state != NULL && s->module < h->module_count && s->bytes != 0u && h->state[s->module] != NULL)
@@ -1100,7 +1122,7 @@ static inline void *cint_rt_state(cint_ctx *ctx, const cint_state *s)
 
 /* The value of the low w bits of u read as two's complement (w is 8, 16, 32
  * or 64). This is EMIT-07's defined mapping from unsigned to signed. */
-static inline int64_t cint_rt_sext(uint64_t u, unsigned w)
+CINT_RT_FOLD int64_t cint_rt_sext(uint64_t u, unsigned w)
 {
     uint64_t mask = w >= 64u ? UINT64_MAX : (((uint64_t)1 << (w & 63u)) - 1u);
     uint64_t sign = (uint64_t)1 << ((w - 1u) & 63u);
@@ -1109,30 +1131,30 @@ static inline int64_t cint_rt_sext(uint64_t u, unsigned w)
     return -(int64_t)(mask - u) - 1;
 }
 
-static inline uint64_t cint_rt_mask(unsigned w)
+CINT_RT_FOLD uint64_t cint_rt_mask(unsigned w)
 {
     return w >= 64u ? UINT64_MAX : (((uint64_t)1 << (w & 63u)) - 1u);
 }
 
 /* Arithmetic right shift by k in 0..63, defined for negative x (EMIT-10). */
-static inline int64_t cint_rt_asr(int64_t x, unsigned k)
+CINT_RT_FOLD int64_t cint_rt_asr(int64_t x, unsigned k)
 {
     return x >= 0 ? x >> k : ~(~x >> k);
 }
 
-static inline unsigned cint_rt_tag_width(uint32_t tag)
+CINT_RT_FOLD unsigned cint_rt_tag_width(uint32_t tag)
 {
     return 8u << ((tag & 0x0fu) - 1u);
 }
 
-static inline bool cint_rt_tag_signed(uint32_t tag)
+CINT_RT_FOLD bool cint_rt_tag_signed(uint32_t tag)
 {
     return (tag & 0xf0u) == 0x10u;
 }
 
 /* True when the integer with pattern `bits` (signed when src_signed) lies in
  * the range of the type `to_tag` (SPEC-09 EMIT-11). */
-static inline bool cint_rt_fits(uint64_t bits, bool src_signed, uint32_t to_tag)
+CINT_RT_FOLD bool cint_rt_fits(uint64_t bits, bool src_signed, uint32_t to_tag)
 {
     unsigned w = cint_rt_tag_width(to_tag);
     bool to_signed = cint_rt_tag_signed(to_tag);
@@ -1150,7 +1172,7 @@ static inline bool cint_rt_fits(uint64_t bits, bool src_signed, uint32_t to_tag)
 
 /* Shift counts of every integer type. */
 #define CINT_RT_COUNT(T, CT, TAG, K)                         \
-    static inline cint_count cint_count_##T(CT k)            \
+    CINT_RT_FOLD cint_count cint_count_##T(CT k)             \
     {                                                        \
         cint_count c;                                        \
         c.bits = CINT_RT_BITS_##K(k);                        \
@@ -1179,19 +1201,19 @@ CINT_RT_COUNT(u64, uint64_t, CINT_TAG_U64, U)
 /* pairs by rt/tests/test_rt.c (EMIT-05).                                     */
 
 #define CINT_RT_PRIMS_NARROW_SIGNED(T, CT, W, TMIN, TMAX)                           \
-    static inline bool cint_rt_add_ovf_##T##_p(CT a, CT b, CT *r)                   \
+    CINT_RT_FOLD bool cint_rt_add_ovf_##T##_p(CT a, CT b, CT *r)                    \
     {                                                                               \
         int64_t v = (int64_t)a + (int64_t)b;                                        \
         *r = (CT)cint_rt_sext((uint64_t)v, (W));                                    \
         return v < (TMIN) || v > (TMAX);                                            \
     }                                                                               \
-    static inline bool cint_rt_sub_ovf_##T##_p(CT a, CT b, CT *r)                   \
+    CINT_RT_FOLD bool cint_rt_sub_ovf_##T##_p(CT a, CT b, CT *r)                    \
     {                                                                               \
         int64_t v = (int64_t)a - (int64_t)b;                                        \
         *r = (CT)cint_rt_sext((uint64_t)v, (W));                                    \
         return v < (TMIN) || v > (TMAX);                                            \
     }                                                                               \
-    static inline bool cint_rt_mul_ovf_##T##_p(CT a, CT b, CT *r)                   \
+    CINT_RT_FOLD bool cint_rt_mul_ovf_##T##_p(CT a, CT b, CT *r)                    \
     {                                                                               \
         int64_t v = (int64_t)a * (int64_t)b; /* |v| <= 2^62 for W <= 32 */         \
         *r = (CT)cint_rt_sext((uint64_t)v, (W));                                    \
@@ -1199,19 +1221,19 @@ CINT_RT_COUNT(u64, uint64_t, CINT_TAG_U64, U)
     }
 
 #define CINT_RT_PRIMS_NARROW_UNSIGNED(T, CT, W, TMAX)                               \
-    static inline bool cint_rt_add_ovf_##T##_p(CT a, CT b, CT *r)                   \
+    CINT_RT_FOLD bool cint_rt_add_ovf_##T##_p(CT a, CT b, CT *r)                    \
     {                                                                               \
         uint64_t v = (uint64_t)a + (uint64_t)b;                                     \
         *r = (CT)(v & cint_rt_mask(W));                                             \
         return v > (uint64_t)(TMAX);                                                \
     }                                                                               \
-    static inline bool cint_rt_sub_ovf_##T##_p(CT a, CT b, CT *r)                   \
+    CINT_RT_FOLD bool cint_rt_sub_ovf_##T##_p(CT a, CT b, CT *r)                    \
     {                                                                               \
         uint64_t v = (uint64_t)a - (uint64_t)b;                                     \
         *r = (CT)(v & cint_rt_mask(W));                                             \
         return a < b;                                                               \
     }                                                                               \
-    static inline bool cint_rt_mul_ovf_##T##_p(CT a, CT b, CT *r)                   \
+    CINT_RT_FOLD bool cint_rt_mul_ovf_##T##_p(CT a, CT b, CT *r)                    \
     {                                                                               \
         uint64_t v = (uint64_t)a * (uint64_t)b; /* < 2^64 for W <= 32 */            \
         *r = (CT)(v & cint_rt_mask(W));                                             \
@@ -1225,7 +1247,7 @@ CINT_RT_PRIMS_NARROW_UNSIGNED(u8, uint8_t, 8u, UINT8_MAX)
 CINT_RT_PRIMS_NARROW_UNSIGNED(u16, uint16_t, 16u, UINT16_MAX)
 CINT_RT_PRIMS_NARROW_UNSIGNED(u32, uint32_t, 32u, UINT32_MAX)
 
-static inline bool cint_rt_add_ovf_i64_p(int64_t a, int64_t b, int64_t *r)
+CINT_RT_FOLD bool cint_rt_add_ovf_i64_p(int64_t a, int64_t b, int64_t *r)
 {
     if ((b > 0 && a > INT64_MAX - b) || (b < 0 && a < INT64_MIN - b)) {
         *r = cint_rt_sext((uint64_t)a + (uint64_t)b, 64u);
@@ -1235,7 +1257,7 @@ static inline bool cint_rt_add_ovf_i64_p(int64_t a, int64_t b, int64_t *r)
     return false;
 }
 
-static inline bool cint_rt_sub_ovf_i64_p(int64_t a, int64_t b, int64_t *r)
+CINT_RT_FOLD bool cint_rt_sub_ovf_i64_p(int64_t a, int64_t b, int64_t *r)
 {
     if ((b < 0 && a > INT64_MAX + b) || (b > 0 && a < INT64_MIN + b)) {
         *r = cint_rt_sext((uint64_t)a - (uint64_t)b, 64u);
@@ -1246,7 +1268,7 @@ static inline bool cint_rt_sub_ovf_i64_p(int64_t a, int64_t b, int64_t *r)
 }
 
 /* Magnitudes in uint64_t, no signed overflow (SPEC-09 EMIT-04). */
-static inline bool cint_rt_mul_ovf_i64_p(int64_t a, int64_t b, int64_t *r)
+CINT_RT_FOLD bool cint_rt_mul_ovf_i64_p(int64_t a, int64_t b, int64_t *r)
 {
     uint64_t ua = a < 0 ? (uint64_t)0 - (uint64_t)a : (uint64_t)a;
     uint64_t ub = b < 0 ? (uint64_t)0 - (uint64_t)b : (uint64_t)b;
@@ -1256,19 +1278,19 @@ static inline bool cint_rt_mul_ovf_i64_p(int64_t a, int64_t b, int64_t *r)
     return ub != 0u && ua > limit / ub;
 }
 
-static inline bool cint_rt_add_ovf_u64_p(uint64_t a, uint64_t b, uint64_t *r)
+CINT_RT_FOLD bool cint_rt_add_ovf_u64_p(uint64_t a, uint64_t b, uint64_t *r)
 {
     *r = a + b;
     return *r < a;
 }
 
-static inline bool cint_rt_sub_ovf_u64_p(uint64_t a, uint64_t b, uint64_t *r)
+CINT_RT_FOLD bool cint_rt_sub_ovf_u64_p(uint64_t a, uint64_t b, uint64_t *r)
 {
     *r = a - b;
     return a < b;
 }
 
-static inline bool cint_rt_mul_ovf_u64_p(uint64_t a, uint64_t b, uint64_t *r)
+CINT_RT_FOLD bool cint_rt_mul_ovf_u64_p(uint64_t a, uint64_t b, uint64_t *r)
 {
     *r = a * b;
     return a != 0u && b > UINT64_MAX / a;
@@ -1279,15 +1301,15 @@ static inline bool cint_rt_mul_ovf_u64_p(uint64_t a, uint64_t b, uint64_t *r)
  * wrapped to the result type, and report whether it fits [GCC manual, "Integer
  * Overflow Builtins"; Clang language extensions, "Checked Arithmetic"]. */
 #define CINT_RT_PRIMS_GNU(T, CT)                                                    \
-    static inline bool cint_rt_add_ovf_##T##_b(CT a, CT b, CT *r)                   \
+    CINT_RT_FOLD bool cint_rt_add_ovf_##T##_b(CT a, CT b, CT *r)                    \
     {                                                                               \
         return __builtin_add_overflow(a, b, r);                                     \
     }                                                                               \
-    static inline bool cint_rt_sub_ovf_##T##_b(CT a, CT b, CT *r)                   \
+    CINT_RT_FOLD bool cint_rt_sub_ovf_##T##_b(CT a, CT b, CT *r)                    \
     {                                                                               \
         return __builtin_sub_overflow(a, b, r);                                     \
     }                                                                               \
-    static inline bool cint_rt_mul_ovf_##T##_b(CT a, CT b, CT *r)                   \
+    CINT_RT_FOLD bool cint_rt_mul_ovf_##T##_b(CT a, CT b, CT *r)                    \
     {                                                                               \
         return __builtin_mul_overflow(a, b, r);                                     \
     }
@@ -1303,7 +1325,7 @@ CINT_RT_PRIMS_GNU(u64, uint64_t)
 /* MSVC: 64-bit multiply through the 128-bit product intrinsics (EMIT-05);
  * every other primitive uses the portable body. */
 #define CINT_RT_PRIMS_ALIAS(OP, T, CT)                                              \
-    static inline bool cint_rt_##OP##_ovf_##T##_b(CT a, CT b, CT *r)                \
+    CINT_RT_FOLD bool cint_rt_##OP##_ovf_##T##_b(CT a, CT b, CT *r)                 \
     {                                                                               \
         return cint_rt_##OP##_ovf_##T##_p(a, b, r);                                 \
     }
@@ -1320,7 +1342,7 @@ CINT_RT_PRIMS_ALIAS(sub, i64, int64_t)
 CINT_RT_PRIMS_ALIAS(add, u64, uint64_t)
 CINT_RT_PRIMS_ALIAS(sub, u64, uint64_t)
 
-static inline bool cint_rt_mul_ovf_i64_b(int64_t a, int64_t b, int64_t *r)
+CINT_RT_FOLD bool cint_rt_mul_ovf_i64_b(int64_t a, int64_t b, int64_t *r)
 {
 #if defined(_M_X64)
     int64_t hi = 0;
@@ -1333,7 +1355,7 @@ static inline bool cint_rt_mul_ovf_i64_b(int64_t a, int64_t b, int64_t *r)
     return hi != (lo < 0 ? -1 : 0);
 }
 
-static inline bool cint_rt_mul_ovf_u64_b(uint64_t a, uint64_t b, uint64_t *r)
+CINT_RT_FOLD bool cint_rt_mul_ovf_u64_b(uint64_t a, uint64_t b, uint64_t *r)
 {
 #if defined(_M_X64)
     uint64_t hi = 0;
@@ -1359,14 +1381,14 @@ static inline bool cint_rt_mul_ovf_u64_b(uint64_t a, uint64_t b, uint64_t *r)
 /* returns true exactly when a * 2^k is outside T (EMIT-10).                  */
 
 #define CINT_RT_SHL_NARROW_SIGNED(T, CT, W, TMIN, TMAX)                             \
-    static inline bool cint_rt_shl_ovf_##T(CT a, unsigned k, CT *r)                 \
+    CINT_RT_FOLD bool cint_rt_shl_ovf_##T(CT a, unsigned k, CT *r)                  \
     {                                                                               \
         int64_t v = (int64_t)a * ((int64_t)1 << k); /* |v| <= 2^62 */              \
         *r = (CT)cint_rt_sext((uint64_t)v, (W));                                    \
         return v < (TMIN) || v > (TMAX);                                            \
     }
 #define CINT_RT_SHL_NARROW_UNSIGNED(T, CT, W, TMAX)                                 \
-    static inline bool cint_rt_shl_ovf_##T(CT a, unsigned k, CT *r)                 \
+    CINT_RT_FOLD bool cint_rt_shl_ovf_##T(CT a, unsigned k, CT *r)                  \
     {                                                                               \
         uint64_t v = (uint64_t)a << k; /* < 2^63 */                                 \
         *r = (CT)(v & cint_rt_mask(W));                                             \
@@ -1380,14 +1402,14 @@ CINT_RT_SHL_NARROW_UNSIGNED(u16, uint16_t, 16u, UINT16_MAX)
 CINT_RT_SHL_NARROW_UNSIGNED(u32, uint32_t, 32u, UINT32_MAX)
 
 /* I64: shift the unsigned pattern, then shift back arithmetically (EMIT-10). */
-static inline bool cint_rt_shl_ovf_i64(int64_t a, unsigned k, int64_t *r)
+CINT_RT_FOLD bool cint_rt_shl_ovf_i64(int64_t a, unsigned k, int64_t *r)
 {
     int64_t v = cint_rt_sext((uint64_t)a << k, 64u);
     *r = v;
     return cint_rt_asr(v, k) != a;
 }
 
-static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
+CINT_RT_FOLD bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
 {
     *r = a << k;
     return (*r >> k) != a;
@@ -1415,7 +1437,7 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
 /* of a for the record.                                                                  */
 
 #define CINT_RT_ARITH(T, CT, TAG, K, W)                                                       \
-    static inline bool cint_add_##T(cint_ctx *ctx, cint_site site, CT a, CT b, CT *out)        \
+    CINT_RT_FOLD bool cint_add_##T(cint_ctx *ctx, cint_site site, CT a, CT b, CT *out)         \
     {                                                                                         \
         CT r;                                                                                 \
         bool overflow = CINT_RT_OVF(add, T)(a, b, &r);                                        \
@@ -1430,7 +1452,7 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
         *out = r;                                                                             \
         return true;                                                                          \
     }                                                                                         \
-    static inline bool cint_sub_##T(cint_ctx *ctx, cint_site site, CT a, CT b, CT *out)        \
+    CINT_RT_FOLD bool cint_sub_##T(cint_ctx *ctx, cint_site site, CT a, CT b, CT *out)         \
     {                                                                                         \
         CT r;                                                                                 \
         bool overflow = CINT_RT_OVF(sub, T)(a, b, &r);                                        \
@@ -1445,7 +1467,7 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
         *out = r;                                                                             \
         return true;                                                                          \
     }                                                                                         \
-    static inline bool cint_mul_##T(cint_ctx *ctx, cint_site site, CT a, CT b, CT *out)        \
+    CINT_RT_FOLD bool cint_mul_##T(cint_ctx *ctx, cint_site site, CT a, CT b, CT *out)         \
     {                                                                                         \
         CT r;                                                                                 \
         bool overflow = CINT_RT_OVF(mul, T)(a, b, &r);                                        \
@@ -1458,7 +1480,7 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
         *out = r;                                                                             \
         return true;                                                                          \
     }                                                                                         \
-    static inline bool cint_neg_##T(cint_ctx *ctx, cint_site site, CT a, CT *out)              \
+    CINT_RT_FOLD bool cint_neg_##T(cint_ctx *ctx, cint_site site, CT a, CT *out)               \
     {                                                                                         \
         CT r;                                                                                 \
         bool overflow = CINT_RT_OVF(sub, T)((CT)0, a, &r);                                    \
@@ -1468,29 +1490,29 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
         *out = r;                                                                             \
         return true;                                                                          \
     }                                                                                         \
-    static inline CT cint_add_wrap_##T(CT a, CT b)                                            \
+    CINT_RT_FOLD CT cint_add_wrap_##T(CT a, CT b)                                             \
     {                                                                                         \
         CT r;                                                                                 \
         (void)CINT_RT_OVF(add, T)(a, b, &r);                                                  \
         return r;                                                                             \
     }                                                                                         \
-    static inline CT cint_sub_wrap_##T(CT a, CT b)                                            \
+    CINT_RT_FOLD CT cint_sub_wrap_##T(CT a, CT b)                                             \
     {                                                                                         \
         CT r;                                                                                 \
         (void)CINT_RT_OVF(sub, T)(a, b, &r);                                                  \
         return r;                                                                             \
     }                                                                                         \
-    static inline CT cint_mul_wrap_##T(CT a, CT b)                                            \
+    CINT_RT_FOLD CT cint_mul_wrap_##T(CT a, CT b)                                             \
     {                                                                                         \
         CT r;                                                                                 \
         (void)CINT_RT_OVF(mul, T)(a, b, &r);                                                  \
         return r;                                                                             \
     }                                                                                         \
-    static inline CT cint_neg_wrap_##T(CT a)                                                  \
+    CINT_RT_FOLD CT cint_neg_wrap_##T(CT a)                                                   \
     {                                                                                         \
         return cint_sub_wrap_##T((CT)0, a);                                                   \
     }                                                                                         \
-    static inline bool cint_shl_##T(cint_ctx *ctx, cint_site site, CT a, cint_count k, CT *out) \
+    CINT_RT_FOLD bool cint_shl_##T(cint_ctx *ctx, cint_site site, CT a, cint_count k, CT *out)  \
     {                                                                                         \
         CT r = 0;                                                                             \
         bool bad = k.bits > (uint64_t)((W) - 1u);                                             \
@@ -1501,7 +1523,7 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
         *out = r;                                                                             \
         return true;                                                                          \
     }                                                                                         \
-    static inline bool cint_shl_wrap_##T(cint_ctx *ctx, cint_site site, CT a, cint_count k, CT *out) \
+    CINT_RT_FOLD bool cint_shl_wrap_##T(cint_ctx *ctx, cint_site site, CT a, cint_count k, CT *out)  \
     {                                                                                         \
         CT r = 0;                                                                             \
         bool bad = k.bits > (uint64_t)((W) - 1u);                                             \
@@ -1517,7 +1539,7 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
  * the divisor checked for 0 and the pair (MIN, -1) handled before any C `/` or
  * `%` (SPEC-01 4.4, SPEC-09 EMIT-09). */
 #define CINT_RT_DIV_SIGNED(T, CT, TAG, TMIN)                                                  \
-    static inline bool cint_div_##T(cint_ctx *ctx, cint_site site, CT a, CT b, CT *out)        \
+    CINT_RT_FOLD bool cint_div_##T(cint_ctx *ctx, cint_site site, CT a, CT b, CT *out)         \
     {                                                                                         \
         int64_t x = (int64_t)a, y = (int64_t)b, q = 0;                                        \
         bool bad = y == 0 || (x == (int64_t)(TMIN) && y == -1);                               \
@@ -1532,7 +1554,7 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
         *out = (CT)q;                                                                         \
         return true;                                                                          \
     }                                                                                         \
-    static inline bool cint_rem_##T(cint_ctx *ctx, cint_site site, CT a, CT b, CT *out)        \
+    CINT_RT_FOLD bool cint_rem_##T(cint_ctx *ctx, cint_site site, CT a, CT b, CT *out)         \
     {                                                                                         \
         int64_t x = (int64_t)a, y = (int64_t)b, m = 0;                                        \
         bool bad = y == 0;                                                                    \
@@ -1546,7 +1568,7 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
         *out = (CT)m;                                                                         \
         return true;                                                                          \
     }                                                                                         \
-    static inline bool cint_shr_##T(cint_ctx *ctx, cint_site site, CT a, cint_count k, CT *out) \
+    CINT_RT_FOLD bool cint_shr_##T(cint_ctx *ctx, cint_site site, CT a, cint_count k, CT *out)  \
     {                                                                                         \
         bool bad = k.bits > (uint64_t)(sizeof(CT) * 8u - 1u);                                 \
         int64_t r = bad ? 0 : cint_rt_asr((int64_t)a, (unsigned)k.bits);                      \
@@ -1558,7 +1580,7 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
     }
 
 #define CINT_RT_DIV_UNSIGNED(T, CT, TAG)                                                      \
-    static inline bool cint_div_##T(cint_ctx *ctx, cint_site site, CT a, CT b, CT *out)        \
+    CINT_RT_FOLD bool cint_div_##T(cint_ctx *ctx, cint_site site, CT a, CT b, CT *out)         \
     {                                                                                         \
         uint64_t x = (uint64_t)a, y = (uint64_t)b;                                            \
         uint64_t q = y == 0u ? 0u : x / y;                                                    \
@@ -1567,7 +1589,7 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
         *out = (CT)q;                                                                         \
         return true;                                                                          \
     }                                                                                         \
-    static inline bool cint_rem_##T(cint_ctx *ctx, cint_site site, CT a, CT b, CT *out)        \
+    CINT_RT_FOLD bool cint_rem_##T(cint_ctx *ctx, cint_site site, CT a, CT b, CT *out)         \
     {                                                                                         \
         uint64_t x = (uint64_t)a, y = (uint64_t)b;                                            \
         uint64_t m = y == 0u ? 0u : x % y;                                                    \
@@ -1576,7 +1598,7 @@ static inline bool cint_rt_shl_ovf_u64(uint64_t a, unsigned k, uint64_t *r)
         *out = (CT)m;                                                                         \
         return true;                                                                          \
     }                                                                                         \
-    static inline bool cint_shr_##T(cint_ctx *ctx, cint_site site, CT a, cint_count k, CT *out) \
+    CINT_RT_FOLD bool cint_shr_##T(cint_ctx *ctx, cint_site site, CT a, cint_count k, CT *out)  \
     {                                                                                         \
         bool bad = k.bits > (uint64_t)(sizeof(CT) * 8u - 1u);                                 \
         uint64_t r = bad ? 0u : (uint64_t)a >> k.bits;                                        \
@@ -1615,6 +1637,7 @@ CINT_RT_ARITH(u8, uint8_t, CINT_TAG_U8, U, 8u)
 CINT_RT_ARITH(u16, uint16_t, CINT_TAG_U16, U, 16u)
 CINT_RT_ARITH(u32, uint32_t, CINT_TAG_U32, U, 32u)
 CINT_RT_ARITH(u64, uint64_t, CINT_TAG_U64, U, 64u)
+#include "cint_rt_lean.h"  /* the lean checked forms (OQ-321) */
 CINT_RT_SAT_SIGNED(i8, int8_t, INT8_MIN, INT8_MAX)
 CINT_RT_SAT_SIGNED(i16, int16_t, INT16_MIN, INT16_MAX)
 CINT_RT_SAT_SIGNED(i32, int32_t, INT32_MIN, INT32_MAX)
@@ -1760,7 +1783,7 @@ static inline uint64_t cint_rt_sat_bits(uint64_t bits, bool src_signed, uint32_t
 }
 
 #define CINT_RT_CONV(D, CD, DTAG, DK, DW, S, CS, STAG, SK)                                   \
-    static inline bool cint_as_##D##_from_##S(cint_ctx *ctx, cint_site site, CS x, CD *out)  \
+    CINT_RT_FOLD bool cint_as_##D##_from_##S(cint_ctx *ctx, cint_site site, CS x, CD *out)   \
     {                                                                                       \
         uint64_t bits = CINT_RT_BITS_##SK(x);                                               \
         bool fits = cint_rt_fits(bits, CINT_RT_SIGNED_##SK, (DTAG));                        \
@@ -1769,11 +1792,11 @@ static inline uint64_t cint_rt_sat_bits(uint64_t bits, bool src_signed, uint32_t
         *out = (CD)CINT_RT_NARROW_##DK(bits, (DW));                                         \
         return true;                                                                        \
     }                                                                                       \
-    static inline CD cint_as_wrap_##D##_from_##S(CS x)                                      \
+    CINT_RT_FOLD CD cint_as_wrap_##D##_from_##S(CS x)                                       \
     {                                                                                       \
         return (CD)CINT_RT_NARROW_##DK(CINT_RT_BITS_##SK(x), (DW));                         \
     }                                                                                       \
-    static inline CD cint_as_sat_##D##_from_##S(CS x)                                       \
+    CINT_RT_FOLD CD cint_as_sat_##D##_from_##S(CS x)                                        \
     {                                                                                       \
         uint64_t bits = cint_rt_sat_bits(CINT_RT_BITS_##SK(x), CINT_RT_SIGNED_##SK, (DTAG)); \
         return (CD)CINT_RT_NARROW_##DK(bits, (DW));                                         \
@@ -1803,7 +1826,7 @@ CINT_RT_CONV_TO(u64, uint64_t, CINT_TAG_U64, U, 64u)
 /* limit I64 extent, operation supplied by the caller as index.checked.<E>    */
 /* (rt/OPEN.md RT-OQ-05).                                                     */
 
-static inline bool cint_index_check(cint_ctx *ctx, cint_site site, const char *operation,
+CINT_RT_FOLD bool cint_index_check(cint_ctx *ctx, cint_site site, const char *operation,
                                     int64_t index, int64_t extent)
 {
     bool inside = index >= 0 && index < extent;
@@ -2057,11 +2080,11 @@ CINT_RT_FOLD bool cint_rt_builtin_fast(uint32_t op, uint32_t tag, uint32_t mode,
         *out = (CT)CINT_RT_NARROW_##K(bits, (W));                                                   \
         return true;                                                                                \
     }                                                                                               \
-    static inline CT cint_min_##T(CT a, CT b)                                                       \
+    CINT_RT_FOLD CT cint_min_##T(CT a, CT b)                                                        \
     {                                                                                               \
         return (CT)(a < b ? a : b);                                                                 \
     }                                                                                               \
-    static inline CT cint_max_##T(CT a, CT b)                                                       \
+    CINT_RT_FOLD CT cint_max_##T(CT a, CT b)                                                        \
     {                                                                                               \
         return (CT)(a < b ? b : a);                                                                 \
     }
@@ -2076,7 +2099,7 @@ CINT_RT_BUILTIN(u64, uint64_t, U, 64u)
 
 /* uabs.checked.<t>.<u>: |a| in the unsigned type of the same width. */
 #define CINT_RT_UABS(T, CT, UT)                                          \
-    static inline UT cint_uabs_##T(CT a)                                 \
+    CINT_RT_FOLD UT cint_uabs_##T(CT a)                                  \
     {                                                                    \
         return (UT)(a < 0 ? (UT)((UT)0 - (UT)a) : (UT)a);                \
     }
@@ -2137,7 +2160,7 @@ CINT_RT_STATIC_ASSERT(sizeof(cint_vdesc) == 88 && offsetof(cint_vdesc, shape) ==
 bool cint_rt_fault_index_dim(cint_ctx *ctx, cint_site site, const char *operation, int64_t dim, int64_t index,
                              int64_t extent);
 
-static inline bool cint_index_check_dim(cint_ctx *ctx, cint_site site, const char *operation, int64_t dim,
+CINT_RT_FOLD bool cint_index_check_dim(cint_ctx *ctx, cint_site site, const char *operation, int64_t dim,
                                         int64_t index, int64_t extent)
 {
     bool inside = index >= 0 && index < extent;

@@ -1,0 +1,8 @@
+case module/extent_field_named
+clause SPEC-04 LS-62, LS-67; compiler/OPEN.md CINTC-OQ-74 (struct array fields sized by constants)
+format 2
+source reference
+outcome value
+stdout-bytes 0
+return I64 56
+fuel-consumed 1

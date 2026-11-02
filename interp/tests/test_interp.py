@@ -190,7 +190,7 @@ def interp_source_identity() -> str:
     digest of the files cint-interp is built from."""
     return cint_check.files_digest(SOURCES + sorted((ROOT / "interp").glob("*.h")) +
                                    [ROOT / "rt" / n for n in ("cint_rt.h", "cint_rt_host.h", "cint_rt_internal.h",
-                                                              "cint_state.h")] +
+                                                              "cint_rt_lean.h", "cint_state.h")] +
                                    [ROOT / "harness" / "cint_harness.c"])
 
 

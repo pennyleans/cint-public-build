@@ -391,6 +391,19 @@ bool cint_rt_fault_arith(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t ta
     return false;
 }
 
+/* The cold writer of the lean arithmetic forms (cint_rt.h section 10, OQ-321): x is the wrapped result r for add and
+ * sub, from which a is r - b or r + b read at the type's width, and a itself for mul and neg. The record is the one
+ * cint_rt_fault_arith writes for those operands, so it is byte-identical to the full forms'. */
+bool cint_rt_fault_arith_cold(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t tag, uint64_t x, uint64_t b)
+{
+    if ((op == CINT_RT_OP_ADD || op == CINT_RT_OP_SUB) && is_scalar_tag(tag)) {
+        unsigned w = cint_rt_tag_width(tag);
+        x = op == CINT_RT_OP_ADD ? x - b : x + b;
+        x = cint_rt_tag_signed(tag) ? (uint64_t)cint_rt_sext(x, w) : x & cint_rt_mask(w);
+    }
+    return cint_rt_fault_arith(ctx, site, op, tag, x, b);
+}
+
 /* Whether a count's tag is I8 to U64, or a wide one with its limbs (RT-OQ-52),
  * and its operand; in cint_wide.c, included below. */
 static bool count_ok(cint_count k);
@@ -1204,6 +1217,31 @@ bool cint_rt_call_enter_slow(cint_ctx *ctx, cint_site site)
     ctx->head.stack_count++;
     ctx->head.depth++;
     return true;
+}
+
+/* A lean check that failed (cint_rt.h 6e): the head takes the frame's count and
+ * depth, so the record is the one cint_rt_call_enter_slow writes for that call. */
+void cint_rt_lean_fail(cint_ctx *ctx, cint_site site, int64_t dr, int64_t fu)
+{
+    int64_t depth = ctx->head.depth;
+    ctx->head.fuel_used = fu;
+    ctx->head.depth = ctx->head.depth_limit - dr;
+    (void)cint_rt_call_enter_slow(ctx, site);
+    ctx->head.depth = depth;
+}
+
+/* A lean callee failed: the caller's site goes into the record after the heavy
+ * frames' sites and before those of the lean frames inside it, which is where
+ * the stack would have held it. The heavy frames took no cint_rt_call_leave on
+ * the way here, so head.stack_count still counts them. */
+void cint_rt_lean_unwind(cint_ctx *ctx, cint_site site)
+{
+    cint_fault_record *rec = &ctx->fault;
+    uint32_t at = ctx->head.stack_count, n = rec->stack_count;
+    if (ctx->head.faulted != 1u || at > n || n >= CINT_RT_MAX_DEPTH) return;
+    memmove(&rec->stack[at + 1u], &rec->stack[at], (size_t)(n - at) * sizeof rec->stack[0]);
+    rec->stack[at] = site;
+    rec->stack_count = n + 1u;
 }
 
 /* ------------------------------------------------------------------------- */

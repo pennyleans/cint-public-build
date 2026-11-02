@@ -128,7 +128,8 @@ export const I64 SYMBOL_MAX = 247;
 // and while it writes the nodes nn_loop to nn_end of an innermost loop, local slot nn_slot
 // is never negative at a load there (loop_facts), or nn_slot is -1. While it writes the copy
 // of the counted loop at node cp, whose end is node cp_end (counted_loop), cp is that node,
-// or -1, and cp_late is 1 once it has written the store to the loop's counter.
+// or -1, and cp_late is 1 once it has written the store to the loop's counter. plain is 1 while
+// c_func writes a function that may write plain conversions and shifts (plain_fn).
 export struct Out {
     I64 nfunc;
     I64 module;
@@ -150,6 +151,8 @@ export struct Out {
     I64 cp;
     I64 cp_end;
     I64 cp_late;
+    I64 plain;
+    I32 lean;
 }
 
 // ---------------------------------------------------------------- small writers
@@ -2071,8 +2074,7 @@ void import_state[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_]
             emit.w_i64(w, dst, j);
             w_str(w, dst, " == NULL) {{");
             nl(w, dst);
-            w_str(w, dst, "        return false;");
-            nl(w, dst);
+            state_bail(w, dst, o);
             w_str(w, dst, "    }}");
             nl(w, dst);
             w_str(w, dst, "    ");
@@ -4438,6 +4440,12 @@ void c_params[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, i
     if (public) {
         w_str(w, dst, ", int64_t fuel");
     }
+    if ((funcs[fn].lean & LN_ROOM) != 0) {
+        w_str(w, dst, ", int64_t dr");
+    }
+    if ((funcs[fn].lean & LN_COUNTS) != 0) {
+        w_str(w, dst, ", int64_t fu");
+    }
     if ((funcs[fn].flags & lowering.FN_KERNEL) != 0) {
         // A kernel's dispatch site and the writable bits of its arguments' views.
         w_str(w, dst, ", cint_site ks, uint32_t kw");
@@ -4515,7 +4523,16 @@ void c_signature[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text
     } else if ((funcs[fn].flags & lowering.FN_EXPORT) != 0 && o[0].root != 1) {
         w_str(w, dst, "CINT_RT_INTERNAL bool ");
     } else {
-        w_str(w, dst, "static bool ");
+        if ((funcs[fn].lean & LN_FOLD) != 0) {
+            w_str(w, dst, "CINT_RT_FOLD ");
+        } else {
+            w_str(w, dst, "static ");
+        }
+        if ((funcs[fn].lean & LN_COUNTS) != 0) {
+            w_str(w, dst, "int64_t ");
+        } else {
+            w_str(w, dst, "bool ");
+        }
     }
     fn_symbol(w, dst, text, toks, funcs, pbytes, o, fn);
     emit.w_byte(w, dst, '(');
@@ -6012,6 +6029,28 @@ void c_node[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
                 c_operand(w, dst, text, toks, sir, funcs, slots, fn, bb);
                 w_str(w, dst, ");");
                 nl(w, dst);
+            } else if (plain_shr(sir, o, i)) {
+                // A right shift by a constant count inside the width cannot fault (plain_shr).
+                // A signed one is the helper's own formula, defined for a negative operand
+                // (cint_rt_asr, EMIT-10); an unsigned one is C's `>>` on the 64-bit pattern.
+                w_str(w, dst, "    t");
+                emit.w_i64(w, dst, sir[i].dst as I64);
+                w_str(w, dst, " = (");
+                c_type(w, dst, ty);
+                if (lowering.is_signed(ty)) {
+                    w_str(w, dst, ")cint_rt_asr((int64_t)");
+                } else {
+                    w_str(w, dst, ")((uint64_t)");
+                }
+                c_operand(w, dst, text, toks, sir, funcs, slots, fn, a);
+                if (lowering.is_signed(ty)) {
+                    w_str(w, dst, ", (unsigned)");
+                } else {
+                    w_str(w, dst, " >> (unsigned)");
+                }
+                c_operand(w, dst, text, toks, sir, funcs, slots, fn, bb);
+                w_str(w, dst, ");");
+                nl(w, dst);
             } else if (rem_form(sir, funcs, o, i) != 0) {
                 // A remainder by a positive constant cannot fault (rem_form).
                 w_str(w, dst, "    t");
@@ -6180,6 +6219,16 @@ void c_node[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
                 c_operand(w, dst, text, toks, sir, funcs, slots, fn, a);
                 w_str(w, dst, " ? 1 : 0);");
                 nl(w, dst);
+            } else if (plain_as(sir, o, i)) {
+                // Every value of the source fits the target: no fault, no helper (plain_as).
+                w_str(w, dst, "    t");
+                emit.w_i64(w, dst, sir[i].dst as I64);
+                w_str(w, dst, " = (");
+                c_type(w, dst, ty);
+                w_str(w, dst, ")");
+                c_operand(w, dst, text, toks, sir, funcs, slots, fn, a);
+                emit.w_byte(w, dst, ';');
+                nl(w, dst);
             } else if (sir[i].c >= 1) {
                 // `as%`, `as|`, and `as?`, whose value is valid only when its SO_ETAG is 0 (box 12).
                 w_str(w, dst, "    t");
@@ -6213,12 +6262,8 @@ void c_node[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
             if (sir[i].b == 1) {
                 host_call(w, dst, text, toks, sir, funcs, slots, o, fn, i);
             } else {
-                w_str(w, dst, "    if (!cint_rt_call_enter(ctx, ");
-                c_site(w, dst, o, sir[i].site as I64);
-                fault_tail(w, dst, o);
-                w_str(w, dst, "    if (!");
-                fn_symbol(w, dst, text, toks, funcs, pbytes, o, a);
-                w_str(w, dst, "(ctx");
+                call_check(w, dst, funcs, o, a, sir[i].site as I64);
+                call_open(w, dst, text, toks, funcs, pbytes, o, a);
                 I64 nargs = sir[i].c as I64;
                 for j in i - nargs..i {
                     w_str(w, dst, ", ");
@@ -6275,9 +6320,7 @@ void c_node[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
                     w_str(w, dst, ", &t");
                     emit.w_i64(w, dst, sir[i + 1].dst as I64);
                 }
-                fault_tail(w, dst, o);
-                w_str(w, dst, "    cint_rt_call_leave(ctx);");
-                nl(w, dst);
+                call_close(w, dst, funcs, o, a, sir[i].site as I64);
             }
         case lowering.SO_FRAME:
             frame_node(w, dst, sir, funcs, o, i);
@@ -6362,9 +6405,7 @@ void c_node[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
                 nl(w, dst);
             }
             frame_return(w, dst, funcs, fn);
-            fuel_flush(w, dst, o);
-            w_str(w, dst, "    return true;");
-            nl(w, dst);
+            fuel_return(w, dst, o);
         case lowering.SO_DISCARD:
             w_str(w, dst, "    (void)");
             c_operand(w, dst, text, toks, sir, funcs, slots, fn, a);
@@ -7632,6 +7673,261 @@ void fuel_flush[b](inout emit.Writer[_] w, inout U8[b] dst, in Out[_] o) {
     }
 }
 
+// A normal return: a lean function that counts returns its count, any other function writes
+// its local count back and returns true.
+void fuel_return[b](inout emit.Writer[_] w, inout U8[b] dst, in Out[_] o) {
+    if ((o[0].lean & LN_COUNTS) != 0) {
+        w_str(w, dst, "    return fu;");
+    } else {
+        fuel_flush(w, dst, o);
+        w_str(w, dst, "    return true;");
+    }
+    nl(w, dst);
+}
+
+// The value a function returns when it faulted.
+void fault_value[b](inout emit.Writer[_] w, inout U8[b] dst, in Out[_] o) {
+    if ((o[0].lean & LN_COUNTS) != 0) {
+        w_str(w, dst, "-1");
+    } else {
+        w_str(w, dst, "false");
+    }
+}
+
+// The return when cint_rt_state failed, before the function's body: a lean function's count
+// is its parameter, ahead of the head, so it goes back first.
+void state_bail[b](inout emit.Writer[_] w, inout U8[b] dst, in Out[_] o) {
+    if ((o[0].lean & LN_COUNTS) != 0) {
+        w_str(w, dst, "        cint_rt_head_of(ctx)->fuel_used = fu;");
+        nl(w, dst);
+    }
+    w_str(w, dst, "        return ");
+    fault_value(w, dst, o);
+    emit.w_byte(w, dst, ';');
+    nl(w, dst);
+}
+
+// ---------------------------------------------------------------- the lean call (OQ-320)
+
+// funcs[fn].lean, 0 for a heavy function. LN_ON: the function is in the lean set (mark_lean).
+// LN_COUNTS: it takes the fuel count `fu` and returns the new count, or -1 when it faulted, as
+// int64_t in place of bool. LN_ROOM: it makes calls, so it takes `dr`, the depth room D -
+// depth of its frame. LN_FOLD: it is emitted CINT_RT_FOLD.
+const I32 LN_ON = 1;
+const I32 LN_COUNTS = 2;
+const I32 LN_ROOM = 4;
+const I32 LN_FOLD = 8;
+// The largest weight of a CINT_RT_FOLD function: its live nodes plus, at each call, the weight
+// of the callee. It bounds what forced inlining adds to any caller; every per-cell helper of
+// Void Lander's smoke.ci is below it (compiler/OPEN.md CINTC-OQ-75).
+const I64 LEAN_WEIGHT = 200;
+
+// Whether function fn can be lean by its row and its nodes, whatever its callees are. Not an
+// entry, an export, a kernel or an import row. No error union, frame arena or scratch arena.
+// Its nodes run only code that leaves the fuel count alone (fuel_safe), so the count can stay
+// out of the head, and none of them runs on after writing a record: the fixed-point `%` and
+// `|` forms do, so a function that holds a fixed-point operator is heavy (CINTC-OQ-76 item 4).
+// A host call is SO_CALL with b 1. SO_ARG writes no statement of its own, and SO_VEXT and
+// SO_VDIM read a view's extents from locals, so they run no code.
+Bool lean_alone(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, I64 fn) {
+    I32 no = lowering.FN_EXPORT | lowering.FN_SCRIPT | lowering.FN_MAIN | lowering.FN_OBSERVE | lowering.FN_TEST |
+        lowering.FN_IMPORT | lowering.FN_EXTERN | lowering.FN_KERNEL | lowering.FN_ERRU | lowering.FN_FRAME |
+        lowering.FN_SCRATCH;
+    if ((funcs[fn].flags & no) != 0 || funcs[fn].entry != 0) {
+        return false;
+    }
+    for i in funcs[fn].first as I64..funcs[fn].last as I64 {
+        I32 k = sir[i].op & lowering.OP_MASK;
+        if (q_node(sir, i)) {
+            return false;
+        }
+        if (k == lowering.SO_CALL) {
+            if (sir[i].b == 1) {
+                return false;
+            }
+        } else if (k == lowering.SO_FRAME) {
+            if (frame_parts(sir, funcs, fn, i) != 0) {
+                return false;
+            }
+        } else if (k != lowering.SO_FUEL && k != lowering.SO_ARG && k != lowering.SO_VEXT && k != lowering.SO_VDIM &&
+                !fuel_safe(k)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// The lean set of the module (docs/design/notes/2026-11-01-lean-call-path.md, section 4.1):
+// the greatest set of lean_alone functions whose callees are all in it, so recursion stays
+// lean and no heavy frame ever runs below a lean one. The stack and the depth stay exact for
+// every heavy frame, and the runtime reads them only there. Import rows are not in the set,
+// so a call to another module keeps the protocol and its caller is heavy. As in mark_effects,
+// a pass over the calls changes at least one function or is the last, so there are at most as
+// many passes as functions, plus one, here and for LN_FOLD.
+export void mark_lean(in lowering.Sir[_] sir, inout lowering.SirFunc[_] funcs, in lowering.LState[_] ls) {
+    I64 nf = ls[0].nfunc;
+    for k in 0..nf {
+        funcs[k].lean = 0;
+        funcs[k].weight = 0;
+        if (lean_alone(sir, funcs, k)) {
+            funcs[k].lean = LN_ON;
+        }
+    }
+    Bool changed = true;
+    while (changed) {
+        changed = false;
+        for k in 0..nf {
+            if (funcs[k].lean == 0) {
+                continue;
+            }
+            for i in funcs[k].first as I64..funcs[k].last as I64 {
+                if ((sir[i].op & lowering.OP_MASK) == lowering.SO_CALL && funcs[sir[i].a as I64].lean == 0) {
+                    funcs[k].lean = 0;
+                    changed = true;
+                    break;
+                }
+            }
+        }
+    }
+    for k in 0..nf {
+        if (funcs[k].lean != 0) {
+            for i in funcs[k].first as I64..funcs[k].last as I64 {
+                I32 kind = sir[i].op & lowering.OP_MASK;
+                if ((sir[i].op & lowering.FL_LIVE) != 0) {
+                    if (kind == lowering.SO_CALL) {
+                        funcs[k].lean = funcs[k].lean | LN_COUNTS | LN_ROOM;
+                    } else if (kind == lowering.SO_FUEL || kind == lowering.SO_PRINT_END) {
+                        funcs[k].lean = funcs[k].lean | LN_COUNTS;
+                    }
+                }
+            }
+        }
+    }
+    changed = true;
+    while (changed) {
+        changed = false;
+        for k in 0..nf {
+            if (funcs[k].lean == 0 || (funcs[k].lean & LN_FOLD) != 0) {
+                continue;
+            }
+            I64 weight = 0;
+            Bool all = true;
+            for i in funcs[k].first as I64..funcs[k].last as I64 {
+                if ((sir[i].op & lowering.FL_LIVE) != 0) {
+                    weight += 1;
+                    if ((sir[i].op & lowering.OP_MASK) == lowering.SO_CALL) {
+                        I64 a = sir[i].a as I64;
+                        if ((funcs[a].lean & LN_FOLD) == 0) {
+                            all = false;
+                            break;
+                        }
+                        weight += funcs[a].weight as I64;
+                    }
+                }
+            }
+            if (all && weight <= LEAN_WEIGHT) {
+                funcs[k].lean = funcs[k].lean | LN_FOLD;
+                funcs[k].weight = weight as I32;
+                changed = true;
+            }
+        }
+    }
+}
+
+// The check of a call of function a at site s. A heavy callee takes the protocol. A heavy
+// caller of a lean callee takes cint_rt_lean_enter. A lean caller checks here, with the test
+// and the order of cint_rt_call_enter, so no C compiler can leave the check out of line, and
+// charges its local count.
+void call_check[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.SirFunc[_] funcs, in Out[_] o, I64 a,
+        I64 s) {
+    if (funcs[a].lean == 0) {
+        w_str(w, dst, "    if (!cint_rt_call_enter(ctx, ");
+        c_site(w, dst, o, s);
+        fault_tail(w, dst, o);
+    } else if (o[0].lean == 0) {
+        w_str(w, dst, "    if (!cint_rt_lean_enter(ctx, ");
+        c_site(w, dst, o, s);
+        fault_tail(w, dst, o);
+    } else {
+        w_str(w, dst, "    if (fh->faulted != 0u || dr <= 0 || fcap - fu < 1) {{ cint_rt_lean_fail(ctx, ");
+        c_site(w, dst, o, s);
+        w_str(w, dst, ", dr, fu); ");
+        c_fault(w, dst, o);
+        w_str(w, dst, " }}");
+        nl(w, dst);
+        w_str(w, dst, "    fu += 1;");
+        nl(w, dst);
+    }
+}
+
+// The call of function a up to its first argument after ctx and the hidden ones.
+void call_open[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in scan.Token[t] toks,
+        in lowering.SirFunc[_] funcs, in U8[_] pbytes, in Out[_] o, I64 a) {
+    if ((funcs[a].lean & LN_COUNTS) == 0) {
+        w_str(w, dst, "    if (!");
+    } else if (o[0].lean != 0) {
+        w_str(w, dst, "    fu = ");
+    } else {
+        w_str(w, dst, "    {{ cint_rt_head *lh = cint_rt_head_of(ctx); int64_t lu = ");
+    }
+    fn_symbol(w, dst, text, toks, funcs, pbytes, o, a);
+    w_str(w, dst, "(ctx");
+    if ((funcs[a].lean & LN_ROOM) != 0) {
+        if (o[0].lean != 0) {
+            w_str(w, dst, ", dr - 1");
+        } else {
+            w_str(w, dst, ", lh->depth_limit - lh->depth - 1");
+        }
+    }
+    if ((funcs[a].lean & LN_COUNTS) != 0) {
+        if (o[0].lean != 0) {
+            w_str(w, dst, ", fu");
+        } else {
+            w_str(w, dst, ", lh->fuel_used");
+        }
+    }
+}
+
+// `cint_rt_lean_unwind(ctx, <site>); `: the caller's site goes into the record.
+void call_unwind[b](inout emit.Writer[_] w, inout U8[b] dst, in Out[_] o, I64 s) {
+    w_str(w, dst, "cint_rt_lean_unwind(ctx, ");
+    c_site(w, dst, o, s);
+    w_str(w, dst, "); ");
+}
+
+// The end of the call of function a at site s. A count of -1 has replaced the caller's `fu`,
+// so the caller takes the count back from the head, where the callee left it, for its own
+// `fault:` to write.
+void call_close[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.SirFunc[_] funcs, in Out[_] o, I64 a,
+        I64 s) {
+    if (funcs[a].lean == 0) {
+        fault_tail(w, dst, o);
+        w_str(w, dst, "    cint_rt_call_leave(ctx);");
+        nl(w, dst);
+    } else if ((funcs[a].lean & LN_COUNTS) == 0) {
+        w_str(w, dst, ")) {{ ");
+        call_unwind(w, dst, o, s);
+        c_fault(w, dst, o);
+        w_str(w, dst, " }}");
+        nl(w, dst);
+    } else if (o[0].lean != 0) {
+        w_str(w, dst, ");");
+        nl(w, dst);
+        w_str(w, dst, "    if (fu < 0) {{ ");
+        call_unwind(w, dst, o, s);
+        w_str(w, dst, "fu = fh->fuel_used; ");
+        c_fault(w, dst, o);
+        w_str(w, dst, " }}");
+        nl(w, dst);
+    } else {
+        w_str(w, dst, "); if (lu < 0) {{ ");
+        call_unwind(w, dst, o, s);
+        c_fault(w, dst, o);
+        w_str(w, dst, " }} lh->fuel_used = lu; }}");
+        nl(w, dst);
+    }
+}
+
 // Node i of a function body: a structure's label or jump, or the node's statement (c_node).
 // While c_func writes the copy of a counted loop (o's cp), the loop's own end label is the
 // original's (counted_loop).
@@ -7681,7 +7977,9 @@ void c_func[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
     o[0].fn = fn;
     o[0].first = first;
     o[0].fuel = 0;
-    if (fuel_local(sir, funcs, fn)) {
+    o[0].plain = plain_fn(sir, funcs, fn);
+    o[0].lean = funcs[fn].lean;
+    if ((o[0].lean & LN_COUNTS) != 0 || (o[0].lean == 0 && fuel_local(sir, funcs, fn))) {
         o[0].fuel = 1;
     }
     c_signature(w, dst, text, toks, funcs, slots, pbytes, o, fn);
@@ -7843,8 +8141,7 @@ void c_func[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
     if (st) {
         w_str(w, dst, "    if (cg_st == NULL) {{");
         nl(w, dst);
-        w_str(w, dst, "        return false;");
-        nl(w, dst);
+        state_bail(w, dst, o);
         w_str(w, dst, "    }}");
         nl(w, dst);
     }
@@ -7916,10 +8213,22 @@ void c_func[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
     if (o[0].fuel != 0) {
         w_str(w, dst, "    cint_rt_head *fh = cint_rt_head_of(ctx);");
         nl(w, dst);
-        w_str(w, dst, "    int64_t fu = fh->fuel_used;");
-        nl(w, dst);
+        if (o[0].lean == 0) {
+            w_str(w, dst, "    int64_t fu = fh->fuel_used;");
+            nl(w, dst);
+        }
         w_str(w, dst, "    int64_t fcap = fh->fuel_limit >= 0 ? fh->fuel_limit : INT64_MAX;");
         nl(w, dst);
+        if (o[0].lean != 0) {
+            w_str(w, dst, "    (void)fu;");
+            nl(w, dst);
+            w_str(w, dst, "    (void)fcap;");
+            nl(w, dst);
+        }
+        if ((o[0].lean & LN_ROOM) != 0) {
+            w_str(w, dst, "    (void)dr;");
+            nl(w, dst);
+        }
         // The fuel count and the counter where a counted loop's copy begins (counted_exits).
         Bool counted = false;
         for i in first..last {
@@ -7988,10 +8297,10 @@ void c_func[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
     }
     if ((funcs[fn].flags & lowering.FN_FALLS) != 0) {
         frame_return(w, dst, funcs, fn);
-        fuel_flush(w, dst, o);
         if ((funcs[fn].flags & lowering.FN_KERNEL) != 0) {
             // The dispatch has published every written parameter: its boundary at `dispatch`
             // density (SPEC-06 1.5; OQ-234).
+            fuel_flush(w, dst, o);
             w_str(w, dst, "    cint_rt_dispatch_end(ctx, kd);");
             nl(w, dst);
         }
@@ -7999,8 +8308,7 @@ void c_func[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
             w_str(w, dst, "    *etag = 0;");
             nl(w, dst);
         }
-        w_str(w, dst, "    return true;");
-        nl(w, dst);
+        fuel_return(w, dst, o);
     }
     if ((funcs[fn].flags & lowering.FN_FAULT) != 0 && exits > 0) {
         w_str(w, dst, "fault:");
@@ -8015,7 +8323,9 @@ void c_func[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
             w_str(w, dst, "\", kd, kph, kwi, kst);");
             nl(w, dst);
         }
-        w_str(w, dst, "    return false;");
+        w_str(w, dst, "    return ");
+        fault_value(w, dst, o);
+        emit.w_byte(w, dst, ';');
         nl(w, dst);
     }
     w_str(w, dst, "}}");
@@ -8115,6 +8425,66 @@ void loop_facts(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowerin
             return;
         }
     }
+}
+
+// OQ-322 (CINTC-OQ-77): conversions and shifts that cannot fault on any value are written
+// without their helper, `ctx` and site. The ground is RT-10: emitted code leaves a function at
+// the first false result, so the context holds no fault at such a node (the ground of rem_form).
+// Where that is not shown (CINTC-OQ-76 item 4), the helper keeps its `faulted` read: a kernel,
+// and a function with a host call or a dispatch, whose host code may leave a record behind.
+
+// Whether function fn may write plain conversions and shifts: 1 unless it is a kernel or holds
+// a host call (an SO_CALL with b 1) or a dispatch (SO_KCALL).
+I64 plain_fn(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, I64 fn) {
+    if ((funcs[fn].flags & lowering.FN_KERNEL) != 0) {
+        return 0;
+    }
+    I64 last = funcs[fn].last as I64;
+    for i in funcs[fn].first as I64..last {
+        I32 k = sir[i].op & lowering.OP_MASK;
+        if (k == lowering.SO_KCALL || (k == lowering.SO_CALL && sir[i].b == 1)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+// Whether ty is one of the eight scalar integer types, I8 to I64 and U8 to U64.
+Bool scalar_int(I32 ty) {
+    return (ty >= lowering.T_I8 && ty <= lowering.T_I64) || (ty >= lowering.T_U8 && ty <= lowering.T_U64);
+}
+
+// Whether checked `as` node i converts between scalar integer types and every value of the
+// source type lies in the target type: signed to a type at least as wide, unsigned to a
+// strictly wider signed type, unsigned to a type at least as wide.
+Bool plain_as(in lowering.Sir[_] sir, in Out[_] o, I64 i) {
+    if ((sir[i].op & lowering.OP_MASK) != lowering.SO_AS || sir[i].c != 0 || o[0].plain == 0 ||
+            !scalar_int(sir[i].ty) || !scalar_int(sir[i].f)) {
+        return false;
+    }
+    I64 wt = fold.ty_width(sir[i].ty as I64);
+    I64 wf = fold.ty_width(sir[i].f as I64);
+    if (lowering.is_signed(sir[i].f)) {
+        return lowering.is_signed(sir[i].ty) && wt >= wf;
+    }
+    if (lowering.is_signed(sir[i].ty)) {
+        return wt > wf;
+    }
+    return wt >= wf;
+}
+
+// Whether checked `>>` node i of a scalar integer type has a constant count k, 0 <= k < the
+// width of its left operand's type (the node's type), which cannot fault.
+Bool plain_shr(in lowering.Sir[_] sir, in Out[_] o, I64 i) {
+    if ((sir[i].op & lowering.OP_MASK) != lowering.SO_BIN || sir[i].c != lowering.B_SHR || sir[i].f != 0 ||
+            o[0].plain == 0 || !scalar_int(sir[i].ty)) {
+        return false;
+    }
+    I64 d = sir[i].b as I64;
+    if (d < 0 || (sir[d].op & lowering.OP_MASK) != lowering.SO_CONST || !scalar_int(sir[d].ty)) {
+        return false;
+    }
+    return sir[d].val >= 0 && sir[d].val < fold.ty_width(sir[i].ty as I64);
 }
 
 // How remainder node i is written: 0 by its checked helper; 1 as a mask, when the divisor
@@ -8358,12 +8728,16 @@ void counted_bound[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] te
 }
 
 // Whether node i is written without the check that can exit to `fault:`: a remainder of
-// rem_form, or an index check of rem_within (c_node).
+// rem_form, a conversion of plain_as, a right shift of plain_shr, or an index check of
+// rem_within (c_node).
 Bool proven(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots,
         in Out[_] o, I64 i) {
     I32 k = sir[i].op & lowering.OP_MASK;
     if (k == lowering.SO_BIN) {
-        return rem_form(sir, funcs, o, i) != 0;
+        return rem_form(sir, funcs, o, i) != 0 || plain_shr(sir, o, i);
+    }
+    if (k == lowering.SO_AS) {
+        return plain_as(sir, o, i);
     }
     return k == lowering.SO_ICHECK && !nview(slots, sir[i].a as I64) && rem_within(sir, funcs, slots, o, i);
 }
@@ -11914,6 +12288,7 @@ void out_of(inout Out[_] o, in PMod[_] pm, I64 mi, I64 nmod) {
     o[0].cp = -1;
     o[0].cp_end = -1;
     o[0].cp_late = 0;
+    o[0].plain = 0;
     if (mi < nmod) {
         o[0].path_at = pm[mi + 1].path_at;
         o[0].path_len = pm[mi + 1].path_len;

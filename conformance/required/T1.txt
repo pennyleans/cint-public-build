@@ -106,6 +106,8 @@
 # each with C9100 at its first fixed-point type, so all 29 are outside_subset here.
 # Measured with --required T1.txt and --only fixed/ on Linux (the seed of 375beca, gcc
 # -O0, portable helpers; scratch run, no receipt).
+# 2026-11-01 (CINTC-OQ-74): 7 conformance/module/extent_ cases of constant extents, frozen
+# from cint_ref, measured with the seed: all outside_subset (C9100). No other row changes.
 anchors/abs.checked.i64.001 cint-seed not_applicable
 anchors/abs.checked.i64.002 cint-seed not_applicable
 anchors/abs.checked.i8.001 cint-seed not_applicable
@@ -832,6 +834,13 @@ module/c3030_device_directory cint-seed compared
 module/c3030_device_name cint-seed compared
 module/c3030_fold_directory cint-seed compared
 module/c3030_not-an-identifier cint-seed compared
+module/extent_at_max cint-seed outside_subset
+module/extent_field_named cint-seed outside_subset
+module/extent_named cint-seed outside_subset
+module/extent_negative_c2015 cint-seed outside_subset
+module/extent_nonconstant_c6004 cint-seed outside_subset
+module/extent_not_i64_c2001 cint-seed outside_subset
+module/extent_product cint-seed outside_subset
 module/fold_after_dependency_c3009 cint-seed compared
 module/import_cycle_c3003 cint-seed compared
 module/import_plain cint-seed compared

@@ -854,9 +854,9 @@ def encodings(compiler: str = COMPILERS["seed"]) -> dict:
 
 
 def runtime_header_digest() -> str:
-    """runtime_header_sha256: both runtime headers, since cint_rt.h includes cint_rt_host.h and
-    emitted C compiles against both (rt/OPEN.md RT-OQ-47)."""
-    return files_digest([RT / "cint_rt.h", RT / "cint_rt_host.h"])
+    """runtime_header_sha256: the runtime headers, since cint_rt.h includes cint_rt_host.h and
+    cint_rt_lean.h and emitted C compiles against all three (rt/OPEN.md RT-OQ-47)."""
+    return files_digest([RT / "cint_rt.h", RT / "cint_rt_host.h", RT / "cint_rt_lean.h"])
 
 
 def runtime_contract() -> str:

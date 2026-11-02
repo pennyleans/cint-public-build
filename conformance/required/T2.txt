@@ -303,6 +303,8 @@
 # coverage, C4040 and two-module fault/publication tests; 2.15 build/test CLI
 # receipts. The existing suite covers some behavior, but cannot replace those named
 # task gates.
+# 2026-11-01 (CINTC-OQ-74): 14 rows for the 7 conformance/module/extent_ cases of constant
+# extents, frozen from cint_ref: seed outside_subset (C9100), B1 compared. No other row changes.
 # Reference: anchors/abs.checked.i64.001 cint-seed SPEC-09 CONF-14.5; SPEC-09 5.5; no cint-boot-1 operator form; anchor operation abs.checked.i64
 anchors/abs.checked.i64.001 cint-seed not_applicable
 # Reference: anchors/abs.checked.i64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation abs.checked.i64
@@ -3171,6 +3173,34 @@ module/c3030_fold_directory cintc compared
 module/c3030_not-an-identifier cint-seed compared
 # Reference: module/c3030_not-an-identifier cintc SPEC-09 CONF-14.1; SPEC-09 CINTC-12 (each segment of a module path is an identifier); SPEC-04 LS-225, LS-278
 module/c3030_not-an-identifier cintc compared
+# Reference: module/extent_at_max cint-seed SPEC-09 CONF-14.4; SPEC-04 LS-62, LS-113; OQ-297; compiler/OPEN.md CINTC-OQ-74 (a constant at MODULE_ARRAY_MAX, 65,536 elements)
+module/extent_at_max cint-seed outside_subset
+# Reference: module/extent_at_max cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-113; OQ-297; compiler/OPEN.md CINTC-OQ-74 (a constant at MODULE_ARRAY_MAX, 65,536 elements)
+module/extent_at_max cintc compared
+# Reference: module/extent_field_named cint-seed SPEC-09 CONF-14.4; SPEC-04 LS-62, LS-67; compiler/OPEN.md CINTC-OQ-74 (struct array fields sized by constants)
+module/extent_field_named cint-seed outside_subset
+# Reference: module/extent_field_named cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-67; compiler/OPEN.md CINTC-OQ-74 (struct array fields sized by constants)
+module/extent_field_named cintc compared
+# Reference: module/extent_named cint-seed SPEC-09 CONF-14.4; SPEC-04 LS-62, LS-113; OQ-297; compiler/OPEN.md CINTC-OQ-74 (a module-level array sized by a constant's name, rank 1 and rank 2)
+module/extent_named cint-seed outside_subset
+# Reference: module/extent_named cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-113; OQ-297; compiler/OPEN.md CINTC-OQ-74 (a module-level array sized by a constant's name, rank 1 and rank 2)
+module/extent_named cintc compared
+# Reference: module/extent_negative_c2015 cint-seed SPEC-09 CONF-14.4; SPEC-04 LS-62, LS-113; OQ-297; compiler/OPEN.md CINTC-OQ-74 (a negative constant extent: C2015)
+module/extent_negative_c2015 cint-seed outside_subset
+# Reference: module/extent_negative_c2015 cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-113; OQ-297; compiler/OPEN.md CINTC-OQ-74 (a negative constant extent: C2015)
+module/extent_negative_c2015 cintc compared
+# Reference: module/extent_nonconstant_c6004 cint-seed SPEC-09 CONF-14.4; SPEC-04 LS-62, LS-113; OQ-297; compiler/OPEN.md CINTC-OQ-74 (an extent that is no compile-time constant: C6004)
+module/extent_nonconstant_c6004 cint-seed outside_subset
+# Reference: module/extent_nonconstant_c6004 cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-113; OQ-297; compiler/OPEN.md CINTC-OQ-74 (an extent that is no compile-time constant: C6004)
+module/extent_nonconstant_c6004 cintc compared
+# Reference: module/extent_not_i64_c2001 cint-seed SPEC-09 CONF-14.4; SPEC-04 LS-62, LS-113; OQ-297; compiler/OPEN.md CINTC-OQ-74 (an extent has type I64: C2001)
+module/extent_not_i64_c2001 cint-seed outside_subset
+# Reference: module/extent_not_i64_c2001 cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-113; OQ-297; compiler/OPEN.md CINTC-OQ-74 (an extent has type I64: C2001)
+module/extent_not_i64_c2001 cintc compared
+# Reference: module/extent_product cint-seed SPEC-09 CONF-14.4; SPEC-04 LS-62, LS-113; OQ-297; compiler/OPEN.md CINTC-OQ-74 (a product of constants, declared after the array)
+module/extent_product cint-seed outside_subset
+# Reference: module/extent_product cintc SPEC-09 CONF-14.1; SPEC-04 LS-62, LS-113; OQ-297; compiler/OPEN.md CINTC-OQ-74 (a product of constants, declared after the array)
+module/extent_product cintc compared
 # Reference: module/fold_after_dependency_c3009 cint-seed SPEC-09 CONF-14.1; SPEC-09 CINTC-12 (case folding compares with the paths of the program so far, in load order); SPEC-04 LS-225; compiler/OPEN.md CINTC-OQ-50
 module/fold_after_dependency_c3009 cint-seed compared
 # Reference: module/fold_after_dependency_c3009 cintc SPEC-09 CONF-14.1; SPEC-09 CINTC-12 (OQ-178: paths loaded so far, breadth first in import order); SPEC-04 LS-225; compiler/OPEN.md CINTC-OQ-50

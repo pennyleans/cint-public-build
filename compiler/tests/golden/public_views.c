@@ -124,7 +124,7 @@ L5_f:;
         goto fault;
     }
     t9 = v_bytes[o_bytes + t8 * s_bytes];
-    if (!cint_as_i64_from_u8(ctx, cs7, t9, &t10)) goto fault;
+    t10 = (int64_t)t9;
     if (!cint_add_i64(ctx, cs8, t7, t10, &t11)) goto fault;
     t12 = INT64_C(0);
     if (!(t12 >= 0 && t12 < n_more)) {
@@ -132,7 +132,7 @@ L5_f:;
         goto fault;
     }
     t13 = v_more[o_more + t12 * s_more];
-    if (!cint_as_i64_from_u8(ctx, cs10, t13, &t14)) goto fault;
+    t14 = (int64_t)t13;
     if (!cint_add_i64(ctx, cs11, t11, t14, &t15)) goto fault;
     *result = t15;
     return true;
@@ -175,7 +175,7 @@ static bool ci_15_public_x5Fviews_5_fixed(cint_ctx *ctx, int32_t *v_a, int64_t o
         goto fault;
     }
     t2 = v_b[o_b + t1 * s_b];
-    if (!cint_as_i32_from_u8(ctx, cs15, t2, &t3)) goto fault;
+    t3 = (int32_t)t2;
     v_a[o_a + t0 * s_a] = t3;
     t4 = INT64_C(0);
     if (!(t4 >= 0 && t4 < n_a)) {
@@ -183,7 +183,7 @@ static bool ci_15_public_x5Fviews_5_fixed(cint_ctx *ctx, int32_t *v_a, int64_t o
         goto fault;
     }
     t5 = v_a[o_a + t4 * s_a];
-    if (!cint_as_i64_from_i32(ctx, cs17, t5, &t6)) goto fault;
+    t6 = (int64_t)t5;
     *result = t6;
     return true;
 fault:

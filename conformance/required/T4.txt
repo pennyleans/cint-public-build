@@ -118,6 +118,8 @@
 # identity 4f3f8b8e; gcc -O0, portable helpers), with --stage T4 and with --interp: 11
 # records compared on each, none disagreeing, none left not executed, every row in its
 # category. Each executor: 1046 compared, 11 held, 67 not_applicable, 0 unsupported.
+# 2026-11-01 (CINTC-OQ-74): 14 rows for the 7 conformance/module/extent_ cases of constant
+# extents, compared by both executors. No other row changes.
 anchors/abs.checked.i64.001 cintc compared
 anchors/abs.checked.i64.001 cintc/cpu-sir-interp compared
 anchors/abs.checked.i64.002 cintc compared
@@ -1552,6 +1554,20 @@ module/c3030_fold_directory cintc compared
 module/c3030_fold_directory cintc/cpu-sir-interp compared
 module/c3030_not-an-identifier cintc compared
 module/c3030_not-an-identifier cintc/cpu-sir-interp compared
+module/extent_at_max cintc compared
+module/extent_at_max cintc/cpu-sir-interp compared
+module/extent_field_named cintc compared
+module/extent_field_named cintc/cpu-sir-interp compared
+module/extent_named cintc compared
+module/extent_named cintc/cpu-sir-interp compared
+module/extent_negative_c2015 cintc compared
+module/extent_negative_c2015 cintc/cpu-sir-interp compared
+module/extent_nonconstant_c6004 cintc compared
+module/extent_nonconstant_c6004 cintc/cpu-sir-interp compared
+module/extent_not_i64_c2001 cintc compared
+module/extent_not_i64_c2001 cintc/cpu-sir-interp compared
+module/extent_product cintc compared
+module/extent_product cintc/cpu-sir-interp compared
 module/fold_after_dependency_c3009 cintc compared
 module/fold_after_dependency_c3009 cintc/cpu-sir-interp compared
 module/import_cycle_c3003 cintc compared

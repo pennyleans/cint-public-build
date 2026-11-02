@@ -1,0 +1,15 @@
+// case: module/extent_named
+// clause: SPEC-04 LS-62, LS-113; OQ-297; compiler/OPEN.md CINTC-OQ-74 (a module-level array sized by a constant's name, rank 1 and rank 2)
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: value I64 4343; the seed refuses the extent
+
+const I64 SLOTS = 3;
+I64[SLOTS] words = [1, 2, 3];
+I32[SLOTS, 2] grid;
+
+export I64 run() {
+    grid[2, 1] = 4;
+    words[2] += 40;
+    return words[2] * 100 + (grid[2, 1] as I64) * 10 + len(words);
+}

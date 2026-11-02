@@ -1,0 +1,12 @@
+// case: module/extent_nonconstant_c6004
+// clause: SPEC-04 LS-62, LS-113; OQ-297; compiler/OPEN.md CINTC-OQ-74 (an extent that is no compile-time constant: C6004)
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: compile error C6004 at 8:5, the extent
+
+I64 n = 2;
+I64[n] a;
+
+export I64 run() {
+    return 0;
+}

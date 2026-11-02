@@ -1,0 +1,7 @@
+case module/extent_negative_c2015
+clause SPEC-04 LS-62, LS-113; OQ-297; compiler/OPEN.md CINTC-OQ-74 (a negative constant extent: C2015)
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2015
+diagnostic.position module/extent_negative_c2015.ci:8:5

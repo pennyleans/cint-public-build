@@ -1,0 +1,14 @@
+// case: module/extent_product
+// clause: SPEC-04 LS-62, LS-113; OQ-297; compiler/OPEN.md CINTC-OQ-74 (a product of constants, declared after the array)
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: value I64 721; the seed refuses the extent
+
+I64[SLOTS * WORDS + 1] room;
+const I64 SLOTS = 4;
+const I64 WORDS = 5;
+
+export I64 run() {
+    room[20] = 7;
+    return room[20] * 100 + len(room);
+}

@@ -89,6 +89,8 @@ export struct SirFunc {
     I32 ntemp;
     I32 entry;
     I32 flags;
+    I32 lean;
+    I32 weight;
 }
 
 // One slot: a parameter, a local, or a hidden Bool of `&&` or `||` (name -1).
@@ -124,7 +126,7 @@ export struct LState {
 }
 
 export const I64 SIR_BYTES = 48;
-export const I64 FUNC_BYTES = 48;
+export const I64 FUNC_BYTES = 56;
 export const I64 SLOT_BYTES = 16;
 export const I64 LSTATE_BYTES = 160;
 

@@ -70,7 +70,7 @@ SOURCES = [RT / "cint_rt.c", RT / "cint_state.c", RT / "cint_rec.c", RT / "tests
            RT / "tests" / "test_state.c", RT / "tests" / "test_record.c", RT / "tests" / "test_density.c"]
 # The headers SOURCES include, which a fuzz receipt pins with them.
 HEADERS = [RT / name for name in ("cint_fixed.h", "cint_mem.h", "cint_rt.h", "cint_rt_host.h", "cint_rt_internal.h",
-                                  "cint_state.h", "cint_state_internal.h", "cint_wide.h")]
+                                  "cint_rt_lean.h", "cint_state.h", "cint_state_internal.h", "cint_wide.h")]
 # test_wide_fast.c, the differential test of the 2- and 4-limb paths (rt/OPEN.md RT-OQ-62) and of the
 # wider products (RT-OQ-66) and quotients (RT-OQ-69), with the runtime as is and with CINT_W_GENERIC,
 # which keeps the limb loops for every width; its seeded pairs per operation in the -O2 builds without sanitizers (2^20, or 2^12 with

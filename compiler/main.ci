@@ -753,6 +753,8 @@ export I64 compile[n, p, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, 
     if (bad >= 0) {
         internal(bad);
     }
+    // Which functions take the lean call (OQ-320).
+    back_c.mark_lean(sir, funcs, ls);
     pm[mi + 1].nobs = nobs;
     if (ls[0].entry >= 0) {
         // 2 when `main` takes the program arguments (lowering.FN_ARGS; OQ-306), so that the

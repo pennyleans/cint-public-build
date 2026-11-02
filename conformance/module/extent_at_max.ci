@@ -1,0 +1,13 @@
+// case: module/extent_at_max
+// clause: SPEC-04 LS-62, LS-113; OQ-297; compiler/OPEN.md CINTC-OQ-74 (a constant at MODULE_ARRAY_MAX, 65,536 elements)
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: value I64 765536; the seed refuses the extent
+
+const I64 MOST = 65536;
+U8[MOST] bytes;
+
+export I64 run() {
+    bytes[65535] = 7;
+    return (bytes[65535] as I64) * 100000 + len(bytes);
+}

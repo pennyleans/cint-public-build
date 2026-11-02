@@ -10,7 +10,7 @@
 # Unsupported seed limits become B1 comparison obligations under CINTC-02/LS-311.
 # Approval covers these rows and exclusions; a later change to either needs a new
 # approval. Stage acceptance still needs the fresh receipts of STAGE-01.
-# The following 646 core-only IDs (552 programs and tables, 18 saturating anchors,
+# The following 653 core-only IDs (559 programs and tables, 18 saturating anchors,
 # 76 built-in anchors) are explicitly outside this boot scope. We assign no
 # outside_subset category to B1. This is not full T2 coverage. B1 compares the 18
 # saturating anchors since task 2.14b and the 76 built-in anchors since box 07.
@@ -92,6 +92,10 @@
 # 2026-10-24 (OQ-315 A; OQ-174 amendment): 2 programs excluded, the cases of the `catch`
 # statement, as error sets are outside cint-boot-1; B1 compares them under T2; no other
 # row or exclusion changes.
+# 2026-11-01 (CINTC-OQ-74; OQ-174 amendment): 7 programs
+# excluded, the conformance/module/extent_ cases: six declare a module-level variable
+# (BOOT-01 declaration) and module/extent_field_named calls the built-in `len`; B1 compares
+# them under T2; no other row or exclusion changes.
 # Boot scope exclusion: anchors/abs.checked.i64.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
 # Boot scope exclusion: anchors/abs.checked.i64.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
 # Boot scope exclusion: anchors/abs.checked.i8.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
@@ -459,6 +463,13 @@
 # Boot scope exclusion: memory/pool_slot_assign SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
 # Boot scope exclusion: memory/pool_stale_generation SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
 # Boot scope exclusion: memory/script_pool_module_level SPEC-09 BOOT-01 excludes arenas, pools and handles; frozen, decision 2026-10-06 on OQ-210 (box 12 memory lifetimes)
+# Boot scope exclusion: module/extent_at_max SPEC-09 BOOT-01 declaration admits no module-level variable; B1 compares it under T2 (CINTC-OQ-74)
+# Boot scope exclusion: module/extent_field_named SPEC-09 BOOT-01 excludes built-in functions; B1 compares it under T2 (CINTC-OQ-74)
+# Boot scope exclusion: module/extent_named SPEC-09 BOOT-01 declaration admits no module-level variable; B1 compares it under T2 (CINTC-OQ-74)
+# Boot scope exclusion: module/extent_negative_c2015 SPEC-09 BOOT-01 declaration admits no module-level variable; B1 compares it under T2 (CINTC-OQ-74)
+# Boot scope exclusion: module/extent_nonconstant_c6004 SPEC-09 BOOT-01 declaration admits no module-level variable; B1 compares it under T2 (CINTC-OQ-74)
+# Boot scope exclusion: module/extent_not_i64_c2001 SPEC-09 BOOT-01 declaration admits no module-level variable; B1 compares it under T2 (CINTC-OQ-74)
+# Boot scope exclusion: module/extent_product SPEC-09 BOOT-01 declaration admits no module-level variable; B1 compares it under T2 (CINTC-OQ-74)
 # Boot scope exclusion: module/import_record_private_closure SPEC-09 BOOT-01; fixture uses a struct result or an import alias
 # Boot scope exclusion: module/import_record_result SPEC-09 BOOT-01; fixture uses a struct result or an import alias
 # Boot scope exclusion: module/import_record_unbound_c2065 SPEC-09 BOOT-01; fixture uses a struct result or an import alias

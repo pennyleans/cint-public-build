@@ -923,11 +923,12 @@ export I64 type_of[t, r](in scan.Token[t] toks, in parse.Node[_] nodes, inout li
 // 65536 times the extent code plus the element's fold.ci tag: the extent code is the
 // extent plus 1 for an extent written as a decimal literal, and 0 for `_` (known at run
 // time). Other extents, size parameters among them, are C9102 (compiler/OPEN.md
-// CINTC-OQ-15). A local array's static extent v above ARRAY_EXTENT_MAX has the code
-// BIG_CODE + v, up to BIG_EXTENT_MAX (check.ci h_type; decision 2026-10-06 on OQ-213), and
-// so has a module-level array's above ARRAY_EXTENT_MAX, which holds at most MODULE_ARRAY_MAX
-// elements whatever its rank (shape_type, lowering.declare_array_global; decision
-// 2026-10-19 on OQ-297).
+// CINTC-OQ-15), but check.ci h_type folds a constant extent in every place it checks.
+// A local array's static extent v above ARRAY_EXTENT_MAX has the code BIG_CODE + v, up to
+// BIG_EXTENT_MAX (check.ci h_type; decision 2026-10-06 on OQ-213), and so has a module-level
+// array's above ARRAY_EXTENT_MAX, which holds at most MODULE_ARRAY_MAX elements whatever its
+// rank (shape_type, check.ci h_type, lowering.declare_array_global; decision 2026-10-19 on
+// OQ-297).
 export const I64 TY_ARRAY = 1099511627776;
 export const I64 ARRAY_EXTENT_MAX = 65534;
 export const I64 BIG_CODE = 4294967296;
@@ -1185,9 +1186,10 @@ export I64 param_type_of[n, t, r](in U8[n] src, in scan.Token[t] toks, in parse.
 // has one extent, with element code elem; 0 after C9102 for another shape or extent. A
 // shape of 2 to 4 extents (box 09) is checked by the caller (checked_extent -1), which
 // gets the rank-1 type of element code elem and builds the type itself (check.ci h_type),
-// or (checked_extent MODULE_EXTENTS, a module-level variable) has a decimal literal of at
-// most NARRAY_EXTENT_MAX per dimension, as a rank-1 one has (box 13 MLA); more than 4 is
-// C9102 (`cint_ref` refuses it, SPEC-02 V-2).
+// or (checked_extent MODULE_EXTENTS, a module-level variable named before check.check_module
+// folds the variables' extents) has a decimal literal of at most NARRAY_EXTENT_MAX per
+// dimension, as a rank-1 one has (box 13 MLA); more than 4 is C9102 (`cint_ref` refuses it,
+// SPEC-02 V-2).
 I64 shape_type[n, t, r](in U8[n] src, in scan.Token[t] toks, in parse.Node[_] nodes,
         inout limits.CompilerDiag[r] diag, inout RState[_] rs, I64 x, I64 f, I64 elem, I64 checked_extent) {
     I64 shape = nodes[x].a as I64;
@@ -2651,10 +2653,10 @@ export I64 resolve_globals[n, t, y, q, r](in U8[n] src, in scan.Token[t] toks, i
     return rs[0].err;
 }
 
-// Finishes module variable and script rules after fields and signatures.
+// Finishes the script and `main` rules after fields, signatures and module variables' types.
 export I64 resolve_remainder(in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes,
         inout Sem[_] sem, inout Sym[_] syms, inout Name[_] names, inout limits.CompilerDiag[_] diag,
-        inout RState[_] rs, I64 root, in limits.Decl[_] decls) {
+        inout RState[_] rs, I64 root) {
     I64 x = nodes[root].a as I64;
     Bool script = rs[0].script >= 0;
     if (script) {
@@ -2672,20 +2674,6 @@ export I64 resolve_remainder(in U8[_] src, in scan.Token[_] toks, in parse.Node[
             fail_note(toks, nodes, diag, rs, C_SCRIPT_MAIN, syms[rs[0].main].tok);
         }
         return rs[0].err;
-    }
-    x = nodes[root].a as I64;
-    while (x >= 0 && rs[0].err == 0) {
-        if (nodes[x].kind == parse.N_VAR && is_statement(nodes, x)) {
-            I64 ty = type_ref(src, toks, nodes, sem, syms, names, decls, diag, rs, nodes[x].a as I64, -1, MODULE_EXTENTS);
-            if (rs[0].err == 0 && !modvar_type_ok(ty)) {
-                fail(toks, diag, rs, C_UNSUPPORTED, nodes[nodes[x].a as I64].tok as I64);
-            }
-            sem[x].ty = ty;
-            if (sem[x].sym >= 0) {
-                syms[sem[x].sym].ty = ty;
-            }
-        }
-        x = nodes[x].next as I64;
     }
     if (rs[0].err == 0 && rs[0].main >= 0) {
         // `main` returns nothing, or (box 12, SPEC-06 3.4a) an error result `E!void`.

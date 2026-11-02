@@ -1,0 +1,12 @@
+// case: module/extent_not_i64_c2001
+// clause: SPEC-04 LS-62, LS-113; OQ-297; compiler/OPEN.md CINTC-OQ-74 (an extent has type I64: C2001)
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: compile error C2001 at 8:5, the extent
+
+const I32 N = 2;
+I64[N] a;
+
+export I64 run() {
+    return 0;
+}

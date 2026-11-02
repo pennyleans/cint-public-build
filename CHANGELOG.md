@@ -2,6 +2,75 @@
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), with one section added: **Compiler coverage**, the conformance counts for the release and the cases that moved from unsupported to compared. Versions follow [Semantic Versioning](https://semver.org/); before 1.0, a minor version may break anything.
 
+## [0.2.8] - 2026-11-01
+
+0.2.8 takes in 0.2.5, 0.2.6 and 0.2.7, which were not published on their own. Each of the four is listed below. 0.2.5 lets a constant expression size a module-level array. 0.2.6 to 0.2.8 make the emitted C do less work for a call between small functions of one module and for a conversion or shift that cannot fault, without changing what any program computes: every result, fault record, fuel count and digest is the one 0.2.4 gives.
+
+### Changed
+
+- For `I8` to `I64` and `U8` to `U64`, `cintc` writes a widening `as` and an unsigned `>>` by a constant count as plain C, and a signed `>>` by a constant count as a call of `cint_rt_asr`, without a checked helper. A widening `as` is one where every value of the source type fits the target, such as `I32` to `I64`, `U8` to `U32` or `U32` to `I64`. The shift count must be a constant from 0 to one less than the width. `<<`, narrowing `as`, signed-to-unsigned `as` and shifts by a variable count still call their checked helpers (SPEC-09P.4 7.5, EMIT-18).
+- Inside a kernel or a function that makes a host call or a dispatch, every conversion and shift keeps its checked helper.
+- The release publishes SPEC-09P.4. Every other edition of 0.2.4 stays in force.
+
+### Compiler coverage
+
+`cintc` refuses the forms that SPEC-09P.4 clause 12 lists with C9102. The suite holds 942 programs and 1,868,185 records, and the reference agrees with every frozen expectation. The agreement of `cintc` and the interpreter with the reference over the whole suite was not measured again for 0.2.8, and no count is claimed for it.
+
+### Known issues
+
+- The workbench, `cint repl` and `cint debug` refuse a module that declares an extern or a `requires` (C4012).
+- On the Windows console, F1, F2 and F4 to F12 reach a program as nothing. Outside raw mode the console's own output code page applies, and in line mode a Ctrl+Z at the start of a read ends the input.
+- A receipt records the grants given with `--grant`. It does not record the grants a run takes from its program or the program arguments.
+- `cint test` takes `--grant` lines, but a test holds no `Grants` value, so they grant no call.
+- `fs` does not list, create, remove or rename; a grant set cannot be narrowed.
+
+## [0.2.7] - 2026-11-01
+
+0.2.7 was not published on its own. Its changes are released in 0.2.8.
+
+### Changed
+
+- A call between two functions of a module's lean set no longer writes the call site or the depth into the context. A lean function is not an entry, an export or a kernel, and it has no error union, frame arena or scratch arena. It makes no host call, dispatch or fixed-point operation and calls only lean functions of its own module. The depth check, the fuel charge and their order are unchanged. On a fault, each lean caller adds its site to the record as the failure returns, so the fault record's `stack` field is byte for byte what 0.2.4 writes (SPEC-09P.4 7.5, EMIT-16, EMIT-18).
+- A lean function that charges fuel, calls or prints receives the fuel count as a parameter and returns the new count instead of passing it through the context, and one that calls also receives the remaining depth.
+- In the builtin helper mode, a lean function of bounded size that is not recursive and each per-operation helper are marked `CINT_RT_FOLD`, which asks the C compiler to inline them. The portable helper mode does not force inlining.
+- `python/tests/programs/calls.ci`: `spin` multiplies inside its loop, so a C compiler that inlines it cannot reduce the loop to a constant and `test_busy` still runs.
+
+### Known issues
+
+- A call of a function in another module is never lean, and neither is its caller. A program whose hot calls cross modules gains less.
+- A program with many small functions builds a larger executable and takes longer to compile with forced inlining.
+
+## [0.2.6] - 2026-11-01
+
+0.2.6 was not published on its own. Its changes are released in 0.2.8.
+
+### Added
+
+- `rt/cint_rt_lean.h` holds lean forms of the checked add, subtract, multiply and negate for `I8` to `I64` and `U8` to `U64`: `cint_add_lean_<t>`, `cint_sub_lean_<t>`, `cint_mul_lean_<t>` and `cint_neg_lean_<t>`. Each makes one overflow test and, on overflow, one unlikely branch to a cold writer out of line, `cint_rt_fault_arith_cold`, which writes the same record as the full form. A lean form does not read the context's fault flag first, so it is correct only where no fault can be pending. `rt/cint_rt.h` includes the header. `cintc` emits calls to the full forms.
+- `rt/tests/test_rt.c` compares each lean form with its full form on results, return values and encoded fault record bytes, in both helper modes.
+
+### Changed
+
+- The runtime header digest in a receipt covers `rt/cint_rt_lean.h` as well as `rt/cint_rt.h` and `rt/cint_rt_host.h`. Every receipt identity changes from this release on.
+
+## [0.2.5] - 2026-11-01
+
+0.2.5 was not published on its own. Its changes are released in 0.2.8.
+
+### Added
+
+- The extent of a module-level array may be any `I64` constant expression at every rank: `I64[N] table;`, `I64[SLOTS * WORDS + 1] room;` and `I64[0x10] t;`. A constant may be declared after the array that uses it. `cintc` emits the same bytes for an extent written as a constant as for the same extent written as a literal.
+- Seven conformance cases under `conformance/module/extent_*` cover named, product and maximum extents, a named extent in a struct field and the diagnostics C2001, C6004 and C2015.
+
+### Changed
+
+- A module-level array extent that is not valid gets the reference's diagnostic instead of C9102: C2001 for an extent that is not `I64` (`const I32 N`), C6004 for one that is not constant and C2015 for a negative one. C9102 remains for the size limits.
+- `I64[_] a;` at module level still fails with C9102, now reported at the type instead of the name.
+
+### Compiler coverage
+
+`cintc` no longer refuses a module-level array whose extent is a name or a constant expression, and clause 12 of SPEC-09P.4 no longer lists that refusal.
+
 ## [0.2.4] - 2026-10-24
 
 ### Added

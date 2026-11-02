@@ -1,4 +1,5 @@
-"""Compares declaration extent values, faults, and first-error ordering."""
+"""Compares declaration extent values, faults, and first-error ordering: fields, view
+parameters, and module-level arrays."""
 import constant_extents as ext
 
 CASES = {'field_named': 'const I64 N = 2;\n'
@@ -87,8 +88,48 @@ CASES['view_encoding_boundary'] = 'I64 take(in U8[65534] a) { return 9; }\nexpor
 CASES['record_field_named'] = 'struct Leaf { I64 value; }\nstruct Box { Leaf[N] items; }\nconst I64 N = 1 + 1;\nexport I64 run() { Box first; first.items[1].value = 17; Box second = first; first.items[1].value = 99; return second.items[1].value; }\n'
 CASES['imported_record_field_named'] = 'import ext;\nstruct Box { ext.R[N] items; }\nconst I64 N = 1 + 1;\nexport I64 run() { Box first; first.items[1].v = 23; Box second = first; return second.items[1].v; }\n'
 
+# A module-level array's extents, which the checker folds as a local array's (CINTC-OQ-74).
+READ = 'export I64 run() { return len(a); }\n'
+CASES.update({
+    'global_named': 'const I64 N = 2;\nI64[N] a;\n' + READ,
+    'global_forward': 'I64[N] a;\nconst I64 N = 2;\n' + READ,
+    'global_dependency': 'const I64 N = M + 1;\nconst I64 M = 1;\nI64[N] a;\n' + READ,
+    'global_expression': 'I64[(1 + 3) / 2] a;\n' + READ,
+    'global_short_circuit': 'I64[true ? 2 : 1 / 0] a;\n' + READ,
+    'global_hex': 'I64[0x2] a;\n' + READ,
+    'global_character': "I64['b' - 'a' + 1] a;\n" + READ,
+    'global_conversion': 'const I32 N = 2;\nI64[N as I64] a;\n' + READ,
+    'global_imported_constant': 'import ext;\nI64[ext.N] a;\n' + READ,
+    'global_initialized': 'const I64 N = 2;\nI64[N] a = [1, 2];\nexport I64 run() { return a[1]; }\n',
+    'global_initializer_count': 'const I64 N = 2;\nI64[N] a = [1];\n' + READ,
+    'global_shape_argument': 'const I64 N = 2;\nI64[N] a;\nI64 f(in I64[3] v) { return 0; }\n'
+                             'export I64 run() { return f(a); }\n',
+    'global_zero': 'const I64 N = 1 - 1;\nI64[N] a;\n' + READ,
+    'global_negative': 'const I64 N = 1 - 2;\nI64[N] a;\n' + READ,
+    'global_negative_literal': 'I64[-1] a;\n' + READ,
+    'global_wrong_width': 'const I32 N = 2;\nI64[N] a;\n' + READ,
+    'global_wrong_bool': 'I64[true] a;\n' + READ,
+    'global_nonconstant': 'I64 n = 2;\nI64[n] a;\n' + READ,
+    'global_call': 'I64 f() { return 2; }\nI64[f()] a;\n' + READ,
+    'global_len': 'I64[2] b;\nI64[len(b)] a;\n' + READ,
+    'global_undefined': 'I64[missing] a;\n' + READ,
+    'global_fault': 'I64[1 / 0] a;\n' + READ,
+    'global_overflow': 'I64[I64.max + 1] a;\n' + READ,
+    'global_cycle_constant': 'const I64 N = M;\nconst I64 M = N;\nI64[N] a;\n' + READ,
+    'global_unknown_before_fault': 'Missing[1 / 0] a;\n' + READ,
+    'global_scalar_order': 'Missing x;\nI64[1 / 0] a;\n' + READ,
+    'global_array_order': 'I64[1 / 0] a;\nMissing x;\n' + READ,
+    'global_rank2_named': 'const I64 N = 2;\nI64[N, N + 1] a;\nexport I64 run() { a[1, 2] = 7; return a[1, 2] + size(a); }\n',
+    'global_rank2_negative': 'const I64 N = 1 - 2;\nI64[2, N] a;\nexport I64 run() { return 0; }\n',
+    'global_self': 'I64[len(a)] a;\n' + READ,
+    'global_cycle_arrays': 'I64[len(b)] a;\nI64[len(a)] b;\n' + READ,
+    'global_cycle_through_constant': 'const I64 N = len(a);\nI64[N] a;\n' + READ,
+})
+# Both refuse these: cint_ref as a dependency outside its surface, cintc with C9102.
+GLOBAL_BOUNDARY = {'global_self', 'global_cycle_arrays', 'global_cycle_through_constant'}
+
 
 if __name__ == '__main__':
     ext.CASES = CASES
-    ext.BOUNDARY = {'field_zero', 'view_encoding_boundary'}
+    ext.BOUNDARY = {'view_encoding_boundary'} | GLOBAL_BOUNDARY
     raise SystemExit(ext.main())

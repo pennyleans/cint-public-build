@@ -315,6 +315,9 @@ static cint_count make_count(const arg *a)
 }
 
 /* Outcome of one helper call: ok (value in `bits`, rendered by type) or not ok. */
+/* Nonzero while a CIF-1 record is run through the lean forms of add, sub, mul and neg (OQ-321). */
+static int g_lean;
+
 typedef struct outcome {
     int supported;
     int ok;
@@ -332,17 +335,17 @@ typedef struct outcome {
         o.supported = 1;                                                                    \
         o.result_tag = type_tag(args[0].type);                                              \
         if (strcmp(name, "add") == 0 && checked) {                                          \
-            o.ok = cint_add_##T(ctx, S_OP, a, b, &r);                                       \
+            o.ok = g_lean ? cint_add_lean_##T(ctx, S_OP, a, b, &r) : cint_add_##T(ctx, S_OP, a, b, &r); \
         } else if (strcmp(name, "add") == 0 && wrap) {                                      \
             r = cint_add_wrap_##T(a, b);                                                    \
             o.ok = 1;                                                                       \
         } else if (strcmp(name, "sub") == 0 && checked) {                                   \
-            o.ok = cint_sub_##T(ctx, S_OP, a, b, &r);                                       \
+            o.ok = g_lean ? cint_sub_lean_##T(ctx, S_OP, a, b, &r) : cint_sub_##T(ctx, S_OP, a, b, &r); \
         } else if (strcmp(name, "sub") == 0 && wrap) {                                      \
             r = cint_sub_wrap_##T(a, b);                                                    \
             o.ok = 1;                                                                       \
         } else if (strcmp(name, "mul") == 0 && checked) {                                   \
-            o.ok = cint_mul_##T(ctx, S_OP, a, b, &r);                                       \
+            o.ok = g_lean ? cint_mul_lean_##T(ctx, S_OP, a, b, &r) : cint_mul_##T(ctx, S_OP, a, b, &r); \
         } else if (strcmp(name, "mul") == 0 && wrap) {                                      \
             r = cint_mul_wrap_##T(a, b);                                                    \
             o.ok = 1;                                                                       \
@@ -368,7 +371,7 @@ typedef struct outcome {
         CT r = 0;                                                                           \
         o.supported = 1;                                                                    \
         o.result_tag = type_tag(args[0].type);                                              \
-        o.ok = cint_neg_##T(ctx, S_OP, a, &r);                                              \
+        o.ok = g_lean ? cint_neg_lean_##T(ctx, S_OP, a, &r) : cint_neg_##T(ctx, S_OP, a, &r); \
         o.bits = SIGNED ? (uint64_t)(int64_t)r : (uint64_t)r;                               \
         return o;                                                                           \
     }
@@ -554,6 +557,9 @@ static long run_file(cint_ctx *ctx, const char *path, int require_all)
         }
         if (run_record(ctx, &r)) {
             n++;
+            g_lean = 1;   /* the same record, against the same expectation, through the lean forms */
+            (void)run_record(ctx, &r);
+            g_lean = 0;
         } else {
             skipped++;
         }
@@ -1155,6 +1161,145 @@ static void test_call_protocol(void)
     cint_rt_call_leave(a);
     CHECK(cint_rt_head_of(a)->stack_count == 0u && cint_rt_head_of(a)->depth == 1, "leave on an empty stack");
     CHECK(cint_rt_entry_end(a) == CINT_OK, "the entry ends OK");
+    cint_ctx_destroy(a);
+    cint_ctx_destroy(b);
+}
+
+/* ------------------------------------------------------------------------- */
+/* The lean call (cint_rt.h 6e; OQ-320) against the call protocol.            */
+/*                                                                            */
+/* Context `a` runs a chain of `heavy` frames and then `lean` frames through  */
+/* cint_rt_call_enter. Context `b` runs it as emitted code does: the heavy    */
+/* frames the same way, the first lean frame through cint_rt_lean_enter, the  */
+/* others by the inline check with `fu` and `dr` local and, if the chain      */
+/* stops, cint_rt_lean_unwind from the innermost lean frame out. `push` is    */
+/* the heavy frame that pushes a dispatch position first, or -1. The deepest  */
+/* frame then does `how`: 0 returns, 1 faults E_BOUNDS, 2 charges more fuel   */
+/* than the allowance has. Status, fuel and the record bytes must agree.      */
+
+static cint_site lean_site(int k)
+{
+    cint_site s = {0u, 10u + (uint32_t)k};
+    return s;
+}
+
+static void lean_deep(cint_ctx *ctx, int how)
+{
+    if (how == 1) {
+        (void)cint_index_check(ctx, S_CALL2, "index", 7, 3);
+    } else if (how == 2) {
+        (void)cint_fuel_charge(ctx, S_CALL2, (uint64_t)INT64_MAX);
+    }
+}
+
+static void lean_chain_a(cint_ctx *a, int heavy, int lean, int push, int how)
+{
+    for (int k = 0; k < heavy + lean; k++) {
+        if (k == push) cint_rt_dispatch_push(a, S_CALL);
+        if (cint_rt_faulted(a) || !cint_rt_call_enter(a, lean_site(k))) return;
+    }
+    lean_deep(a, how);
+}
+
+static void lean_chain_b(cint_ctx *b, int heavy, int lean, int push, int how)
+{
+    cint_rt_head *h = cint_rt_head_of(b);
+    int k = 0, entered = 0;
+    int64_t fu, fcap, dr;
+    for (; k < heavy; k++) {
+        if (k == push) cint_rt_dispatch_push(b, S_CALL);
+        if (cint_rt_faulted(b) || !cint_rt_call_enter(b, lean_site(k))) return;
+    }
+    if (lean == 0) {
+        lean_deep(b, how);
+        return;
+    }
+    if (!cint_rt_lean_enter(b, lean_site(heavy))) return;
+    entered = 1;
+    fu = h->fuel_used;
+    fcap = h->fuel_limit >= 0 ? h->fuel_limit : INT64_MAX;
+    dr = h->depth_limit - h->depth - 1;
+    for (; entered < lean; entered++) {
+        if (h->faulted != 0u || dr <= 0 || fcap - fu < 1) {
+            cint_rt_lean_fail(b, lean_site(heavy + entered), dr, fu);
+            goto unwind;
+        }
+        fu += 1;
+        dr -= 1;
+    }
+    h->fuel_used = fu;
+    lean_deep(b, how);
+    fu = h->fuel_used;
+    if (!cint_rt_faulted(b)) return;
+unwind:
+    h->fuel_used = fu;
+    while (entered > 0) {
+        entered--;
+        cint_rt_lean_unwind(b, lean_site(heavy + entered));
+    }
+}
+
+static void lean_run(cint_ctx *a, cint_ctx *b, int64_t fuel, int64_t depth, int heavy, int lean, int push, int how)
+{
+    int64_t fa = -1, fb = -2;
+    size_t la = 0u, lb = 1u;
+    cint_status sa = cint_rt_entry_open(a, S_FUEL, fuel, depth), sb = cint_rt_entry_open(b, S_FUEL, fuel, depth);
+    CHECK(sa == sb, "lean: entries open alike");
+    if (sa != CINT_OK) {
+        return;
+    }
+    lean_chain_a(a, heavy, lean, push, how);
+    lean_chain_b(b, heavy, lean, push, how);
+    sa = cint_rt_entry_end(a);
+    sb = cint_rt_entry_end(b);
+    CHECK(sa == sb && cint_fuel_consumed(a, &fa) == CINT_OK && cint_fuel_consumed(b, &fb) == CINT_OK && fa == fb,
+          "lean: status and fuel agree");
+    CHECK(cint_fault_get(a, g_proto_a, sizeof g_proto_a, &la) == CINT_OK &&
+              cint_fault_get(b, g_proto_b, sizeof g_proto_b, &lb) == CINT_OK && la == lb && la <= sizeof g_proto_a &&
+              memcmp(g_proto_a, g_proto_b, la) == 0,
+          "lean: records agree byte for byte");
+    cint_ctx_clear_fault(a);
+    cint_ctx_clear_fault(b);
+}
+
+static void test_lean_call(void)
+{
+    static const int64_t depths[] = {1, 2, 3, 4, 5, 8, (int64_t)CINT_RT_MAX_DEPTH};
+    static const int64_t fuels[] = {CINT_FUEL_UNBOUNDED, 0, 1, 2, 3, 4, 5, 6, 9};
+    cint_ctx *a = new_ctx(), *b = new_ctx();
+    cint_rt_head *h;
+    size_t i, j;
+    if (a == NULL || b == NULL) {
+        CHECK(0, "cint_ctx_create");
+        cint_ctx_destroy(a);
+        cint_ctx_destroy(b);
+        return;
+    }
+    for (i = 0; i < sizeof depths / sizeof depths[0]; i++) {
+        for (j = 0; j < sizeof fuels / sizeof fuels[0]; j++) {
+            for (int heavy = 0; heavy <= 3; heavy++) {
+                for (int lean = 0; lean <= 5; lean++) {
+                    for (int push = -1; push < heavy; push++) {
+                        for (int how = 0; how <= 2; how++) {
+                            lean_run(a, b, fuels[j], depths[i], heavy, lean, push, how);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    /* The deepest chain: every position fits, outermost first. */
+    lean_run(a, b, CINT_FUEL_UNBOUNDED, (int64_t)CINT_RT_MAX_DEPTH, 3, (int)CINT_RT_MAX_DEPTH - 4, -1, 1);
+    /* A stack of sites with no room left is left alone; a return with no record adds nothing. */
+    CHECK(cint_rt_entry_open(b, S_FUEL, CINT_FUEL_UNBOUNDED, 8) == CINT_OK, "lean: open");
+    cint_rt_lean_unwind(b, S_CALL);
+    CHECK(cint_rt_entry_end(b) == CINT_OK, "lean: an unwind with no record writes none");
+    /* cint_rt_lean_enter leaves the stack and the depth where they were. */
+    CHECK(cint_rt_entry_open(b, S_FUEL, 5, 8) == CINT_OK, "lean: open");
+    h = cint_rt_head_of(b);
+    CHECK(cint_rt_lean_enter(b, S_CALL) && h->fuel_used == 1 && h->depth == 1 && h->stack_count == 0u,
+          "lean: an entry charges one unit and writes no stack or depth");
+    CHECK(cint_rt_entry_end(b) == CINT_OK, "lean: end");
     cint_ctx_destroy(a);
     cint_ctx_destroy(b);
 }
@@ -3399,6 +3544,92 @@ static void test_agreement(long pairs)
     printf("agreement: builtin bodies not available on this compiler; skipped\n");
 }
 #endif
+
+/* The lean forms (OQ-321, cint_rt.h section 10) against the full forms: the same result and, on a fault, the same
+ * encoded record, for add, sub, mul and neg of every type, on the edge values and on N seeded pairs. They differ on
+ * one thing, and the last block pins it: with a record already written, a lean form that does not overflow returns
+ * true, and one that overflows returns false and leaves the first record as it was. */
+static int lean_same(cint_ctx *cf, cint_ctx *cl, bool of, bool ol)
+{
+    uint8_t ef[512], el[512];
+    size_t nf = 0u, nl = 0u;
+    int bad = of != ol;
+    if (!of && !ol) {
+        get_fault(cf, &g_rec);
+        get_fault(cl, &g_rec2);
+        nf = cint_fault_encode(&g_rec, ef, sizeof ef);
+        nl = cint_fault_encode(&g_rec2, el, sizeof el);
+        bad = nf == 0u || nf != nl || memcmp(ef, el, nf) != 0;
+    }
+    (void)cint_ctx_clear_fault(cf);
+    (void)cint_ctx_clear_fault(cl);
+    return bad;
+}
+
+#define LEAN2(OP, T, CT, SIGNED)                                                                                  \
+    do {                                                                                                          \
+        CT a = SIGNED ? (CT)cint_rt_sext(x, (unsigned)sizeof(CT) * 8u) : (CT)x;                                    \
+        CT b = SIGNED ? (CT)cint_rt_sext(y, (unsigned)sizeof(CT) * 8u) : (CT)y;                                    \
+        CT rf = 0, rl = 0;                                                                                        \
+        bool of = cint_##OP##_##T(cf, S_OP, a, b, &rf), ol = cint_##OP##_lean_##T(cl, S_OP, a, b, &rl);            \
+        bad += lean_same(cf, cl, of, ol) + (rf != rl);                                                            \
+        calls++;                                                                                                  \
+    } while (0)
+#define LEAN1(T, CT, SIGNED)                                                                                      \
+    do {                                                                                                          \
+        CT a = SIGNED ? (CT)cint_rt_sext(x, (unsigned)sizeof(CT) * 8u) : (CT)x;                                    \
+        CT rf = 0, rl = 0;                                                                                        \
+        bool of = cint_neg_##T(cf, S_OP, a, &rf), ol = cint_neg_lean_##T(cl, S_OP, a, &rl);                        \
+        bad += lean_same(cf, cl, of, ol) + (rf != rl);                                                            \
+        calls++;                                                                                                  \
+    } while (0)
+#define LEAN_TYPE(T, CT, SIGNED) LEAN2(add, T, CT, SIGNED); LEAN2(sub, T, CT, SIGNED); LEAN2(mul, T, CT, SIGNED); LEAN1(T, CT, SIGNED)
+
+static void test_lean(long pairs)
+{
+    static const uint64_t edge[] = {
+        0u, 1u, 2u, 3u, 0x7eu, 0x7fu, 0x80u, 0x81u, 0xffu, 0x7fffu, 0x8000u, 0xffffu, 0x7fffffffu, 0x80000000u,
+        0xffffffffu, 3037000499u, 3037000500u, 0x7fffffffffffffffu, 0x8000000000000000u, 0x8000000000000001u,
+        0xfffffffffffffffeu, 0xffffffffffffffffu,
+    };
+    const size_t ne = sizeof edge / sizeof edge[0];
+    cint_ctx *cf = new_ctx(), *cl = new_ctx(), *cp = new_ctx();
+    long i, bad = 0, calls = 0;
+    if (cf == NULL || cl == NULL || cp == NULL) {
+        CHECK(0, "cint_ctx_create");
+        return;
+    }
+    for (i = 0; i < (long)(ne * ne) + pairs; i++) {
+        uint64_t x = i < (long)(ne * ne) ? edge[(size_t)i / ne] : pick();
+        uint64_t y = i < (long)(ne * ne) ? edge[(size_t)i % ne] : pick();
+        LEAN_TYPE(i64, int64_t, 1); LEAN_TYPE(u64, uint64_t, 0); LEAN_TYPE(i32, int32_t, 1); LEAN_TYPE(u32, uint32_t, 0);
+        LEAN_TYPE(i16, int16_t, 1); LEAN_TYPE(u16, uint16_t, 0); LEAN_TYPE(i8, int8_t, 1); LEAN_TYPE(u8, uint8_t, 0);
+    }
+    for (i = 0; i < 65536; i++) { /* every pair of 8 bits, as exh8 does */
+        uint64_t x = (uint64_t)(i >> 8), y = (uint64_t)(i & 255);
+        LEAN_TYPE(i8, int8_t, 1); LEAN_TYPE(u8, uint8_t, 0);
+    }
+    CHECK(bad == 0, "lean forms agree with the full forms on results, faults and encoded records");
+    printf("lean: %ld operations on %ld pairs, %ld differ\n", calls, (long)(ne * ne) + pairs, bad);
+    {
+        int64_t r = 77;
+        cint_fault_record before;
+        CHECK(!cint_add_i64(cp, S_OP, INT64_MAX, 1, &r), "the first fault");
+        get_fault(cp, &g_rec);
+        before = g_rec;
+        CHECK(!cint_mul_lean_i64(cp, S_OP, INT64_MAX, 2, &r) && r == 77, "a lean overflow on a faulted context returns false");
+        CHECK(!cint_add_lean_u8(cp, S_OP, 255u, 1u, &(uint8_t){0}), "and so does a lean overflow of another type");
+        get_fault(cp, &g_rec2);
+        CHECK(memcmp(&before, &g_rec2, sizeof before) == 0, "the first record is not changed by a lean fault");
+        CHECK(cint_add_lean_i64(cp, S_OP, 1, 1, &r) && r == 2, "a lean form without overflow returns true on a faulted context");
+        CHECK(!cint_add_i64(cp, S_OP, 1, 1, &r) && r == 2, "the full form still returns false there and writes nothing");
+        get_fault(cp, &g_rec2);
+        CHECK(memcmp(&before, &g_rec2, sizeof before) == 0, "the record is still the first one");
+    }
+    cint_ctx_destroy(cf);
+    cint_ctx_destroy(cl);
+    cint_ctx_destroy(cp);
+}
 
 /* rotl and rotr through cint_rt_builtin_fast against cint_rt_builtin (rt/OPEN.md
  * RT-OQ-67): every operand tag, every count tag, modes 0 and 1, the counts -1 to
@@ -5676,6 +5907,7 @@ int main(int argc, char **argv)
     test_encoder();
     test_entries();
     test_call_protocol();
+    test_lean_call();
     test_context();
     test_buffers();
     test_logical_buffers();
@@ -5705,6 +5937,7 @@ int main(int argc, char **argv)
     test_result_forms();
     test_hand();
     test_agreement(pairs);
+    test_lean(pairs / 20 + 100);
     test_rotations_fast(pairs / 64 + 70);
     test_fault_operands();
     test_tables(argv[1], exh8);

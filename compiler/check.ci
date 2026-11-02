@@ -6596,11 +6596,12 @@ Bool size_expression[s](in scan.Token[_] toks, in parse.Node[_] nodes, in resolv
 }
 
 // The places a type can occur, for K_TYPE's frame a (`cint_ref` _dim's `where`): a local
-// variable 0, a field -1, a view variable -2, else the function or kernel node of a
-// parameter plus one.
+// variable 0, a field -1, a view variable -2, a module-level variable -3, else the function
+// or kernel node of a parameter plus one.
 const I64 WHERE_LOCAL = 0;
 const I64 WHERE_FIELD = -1;
 const I64 WHERE_VIEW = -2;
+const I64 WHERE_MODVAR = -3;
 
 // C2015: a negative extent (SPEC-04 LS-62; box 09 ruling R10).
 const I64 C_NEGATIVE_EXTENT = 2015;
@@ -6612,7 +6613,8 @@ const I64 C_NEGATIVE_EXTENT = 2015;
 // expression of size parameters known at run time (code 0): a kernel parameter's shape
 // expression, or a local array's in a function. A constant extent above the encoding's
 // limit (65534 at rank 1, resolve.NARRAY_EXTENT_MAX above) is C9102, but a function's local
-// array of rank 1 has resolve.BIG_CODE's form up to resolve.BIG_EXTENT_MAX.
+// array of rank 1 has resolve.BIG_CODE's form up to resolve.BIG_EXTENT_MAX, and a module-level
+// array of rank 1 has it up to resolve.MODULE_ARRAY_MAX.
 void h_type[s](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes,
         inout resolve.Sem[_] sem, inout resolve.Sym[_] syms, inout resolve.Name[_] names,
         in limits.Decl[_] decls, inout parse.Frame[s] wk, inout limits.CompilerDiag[_] diag,
@@ -6722,6 +6724,10 @@ void h_type[s](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes,
         if (v > most && most == resolve.ARRAY_EXTENT_MAX && v <= resolve.BIG_EXTENT_MAX && wh == WHERE_LOCAL &&
                 rs[0].ctx == resolve.CTX_FUNCTION) {
             // A local array's storage from the frame arena (decision 2026-10-06 on OQ-213).
+            code = resolve.BIG_CODE + v;
+        } else if (v > most && most == resolve.ARRAY_EXTENT_MAX && v <= resolve.MODULE_ARRAY_MAX &&
+                wh == WHERE_MODVAR) {
+            // A module-level array of rank 1 (decision 2026-10-19 on OQ-297).
             code = resolve.BIG_CODE + v;
         } else if (v > most) {
             resolve.fail(toks, diag, rs, resolve.C_UNSUPPORTED, first(nodes, e));
@@ -10120,7 +10126,32 @@ export I64 check_module[m, s, l, r, y](in U8[_] src, in scan.Token[_] toks, in p
         item = nodes[item].next as I64;
     }
     if (rs[0].err != 0) { return rs[0].err; }
-    if (resolve.resolve_remainder(src, toks, nodes, sem, syms, names, diag, rs, root, decls) != 0) {
+    // The module-level variables' types in source order, after the signatures (`cint_ref`
+    // module_var_type). An array's extents fold as a local array's do (CINTC-OQ-74).
+    item = nodes[root].a as I64;
+    while (item >= 0 && rs[0].err == 0 && rs[0].script < 0) {
+        if (nodes[item].kind == parse.N_VAR && resolve.is_statement(nodes, item)) {
+            I64 tn = nodes[item].a as I64;
+            I64 vt = 0;
+            if (nodes[tn].kind == parse.N_TYPE && nodes[tn].a >= 0 && !resolve.mem_node(toks, nodes, tn)) {
+                run(src, toks, nodes, sem, syms, names, decls, wk, lits, diag, faults, fres, z, ws, wv, path, rs, cs,
+                    K_TYPE, tn, WHERE_MODVAR);
+                vt = sem[tn].ty;
+            } else {
+                vt = resolve.type_ref(src, toks, nodes, sem, syms, names, decls, diag, rs, tn, -1, resolve.MODULE_EXTENTS);
+            }
+            if (rs[0].err == 0 && !resolve.modvar_type_ok(vt)) {
+                resolve.fail(toks, diag, rs, resolve.C_UNSUPPORTED, nodes[tn].tok as I64);
+            }
+            sem[item].ty = vt;
+            if (sem[item].sym >= 0) {
+                syms[sem[item].sym].ty = vt;
+            }
+        }
+        item = nodes[item].next as I64;
+    }
+    if (rs[0].err != 0) { return rs[0].err; }
+    if (resolve.resolve_remainder(src, toks, nodes, sem, syms, names, diag, rs, root) != 0) {
         return rs[0].err;
     }
     item = nodes[root].a as I64;

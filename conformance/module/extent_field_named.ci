@@ -1,0 +1,23 @@
+// case: module/extent_field_named
+// clause: SPEC-04 LS-62, LS-67; compiler/OPEN.md CINTC-OQ-74 (struct array fields sized by constants)
+// subset: cint-core-1
+// entry: run; args: none
+// spec outcome: value I64 56; the seed refuses the extent
+
+const I64 N = 2;
+
+struct Inner {
+    I64 v;
+}
+
+struct Room {
+    I64[N + 1] words;
+    Inner[N] inners;
+}
+
+export I64 run() {
+    Room r;
+    r.words[2] = 5;
+    r.inners[1].v = 3;
+    return r.words[2] * 10 + r.inners[1].v + len(r.words);
+}

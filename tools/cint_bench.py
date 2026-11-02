@@ -713,7 +713,7 @@ class Run:
         self.work.mkdir(parents=True)
         if self.receipts.exists() and any(self.receipts.iterdir()):
             raise BenchError("%s already holds receipts; give another --out or remove them" % self.receipts)
-        self.inputs += [cc.RT / "cint_rt.c", cc.RT / "cint_rt.h", cc.RT / "cint_rt_host.h"]
+        self.inputs += [cc.RT / "cint_rt.c", cc.RT / "cint_rt.h", cc.RT / "cint_rt_host.h", cc.RT / "cint_rt_lean.h"]
 
     # ---- identities
     def variant_identity(self, v: dict, build=None) -> dict:

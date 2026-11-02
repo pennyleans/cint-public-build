@@ -1,0 +1,7 @@
+case module/extent_not_i64_c2001
+clause SPEC-04 LS-62, LS-113; OQ-297; compiler/OPEN.md CINTC-OQ-74 (an extent has type I64: C2001)
+format 2
+source compile-error
+outcome compile-error
+diagnostic.code C2001
+diagnostic.position module/extent_not_i64_c2001.ci:8:5
