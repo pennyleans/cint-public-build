@@ -1,0 +1,9 @@
+case fixed/lane_q_sticky_flag
+clause SPEC-01 IM-60, IM-30, IM-47, IM-113 (the sticky row flag as a source idiom: a lane whose `+|` saturated differs from its `+%`, ORed into an I16 row accumulator; OQ-338 Q3 A)
+format 5
+source reference
+outcome value
+stdout-bytes 30
+stdout-sha256 3b864cdd5629c84e2c5f2d36da37f85850433e0a0def42178f05660399086d66
+return I64 1
+fuel-consumed 27

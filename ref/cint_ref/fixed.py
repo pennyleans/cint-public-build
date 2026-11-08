@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass
 from fractions import Fraction
 
-from .arith import ROUND_MODES, _isqrt_round, op_id, round_div
+from .arith import ROUND_MODES, _isqrt_round, op_id, round_div, rshr_raw
 from .faults import Fault
 from .types import IntType, Value, int_type, is_int_type
 
@@ -116,6 +116,35 @@ def op(name: str, form: str, type_: str, *operands, mode: str | None = None, tar
         if not isinstance(n, Value) or not is_int_type(n.type):
             raise ValueError("mul_int multiplies by an integer: %r" % (n,))
         return _form(q, form, a.value * n.value, op_id("mul_int", "checked", [q.ident, n.type]), (a, n))
+    if name in ("hadd", "rhadd"):
+        # SPEC-01 IM-190: on the raw values; no rounding mode applies.
+        if form != "checked":
+            raise ValueError("%s has only the checked form" % name)
+        a, b = (_raw(x, q) for x in _two(operands))
+        return Value(q.name, (a.value + b.value + (name == "rhadd")) >> 1)
+    if name == "rshr":
+        # SPEC-01 IM-192: on the raw value, the count checked as for `>>`.
+        if form != "checked" or mode != "half_up":
+            raise ValueError("rshr is rshr.checked.<Q>.half_up")
+        a_raw, k = _two(operands)
+        a = _raw(a_raw, q)
+        if not isinstance(k, Value) or not is_int_type(k.type):
+            raise ValueError("the count of rshr is an integer: %r" % (k,))
+        if not 0 <= k.value <= q.width - 1:
+            return Fault("E_SHIFT", op_id(name, form, [q.ident], mode), (a, k), None, Value("I64", q.width - 1))
+        return Value(q.name, rshr_raw(a.value, k.value))
+    if name == "rmulh":
+        # SPEC-01 IM-191: the value of qmul(Q, a, k, half_up), saturated; k of Q1.(w-1).
+        if form != "sat" or mode != "half_up":
+            raise ValueError("rmulh is rmulh.sat.<Q>.<Qk>.half_up")
+        a_raw, k_raw = _two(operands)
+        a = _raw(a_raw, q)
+        qk = q_type(k_raw.type)
+        if q.width not in (16, 32) or qk.i != 1 or qk.width != q.width:
+            raise ValueError("rmulh takes Q of 16 or 32 bits and a Q1.(w-1) coefficient")
+        k = _raw(k_raw, qk)
+        r = round_div(a.value * k.value, 1 << (q.width - 1), "half_up")
+        return Value(q.name, q.storage.sat(r))
     if name == "qmul":
         if form != "checked":
             raise ValueError("qmul has only the checked form")

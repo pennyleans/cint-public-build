@@ -627,6 +627,11 @@ export const I32 FN_GRANTS = 134217728;
 // `main(in U8[_] args)`: the function's last parameter is the program arguments (SPEC-04 LS-221;
 // OQ-306, `rt/OPEN.md` RT-OQ-76), which the program entry reads from the context (cint_ctx_args).
 export const I32 FN_ARGS = 268435456;
+// The speculation set (SPEC-09 BACK-17; OQ-339, compiler/OPEN.md CINTC-OQ-83), set only in a
+// cpu-c17-spec build by back_c.mark_spec: a lean function with no print, assertion, imported
+// variable, wide or fixed-point node, view index check or statically empty extent, and no
+// faulting built-in but isqrt, whose callees are all in the set. Its twin runs unchecked.
+export const I32 FN_SPEC = 536870912;
 
 // Whether slot k is a `Grants` parameter (FN_GRANTS).
 export Bool is_grants(in SirSlot[_] slots, I64 k) {
@@ -1696,6 +1701,13 @@ void unsupported[t, r](in scan.Token[t] toks, inout limits.CompilerDiag[r] diag,
     stop_at(toks, diag, ls, C_UNSUPPORTED, tk, what, 0);
 }
 
+// C9102 at token tk for a form of another module's row that lowering does not take yet
+// (U_IMPORT, with the cross-module limit resolve.X_ROW in detail[1], which `cint` names).
+void unsupported_import[t, r](in scan.Token[t] toks, inout limits.CompilerDiag[r] diag, inout LState[_] ls,
+        I64 tk) {
+    stop_at(toks, diag, ls, C_UNSUPPORTED, tk, U_IMPORT, resolve.X_ROW);
+}
+
 // A new node at token tk; -1 with C9001 when the table is full.
 I64 add_sir[t, ns, r](in scan.Token[t] toks, inout Sir[ns] sir, inout limits.CompilerDiag[r] diag,
         inout LState[_] ls, I32 op, I32 ty, I64 tk) {
@@ -2112,8 +2124,9 @@ export I64 builtin_arity(in Sir[_] sir, I64 i) {
     return fold.builtin_values(sir[i].f as I64);
 }
 
+// `rshr`'s count (SPEC-01 IM-192) is a count of its own type, as a rotation's.
 export Bool builtin_rotates(in Sir[_] sir, I64 i) {
-    return sir[i].f as I64 == fold.BI_ROTL || sir[i].f as I64 == fold.BI_ROTR;
+    return sir[i].f as I64 == fold.BI_ROTL || sir[i].f as I64 == fold.BI_ROTR || sir[i].f as I64 == fold.BI_RSHR;
 }
 
 export Bool bin_faults(I32 b, I32 form) {
@@ -3543,7 +3556,7 @@ void expr_step[n, t, m, ns, r](in U8[n] text, in scan.Token[t] toks, in parse.No
             if (ic >= 0) {
                 // An imported constant, by value (its import row).
                 if ((funcs[ic].flags & FN_ICONST) == 0 || (funcs[ic].flags & FN_ISTRUCT) != 0) {
-                    unsupported(toks, diag, ls, tk, U_IMPORT);
+                    unsupported_import(toks, diag, ls, tk);
                     return;
                 }
                 I32 ity = funcs[ic].result;
@@ -4057,7 +4070,7 @@ void builtin_step[n, t, ns, s, r](in U8[n] text, in scan.Token[t] toks, in parse
         return;
     }
     I64 nv = fold.builtin_values(id);
-    Bool rot = id == fold.BI_ROTL || id == fold.BI_ROTR || id == fold.BI_SHL_RESULT;
+    Bool rot = id == fold.BI_ROTL || id == fold.BI_ROTR || id == fold.BI_SHL_RESULT || id == fold.BI_RSHR;
     Bool same = fold.builtin_same(id);
     I64 start = 0;
     if (id == fold.BI_MULDIV) {
@@ -4121,6 +4134,10 @@ void builtin_step[n, t, ns, s, r](in U8[n] text, in scan.Token[t] toks, in parse
     if (fold.builtin_mode(id) && last >= 0) {
         I64 mt = nodes[last].tok as I64;
         mode = resolve.round_mode(text, toks[mt].start as I64, toks[mt].len as I64);
+    }
+    if (id == fold.BI_RSHR) {
+        // IM-192: half_up, named by the operation of its E_SHIFT record.
+        mode = 8;
     }
     if (id == fold.BI_UABS) {
         rty = opty + 0x10;
@@ -4245,7 +4262,7 @@ void qbuiltin_step[t, ns, s, r](in scan.Token[t] toks, in parse.Node[_] nodes, i
     if (rty != opty) {
         sir[i].val = mode + 256 * (opty as I64);
     }
-    if (id == fold.BI_QMUL || id == fold.BI_MUL_INT) {
+    if (id == fold.BI_QMUL || id == fold.BI_MUL_INT || id == fold.BI_RMULH) {
         sir[i].val += 131072 * sem[call_arg(nodes, x, start + 1)].ty;
     }
     if (fold.builtin_faults(id)) {
@@ -4661,7 +4678,7 @@ void call_step[n, t, m, ns, s, r](in U8[n] text, in scan.Token[t] toks, in parse
         if (nodes[callee].kind == parse.N_FIELD) {
             fn = find_import(text, toks, funcs, ls, nodes[nodes[callee].a as I64].tok as I64, tk);
             if (fn < 0 || (funcs[fn].flags & (FN_ICONST | FN_ISTRUCT)) != 0) {
-                unsupported(toks, diag, ls, tk, U_IMPORT);
+                unsupported_import(toks, diag, ls, tk);
                 return;
             }
         } else if (nodes[callee].kind != parse.N_NAME || (nodes[callee].flags & parse.F_PAREN) != 0) {
@@ -5203,7 +5220,7 @@ I64 describe_set[n, t](in U8[n] text, in scan.Token[t] toks, in parse.Node[_] no
         // copy of it before an entry.
         I64 es0 = find_import_set(slots, ls, resolve.import_base_row(d));
         if (es0 < 0) {
-            unsupported(toks, diag, ls, tk, U_IMPORT);
+            unsupported_import(toks, diag, ls, tk);
             return -1;
         }
         if (!fresh) {
@@ -9619,14 +9636,14 @@ void declare_imports[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in pa
                 if (rty == resolve.TY_VOID) {
                     rty = T_NONE as I64;
                 }
-                if (ext && decl.row_tag(decls, row) == decl.ERRUNION_TAG && decls[row].rank == 0 &&
-                        decls[row].ref > 0) {
-                    // An imported extern with an error union result (I/O services lane U5):
-                    // its set's slots, copied before its parameters (entry_set); its value
-                    // type from the row's `align`.
+                if (decls[row].kind == limits.DK_FUNC && decl.row_tag(decls, row) == decl.ERRUNION_TAG &&
+                        decls[row].rank == 0 && decls[row].ref > 0) {
+                    // An imported function with an error union result, an extern (I/O services
+                    // lane U5) or not (bugfix pass B1, #505): its set's slots, copied before its
+                    // parameters (entry_set); its value type from the row's `align`.
                     I64 es0 = find_import_set(slots, ls, decls[row].ref as I64);
                     if (es0 < 0) {
-                        unsupported(toks, diag, ls, tk, U_IMPORT);
+                        unsupported_import(toks, diag, ls, tk);
                         return;
                     }
                     if (copy_set_slots(toks, slots, diag, ls, es0, tk) < 0) {
@@ -9639,7 +9656,7 @@ void declare_imports[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in pa
                     if (v != 0x02) {
                         rty = scalar_type(v) as I64;
                         if (rty == T_NONE as I64) {
-                            unsupported(toks, diag, ls, tk, U_IMPORT);
+                            unsupported_import(toks, diag, ls, tk);
                             return;
                         }
                     }
@@ -9649,7 +9666,7 @@ void declare_imports[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in pa
                     rty = import_param_type(text, toks, funcs, slots, ls, decls, row) as I64;
                 }
                 if (resolve.is_array(rty) || (rty == 0 && decl.row_tag(decls, row) != 0x02 && etag == T_NONE)) {
-                    unsupported(toks, diag, ls, tk, U_IMPORT);
+                    unsupported_import(toks, diag, ls, tk);
                     return;
                 }
                 funcs[k].result = rty as I32;
@@ -9678,9 +9695,10 @@ void declare_imports[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in pa
                     funcs[k].ntemp = decls[row].b as I32;
                     I64 p = decl.next_member(decls, row);
                     for j in 0..decls[row].a {
-                        if (ext && decl.row_tag(decls, p) == resolve.TY_GRANTS && decls[p].rank == 0) {
+                        if (decl.row_tag(decls, p) == resolve.TY_GRANTS && decls[p].rank == 0) {
                             // The `Grants` handle of an imported service extern (FN_GRANTS; I/O
-                            // services lane U5), counted among the row's parameters.
+                            // services lane U5) or of another imported function (bugfix pass B1,
+                            // #506), counted among the row's parameters.
                             I64 gs = add_slot(toks, slots, diag, ls, -1, T_GRANTS, SK_PARAM, tk);
                             if (gs < 0) {
                                 return;
@@ -9701,7 +9719,7 @@ void declare_imports[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in pa
                             }
                         }
                         if (pty == T_NONE || (kind == SK_PARAM && decls[p].mode == 2)) {
-                            unsupported(toks, diag, ls, tk, U_IMPORT);
+                            unsupported_import(toks, diag, ls, tk);
                             return;
                         }
                         if (ext && (kind == SK_SPARAM || kind == SK_SREF || is_limbs(pty) || is_q(pty) ||
@@ -9709,7 +9727,7 @@ void declare_imports[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in pa
                                 (kind == SK_PARAM && decls[p].mode == 3) || (kind == SK_VIEW && decls[p].mode == 2))) {
                             // An imported extern takes what declare_extern takes (I/O services
                             // lane U2).
-                            unsupported(toks, diag, ls, tk, U_IMPORT);
+                            unsupported_import(toks, diag, ls, tk);
                             return;
                         }
                         I64 ps = add_slot(toks, slots, diag, ls, -1, pty, kind, tk);
@@ -9719,12 +9737,18 @@ void declare_imports[n, t, m, nf, r](in U8[n] text, in scan.Token[t] toks, in pa
                         funcs[k].nparam += 1;
                         p = decl.next_member(decls, p);
                     }
+                    if (!ext && etag != T_NONE) {
+                        // An imported function with an error union result (bugfix pass B1):
+                        // the callee's tag goes out through its last parameter, as for a call
+                        // of a function of this module.
+                        funcs[k].flags = funcs[k].flags | FN_ERRU | (etag << 16);
+                    }
                     if (ext) {
                         // An imported extern: FN_EXTERN, with its class from the row
                         // (back_c.mark_effects); its result is void or a scalar of at most 64
                         // bits, with its error set's tag type above 16 (FN_ERRU, etag above).
                         if (is_limbs(funcs[k].result) || is_q(funcs[k].result)) {
-                            unsupported(toks, diag, ls, tk, U_IMPORT);
+                            unsupported_import(toks, diag, ls, tk);
                             return;
                         }
                         funcs[k].flags = funcs[k].flags | FN_EXTERN;

@@ -1,0 +1,48 @@
+// case: fixed/lane_q_spec_examples
+// clause: SPEC-01 IM-190, IM-191, IM-192 (the example rows of the three tables, one per line)
+// subset: cint-core-1 (fixed point, lane Q)
+// entry: run; args: none
+// spec outcome: value I64 358; prints the rows of IM-190 (`hadd 3 -4 -1 32767 -32768 -1`, `rhadd 4 -3 0 32767 -32768 0`, `u8 254 255`, `q5_11 1024 1025`, `i64` I64.max twice), IM-192 (`rshr 2 -1 -2 3 16384 -1 1` against `shr 1 -2 -2 2 16383 -1 1`) and IM-191 (`rmulh 8192 1 0 32767`, `rmulh 358 -32767 2147483647`), each with a line feed. S-1 U-1
+
+I16 shift(I16 a, I64 k) {
+    return rshr(a, k);
+}
+
+export I64 run() {
+    I16 p3 = 3;
+    I16 p4 = 4;
+    I16 n3 = -3;
+    I16 n4 = -4;
+    I16 n1 = -1;
+    I16 z = 0;
+    I16 top = 32767;
+    I16 bot = -32768;
+    U8 u255 = 255;
+    U8 u254 = 254;
+    Q5.11 one = 1.0;
+    Q5.11 tiny = Q5.11.raw(1);
+    I64 big = I64.max;
+    "hadd {hadd(p3, p4)} {hadd(n3, n4)} {hadd(n1, z)} {hadd(top, top)} {hadd(bot, bot)} {hadd(top, bot)}\n";
+    "rhadd {rhadd(p3, p4)} {rhadd(n3, n4)} {rhadd(n1, z)} {rhadd(top, top)} {rhadd(bot, bot)} {rhadd(top, bot)}\n";
+    "u8 {hadd(u255, u254)} {rhadd(u255, u254)}\n";
+    "q5_11 {hadd(one, tiny)!raw} {rhadd(one, tiny)!raw}\n";
+    "i64 {hadd(big, big)} {rhadd(big, big)}\n";
+    I16 six = 6;
+    I16 m6 = -6;
+    I16 m7 = -7;
+    I16 five = 5;
+    I16 one16 = 1;
+    "rshr {shift(six, 2)} {shift(m6, 2)} {shift(m7, 2)} {shift(five, 1)} {shift(top, 1)} {shift(bot, 15)} {shift(one16, 0)}\n";
+    "shr {six >> 2} {m6 >> 2} {m7 >> 2} {five >> 1} {top >> 1} {bot >> 15} {one16 >> 0}\n";
+    Q1.15 half = 0.5;
+    Q1.15 h1 = Q1.15.raw(1);
+    Q1.15 hm1 = Q1.15.raw(-1);
+    Q1.15 mone = Q1.15.raw(-32768);
+    Q1.15 k = Q1.15.raw(5734);
+    Q1.15 kmax = Q1.15.raw(32767);
+    Q5.11 qmin = Q5.11.raw(-32768);
+    Q1.31 wmin = Q1.31.raw(-2147483648);
+    "rmulh {rmulh(half, half)!raw} {rmulh(h1, half)!raw} {rmulh(hm1, half)!raw} {rmulh(mone, mone)!raw}\n";
+    "rmulh {rmulh(one, k)!raw} {rmulh(qmin, kmax)!raw} {rmulh(wmin, wmin)!raw}\n";
+    return rmulh(one, k).raw as I64;
+}

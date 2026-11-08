@@ -1,0 +1,9 @@
+case fixed/lane_q_hadd_i8_exhaustive
+clause SPEC-01 IM-190 (`hadd` and `rhadd` on every I8 pair and every Q1.7 pair: floor((A + B) / 2) and floor((A + B + 1) / 2) on the raw values)
+format 5
+source reference
+outcome value
+stdout-bytes 82
+stdout-sha256 b3699e3b4aeae3a6fc319f44f4faef077a0a570f899aae6456cf8c389b1867f6
+return I64 -8096146201322110976
+fuel-consumed 65793

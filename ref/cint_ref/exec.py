@@ -763,7 +763,15 @@ class Machine:
             return self.eval(e.arg).shape[0]
         if kind == "builtin":
             t = e.operand_type
-            if e.callee in ("qmul", "mul_int"):
+            if e.callee in ("hadd", "rhadd", "rshr", "rmulh"):
+                # SPEC-01 IM-190 to IM-192: lane Q, on the raw values.
+                types = e.operand_types if e.callee == "rmulh" else [t] * len(e.values)
+                vals = [Value(vt, self.eval(v)) for vt, v in zip(types, e.values)]
+                if e.count is not None:
+                    vals.append(Value(e.count.ty, self.eval(e.count)))
+                form = "sat" if e.callee == "rmulh" else "checked"
+                r = (fixed.op if is_q(t) else arith.op)(e.callee, form, t, *vals, mode=e.mode)
+            elif e.callee in ("qmul", "mul_int"):
                 # SPEC-01 IM-63, IM-64: operands of their own types.
                 vals = [Value(vt, self.eval(v)) for vt, v in zip(e.operand_types, e.values)]
                 r = fixed.op(e.callee, "checked", t, *vals, mode=e.mode, target=e.target)

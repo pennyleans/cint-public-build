@@ -1373,6 +1373,105 @@ static void test_hand(void)
         CHECK(cint_as_sat_u8_from_i16(-1) == 0u && cint_as_sat_u8_from_i16(300) == 255u, "as| U8 from I16");
         CHECK(cint_as_sat_i16_from_u32(40000u) == INT16_MAX && cint_as_sat_i16_from_u32(7u) == 7, "as| I16 from U32");
         CHECK(cint_as_u8_from_i16(ctx, S_OP, 255, &u8) && u8 == 255u, "I16 255 as U8");
+        /* The four edges of the branch-free signed arm (RT-OQ-81): the bounds fit, one past them
+         * faults, and sat lands on the bound of the same side. */
+        {
+            int32_t s32 = 0;
+            int16_t s16 = 0;
+            CHECK(cint_as_i32_from_i64(ctx, S_OP, INT32_MAX, &s32) && s32 == INT32_MAX, "2^31-1 as I32");
+            CHECK(cint_as_i32_from_i64(ctx, S_OP, INT32_MIN, &s32) && s32 == INT32_MIN, "-2^31 as I32");
+            CHECK(!cint_as_i32_from_i64(ctx, S_OP, 2147483648LL, &s32), "2^31 as I32");
+            get_fault(ctx, &g_rec);
+            CHECK(strcmp(render(&g_rec.limit, buf, sizeof buf), "I32 2147483647") == 0, "limit I32 MAX");
+            cint_ctx_clear_fault(ctx);
+            CHECK(!cint_as_i32_from_i64(ctx, S_OP, -2147483649LL, &s32), "-2^31-1 as I32");
+            get_fault(ctx, &g_rec);
+            CHECK(strcmp(render(&g_rec.limit, buf, sizeof buf), "I32 -2147483648") == 0, "limit I32 MIN");
+            cint_ctx_clear_fault(ctx);
+            CHECK(!cint_as_i32_from_i64(ctx, S_OP, INT64_MIN, &s32), "INT64_MIN as I32");
+            cint_ctx_clear_fault(ctx);
+            CHECK(!cint_as_i32_from_i64(ctx, S_OP, INT64_MAX, &s32), "INT64_MAX as I32");
+            cint_ctx_clear_fault(ctx);
+            CHECK(cint_as_i8_from_i64(ctx, S_OP, 127, &s8) && s8 == 127, "127 as I8");
+            CHECK(!cint_as_i8_from_i64(ctx, S_OP, 128, &s8), "128 as I8");
+            cint_ctx_clear_fault(ctx);
+            CHECK(!cint_as_i8_from_i64(ctx, S_OP, -129, &s8), "-129 as I8");
+            cint_ctx_clear_fault(ctx);
+            CHECK(cint_as_i16_from_i32(ctx, S_OP, -32768, &s16) && s16 == INT16_MIN, "-2^15 as I16 from I32");
+            CHECK(!cint_as_i16_from_i32(ctx, S_OP, 32768, &s16), "2^15 as I16 from I32");
+            cint_ctx_clear_fault(ctx);
+            CHECK(cint_as_i8_from_i16(ctx, S_OP, -128, &s8) && s8 == -128, "-128 as I8 from I16");
+            CHECK(!cint_as_i8_from_i16(ctx, S_OP, -129, &s8), "-129 as I8 from I16");
+            cint_ctx_clear_fault(ctx);
+            CHECK(cint_as_sat_i32_from_i64(-2147483649LL) == INT32_MIN, "-2^31-1 as| I32");
+            CHECK(cint_as_sat_i32_from_i64(INT64_MIN) == INT32_MIN && cint_as_sat_i32_from_i64(INT64_MAX) == INT32_MAX,
+                  "I64 ends as| I32");
+            CHECK(cint_as_sat_i16_from_i64(-32769) == INT16_MIN && cint_as_sat_i16_from_i64(32768) == INT16_MAX,
+                  "as| I16 at both ends");
+            CHECK(cint_as_i8_from_i64(ctx, S_OP, -128, &s8) && s8 == -128, "-128 as I8 from I64");
+            CHECK(!cint_as_i8_from_i64(ctx, S_OP, INT64_MIN, &s8), "INT64_MIN as I8");
+            cint_ctx_clear_fault(ctx);
+            CHECK(!cint_as_i8_from_i64(ctx, S_OP, INT64_MAX, &s8), "INT64_MAX as I8");
+            cint_ctx_clear_fault(ctx);
+            CHECK(cint_as_i16_from_i64(ctx, S_OP, 32767, &s16) && s16 == INT16_MAX, "2^15-1 as I16 from I64");
+            CHECK(!cint_as_i16_from_i64(ctx, S_OP, -32769, &s16), "-2^15-1 as I16 from I64");
+            get_fault(ctx, &g_rec);
+            CHECK(strcmp(render(&g_rec.limit, buf, sizeof buf), "I16 -32768") == 0, "limit I16 MIN");
+            cint_ctx_clear_fault(ctx);
+            CHECK(cint_as_i8_from_i16(ctx, S_OP, 127, &s8) && s8 == 127, "127 as I8 from I16");
+            CHECK(!cint_as_i8_from_i16(ctx, S_OP, 128, &s8), "128 as I8 from I16");
+            cint_ctx_clear_fault(ctx);
+            /* w = 64 keeps the old arms: a signed source into I64 and U64. */
+            CHECK(cint_as_i64_from_i64(ctx, S_OP, INT64_MIN, &s) && s == INT64_MIN, "INT64_MIN as I64");
+            CHECK(cint_as_u64_from_i64(ctx, S_OP, INT64_MAX, &u) && u == (uint64_t)INT64_MAX, "INT64_MAX as U64");
+            CHECK(!cint_as_u64_from_i64(ctx, S_OP, INT64_MIN, &u), "INT64_MIN as U64");
+            cint_ctx_clear_fault(ctx);
+        }
+        {
+            /* cint_rt_fits against the formula it replaced (RT-OQ-81), with the tags as runtime
+             * values, as rt/cint_wide.h and rt/cint_rt.c pass them: for every target type, every
+             * pattern at or beside a bound of every width, signed and unsigned source. */
+            static const uint32_t tags[8] = {CINT_TAG_I8, CINT_TAG_I16, CINT_TAG_I32, CINT_TAG_I64,
+                                             CINT_TAG_U8, CINT_TAG_U16, CINT_TAG_U32, CINT_TAG_U64};
+            uint64_t patterns[80];
+            unsigned np = 0, ti, pi, si;
+            unsigned bad = 0;
+            for (pi = 0; pi < 4; pi++) {
+                unsigned w = 8u << pi;
+                uint64_t half = (uint64_t)1 << (w - 1u), full = w == 64u ? 0u : (uint64_t)1 << w;
+                patterns[np++] = half - 1u;
+                patterns[np++] = half;
+                patterns[np++] = half + 1u;
+                patterns[np++] = (uint64_t)0 - half;
+                patterns[np++] = (uint64_t)0 - half - 1u;
+                patterns[np++] = (uint64_t)0 - half + 1u;
+                patterns[np++] = full - 1u;
+                patterns[np++] = full;
+                patterns[np++] = full + 1u;
+                patterns[np++] = (uint64_t)0 - full;
+            }
+            patterns[np++] = 0u;
+            patterns[np++] = 1u;
+            patterns[np++] = UINT64_MAX;
+            patterns[np++] = UINT64_MAX - 1u;
+            for (ti = 0; ti < 8; ti++) {
+                for (pi = 0; pi < np; pi++) {
+                    for (si = 0; si < 2; si++) {
+                        bool src_signed = si == 1;
+                        uint64_t bits = patterns[pi];
+                        uint32_t to_tag = tags[ti];
+                        unsigned w = cint_rt_tag_width(to_tag);
+                        bool to_signed = cint_rt_tag_signed(to_tag);
+                        uint64_t max = to_signed ? ((uint64_t)1 << ((w - 1u) & 63u)) - 1u : cint_rt_mask(w);
+                        bool ref = (!src_signed || (bits >> 63) == 0u)
+                                       ? bits <= max
+                                       : to_signed && (uint64_t)0 - bits <= (uint64_t)1 << ((w - 1u) & 63u);
+                        if (cint_rt_fits(bits, src_signed, to_tag) != ref) bad++;
+                    }
+                }
+            }
+            CHECK(np == 44 && bad == 0, "cint_rt_fits agrees with the old formula on every boundary pattern");
+        }
     }
     {
         /* SPEC-01 4.4 table rows for / and %. */

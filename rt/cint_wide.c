@@ -38,7 +38,12 @@ void cint_rt_wide_udivmod(uint64_t *q, uint64_t *r, const uint64_t *u, unsigned 
 void cint_rt_wide_udivrem(uint64_t *q, uint64_t *r, const uint64_t *u, unsigned m, const uint64_t *v, unsigned n)
 {
     uint64_t un[33], vn[32];
-    unsigned s = cint_rt_clz64(v[n - 1u]), i, j;
+    unsigned s, i, j;
+    if (n == 1u) {  /* one limb: limb by limb, without a normalized copy of u */
+        r[0] = cint_w_udiv1(q, u, m, v[0]);
+        return;
+    }
+    s = cint_rt_clz64(v[n - 1u]);
     /* Normalize so that the divisor's top limb has its top bit set. */
     if (s != 0u) {
         for (i = n - 1u; i > 0u; i--) vn[i] = (v[i] << s) | (v[i - 1u] >> (64u - s));
@@ -50,12 +55,6 @@ void cint_rt_wide_udivrem(uint64_t *q, uint64_t *r, const uint64_t *u, unsigned 
         cint_w_copy(vn, v, n);
         cint_w_copy(un, u, m);
         un[m] = 0u;
-    }
-    if (n == 1u) {
-        uint64_t rem = un[m];
-        for (j = m; j > 0u; j--) q[j - 1u] = cint_w_div21(rem, un[j - 1u], vn[0], &rem);
-        r[0] = rem >> s;
-        return;
     }
     for (j = m - n + 1u; j > 0u;) {
         uint64_t qhat, rhat, carry = 0u, borrow = 0u, t, b1;

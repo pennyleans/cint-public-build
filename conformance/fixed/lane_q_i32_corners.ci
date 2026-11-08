@@ -1,0 +1,36 @@
+// case: fixed/lane_q_i32_corners
+// clause: SPEC-01 IM-190, IM-191, IM-192 (`hadd` and `rhadd` on I32 and Q16.16, and `rmulh` on Q16.16 and Q1.31 by Q1.31, over 16 corner raw values, every pair printed; `rshr` of each corner at runtime counts 0, 1, 2, 15, 16, 30 and 31)
+// subset: cint-core-1 (fixed point, lane Q)
+// entry: run; args: none
+// spec outcome: value I64 -5790477526849579063 (the digest of rmulh on Q16.16 by Q1.31); prints 256 pair lines and 112 shift lines, equal to Python's closed forms. S-1 U-1
+
+I32 shift(I32 a, I64 k) {
+    return rshr(a, k);
+}
+
+Q16.16 shift_q(Q16.16 a, I64 k) {
+    return rshr(a, k);
+}
+
+export I64 run() {
+    I32[16] c = [-2147483648, -2147483647, -2147450880, -1073741824, -32768, -2, -1, 0,
+                 1, 2, 3, 32768, 1073741824, 2147450880, 2147483646, 2147483647];
+    I64[7] counts = [0, 1, 2, 15, 16, 30, 31];
+    I64 d = 0;
+    for i in 0..16 {
+        I32 a = c[i];
+        Q16.16 qa = Q16.16.raw(a);
+        Q1.31 wa = Q1.31.raw(a);
+        for j in 0..16 {
+            I32 b = c[j];
+            Q16.16 qb = Q16.16.raw(b);
+            Q1.31 wb = Q1.31.raw(b);
+            "{a} {b}: {hadd(a, b)} {rhadd(a, b)} {hadd(qa, qb)!raw} {rhadd(qa, qb)!raw} {rmulh(qa, wb)!raw} {rmulh(wa, wb)!raw}\n";
+            d = d *% 1000003 +% (rmulh(qa, wb).raw as I64);
+        }
+        for k in 0..7 {
+            "{a} >> {counts[k]}: {shift(a, counts[k])} {shift_q(qa, counts[k])!raw}\n";
+        }
+    }
+    return d;
+}

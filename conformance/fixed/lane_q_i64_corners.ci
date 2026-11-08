@@ -1,0 +1,35 @@
+// case: fixed/lane_q_i64_corners
+// clause: SPEC-01 IM-190, IM-192 (`hadd`, `rhadd` and `rshr` on I64 and U64, whose lowering has no wider type: 16 corners of each, the U64 corners with the top bit set included, every pair printed; `rshr` at runtime counts 0, 1, 2, 62 and 63)
+// subset: cint-core-1 (fixed point, lane Q)
+// entry: run; args: none
+// spec outcome: value I64 -2742555400335320240 (the digest of hadd on I64); prints 512 pair lines and 160 shift lines, equal to Python's closed forms. S-1 U-1
+
+I64 shift(I64 a, I64 k) {
+    return rshr(a, k);
+}
+
+U64 shift_u(U64 a, I64 k) {
+    return rshr(a, k);
+}
+
+export I64 run() {
+    I64[16] c = [I64.min, I64.min + 1, -9223372036854743040, -1073741824, -32768, -2, -1, 0,
+                 1, 2, 32768, 1073741824, 9223372036854743040, 4611686018427387904, I64.max - 1, I64.max];
+    U64[16] u = [0, 1, 2, 3, 32768, 1073741824, 4294967296, 4611686018427387904,
+                 9223372036854775806, 9223372036854775807, 9223372036854775808, 9223372036854775809,
+                 18446744073709551613, 18446744073709551614, U64.max, 12297829382473034410];
+    I64[5] counts = [0, 1, 2, 62, 63];
+    I64 d = 0;
+    for i in 0..16 {
+        for j in 0..16 {
+            "i {c[i]} {c[j]}: {hadd(c[i], c[j])} {rhadd(c[i], c[j])}\n";
+            "u {u[i]} {u[j]}: {hadd(u[i], u[j])} {rhadd(u[i], u[j])}\n";
+            d = d *% 1000003 +% hadd(c[i], c[j]);
+        }
+        for k in 0..5 {
+            "i {c[i]} >> {counts[k]}: {shift(c[i], counts[k])}\n";
+            "u {u[i]} >> {counts[k]}: {shift_u(u[i], counts[k])}\n";
+        }
+    }
+    return d;
+}

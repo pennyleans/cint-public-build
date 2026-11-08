@@ -208,6 +208,7 @@ bool cint_commit_output(const char *path, const uint8_t *bytes, size_t len, size
 #define CINT_BUILD_FAULT 2     /* a fault inside the compiler: an internal error (CINTC-10); ctx holds it */
 #define CINT_BUILD_REFUSED 3   /* a call was refused, or the manifest is invalid */
 #define CINT_BUILD_IO 4        /* an input, a table allocation, or the output set failed */
+#define CINT_BUILD_UNSUPPORTED 5 /* selected backend refuses; diag holds node/site/capability */
 
 /* Reads the `count` modules `rels` under `root` in build manifest order, then
  * calls plan, and for each module in the given order compile, measure, and
@@ -238,6 +239,9 @@ enum { CINT_PATH_IDENTIFIER = 1, CINT_PATH_DEVICE = 2, CINT_PATH_COLLISION = 3 }
  * path ranges give CINT_BUILD_REFUSED. Neither failure publishes the output set.
  * A null sink is allowed and has the same behavior as the legacy entry. */
 typedef bool (*cint_diagnostic_path_sink)(void *user, int64_t row, const uint8_t *bytes, size_t len);
+/* The backend the next build emits for: 0 cpu-c17, 1 cpu-c17-spec (SPEC-09 BACK-17), 2 cpu-qbe,
+ * which cintc reads from the module table's header row (pm[0].nsites). No implicit fallback. */
+extern int cint_build_backend;
 int cint_build_with_paths(cint_ctx *ctx, cint_bridge_root *root, const char *const *rels, int64_t count,
                           const char *out, cint_compiler_diag *diag, uint8_t *faults,
                           cint_diagnostic_path_sink path_sink, void *user);

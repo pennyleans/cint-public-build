@@ -1,0 +1,34 @@
+// case: fixed/lane_q_rmulh_q1_15_grid
+// clause: SPEC-01 IM-191 (`rmulh` on Q1.15 by Q1.15 and on Q5.11 by Q1.15 over every raw value whose low byte is 0x00, 0x01, 0x7F, 0x80 or 0xFF crossed with 64 fixed coefficients; one running digest each; the corner -1.0 by -1.0 printed alone)
+// subset: cint-core-1 (fixed point, lane Q)
+// entry: run; args: none
+// spec outcome: value I64 4589454567295672079; prints that digest for Q1.15 and Q5.11 (the raw arithmetic is the same) and `32767` for the corner, equal to Python's sat(floor((A K + 2^14) / 2^15)). S-1 U-1
+
+export I64 run() {
+    I16[13] corner = [-32768, -32767, -16385, -16384, -2, -1, 0, 1, 2, 16383, 16384, 32766, 32767];
+    Q1.15[64] ks;
+    for j in 0..64 {
+        if (j < 13) {
+            ks[j] = Q1.15.raw(corner[j]);
+        } else {
+            ks[j] = Q1.15.raw((-32761 + 1291 * (j - 13)) as I16);
+        }
+    }
+    I64[5] low = [0, 1, 127, 128, 255];
+    I64 d1 = 0;
+    I64 d5 = 0;
+    for hb in 0..256 {
+        for lb in 0..5 {
+            I16 a = ((hb * 256 + low[lb]) as% I16);
+            Q1.15 qa = Q1.15.raw(a);
+            Q5.11 pa = Q5.11.raw(a);
+            for j in 0..64 {
+                d1 = d1 *% 1000003 +% (rmulh(qa, ks[j]).raw as I64);
+                d5 = d5 *% 1000003 +% (rmulh(pa, ks[j]).raw as I64);
+            }
+        }
+    }
+    Q1.15 m = Q1.15.raw(-32768);
+    "{d1} {d5}\n{rmulh(m, m)!raw}\n";
+    return d1;
+}

@@ -1,0 +1,11 @@
+I64 first[n](in I64[n] xs) {
+    I64[n] a;
+    a[0] = xs[0];
+    return a[0];
+}
+
+void main() {
+    I64[3] b;
+    b[0] = 1;
+    "{first(b)}\n";
+}

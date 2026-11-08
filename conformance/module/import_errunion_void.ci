@@ -1,0 +1,17 @@
+// case: module/import_errunion_void
+// clause: SPEC-04 LS-92 to LS-97, LS-119, LS-226 to LS-228; SPEC-09 CINTC-16
+// subset: cint-core-1 (a call of an imported function whose result is `E!void`, with `catch` blocks)
+// entry: run; args: none
+
+import module.lib.errunion_lib;
+
+export I64 run() {
+    I64 r = 0;
+    errunion_lib.require_small(5) catch (e) {
+        r += 1;
+    };
+    errunion_lib.require_small(500) catch (e) {
+        r += 10;
+    };
+    return r;
+}

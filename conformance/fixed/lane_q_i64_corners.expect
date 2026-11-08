@@ -1,0 +1,9 @@
+case fixed/lane_q_i64_corners
+clause SPEC-01 IM-190, IM-192 (`hadd`, `rhadd` and `rshr` on I64 and U64, whose lowering has no wider type: 16 corners of each, the U64 corners with the top bit set included, every pair printed; `rshr` at runtime counts 0, 1, 2, 62 and 63)
+format 5
+source reference
+outcome value
+stdout-bytes 36124
+stdout-sha256 e11662fd86651a3f23a85a16ed94c1222cd2d957a7ce18327b0e42f8318783c9
+return I64 -2742555400335320240
+fuel-consumed 513

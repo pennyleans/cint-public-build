@@ -130,7 +130,7 @@ PRELUDE = frozenset("""
 len extent size lower copy fill equal swap abs uabs min max clamp div_trunc rem_trunc
 div_euclid rem_euclid divmod div_round muldiv mul_full isqrt isqrt_round add_result
 sub_result mul_result div_result rem_result shl_result rotl rotr mul div mul_wrap mul_sat
-sqrt qmul mul_int sum fold_checked sum_wrap sum_sat count wrap_bits rescale3 rescale3_rem shl3 sign
+sqrt qmul mul_int hadd rhadd rshr rmulh sum fold_checked sum_wrap sum_sat count wrap_bits rescale3 rescale3_rem shl3 sign
 tdot random format utf8 embed to_device to_host dot transpose reverse reshape
 """.split())
 # The names box 09 adds to the prelude (rulings R4 and R6); a module parsed without the
@@ -139,6 +139,9 @@ BOX09_PRELUDE = frozenset({"dot", "transpose", "reverse", "reshape"})
 # The names box 15 adds to the prelude (ruling BX15-05); a module parsed without fixed point may
 # still declare them.
 FIXED_PRELUDE = frozenset({"qmul", "mul_int"})
+# The lane Q built-ins (SPEC-01 IM-190 to IM-192, SPEC-04 LS-329; OQ-338), gated with fixed point:
+# a module parsed without fixed point may still declare them.
+LANEQ_PRELUDE = frozenset({"hadd", "rhadd", "rshr", "rmulh"})
 BUILTIN_TYPES = frozenset({"Bool", "Str", "Round", "T1", "T27", "PT5", "PT4", "Arena", "Pool", "Handle"})
 # The built-in error set of SPEC-01 IM-188, a type name with the box 12 surface (SPEC-04 LS-21).
 BOX12_TYPES = frozenset({"ArithError"})
@@ -175,6 +178,8 @@ BUILTIN_SIGS = {
     # Fixed point only (SPEC-01 IM-61 to IM-67, SPEC-04 LS-145); `sqrt` takes its mode or not.
     "mul": ("T", 2, False, True), "div": ("T", 2, False, True), "mul_wrap": ("T", 2, False, True),
     "mul_sat": ("T", 2, False, True), "sqrt": ("T", 1, False, "optional"),
+    # Lane Q (SPEC-01 IM-190, IM-192): integers and fixed point of 8 to 64 bits; `rshr` takes a count.
+    "hadd": ("T", 2, False, False), "rhadd": ("T", 2, False, False), "rshr": ("T", 2, False, False),
 }
 # The scalar built-ins defined on fixed point (SPEC-01 IM-60 to IM-67), and those on fixed point only.
 Q_BUILTINS = frozenset({"abs", "min", "max", "mul", "div", "mul_wrap", "mul_sat", "sqrt"})
@@ -495,7 +500,7 @@ class Checker:
         self.fixed = getattr(module, "fixed", True)
         self.prelude = PRELUDE if self.box09 else PRELUDE - BOX09_PRELUDE
         if not self.fixed:
-            self.prelude = self.prelude - FIXED_PRELUDE
+            self.prelude = self.prelude - FIXED_PRELUDE - LANEQ_PRELUDE
         self.kernel = None           # the KernelDecl being checked
         self.kreduce: dict = {}      # scalar `out` name -> its `reduce` statement, in the kernel checked
         self.box12 = getattr(module, "box12", True)
@@ -514,9 +519,16 @@ class Checker:
         return (any(name in s for s in self.scopes) or name in self.globals
                 or name in self.prelude or name in self.types)
 
+    def declared_message(self, name, declared="`%s` is already declared"):
+        """The C3001 message: a built-in name is named as one (SPEC-04 LS-145, issue #502)."""
+        if not any(name in sc for sc in self.scopes) and name not in self.globals and \
+                (name in self.prelude or name in self.types):
+            return "`%s` is a built-in name (SPEC-04 LS-145) and cannot be declared" % name
+        return declared % name
+
     def declare(self, name, pos, sym):
         if self.visible(name):
-            error("C3001", pos, "`%s` is already declared and visible here" % name)
+            error("C3001", pos, self.declared_message(name, "`%s` is already declared and visible here"))
         self.scopes[-1][name] = sym
 
     def lookup(self, name, pos) -> Sym:
@@ -920,7 +932,7 @@ class Checker:
             error("C3002", pos, "`%s` collides with a name selected from module `%s` (SPEC-04 LS-228)"
                   % (name, self.selected[name].name))
         if name in self.globals or name in self.prelude or name in self.types:
-            error("C3001", pos, "`%s` is already declared" % name)
+            error("C3001", pos, self.declared_message(name))
         self.globals[name] = sym
 
     def _imports(self):
@@ -968,7 +980,7 @@ class Checker:
         self.size_params = {}
         for name, pos in f.size_params:
             if name in self.size_params or name in self.globals or name in self.prelude or name in self.types:
-                error("C3001", pos, "`%s` is already declared" % name)
+                error("C3001", pos, self.declared_message(name))
             self.size_params[name] = pos
         f.param_types = []
         for p in f.params:
@@ -1160,7 +1172,7 @@ class Checker:
             scope = {}
             for name, pos in k.size_params:
                 if name in self.size_params or name in self.globals or name in self.prelude or name in self.types:
-                    error("C3001", pos, "`%s` is already declared" % name)
+                    error("C3001", pos, self.declared_message(name))
                 self.size_params[name] = pos
                 scope[name] = Sym("sizeparam", name, "I64", pos)
             self.scopes = [scope]
@@ -2029,7 +2041,10 @@ class Checker:
             return self._result_builtin(e)
         if not local and self.fixed and name in FIXED_PRELUDE:
             return self._mixed_fixed(e)
-        if not local and name in BUILTIN_SIGS and (self.fixed or name not in Q_ONLY_BUILTINS):
+        if not local and self.fixed and name == "rmulh":
+            return self._rmulh(e)
+        if not local and name in BUILTIN_SIGS and (self.fixed or name not in Q_ONLY_BUILTINS) and \
+                (self.fixed or name not in LANEQ_PRELUDE):
             return self._builtin(e)
         if not local and name in self.prelude:
             raise Refused("the built-in `%s` is outside the scalar surface that cint_ref implements" % name, e.start)
@@ -2099,6 +2114,41 @@ class Checker:
         e.operand_types = types
         e.ty = target or types[0]
         return e.ty
+
+    def _rmulh(self, e):
+        """`rmulh(a, k)` (SPEC-01 IM-191, SPEC-04 LS-329): `a` of a `Q` type of 16- or 32-bit
+        storage, `k` of `Q1.15` or `Q1.31` to match; the result has the type of `a`. An untyped
+        `k` settles to the coefficient type, an untyped `a` to the type of a typed `k`."""
+        args = list(e.args)
+        named = next((a for a in args if a.name is not None), None)
+        if named is not None:
+            error("C2063", named.pos, "`rmulh` takes no named arguments")
+        if len(args) != 2:
+            error("C2022", e.start, "`rmulh` takes 2 arguments")
+        a, k = (x.value for x in args)
+        for v in (a, k):
+            if isinstance(v, P.TypeArg):
+                error("C3007", v.start, "the type name `%s` is not a value" % v.name)
+        ta, tk = self.infer(a), self.infer(k)
+        if ta is None:
+            ta = tk if tk is not None and is_q(tk) else "I64"
+            self.settle(a, ta)
+        if not is_q(ta) or fixed.q_type(ta).width not in (16, 32):
+            error("C2103", a.start, "`rmulh` takes a fixed-point value of 16- or 32-bit storage, found %s "
+                  "(SPEC-01 IM-191)" % type_name(ta))
+        coef = "Q1.%d" % (fixed.q_type(ta).width - 1)
+        if tk is None:
+            self.settle(k, coef)
+            tk = coef
+        if tk != coef:
+            error("C2001", k.start, "the coefficient of `rmulh` on %s is %s, found %s (SPEC-01 IM-191)"
+                  % (type_name(ta), coef, type_name(tk)))
+        e.kind = "builtin"
+        e.values, e.count, e.mode, e.target = [a, k], None, "half_up", None
+        e.operand_type = ta
+        e.operand_types = [ta, tk]
+        e.ty = ta
+        return ta
 
     def _member(self, e, recv):
         """A member of an arena or a pool (SPEC-04 LS-145, LS-306; SPEC-03 M-14 to M-20;
@@ -2685,7 +2735,7 @@ class Checker:
             mode = ma.name
         values = [a.value for a in args]
         count = None
-        if e.callee in ("rotl", "rotr"):
+        if e.callee in ("rotl", "rotr", "rshr"):
             count = values.pop()
             tk = self.infer(count)
             if tk is None:
@@ -2781,6 +2831,16 @@ class Checker:
         return e.ty
 
     def _builtin_result(self, e, op_t):
+        if e.callee in LANEQ_PRELUDE:
+            # SPEC-01 IM-190, IM-192: integers and fixed point of 8 to 64 bits, result `T`.
+            width = fixed.q_type(op_t).width if is_q(op_t) else int_type(op_t).width if is_int_type(op_t) else 0
+            if not 8 <= width <= 64:
+                error("C2103", e.start, "`%s` is defined on integers and fixed point of 8 to 64 bits, found %s "
+                      "(SPEC-01 IM-190, IM-192)" % (e.callee, type_name(op_t)))
+            e.mode = "half_up" if e.callee == "rshr" else None
+            e.operand_type = op_t
+            e.ty = op_t
+            return e.ty
         if is_q(op_t) and e.callee in Q_BUILTINS:
             # SPEC-01 IM-60 to IM-67: a result of the operands' fixed-point type.
             if e.callee == "sqrt" and e.mode is None:

@@ -1,0 +1,6 @@
+I64 counter = 0;
+
+void main() {
+    counter = counter + 1;
+    "{counter}\n";
+}

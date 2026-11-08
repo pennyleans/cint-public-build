@@ -1,0 +1,30 @@
+// case: fixed/lane_q_sticky_flag
+// clause: SPEC-01 IM-60, IM-30, IM-47, IM-113 (the sticky row flag as a source idiom: a lane whose `+|` saturated differs from its `+%`, ORed into an I16 row accumulator; OQ-338 Q3 A)
+// subset: cint-core-1 (fixed point, lane Q)
+// entry: run; args: none
+// spec outcome: value I64 1; prints `0 8852043379180899328` (the quiet row: no lane saturates) and `1 32767` (the loud row: 15.5 +| 1.0 saturates at lane 2), each with a line feed. S-1 U-1
+
+I16 row_flag(in Q5.11[_] m, in Q5.11[_] e, inout Q5.11[_] res) {
+    I16 flag = 0;
+    for j in 0..8 {
+        Q5.11 v = m[j] +| e[j];
+        flag = flag | ((m[j] +| e[j]) != (m[j] +% e[j]) ? 1 : 0);
+        res[j] = v;
+    }
+    return flag;
+}
+
+export I64 run() {
+    Q5.11[8] m = [1.0, 2.0, 15.5, -3.0, 0.25, 7.0, -15.0, 4.0];
+    Q5.11[8] quiet = [0.5, 0.5, 0.25, 1.0, 1.0, 1.0, -0.5, 2.0];
+    Q5.11[8] loud = [0.5, 0.5, 1.0, 1.0, 1.0, 1.0, -0.5, 2.0];
+    Q5.11[8] res;
+    I16 a = row_flag(m, quiet, res);
+    I64 d = 0;
+    for j in 0..8 {
+        d = d *% 1000003 +% (res[j].raw as I64);
+    }
+    I16 b = row_flag(m, loud, res);
+    "{a} {d}\n{b} {res[2]!raw}\n";
+    return (a * 10 + b) as I64;
+}

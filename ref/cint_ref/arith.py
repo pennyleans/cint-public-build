@@ -16,7 +16,7 @@ import math
 from .faults import Fault
 from .types import BOOL, IntType, Value, int_type, unsigned_of
 
-__all__ = ["op", "Value", "Fault", "OpenCase", "ROUND_MODES", "round_div", "op_id"]
+__all__ = ["op", "Value", "Fault", "OpenCase", "ROUND_MODES", "round_div", "op_id", "rshr_raw"]
 
 # SPEC-01 4.5, in the order of the built-in enum `Round` (SPEC-04 6.8).
 ROUND_MODES = ("floor", "ceil", "trunc", "away", "half_even", "half_away",
@@ -72,6 +72,11 @@ def round_div(n: int, d: int, mode: str) -> int:
     if mode == "half_up":
         return q + 1
     return q                      # half_down
+
+
+def rshr_raw(a: int, k: int) -> int:
+    """SPEC-01 IM-192 on a raw value: `a` for k = 0, else floor((a + 2^(k-1)) / 2^k)."""
+    return a if k == 0 else (a + (1 << (k - 1))) >> k
 
 
 def _isqrt_round(x: int, mode: str) -> int:
@@ -179,6 +184,24 @@ def op(name: str, form: str, type_: str, *operands, mode: str | None = None,
         if name == "shr":
             return Value(t.name, a.value >> k.value)
         return _apply_form(t, form, a.value << k.value, operation, (a, k))
+
+    if name in ("hadd", "rhadd"):
+        # SPEC-01 IM-190: the exact sum halved, toward negative infinity or at the half up.
+        _need(form == "checked", "%s has only the checked form" % name)
+        a, b = (_typed(x, type_) for x in _arity(operands, 2))
+        _same(t, a, b)
+        return Value(t.name, (a.value + b.value + (name == "rhadd")) >> 1)
+
+    if name == "rshr":
+        # SPEC-01 IM-192: round(A / 2^k, half_up), the count checked as for `>>`.
+        _need(form == "checked" and mode == "half_up", "rshr is rshr.checked.<T>.half_up")
+        a_raw, k_raw = _arity(operands, 2)
+        a = _typed(a_raw, type_)
+        k = _typed(k_raw, "I64")
+        _same(t, a)
+        if not 0 <= k.value <= t.width - 1:
+            return Fault("E_SHIFT", op_id(name, form, [type_], mode), (a, k), None, Value("I64", t.width - 1))
+        return Value(t.name, rshr_raw(a.value, k.value))
 
     if name in ("rotl", "rotr"):
         _need(form == "checked", "rotations have only the checked form")

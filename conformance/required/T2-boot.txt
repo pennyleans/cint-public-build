@@ -10,7 +10,7 @@
 # Unsupported seed limits become B1 comparison obligations under CINTC-02/LS-311.
 # Approval covers these rows and exclusions; a later change to either needs a new
 # approval. Stage acceptance still needs the fresh receipts of STAGE-01.
-# The following 653 core-only IDs (559 programs and tables, 18 saturating anchors,
+# The following 677 core-only IDs (583 programs and tables, 18 saturating anchors,
 # 76 built-in anchors) are explicitly outside this boot scope. We assign no
 # outside_subset category to B1. This is not full T2 coverage. B1 compares the 18
 # saturating anchors since task 2.14b and the 76 built-in anchors since box 07.
@@ -96,6 +96,15 @@
 # excluded, the conformance/module/extent_ cases: six declare a module-level variable
 # (BOOT-01 declaration) and module/extent_field_named calls the built-in `len`; B1 compares
 # them under T2; no other row or exclusion changes.
+# 2026-11-02 (OQ-325 A; OQ-174 amendment): 5 programs excluded, the conformance/module/
+# cases of cross-module calls, whose error sets and `Grants` are outside cint-boot-1; B1
+# compares them under T2; no other row or exclusion changes.
+# 2026-11-04 (OQ-338, Proposed; S-1 U-1; OQ-174 amendment): 17 programs excluded, the
+# cases of the lane Q operations, whose fixed-point types, array literals, kernels and
+# built-ins are outside cint-boot-1; B1 compares them under T2; no other row or exclusion
+# changes.
+# 2026-11-04 (issue 541; OQ-174 amendment): 1 program excluded, kernel/sum_bound_plain_add,
+# a kernel case outside cint-boot-1; B1 compares it under T2; no other row or exclusion changes.
 # Boot scope exclusion: anchors/abs.checked.i64.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
 # Boot scope exclusion: anchors/abs.checked.i64.002 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
 # Boot scope exclusion: anchors/abs.checked.i8.001 SPEC-09 5.5; no cint-boot-1 operator form; B1 compares it under T2 (box 07)
@@ -339,6 +348,22 @@
 # Boot scope exclusion: fixed/kernel_mul_overflow SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
 # Boot scope exclusion: fixed/kernel_scale_reduce SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
 # Boot scope exclusion: fixed/kernel_scale_reduce_q80_48 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, games wave G2a (OQ-292)
+# Boot scope exclusion: fixed/lane_q_hadd_c2001 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; S-1 U-1 (OQ-338)
+# Boot scope exclusion: fixed/lane_q_hadd_i8_exhaustive SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; S-1 U-1 (OQ-338)
+# Boot scope exclusion: fixed/lane_q_hadd_q64_64_c2103 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; S-1 U-1 (OQ-338)
+# Boot scope exclusion: fixed/lane_q_i16_grid SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; S-1 U-1 (OQ-338)
+# Boot scope exclusion: fixed/lane_q_i32_corners SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; S-1 U-1 (OQ-338)
+# Boot scope exclusion: fixed/lane_q_i64_corners SPEC-09 BOOT-01 excludes array literals and the LS-145 built-ins (`hadd`, `rhadd`, `rshr`); S-1 U-1 (OQ-338)
+# Boot scope exclusion: fixed/lane_q_name_c3001 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; S-1 U-1 (OQ-338)
+# Boot scope exclusion: fixed/lane_q_rmulh_c2103 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; S-1 U-1 (OQ-338)
+# Boot scope exclusion: fixed/lane_q_rmulh_coefficient_c2001 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; S-1 U-1 (OQ-338)
+# Boot scope exclusion: fixed/lane_q_rmulh_q1_15_grid SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; S-1 U-1 (OQ-338)
+# Boot scope exclusion: fixed/lane_q_rshr_i8_exhaustive SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; S-1 U-1 (OQ-338)
+# Boot scope exclusion: fixed/lane_q_rshr_shift_fault SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; S-1 U-1 (OQ-338)
+# Boot scope exclusion: fixed/lane_q_spec_examples SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; S-1 U-1 (OQ-338)
+# Boot scope exclusion: fixed/lane_q_sticky_flag SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; S-1 U-1 (OQ-338)
+# Boot scope exclusion: fixed/lane_q_sweep_q5_11 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; S-1 U-1 (OQ-338)
+# Boot scope exclusion: fixed/lane_q_unsigned_corners SPEC-09 BOOT-01 excludes array literals and the LS-145 built-ins (`hadd`, `rhadd`, `rshr`); S-1 U-1 (OQ-338)
 # Boot scope exclusion: fixed/literal_grid_q16_16 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
 # Boot scope exclusion: fixed/literal_grid_q80_48 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, games wave G2a (OQ-292)
 # Boot scope exclusion: fixed/literal_off_grid_c2006 SPEC-09 BOOT-01 FIXED_TYPE and DEC_FRAC exclude fixed point; frozen, box 15 unit 1
@@ -410,9 +435,12 @@
 # Boot scope exclusion: kernel/heat_rounding_rf3 SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
 # Boot scope exclusion: kernel/heat_sum_i32_epilogue SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
 # Boot scope exclusion: kernel/inout_copy_in_copy_out SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/lane_q_half_sweep SPEC-09 BOOT-01 excludes kernels, and FIXED_TYPE and DEC_FRAC exclude fixed point; S-1 U-1 (OQ-338)
+# Boot scope exclusion: kernel/lane_q_i16_halving SPEC-09 BOOT-01 excludes kernels; S-1 U-1 (OQ-338)
 # Boot scope exclusion: kernel/min_no_contributions SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
 # Boot scope exclusion: kernel/scale_over_2d SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
 # Boot scope exclusion: kernel/shape_two_pass SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
+# Boot scope exclusion: kernel/sum_bound_plain_add SPEC-09 BOOT-01 excludes kernels; issue 541
 # Boot scope exclusion: kernel/total_checked_fold SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
 # Boot scope exclusion: kernel/total_empty SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
 # Boot scope exclusion: kernel/total_exact_epilogue_overflow SPEC-09 BOOT-01 excludes kernels; held I-2 (box 09, R0)
@@ -470,6 +498,11 @@
 # Boot scope exclusion: module/extent_nonconstant_c6004 SPEC-09 BOOT-01 declaration admits no module-level variable; B1 compares it under T2 (CINTC-OQ-74)
 # Boot scope exclusion: module/extent_not_i64_c2001 SPEC-09 BOOT-01 declaration admits no module-level variable; B1 compares it under T2 (CINTC-OQ-74)
 # Boot scope exclusion: module/extent_product SPEC-09 BOOT-01 declaration admits no module-level variable; B1 compares it under T2 (CINTC-OQ-74)
+# Boot scope exclusion: module/import_errunion_catch SPEC-09 BOOT-01; error sets are outside cint-boot-1; B1 compares it under T2 (OQ-325)
+# Boot scope exclusion: module/import_errunion_try SPEC-09 BOOT-01; error sets are outside cint-boot-1; B1 compares it under T2 (OQ-325)
+# Boot scope exclusion: module/import_errunion_void SPEC-09 BOOT-01; error sets are outside cint-boot-1; B1 compares it under T2 (OQ-325)
+# Boot scope exclusion: module/import_grants_arg SPEC-09 BOOT-01; `Grants` is outside cint-boot-1; B1 compares it under T2 (OQ-325)
+# Boot scope exclusion: module/import_grants_service SPEC-09 BOOT-01; `Grants` and service externs are outside cint-boot-1; B1 compares it under T2 (OQ-325)
 # Boot scope exclusion: module/import_record_private_closure SPEC-09 BOOT-01; fixture uses a struct result or an import alias
 # Boot scope exclusion: module/import_record_result SPEC-09 BOOT-01; fixture uses a struct result or an import alias
 # Boot scope exclusion: module/import_record_unbound_c2065 SPEC-09 BOOT-01; fixture uses a struct result or an import alias

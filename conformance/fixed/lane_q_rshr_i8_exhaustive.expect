@@ -1,0 +1,9 @@
+case fixed/lane_q_rshr_i8_exhaustive
+clause SPEC-01 IM-192 (`rshr` on every I8 value and every count 0 to 7, a runtime count through a parameter, 0 included, and again with constant counts; round(A / 2^k, half_up))
+format 5
+source reference
+outcome value
+stdout-bytes 57
+stdout-sha256 506014df6d5d296d548bd59115514a47deb536444b5c041648ef2962c244d97d
+return I64 688235502011404928
+fuel-consumed 6401

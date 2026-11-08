@@ -1,0 +1,7 @@
+case fixed/lane_q_hadd_c2001
+clause SPEC-01 IM-190; SPEC-04 LS-145, 17.2 (`hadd` of two fixed-point types is C2001)
+format 5
+source compile-error
+outcome compile-error
+diagnostic.code C2001
+diagnostic.position fixed/lane_q_hadd_c2001.ci:10:23

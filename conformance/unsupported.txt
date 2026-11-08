@@ -93,18 +93,80 @@
 # denied_try_main and main_grants_print wait, with no line here, for cpu-sir-interp.
 # I/O services lane U5c (2026-10-22): cpu-sir-interp runs them (rt/OPEN.md RT-OQ-75), and
 # their rows are compared in T2, T3 and T4.
+# S-1 U-1 (2026-11-04, OQ-338): the cintc/gpu-cuda line of kernel/lane_q_half_sweep gives the
+# BACK-05 capability `fixed`, as for the fixed-point kernels of box 15; its cintc rows compare it.
+# cpu-qbe Q1 and Q2 (2026-11-07, SPEC-09 BACK-18, Proposed): a module back_qbe refuses fails
+# `cint emit-qbe` with E_UNSUPPORTED and the capability (entry, storage, node, type, module
+# or symbol). Its line, for cintc/cpu-qbe, gives the capability first; a run of
+# `cint_check --backend cpu-qbe` fails unless the refusal names the same capability, and
+# fails on a line whose case back_qbe accepts. Measured with tools/cint_check.py --leg gcc
+# --opt 2 --helpers builtin --compiler b1 --backend cpu-qbe --no-receipt (QBE 1.2).
+anchors/div_euclid_checked_i64 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability symbol a public cx name of the module is longer than the 79 bytes QBE reads, which BACK-18 never shortens
+anchors/div_round_checked_i64_away cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability symbol a public cx name of the module is longer than the 79 bytes QBE reads, which BACK-18 never shortens
+anchors/div_round_checked_i64_ceil cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability symbol a public cx name of the module is longer than the 79 bytes QBE reads, which BACK-18 never shortens
+anchors/div_round_checked_i64_floor cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability symbol a public cx name of the module is longer than the 79 bytes QBE reads, which BACK-18 never shortens
+anchors/div_round_checked_i64_half_away cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability symbol a public cx name of the module is longer than the 79 bytes QBE reads, which BACK-18 never shortens
+anchors/div_round_checked_i64_half_down cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability symbol a public cx name of the module is longer than the 79 bytes QBE reads, which BACK-18 never shortens
+anchors/div_round_checked_i64_half_even cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability symbol a public cx name of the module is longer than the 79 bytes QBE reads, which BACK-18 never shortens
+anchors/div_round_checked_i64_half_trunc cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability symbol a public cx name of the module is longer than the 79 bytes QBE reads, which BACK-18 never shortens
+anchors/div_round_checked_i64_half_up cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability symbol a public cx name of the module is longer than the 79 bytes QBE reads, which BACK-18 never shortens
+anchors/div_round_checked_i64_trunc cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability symbol a public cx name of the module is longer than the 79 bytes QBE reads, which BACK-18 never shortens
+anchors/div_round_checked_i8_half_up cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability symbol a public cx name of the module is longer than the 79 bytes QBE reads, which BACK-18 never shortens
+anchors/div_trunc_checked_i64 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability symbol a public cx name of the module is longer than the 79 bytes QBE reads, which BACK-18 never shortens
+anchors/isqrt_round_checked_i64_ceil cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability symbol a public cx name of the module is longer than the 79 bytes QBE reads, which BACK-18 never shortens
+anchors/muldiv_checked_i64_i64_ceil cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability symbol a public cx name of the module is longer than the 79 bytes QBE reads, which BACK-18 never shortens
+anchors/muldiv_checked_i64_i64_floor cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability symbol a public cx name of the module is longer than the 79 bytes QBE reads, which BACK-18 never shortens
+anchors/muldiv_checked_i64_i64_half_even cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability symbol a public cx name of the module is longer than the 79 bytes QBE reads, which BACK-18 never shortens
+anchors/rem_euclid_checked_i64 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability symbol a public cx name of the module is longer than the 79 bytes QBE reads, which BACK-18 never shortens
+anchors/rem_trunc_checked_i64 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability symbol a public cx name of the module is longer than the 79 bytes QBE reads, which BACK-18 never shortens
 arith/const_narrow_literal_2p3000 cint-seed C9102 SEED-16 the seed holds a literal in 64 bits and refuses a checked as of a literal of 2^64 or more
 arith/const_narrow_literal_max cint-seed C9102 SEED-16 the seed holds a literal in 64 bits and refuses a checked as of a literal of 2^64 or more
 arith/literal_conversion_skipped_operand cint-seed C9102 SEED-16 the seed holds a literal in 64 bits and refuses a checked as of a literal of 2^64 or more
+boot/refuse_kernel cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
 control/nest_blocks_200 cint-seed C9004 SEED-15 the seed compiles at most 199 nested blocks
 control/nest_blocks_256 cint-seed C9004 SEED-15 the seed compiles at most 199 nested blocks
 control/nest_blocks_257 cint-seed C9004 SEED-15 the seed compiles at most 199 nested blocks
 control/nest_for_256 cint-seed C9004 SEED-15 the seed compiles at most 49 nested for loops
 control/nest_whiles_256 cint-seed C9004 SEED-15 the seed compiles at most 66 nested while loops
 control/nest_whiles_67 cint-seed C9004 SEED-15 the seed compiles at most 66 nested while loops
+fixed/kernel_mul_overflow cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
 fixed/kernel_mul_overflow cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability fixed the cuda profile refuses fixed point until back_ptx emits its operations (box 15 ruling BX15-01, a later unit)
+fixed/kernel_scale_reduce cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
 fixed/kernel_scale_reduce cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability fixed the cuda profile refuses fixed point until back_ptx emits its operations (box 15 ruling BX15-01, a later unit)
+fixed/kernel_scale_reduce_q80_48 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
 fixed/kernel_scale_reduce_q80_48 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability fixed the cuda profile refuses fixed point until back_ptx emits its operations (box 15 ruling BX15-01, a later unit; OQ-294)
+kernel/advance_element_form cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/alias_gcd_accepted cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/alias_uncertain_columns cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/bounds_in_block cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/dispatch_number_second cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/fuel_before_overflow cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/fuel_entry_charge cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/fuel_in_body_located cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/heat_e1_overflow cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/heat_e2_narrowing cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/heat_e9_div_zero cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/heat_fold_i32_work_item cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/heat_hot_spot cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/heat_rounding_rf3 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/heat_sum_i32_epilogue cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/inout_copy_in_copy_out cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/lane_q_half_sweep cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/lane_q_half_sweep cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability fixed the cuda profile refuses fixed point until back_ptx emits its operations (box 15 ruling BX15-01; S-1 U-1, OQ-338)
+kernel/lane_q_i16_halving cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/lane_q_i16_halving cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability builtin the cuda profile refuses the lane Q built-ins in a kernel until back_ptx emits them (S-1 U-1, OQ-338)
+kernel/min_no_contributions cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/scale_over_2d cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/shape_two_pass cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/sum_bound_plain_add cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/total_checked_fold cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/total_empty cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/total_exact_epilogue_overflow cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/total_exact_sum cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/total_sat_orders cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/unpublished_after_fault cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/where_violation cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+kernel/zero_work_items cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
 memory/frame_arena_counts_elements cint-seed C9003 EMIT-30 the seed admits a local array of at most 4,096 bytes
 memory/frame_arena_recursion_exhausts cint-seed C9003 EMIT-30 the seed admits a local array of at most 4,096 bytes
 memory/frame_arena_released_at_block_exit cint-seed C9003 EMIT-30 the seed admits a local array of at most 4,096 bytes
@@ -112,20 +174,39 @@ struct/constructor_shape_later_fault cint-seed C9102 SEED-OQ-06 the seed does no
 struct/constructor_shape_order cint-seed C9102 SEED-OQ-06 the seed does not support an array-field constructor argument
 struct/constructor_shape_runtime cint-seed C9102 SEED-OQ-06 the seed does not support an array-field constructor argument
 struct/constructor_shape_zero_elements cint-seed C9102 SEED-OQ-06 the seed does not support an array-field constructor argument
+tables/kernel_add_checked_i64 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+tables/kernel_add_sat_i64 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
 tables/kernel_add_sat_i64 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability sat the cuda profile refuses saturating arithmetic until its kernel cases pass (box 11 note 4.4)
+tables/kernel_add_wrap_i64 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+tables/kernel_div_checked_i64 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
 tables/kernel_div_checked_i64 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability div the cuda profile refuses division and remainder until their kernel cases pass (box 11 note 4.4)
+tables/kernel_mul_checked_i64 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+tables/kernel_mul_sat_i64 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
 tables/kernel_mul_sat_i64 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability sat the cuda profile refuses saturating arithmetic until its kernel cases pass (box 11 note 4.4)
+tables/kernel_mul_wrap_i64 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+tables/kernel_rem_checked_i64 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
 tables/kernel_rem_checked_i64 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability div the cuda profile refuses division and remainder until their kernel cases pass (box 11 note 4.4)
+tables/kernel_shl_checked_i64 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
 tables/kernel_shl_checked_i64 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability shift the cuda profile refuses shifts until their kernel cases pass (box 11 note 4.4)
+tables/kernel_shl_wrap_i64 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
 tables/kernel_shl_wrap_i64 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability shift the cuda profile refuses shifts until their kernel cases pass (box 11 note 4.4)
+tables/kernel_shr_checked_i64 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
 tables/kernel_shr_checked_i64 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability shift the cuda profile refuses shifts until their kernel cases pass (box 11 note 4.4)
+tables/kernel_sub_checked_i64 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
+tables/kernel_sub_sat_i64 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
 tables/kernel_sub_sat_i64 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability sat the cuda profile refuses saturating arithmetic until its kernel cases pass (box 11 note 4.4)
+tables/kernel_sub_wrap_i64 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
 view/copy_shape_assignment cint-seed C9102 SEED-OQ-06 the seed refuses whole-array assignment
 view/copy_shape_empty_source cint-seed C9102 SEED-OQ-06 the seed refuses whole-array assignment
 view/copy_shape_zero_elements cint-seed C9102 SEED-OQ-06 the seed refuses whole-array assignment
 view/shape_mismatch_runtime cint-seed C9102 SEED-OQ-05 the seed checks the shapes of views passed between CINT functions at compile time only
+wide/kernel_add_overflow_u256 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
 wide/kernel_add_overflow_u256 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability wide the cuda profile refuses U128 to U512 (box 15 ruling BX15-01)
+wide/kernel_alias_descriptors_i256 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
 wide/kernel_alias_descriptors_i256 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability wide the cuda profile refuses I128 to I1024 (box 15 ruling BX15-01)
+wide/kernel_alias_descriptors_u128 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
 wide/kernel_alias_descriptors_u128 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability wide the cuda profile refuses U128 to U512 (box 15 ruling BX15-01)
+wide/kernel_mul_overflow_i128 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
 wide/kernel_mul_overflow_i128 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability wide the cuda profile refuses I128 to I1024 (box 15 ruling BX15-01)
+wide/kernel_reduce_sum_i512 cintc/cpu-qbe E_UNSUPPORTED BACK-18 capability entry a kernel is never admitted (no dispatch on cpu-qbe)
 wide/kernel_reduce_sum_i512 cintc/gpu-cuda E_UNSUPPORTED BACK-05 capability wide the cuda profile refuses I128 to I1024 (box 15 ruling BX15-01)

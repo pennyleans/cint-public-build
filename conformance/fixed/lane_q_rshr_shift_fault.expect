@@ -1,0 +1,19 @@
+case fixed/lane_q_rshr_shift_fault
+clause SPEC-01 IM-192, IM-45, IM-134 (`rshr` with a runtime count of 16 on I16 faults E_SHIFT, operation rshr.checked.i16.half_up, operands the value and the count, limit 15)
+format 5
+source reference
+outcome fault
+stdout-bytes 0
+fuel-consumed 3
+fault.code E_SHIFT
+fault.operation rshr.checked.i16.half_up
+fault.operand I16 1000
+fault.operand I64 16
+fault.exact none
+fault.limit I64 15
+fault.position fixed/lane_q_rshr_shift_fault.ci:8:12
+fault.revision self
+fault.source-map self
+fault.address none
+fault.stack-depth 1
+fault.stack fixed/lane_q_rshr_shift_fault.ci:15:13

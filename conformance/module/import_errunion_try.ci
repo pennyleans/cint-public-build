@@ -1,0 +1,22 @@
+// case: module/import_errunion_try
+// clause: SPEC-04 LS-92 to LS-97, LS-119, LS-226 to LS-228; SPEC-09 CINTC-16
+// subset: cint-core-1 (`try` on a call of an imported function, in a function whose result is an error union of the same imported set)
+// entry: run; args: none
+
+import module.lib.errunion_lib;
+
+errunion_lib.LookupError!I64 quarter(I64 n) {
+    I64 h = try errunion_lib.checked_half(n);
+    return try errunion_lib.checked_half(h);
+}
+
+I64 kind(I64 n) {
+    I64 v = quarter(n) catch (e) {
+        return e == errunion_lib.LookupError.negative ? -20 : -30;
+    };
+    return v;
+}
+
+export I64 run() {
+    return kind(40) * 100 + kind(-8) + kind(300);
+}

@@ -6,7 +6,8 @@ literals in the C sources of rt/, seed/, harness/, cli/, interp/, workbench/ and
 tools/gamekit_*.py; it refuses any CR byte in conformance/, compiler/, cli/, interp/, workbench/,
 games/ and rt/*.h; it fails a component over its SPEC-09 4.2 ceiling and reports one over its
 target. The CLI size rows count cli/*.c, with cli/cint_receipt.c (decision 26), cli/cint_discover.c
-(I/O services lane U4) and cli/cint_cache.c (OQ-313) each in its own row;
+(I/O services lane U4), cli/cint_cache.c (OQ-313) and cli/cint_diag.c (SPEC-09 edition 48) each in
+its own row;
 the CLI headers are reported separately. The workbench row counts workbench/*.c and
 workbench/*.h (box 14 ruling BX14-03 A); workbench/tests/ is not counted.
 Python test drivers under rt/, seed/, harness/, cli/, interp/ and workbench/, and python/tests/, are
@@ -71,20 +72,26 @@ SIZE_ROWS = (
     ("cint_fs.c", ("rt/cint_fs.c",), 600, 900),   # the fs/1 service (RT-OQ-72), included by rt/cint_rt.c; Proposed
     ("cint_console.c", ("rt/cint_console.c",), 400, 600),   # the console/1 service (RT-OQ-73), included by rt/cint_rt.c; Proposed
     ("cint_program.c", ("rt/cint_program.c",), 450, 700),   # program processes and cint_program_run_args (RT-OQ-74), included by rt/cint_rt.c; Proposed
+    ("cint_qbe.c", ("rt/cint_qbe.c",), 300, 450),   # the cpu-qbe entry points (RT-OQ-82, SPEC-09 BACK-18), included by rt/cint_rt.c; Proposed
+    ("cint_qbe_wide.c", ("rt/cint_qbe_wide.c",), 250, 350),   # the cpu-qbe wide-integer entry points (RT-OQ-82, Q3), included by rt/cint_rt.c; Proposed
+    ("cint_qbe_fixed.c", ("rt/cint_qbe_fixed.c",), 80, 150),  # the cpu-qbe fixed-point entry points (RT-OQ-82, Q3), included by rt/cint_rt.c; Proposed
     ("cint_rec_host.c", ("rt/cint_rec_host.c",), 350, 500),
     # Decision 2026-10-06 on OQ-212: arenas, pools and handles, outside the cint_rt row.
     ("cint_mem (rt/cint_mem.c, rt/cint_mem.h)", ("rt/cint_mem.c", "rt/cint_mem.h"), 600, 900),
     # Box 15 default BX15-15: the wide integers, outside the cint_rt rows; set again after unit 3.
-    ("cint_wide (rt/cint_wide.c, rt/cint_wide.h)", ("rt/cint_wide.c", "rt/cint_wide.h"), 2000, 3000),
+    # Decision 2026-11-04 on OQ-340: ceiling 3,100 for the small-operand paths of issue 543.
+    ("cint_wide (rt/cint_wide.c, rt/cint_wide.h)", ("rt/cint_wide.c", "rt/cint_wide.h"), 2000, 3100),
     # Box 15 default BX15-15: fixed point, outside the cint_rt rows; its record writer counts here.
     # Decision 2026-10-16 on OQ-295: set again from measured counts for fixed point of 128-bit storage.
     ("cint_fixed (rt/cint_fixed.c, rt/cint_fixed.h)", ("rt/cint_fixed.c", "rt/cint_fixed.h"), 1000, 1200),
     ("cint-harness (harness/*.c, harness/*.h)", ("harness/*.c", "harness/*.h"), 600, 1000),
-    ("cint CLI (cli/*.c except cli/cint_receipt.c, cli/cint_discover.c and cli/cint_cache.c)",
-     ("cli/*.c", "!cli/cint_receipt.c", "!cli/cint_discover.c", "!cli/cint_cache.c"), 1500, 2500),
+    ("cint CLI (cli/*.c except cli/cint_receipt.c, cli/cint_discover.c, cli/cint_cache.c and cli/cint_diag.c)",
+     ("cli/*.c", "!cli/cint_receipt.c", "!cli/cint_discover.c", "!cli/cint_cache.c", "!cli/cint_diag.c"), 1500, 2500),
     ("cint CLI receipts (cli/cint_receipt.c)", ("cli/cint_receipt.c",), 400, 600),
     ("cint CLI discovery (cli/cint_discover.c)", ("cli/cint_discover.c",), 250, 350),
     ("cint CLI toolchain and run cache (cli/cint_cache.c)", ("cli/cint_cache.c",), 200, 300),
+    # SPEC-09 edition 48 (bugfix pass B2): the message and note of a compile diagnostic.
+    ("cint CLI diagnostics (cli/cint_diag.c)", ("cli/cint_diag.c",), 150, 250),
     # Decisions 2026-10-06 on OQ-218 (BX13-21) and 2026-10-10 on OQ-279: set again from measured counts.
     ("cint-interp (interp/*.c, interp/*.h)", ("interp/*.c", "interp/*.h"), 8000, 10000),
     # Decision 2026-10-08 on OQ-231 (BX14-S1): set again from the counts of box 14's units.

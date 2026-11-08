@@ -426,8 +426,20 @@ static int program_run(const cint_program *program, cint_main_fn main_fn, int64_
     cfg.frame_arena_bytes = frame_arena_bytes;   /* 0: the default of SPEC-06 1.4 */
     st = cint_ctx_create(&cfg, &ctx);
     if (st == CINT_REFUSED && (imports != NULL || grants != NULL)) {
-        /* A grant line the runtime does not take, or a host import that does not resolve
-         * (rt/cint_host.c, rt/cint_fs.c): a usage error of the program's command line. */
+        /* A grant line the runtime does not take, or a host import that does not resolve (rt/cint_host.c,
+         * rt/cint_fs.c): a usage error. With no host function configured here, the first extern that is not a
+         * service's is one that never resolves, and the line names it (issue #501). */
+        for (uint32_t m = 0u; imports != NULL && cint_rt_host_tables_valid(imports, program) && m < program->module_count; m++) {
+            for (uint32_t k = 0u; imports->tables[m] != NULL && k < imports->tables[m]->count; k++) {
+                const cint_name *x = &imports->tables[m]->imports[k].name;
+                if (memchr(x->bytes, '/', x->len) != NULL) continue;
+                err_str("usage: the extern `");
+                err_put(x->bytes, x->len);
+                err_str("` has no host function: cint run and cint test supply only the service externs (SPEC-07 SEC-CAP-6)\n");
+                (void)fflush(stderr);
+                return CINT_EXIT_USAGE;
+            }
+        }
         err_str("usage: a --grant line is malformed or names a directory that cannot be opened, or the "
                 "program's host imports do not resolve\n");
         (void)fflush(stderr);

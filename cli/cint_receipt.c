@@ -19,9 +19,6 @@
 #include "cint_proc.h"
 #include "cint_receipt.h"
 
-#define TOOL_VERSION "0.2.8"
-#define RUNTIME_CONTRACT "cint-rt-3"
-
 /* ------------------------------------------------------------------------- */
 /* Byte buffers and canonical JSON (SPEC-09 RCPT-02, SPEC-04 LS-289).        */
 

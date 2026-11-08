@@ -1,7 +1,7 @@
 """Builds compiler modules with the seed and calls their test entries.
 
     python compiler/tests/run.py --leg msvc|gcc|clang|apple-clang --suite foundations|front|check|fold|golden|capacity|ptx
-        [--opt 0|2] [--helpers portable|builtin] [--sanitize | --no-sanitize] [--out DIR]
+        [--opt 0|2] [--helpers portable|builtin] [--sanitize | --no-sanitize] [--out DIR] [--timings]
 
 Slice 2 plan tasks 2.9 (suite foundations), 2.10a and 2.10b (suite front), 2.10b alone
 (suite fold), and 2.11 (suite golden: compiler/main.ci through the bridge,
@@ -36,6 +36,13 @@ above. A host part runs a C host built with a module's emitted C, for test entri
 take views (slice 2 task 2.10a: the `parse` part of the `front` suite, front_suite.py).
 A part names the sources it needs; when one is absent (a task that has not landed yet)
 the part is skipped and says so, and the suite runs the parts that are present.
+
+The front suite holds every part of the check suite, so a gate that runs front does not also
+run check at the same configurations (#491); check alone is for a change to resolve.ci or
+check.ci that does not need the rest of front. --timings prints one line per configuration
+and part, `timing <configuration> <part>: <s> s`, and for a harness part the split into
+emitting C with the seed, building it, and running the cases; the tools of a configuration
+are the part `tools`.
 """
 import argparse
 import hashlib
@@ -43,6 +50,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 COMPILER = ROOT / "compiler"
@@ -484,20 +492,26 @@ def configurations(ns) -> list:
 
 
 def run_config(leg, opt, helpers, sanitize, parts, prepared, out: pathlib.Path, emitted: dict) -> tuple:
+    """One configuration: (tag, passed, total, failures, timings), timings one (part, seconds,
+    split) per part after the tools, split None or the emit, build and run seconds."""
     tag = "%s-O%s-%s%s" % (leg, opt, helpers, "-san" if sanitize else "")
     tc = cc.Toolchain(leg, opt, helpers, sanitize)
     work = out / tag
     work.mkdir(parents=True, exist_ok=True)
+    t0 = time.monotonic()
     tools = cc.build_tools(tc, work)
+    timings = [("tools", time.monotonic() - t0, None)]
     passed, total, failures = 0, 0, []
     env = dict(tc.env)
     env["ASAN_OPTIONS"] = "detect_leaks=1:abort_on_error=0"
     env["UBSAN_OPTIONS"] = "print_stacktrace=1:halt_on_error=1"
     for part in parts:
+        t0 = time.monotonic()
         if part["kind"] == "host":
             p, t, f = part["module"].run(tc, tools, work, emitted, prepared[part["name"]], cc)
             passed, total = passed + p, total + t
             failures += ["%s %s: %s" % (tag, part["name"], x) for x in f[:40]]
+            timings.append((part["name"], time.monotonic() - t0, None))
             continue
         rel, make = part["rel"], part["make"]
         cases = make()
@@ -515,14 +529,17 @@ def run_config(leg, opt, helpers, sanitize, parts, prepared, out: pathlib.Path, 
                 problem = "emitted C holds a CR byte"
             elif emitted.setdefault(rel, digest) != digest:
                 problem = "emitted C differs from the first configuration's (%s)" % emitted[rel][:16]
+        t1 = time.monotonic()
         if problem is None:
             try:
                 objs = tc.compile([c_file], work, stem)
                 lib = tc.link_shared(objs + [tools["rt_obj"]], work / stem, stem)
             except cc.BuildError as e:
                 problem = "build: %s" % " ".join(str(e).split())[:600]
+        t2 = time.monotonic()
         if problem is not None:
             failures.append("%s %s: %s (%d cases)" % (tag, rel, problem, len(cases)))
+            timings.append((rel, t2 - t0, (t1 - t0, t2 - t1, 0.0)))
             continue
         cases_file = work / (stem + ".cases")
         cases_file.write_bytes("".join(line + "\n" for line, _ in cases).encode("ascii"))
@@ -539,7 +556,9 @@ def run_config(leg, opt, helpers, sanitize, parts, prepared, out: pathlib.Path, 
                 passed += 1
             elif len(failures) < 40:
                 failures.append("%s %s: %s: want %s, got %s" % (tag, rel, line, want, got))
-    return tag, passed, total, failures
+        t3 = time.monotonic()
+        timings.append((rel, t3 - t0, (t1 - t0, t2 - t1, t3 - t2)))
+    return tag, passed, total, failures, timings
 
 
 def main(argv=None) -> int:
@@ -553,6 +572,7 @@ def main(argv=None) -> int:
     ap.add_argument("--no-sanitize", dest="sanitize", action="store_false",
                     help="only unsanitized configurations")
     ap.add_argument("--out", help="build directory (default <build>/compiler/<suite>, <build> from CINT_BUILD)")
+    ap.add_argument("--timings", action="store_true", help="one line of seconds per configuration and part")
     raw = list(argv if argv is not None else sys.argv[1:])
     ns = ap.parse_args(raw)
     if ns.out and pathlib.Path(ns.out).resolve().is_relative_to(ROOT.resolve()):
@@ -589,13 +609,18 @@ def main(argv=None) -> int:
     failed = False
     for opt, helpers, sanitize in configurations(ns):
         try:
-            tag, p, t, failures = run_config(ns.leg, opt, helpers, sanitize, parts, prepared, out, emitted)
+            tag, p, t, failures, timings = run_config(ns.leg, opt, helpers, sanitize, parts, prepared, out,
+                                                      emitted)
         except cc.BuildError as e:
             print("BLOCKED: %s" % " ".join(str(e).split())[:800])
             return 3
         for f in failures:
             print("FAIL " + f)
         failed = failed or bool(failures)
+        if ns.timings:
+            for name, seconds, split in timings:
+                print("timing %s %s: %.1f s%s" % (tag, name, seconds, "" if split is None else
+                                                  " (emit %.1f, build %.1f, run %.1f)" % split))
         print("%s: %d of %d %s" % (tag, p, t, VERB.get(ns.suite, "pass")))
         passed, total = passed + p, total + t
     for rel, digest in sorted(emitted.items()):

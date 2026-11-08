@@ -1,0 +1,9 @@
+case fixed/lane_q_spec_examples
+clause SPEC-01 IM-190, IM-191, IM-192 (the example rows of the three tables, one per line)
+format 5
+source reference
+outcome value
+stdout-bytes 228
+stdout-sha256 5dd7e6024f33e8934a37ade937c0ccf593696cf82f9ad7f684b006bf4b26470f
+return I64 358
+fuel-consumed 8

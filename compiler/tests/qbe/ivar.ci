@@ -1,0 +1,8 @@
+import lib.tally;
+
+void main() {
+    tally.bump();
+    tally.total = tally.total + tally.small as I64;
+    tally.small = 200;
+    "{tally.total} {tally.small}\n";
+}

@@ -312,6 +312,10 @@ export const I64 C_EMPTY_CASE = 4023;
 export const I64 C_DEFAULT_PLACE = 4025;
 export const I64 C_OUT_PARAM = 5001;
 
+// The note of a diagnostic in detail[2] (resolve.ci NOTE_SCRIPT and NOTE_MODULE are 1 and 2):
+// a keyword where a name is expected, at detail[0]:detail[1] (SPEC-04 LS-18, issues #458, #502).
+export const I64 NOTE_KEYWORD = 3;
+
 // ---------------------------------------------------------------- frames
 
 // Expression levels of SPEC-04 18.6, lowest first. A frame for a sub-expression carries
@@ -659,6 +663,19 @@ void fail[t, r](in scan.Token[t] toks, inout limits.CompilerDiag[r] diag, inout 
     fail_at(diag, ps, code, toks[tok].line as I64, toks[tok].col as I64);
 }
 
+// fail at tok, with the NOTE_KEYWORD note naming the keyword at token kw.
+void fail_keyword[t, r](in scan.Token[t] toks, inout limits.CompilerDiag[r] diag, inout PState[_] ps, I64 code,
+        I64 tok, I64 kw) {
+    if (ps[0].err == 0) {
+        ps[0].err = code;
+        I64 row = limits.diag_add(diag, code, ps[0].module, toks[tok].line as I64, toks[tok].col as I64,
+            toks[kw].line as I64, toks[kw].col as I64);
+        if (row > 0) {
+            diag[row].detail[2] = NOTE_KEYWORD;
+        }
+    }
+}
+
 // A new node of `kind` at token `tok`, all children -1; -1 with C9001 when the table is full.
 I64 new_node[t, m, r](in scan.Token[t] toks, inout Node[m] nodes, inout limits.CompilerDiag[r] diag,
         inout PState[_] ps, I32 kind, I64 tok, I64 start) {
@@ -765,6 +782,10 @@ Bool expect_kw[t, r](in scan.Token[t] toks, inout limits.CompilerDiag[r] diag, i
 
 // An identifier token (C1050 when the current token is not one), or -1.
 I64 expect_ident[t, r](in scan.Token[t] toks, inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    if (kind_at(toks, ps, 0) == scan.TK_KEYWORD) {
+        fail_keyword(toks, diag, ps, scan.C_SYNTAX, cur(ps), cur(ps));
+        return -1;
+    }
     if (kind_at(toks, ps, 0) != scan.TK_IDENT) {
         fail(toks, diag, ps, scan.C_SYNTAX, cur(ps));
         return -1;
@@ -2036,6 +2057,13 @@ void simple[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[
     if (!push(toks, st, diag, ps, S_SIMPLE, x, 0)) {
         return;
     }
+    // A type, a keyword, then `=` or `;` (`I64 out = 1;`): Frame.d is the keyword's token, for
+    // the note of the C4012 that h_simple reports at the statement (`cint_ref` parse_simple).
+    I64 n = type_len(toks, ps, 0);
+    if (n > 0 && kind_at(toks, ps, n) == scan.TK_KEYWORD &&
+            (is_op(toks, ps, n + 1, scan.OP_ASSIGN) || is_op(toks, ps, n + 1, scan.OP_SEMI))) {
+        st[ps[0].sp - 1].d = tok_at(ps, n) as I32;
+    }
     if (k > 0 && (is_assign_op(after) || after == scan.OP_INC || after == scan.OP_DEC)) {
         st[ps[0].sp - 1].c = 0;
         _ = push(toks, st, diag, ps, S_OPERAND, -1, L_POSTFIX);
@@ -2051,7 +2079,8 @@ I64 simple_node[t, r](in scan.Token[t] toks, inout Node[_] nodes, inout limits.C
     return new_node(toks, nodes, diag, ps, N_EXPR_STMT, cur(ps), cur(ps));
 }
 
-// S_SIMPLE: Frame.c 0 after an assignment target, 1 after the value, 2 after an expression.
+// S_SIMPLE: Frame.c 0 after an assignment target, 1 after the value, 2 after an expression;
+// Frame.d a keyword token after a type (simple), or -1.
 void h_simple[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
         inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
     I64 f = ps[0].sp - 1;
@@ -2098,6 +2127,10 @@ void h_simple[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Fram
     // `call catch (e) { ... };` (OQ-315 A): the checker takes only an `E!void` call (check.h_catch).
     if (nodes[v].kind == N_CATCH && nodes[v].c >= 0 && nodes[nodes[v].a as I64].kind == N_CALL) {
         call = true;
+    }
+    if (!call && st[f].d >= 0) {
+        fail_keyword(toks, diag, ps, C_STATEMENT_FORM, nodes[v].start as I64, st[f].d as I64);
+        return;
     }
     if (!call) {
         fail(toks, diag, ps, C_STATEMENT_FORM, nodes[v].start as I64);
@@ -4130,11 +4163,23 @@ void top_item[n, t, s, r](in U8[n] src, inout scan.Token[t] toks, inout Node[_] 
     statement(src, toks, nodes, st, diag, ps);
 }
 
+// A segment of a module path: an identifier, or a keyword when a further segment follows,
+// since only the last segment names the module in code (SPEC-04 LS-225; decision 2026-11-02
+// on OQ-326, A; `cint_ref`'s path_segment). The paths of records and lookups take the token's
+// bytes whatever its kind (record_imports, import_is).
+I64 path_segment[t, r](in scan.Token[t] toks, inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
+    if (kind_at(toks, ps, 0) == scan.TK_KEYWORD && is_op(toks, ps, 1, scan.OP_DOT) &&
+            (kind_at(toks, ps, 2) == scan.TK_IDENT || kind_at(toks, ps, 2) == scan.TK_KEYWORD)) {
+        return advance(toks, ps);
+    }
+    return expect_ident(toks, diag, ps);
+}
+
 // `import module_path [ as IDENT | . { IDENT { , IDENT } [,] } ] ;` (SPEC-04 18.3).
 void import_decl[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout Frame[s] st,
         inout limits.CompilerDiag[r] diag, inout PState[_] ps) {
     I64 kw = advance(toks, ps);
-    I64 first = expect_ident(toks, diag, ps);
+    I64 first = path_segment(toks, diag, ps);
     if (first < 0) {
         return;
     }
@@ -4176,7 +4221,7 @@ void import_decl[t, s, r](inout scan.Token[t] toks, inout Node[_] nodes, inout F
             }
             break;
         }
-        I64 seg = expect_ident(toks, diag, ps);
+        I64 seg = path_segment(toks, diag, ps);
         if (seg < 0) {
             return;
         }

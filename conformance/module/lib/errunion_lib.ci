@@ -1,0 +1,21 @@
+// Helper module of module/import_errunion_catch, import_errunion_try and import_errunion_void
+// (not a case). An exported error set and functions whose results are error unions of it.
+
+export error LookupError { negative, too_big }
+
+export LookupError!I64 checked_half(I64 n) {
+    if (n < 0) {
+        return LookupError.negative;
+    }
+    if (n > 100) {
+        return LookupError.too_big;
+    }
+    return n / 2;
+}
+
+export LookupError!void require_small(I64 n) {
+    if (n > 100) {
+        return LookupError.too_big;
+    }
+    return;
+}

@@ -1,0 +1,11 @@
+// case: module/import_grants_arg
+// clause: SPEC-04 LS-119, LS-221, LS-323 to LS-328; SPEC-07 SEC-CAP-1, SEC-OS-1
+// subset: cint-core-1 (`main(Grants g)` passes its `Grants` handle to a function of another module)
+// spec outcome: value void, stdout `2\n`
+
+import module.lib.grants_lib;
+
+export void main(Grants g) {
+    I64 x = grants_lib.take(g, 1);
+    "{x}\n";
+}

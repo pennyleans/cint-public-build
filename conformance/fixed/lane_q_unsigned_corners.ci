@@ -1,0 +1,42 @@
+// case: fixed/lane_q_unsigned_corners
+// clause: SPEC-01 IM-190, IM-192 (`hadd`, `rhadd` and `rshr` on U8, U16 and U32 over 0, 1, 2, MAX / 2, MAX / 2 + 1, MAX - 1 and MAX, every pair printed, `rshr` at every runtime count)
+// subset: cint-core-1 (fixed point, lane Q)
+// entry: run; args: none
+// spec outcome: value I64 -1094597377155752751 (the digest of rhadd on U32); prints 147 pair lines and 392 shift lines, equal to Python's closed forms. S-1 U-1
+
+U8 s8(U8 a, I64 k) {
+    return rshr(a, k);
+}
+
+U16 s16(U16 a, I64 k) {
+    return rshr(a, k);
+}
+
+U32 s32(U32 a, I64 k) {
+    return rshr(a, k);
+}
+
+export I64 run() {
+    U8[7] a = [0, 1, 2, 127, 128, 254, 255];
+    U16[7] b = [0, 1, 2, 32767, 32768, 65534, 65535];
+    U32[7] c = [0, 1, 2, 2147483647, 2147483648, 4294967294, 4294967295];
+    I64 d = 0;
+    for i in 0..7 {
+        for j in 0..7 {
+            "u8 {a[i]} {a[j]}: {hadd(a[i], a[j])} {rhadd(a[i], a[j])}\n";
+            "u16 {b[i]} {b[j]}: {hadd(b[i], b[j])} {rhadd(b[i], b[j])}\n";
+            "u32 {c[i]} {c[j]}: {hadd(c[i], c[j])} {rhadd(c[i], c[j])}\n";
+            d = d *% 1000003 +% (rhadd(c[i], c[j]) as I64);
+        }
+        for k in 0..8 {
+            "u8 {a[i]} >> {k}: {s8(a[i], k)}\n";
+        }
+        for k in 0..16 {
+            "u16 {b[i]} >> {k}: {s16(b[i], k)}\n";
+        }
+        for k in 0..32 {
+            "u32 {c[i]} >> {k}: {s32(c[i], k)}\n";
+        }
+    }
+    return d;
+}

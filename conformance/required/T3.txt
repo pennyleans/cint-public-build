@@ -16,7 +16,9 @@
 # OQ-294): the 56 rows of the 28 of those cases B1 compiles; amended 2026-10-22 (OQ-307 A):
 # the 18 rows of the 9 cases of byte strings and `equal`, and the 2 rows of
 # boot/refuse_byte_string, compared now that its cintc expectation is frozen; amended
-# 2026-10-24 (OQ-315 A): the 4 rows of the 2 cases of the `catch` statement.
+# 2026-10-24 (OQ-315 A): the 4 rows of the 2 cases of the `catch` statement; amended
+# 2026-11-04 (OQ-338, Proposed; S-1 U-1): the 36 rows of the 18 cases of the lane Q
+# operations, kernel/lane_q_half_sweep unsupported BACK-05 on gpu-cuda (capability fixed), and kernel/lane_q_i16_halving (capability builtin).
 # Required case list of stage T3 (SPEC-09 CONF-15, CONF-17; slice 2 decision patch D-14).
 # One line per case and backend: <case> <compiler> <category> [<detail>], where the
 # detail is the limit identifier of an unsupported case or the Open item of a held case,
@@ -154,6 +156,8 @@
 # cintc/gpu-cuda: 1030 compared, 11 held, 67 not_applicable, 16 unsupported.
 # 2026-11-01 (CINTC-OQ-74): 14 rows for the 7 conformance/module/extent_ cases of constant
 # extents, compared on both backends. No other row changes.
+# 2026-11-02 (OQ-325 A; CINTC-OQ-79): 10 rows for the 5 conformance/module/ cases of
+# cross-module calls, compared on both backends. No other row changes.
 anchors/abs.checked.i64.001 cintc compared
 anchors/abs.checked.i64.001 cintc/gpu-cuda compared
 anchors/abs.checked.i64.002 cintc compared
@@ -1320,6 +1324,38 @@ fixed/kernel_scale_reduce cintc compared
 fixed/kernel_scale_reduce cintc/gpu-cuda unsupported BACK-05
 fixed/kernel_scale_reduce_q80_48 cintc compared
 fixed/kernel_scale_reduce_q80_48 cintc/gpu-cuda unsupported BACK-05
+fixed/lane_q_hadd_c2001 cintc compared
+fixed/lane_q_hadd_c2001 cintc/gpu-cuda compared
+fixed/lane_q_hadd_i8_exhaustive cintc compared
+fixed/lane_q_hadd_i8_exhaustive cintc/gpu-cuda compared
+fixed/lane_q_hadd_q64_64_c2103 cintc compared
+fixed/lane_q_hadd_q64_64_c2103 cintc/gpu-cuda compared
+fixed/lane_q_i16_grid cintc compared
+fixed/lane_q_i16_grid cintc/gpu-cuda compared
+fixed/lane_q_i32_corners cintc compared
+fixed/lane_q_i32_corners cintc/gpu-cuda compared
+fixed/lane_q_i64_corners cintc compared
+fixed/lane_q_i64_corners cintc/gpu-cuda compared
+fixed/lane_q_name_c3001 cintc compared
+fixed/lane_q_name_c3001 cintc/gpu-cuda compared
+fixed/lane_q_rmulh_c2103 cintc compared
+fixed/lane_q_rmulh_c2103 cintc/gpu-cuda compared
+fixed/lane_q_rmulh_coefficient_c2001 cintc compared
+fixed/lane_q_rmulh_coefficient_c2001 cintc/gpu-cuda compared
+fixed/lane_q_rmulh_q1_15_grid cintc compared
+fixed/lane_q_rmulh_q1_15_grid cintc/gpu-cuda compared
+fixed/lane_q_rshr_i8_exhaustive cintc compared
+fixed/lane_q_rshr_i8_exhaustive cintc/gpu-cuda compared
+fixed/lane_q_rshr_shift_fault cintc compared
+fixed/lane_q_rshr_shift_fault cintc/gpu-cuda compared
+fixed/lane_q_spec_examples cintc compared
+fixed/lane_q_spec_examples cintc/gpu-cuda compared
+fixed/lane_q_sticky_flag cintc compared
+fixed/lane_q_sticky_flag cintc/gpu-cuda compared
+fixed/lane_q_sweep_q5_11 cintc compared
+fixed/lane_q_sweep_q5_11 cintc/gpu-cuda compared
+fixed/lane_q_unsigned_corners cintc compared
+fixed/lane_q_unsigned_corners cintc/gpu-cuda compared
 fixed/literal_grid_q16_16 cintc compared
 fixed/literal_grid_q16_16 cintc/gpu-cuda compared
 fixed/literal_grid_q80_48 cintc compared
@@ -1462,12 +1498,18 @@ kernel/heat_sum_i32_epilogue cintc compared
 kernel/heat_sum_i32_epilogue cintc/gpu-cuda compared
 kernel/inout_copy_in_copy_out cintc compared
 kernel/inout_copy_in_copy_out cintc/gpu-cuda compared
+kernel/lane_q_half_sweep cintc compared
+kernel/lane_q_half_sweep cintc/gpu-cuda unsupported BACK-05
+kernel/lane_q_i16_halving cintc compared
+kernel/lane_q_i16_halving cintc/gpu-cuda unsupported BACK-05
 kernel/min_no_contributions cintc compared
 kernel/min_no_contributions cintc/gpu-cuda compared
 kernel/scale_over_2d cintc compared
 kernel/scale_over_2d cintc/gpu-cuda compared
 kernel/shape_two_pass cintc compared
 kernel/shape_two_pass cintc/gpu-cuda compared
+kernel/sum_bound_plain_add cintc compared
+kernel/sum_bound_plain_add cintc/gpu-cuda compared
 kernel/total_checked_fold cintc compared
 kernel/total_checked_fold cintc/gpu-cuda compared
 kernel/total_empty cintc compared
@@ -1606,6 +1648,16 @@ module/fold_after_dependency_c3009 cintc compared
 module/fold_after_dependency_c3009 cintc/gpu-cuda compared
 module/import_cycle_c3003 cintc compared
 module/import_cycle_c3003 cintc/gpu-cuda compared
+module/import_errunion_catch cintc compared
+module/import_errunion_catch cintc/gpu-cuda compared
+module/import_errunion_try cintc compared
+module/import_errunion_try cintc/gpu-cuda compared
+module/import_errunion_void cintc compared
+module/import_errunion_void cintc/gpu-cuda compared
+module/import_grants_arg cintc compared
+module/import_grants_arg cintc/gpu-cuda compared
+module/import_grants_service cintc compared
+module/import_grants_service cintc/gpu-cuda compared
 module/import_plain cintc compared
 module/import_plain cintc/gpu-cuda compared
 module/import_private_c3008 cintc compared

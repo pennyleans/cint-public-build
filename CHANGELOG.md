@@ -2,6 +2,111 @@
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), with one section added: **Compiler coverage**, the conformance counts for the release and the cases that moved from unsupported to compared. Versions follow [Semantic Versioning](https://semver.org/); before 1.0, a minor version may break anything.
 
+## [0.2.17] - 2026-11-08
+
+0.2.17 is the last release of the 0.2 line. It takes in 0.2.9 to 0.2.16, which were not published on their own and are listed below. 0.3.0 follows as an experimental pre-release. Across the nine versions, the language gains four halving and rounding operations, and calls across modules take error unions and grants. `cint` gains `--version` and a cache outside its own directory. The executor `cpu-c17-spec` runs some calls speculatively without changing any outcome, and the experimental executor `cpu-qbe` builds a program through QBE with no C compiler. No expected output that an earlier release published for a conformance case changes.
+
+### Added
+
+- The experimental executor `cpu-qbe` (SPEC-09P.5 5.3, BACK-18). With a toolchain file that names `backend cpu-qbe`, a QBE binary and its SHA-256, a target (`amd64_sysv` or `arm64_apple`), an assembler and a linker, `cint emit-qbe` writes QBE SSA in place of C, and `cint run` and `cint build` build the program through QBE, the assembler and the linker with no C compiler. Fault records, sites and fuel match those of `cpu-c17`. `cpu-qbe` refuses kernels and some other modules with `E_UNSUPPORTED cpu-qbe capability NAME`; nothing falls back to `cpu-c17`. `tools/cint_check.py --backend cpu-qbe --qbe PATH` compares it with the reference.
+
+### Changed
+
+- The release publishes SPEC-04P.5, SPEC-06P.4 and SPEC-09P.5. Every other edition of 0.2.8 stays in force.
+
+### Fixed
+
+- `cint_build` in `rt/cint_build.c` wrote the flag of `--backend cpu-c17-spec` into the first row of the compiler's program table on every build, past the end of a row narrower than five words. `rt/tests/test_bridge.py`, whose test compilers have such rows, reports the overflow under AddressSanitizer. The flag is now written only for `--backend cpu-c17-spec`, and such a build refuses a row that cannot hold it. `cintc` builds are unchanged.
+
+### Compiler coverage
+
+`cintc` refuses the forms that SPEC-09P.5 clause 12 lists with C9102. The suite holds 966 programs and 1,868,209 records, and the reference agrees with every frozen expectation. With GCC 13.3 at `-O2` on Linux x86-64, `cpu-c17` and `cpu-c17-spec` each agree with the reference on the 1,868,004 records of the 761 programs that `cintc` compiles, and `cpu-c17-spec` does so again with every region forced to rerun. With QBE 1.3 and GCC 16.2.1 at `-O2` on Linux x86-64, `cpu-qbe` agrees on the 1,864,316 records of the 690 programs it compiles. The interpreter was not compared over the whole suite for 0.2.17, and no count is claimed for it.
+
+### Known issues
+
+- The workbench, `cint repl` and `cint debug` refuse a module that declares an extern or a `requires` (C4012).
+- On the Windows console, F1, F2 and F4 to F12 reach a program as nothing. Outside raw mode the console's own output code page applies, and in line mode a Ctrl+Z at the start of a read ends the input.
+- A receipt records the grants given with `--grant`. It does not record the grants a run takes from its program or the program arguments.
+- `cint test` takes `--grant` lines, but a test holds no `Grants` value, so they grant no call.
+- `fs` does not list, create, remove or rename; a grant set cannot be narrowed.
+- `gpu-cuda` refuses a kernel that calls `hadd`, `rhadd`, `rshr` or `rmulh` (capability `builtin`) or holds a fixed-point value (capability `fixed`).
+- `cpu-c17-spec` has run only with GCC and Clang on Linux x86-64. It speculates at calls, not at kernel dispatches.
+- `cpu-qbe` is experimental: it refuses kernels, `cint test`, libraries, applications, `--frame-arena`, `--width-report` and `--receipt`, and it has run only on Linux x86-64 and macOS arm64.
+
+## [0.2.16] - 2026-11-07
+
+0.2.16 was not published on its own. It changes no file of the published tree except its version.
+
+## [0.2.15] - 2026-11-06
+
+0.2.15 was not published on its own. Its changes are released in 0.2.17.
+
+### Added
+
+- The executor `cpu-c17-spec`, written by `cint emit-c --backend cpu-c17-spec`. At each call from checked code into the module's *speculation set* (lean functions that make no host call, print, assertion, wide or fixed-point operation and call no built-in that can fault except `isqrt` and `isqrt_round`), the emitted C saves the state the callee can write and runs an unchecked twin of the callee that raises a flag where a checked operation would fault. It keeps the twin's result when the flag is clear and the fuel is within the allowance. Otherwise it restores the saved state and runs the checked call. Every state, result, fault record, fuel count and output equals that of `cpu-c17` (SPEC-09P.5 5.3, BACK-17).
+- When compiled with `CINT_SPEC_FORCE_RERUN` defined, every region restores and reruns, so a conformance run checks both paths. `tools/cint_check.py --backend cpu-c17-spec [--spec-rerun]` runs the suite that way, and `compiler/tests/spec_forms.py` runs one program for each operation and type of the twin against the reference at every fuel allowance.
+- Without `--backend`, `cint emit-c` writes the same bytes as before.
+
+## [0.2.14] - 2026-11-06
+
+0.2.14 was not published on its own. Its changes are released in 0.2.17.
+
+### Added
+
+- The built-in functions `hadd(a, b)` and `rhadd(a, b)`, the average of two values rounded down and up; `rshr(a, k)`, a right shift by `k` rounded half up; and `rmulh(a, k)`, the product of a 16-bit or 32-bit fixed-point value and a `Q1.15` or `Q1.31` coefficient, rounded half up and saturated. All four take integers and fixed point of 8 to 64 bits and return a value of the operand's type. Only `rshr` faults, with `E_SHIFT`, for a count outside the type's width (SPEC-04P.5 7.2.5, IM-190 to IM-192, LS-329). The reference, `cintc` and the interpreter run all four.
+- `cintc` writes each of the four as plain C with no runtime helper. It also writes `+|`, `-|` and `as|` on 8-bit to 32-bit values as a clamp of the exact result instead of a helper call, a form that a C compiler can vectorize. Outcomes do not change.
+- Conformance cases `conformance/fixed/lane_q_*` and `conformance/kernel/lane_q_*`: exhaustive 8-bit runs, the corners of 16 to 64 bits, a sweep on `Q5.11`, the diagnostics C2001, C2103 and C3001, and the `E_SHIFT` fault.
+
+### Changed
+
+- The multiply and divide of `I512` and `I1024` take shorter paths when both operands fit in 128 bits or the divisor fits in 64 bits, and the division of one limb no longer makes a normalized copy. Results and fault records are unchanged.
+
+## [0.2.13] - 2026-11-04
+
+0.2.13 was not published on its own. Its changes are released in 0.2.17.
+
+### Changed
+
+- In a kernel `sum` whose `where` bounds, checked at the kernel's entry, show from the element width that the running total cannot overflow, `cintc` writes each addition as a plain add. Otherwise it keeps the checked add of the build's helper mode. The final range check, the total, the fault record and the fuel are unchanged. The case `conformance/kernel/sum_bound_plain_add` holds a bound at the limit and one past it.
+
+## [0.2.12] - 2026-11-04
+
+0.2.12 was not published on its own. Its changes are released in 0.2.17.
+
+### Changed
+
+- `cint_rt_fits`, the runtime's test that a value fits a narrower type, checks a signed value against a signed type below 64 bits with one comparison and no branch on the sign. Every result matches the earlier test, and `rt/tests/test_rt.c` compares the two on the boundary values of every target type.
+
+## [0.2.11] - 2026-11-03
+
+0.2.11 was not published on its own. It changes no file of the published tree except its version.
+
+## [0.2.10] - 2026-11-02
+
+0.2.10 was not published on its own. It changes no file of the published tree except its version.
+
+## [0.2.9] - 2026-11-02
+
+0.2.9 was not published on its own. Its changes are released in 0.2.17.
+
+### Added
+
+- `cint --version` prints the version, the compiler source identity and the runtime contract version, and `cint --json --version` prints them as one JSON object. From this release on, the sources of each release carry its version, and a receipt records it as `identity.tool.version` (SPEC-06P.4 6).
+- In an `import`, a segment other than the last may be spelled as a keyword: `import kernel.sha256;` names `kernel/sha256.ci`. The last segment names the module in code and stays an identifier (SPEC-04P.5 LS-225).
+- A call to a function of an imported module whose result is an error union of that module's error set takes `catch`, as an expression or as a statement on an `E!void` result, and `try` inside a function whose result has the same error set. A `Grants` value may be passed to a function of an imported module.
+
+### Changed
+
+- The cache of `cint run`, `cint build` and `cint test` is `--cache DIR`, else the directory that `CINT_CACHE` names, else the cache directory of the platform: `%LOCALAPPDATA%\cint` on Windows, `$HOME/Library/Caches/cint` on macOS and elsewhere `$XDG_CACHE_HOME/cint` or `$HOME/.cache/cint`. It is never under the directory of `cint`, which may be read-only or shared (SPEC-06P.4 5.3).
+- `cint emit-c` reads any module under `--root` that a named module imports and the command line leaves out, and places it before its first importer (SPEC-06P.4 5.7).
+- The diagnostics C4012 for a keyword after a type, C1050 for a keyword where a name is expected and C3001 for a declaration of a built-in name state which word they found. Codes and positions are unchanged.
+- When given a program with an extern that no standard service serves, `cint run` and `cint test` exit with status 4 and name that extern (SPEC-06P.4 5.4).
+- `python/tests/test_calls.py` holds the entry of `test_busy` on an event instead of a long loop, so the second call meets a running entry on any machine. In `tools/cint_check.py`, a compiler run that exits with status 5 counts as an environment failure, apart from the disagreements, and still fails the run.
+
+### Compiler coverage
+
+`cintc` no longer refuses `catch` on a call to a function of an imported module. It refuses, with C9102 and a message that names the limit, a parameter, result or field of an error-set type from another module, an error union of a combined error set of another module and a combined error set with an operand of another module (SPEC-09P.5 clause 12).
+
 ## [0.2.8] - 2026-11-01
 
 0.2.8 takes in 0.2.5, 0.2.6 and 0.2.7, which were not published on their own. Each of the four is listed below. 0.2.5 lets a constant expression size a module-level array. 0.2.6 to 0.2.8 make the emitted C do less work for a call between small functions of one module and for a conversion or shift that cannot fault, without changing what any program computes: every result, fault record, fuel count and digest is the one 0.2.4 gives.

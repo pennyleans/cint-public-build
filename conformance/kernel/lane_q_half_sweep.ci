@@ -1,0 +1,55 @@
+// case: kernel/lane_q_half_sweep
+// clause: SPEC-02 K-1, K-12; SPEC-01 IM-190, IM-192, IM-60, IM-113 (the first half-sweep of fixed/lane_q_sweep_q5_11 as a kernel, one work-item a cell: its plane digest equals the sequential case's `half` line)
+// subset: cint-core-1 (fixed point, lane Q, kernel)
+// entry: run; args: none
+// spec outcome: value I64 -8671614381695293684; prints `half -8671614381695293684` with a line feed, the `half` line of fixed/lane_q_sweep_q5_11. S-1 U-1
+
+kernel half_sweep[n](in Q5.11[n] p, in Q5.11[n] dv, in I16[n] solid, in I64 color, out Q5.11[n] q) over [i: n] {
+    I64 x = i % 16;
+    I64 y = i / 16;
+    Q5.11 c = p[i];
+    Q5.11 v = c;
+    if (((x + y) & 1) == color && solid[i] == 0) {
+        Q5.11 l = c;
+        Q5.11 r = c;
+        Q5.11 u = c;
+        Q5.11 d = c;
+        if (x > 0 && solid[i - 1] == 0) {
+            l = p[i - 1];
+        }
+        if (x < 15 && solid[i + 1] == 0) {
+            r = p[i + 1];
+        }
+        if (y < 7 && solid[i + 16] == 0) {
+            u = p[i + 16];
+        }
+        if (y > 0 && solid[i - 16] == 0) {
+            d = p[i - 16];
+        }
+        v = hadd(rhadd(l, r), hadd(u, d)) +| rshr(dv[i], 2);
+    }
+    q[i] = v;
+}
+
+export I64 run() {
+    Q5.11[128] p;
+    Q5.11[128] dv;
+    I16[128] solid;
+    Q5.11[128] q;
+    for y in 2..7 {
+        solid[y * 16 + 10] = 1;
+    }
+    solid[3 * 16 + 3] = 1;
+    I64 s = 338;
+    for i in 0..128 {
+        s = s *% 6364136223846793005 +% 1442695040888963407;
+        dv[i] = Q5.11.raw((((s >> 33) & 8191) - 4096) as I16);
+    }
+    half_sweep(p, dv, solid, 0, q);
+    I64 acc = 0;
+    for i in 0..128 {
+        acc = acc *% 1000003 +% (q[i].raw as I64);
+    }
+    "half {acc}\n";
+    return acc;
+}

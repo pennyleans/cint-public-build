@@ -116,6 +116,11 @@ static inline unsigned cint_q_frac(uint32_t t)
 bool cint_rt_fixed_fault(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t mode, uint32_t ta, uint32_t tb,
                          uint32_t tr, uint64_t a, uint64_t b);
 
+/* The E_SHIFT record of `rshr` (SPEC-01 IM-192) on a, of an integer or fixed-point type t of 8 to 64
+ * bits, by a count k outside 0 to w - 1: rshr.checked.<t>.half_up, a, k and the limit w - 1 as I64,
+ * unless the context holds a record already. Returns false; emitted C calls it only for such a count. */
+bool cint_rt_rshr_fault(cint_ctx *ctx, cint_site site, uint32_t t, uint64_t a, cint_count k);
+
 /* cint_rt_print_format (rt/cint_rt.h section 6c) for a value of the fixed-point type qt, given as its raw
  * storage (SPEC-04 LS-207, LS-208; rt/OPEN.md RT-OQ-56): the form has no kind, `#`, group or
  * CINT_FORMAT_BITS, and with CINT_FORMAT_PRECISION, precision is the `.precision` (otherwise 0, for the

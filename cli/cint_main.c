@@ -38,7 +38,8 @@
  * SPEC-04 LS-276 form, the fault in SPEC-06 8.4 form, the error result of `main` as one line
  * `error: <set>.<value> (tag <n>)`, and this tool's own errors; with --json every stderr line is
  * one canonical JSON object: CINT-DIAG-1, CINT-FAULT-1, CINT-ERROR-1, or CINT-TOOL-1
- * (SPEC-06 15). The host C compiler's output goes to a log in the cache directory. A receipt
+ * (SPEC-06 15). The host C compiler's output goes to a log in the cache directory: --cache DIR, else
+ * CINT_CACHE, else the platform cache directory, never the toolchain's tree (cli/cint_cache.c). A receipt
  * (kind `run`, `build` or `test`, D-16) is written only to --receipt PATH, followed by the line
  * `receipt: PATH` on stderr unless --json is given.
  *
@@ -54,9 +55,14 @@
  * receipt identity names no host directory. Multi-segment imports and the root module never
  * probe it; without a standard library root each import probes one path, as before.
  * `cint emit-c [--json] --root DIR --out DIR [--toolchain FILE] MODULE.ci...` (task 2.12a) builds
- * the modules, given in dependency order (D-13; the root last), through cint_build and commits
- * the output set under --out (C per module, the D-2 program file, MANIFEST; <out>/MANIFEST.ref).
- * No stdout; each diagnostic names its module. Exit 0, 2, 4, 5 or 7 as above.
+ * the modules, given in dependency order (D-13; the root last), with each project module they
+ * import that the list leaves out read from --root and placed before its first importer as
+ * `cint build` finds it (issue #511), through cint_build and commits the output set (C per
+ * module, the D-2 program file, MANIFEST) to the stage directory <out>.stage-<N> beside DIR,
+ * which <out>/MANIFEST.ref names (SPEC-09 CINTC-06); N changes from build to build, so a reader
+ * takes the set from MANIFEST.ref.
+ * No stdout; each diagnostic names its module. Exit 0, 2, 4, 5 or 7 as above. `cint --version`
+ * prints the tool version, the compiler source identity and the runtime contract (issue #503).
  *
  * --width-report (games G3, rt/OPEN.md RT-OQ-64) compiles the program's C with CINT_WIDTH_REPORT
  * and cint_program_run_args renamed (rt/cint_wide.h section 2), so that the program writes its
@@ -77,8 +83,8 @@
  *
  * Receipt and JSON writing live in cli/cint_receipt.c, module discovery (the import scan, the
  * standard library root, the source snapshot) in cli/cint_discover.c, the toolchain file and the
- * run cache in cli/cint_cache.c, and the state all four share in cli/cint_receipt.h (decision 26;
- * SPEC-09 4.2 rows). */
+ * run cache in cli/cint_cache.c, the message and note of a compile diagnostic in cli/cint_diag.c,
+ * and the state all five share in cli/cint_receipt.h (decision 26; SPEC-09 4.2 rows). */
 #define _CRT_SECURE_NO_WARNINGS 1
 #if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L
@@ -132,8 +138,9 @@ static const char USAGE[] =
     "usage: cint [--json] run [--receipt PATH | --width-report PATH] [--rebuild] [--root DIR] [--stdlib DIR] [--toolchain FILE] [--cache DIR] [--grant LINE]... [--frame-arena N] FILE.ci [-- ARG...]\n"
     "       cint [--json] build [--receipt PATH | --width-report] [--root DIR] [--out DIR] [--lib | --app] [--stdlib DIR] [--toolchain FILE] [--cache DIR] [--frame-arena N] [FILE.ci | DIR]\n"
     "       cint [--json] test [--receipt PATH] [--root DIR] [--stdlib DIR] [--toolchain FILE] [--cache DIR] [--grant LINE]... [FILE.ci | DIR]\n"
-    "       cint [--json] emit-c --root DIR --out DIR [--stdlib DIR] [--toolchain FILE] MODULE.ci...\n"
-    "       cint [--json] NAME [ARG...]: runs cint-NAME from cint's directory, as cint debug or cint workbench\n";
+    "       cint [--json] emit-c|emit-qbe --root DIR --out DIR [--stdlib DIR] [--toolchain FILE] [--backend cpu-c17-spec] MODULE.ci...\n"
+    "       cint [--json] NAME [ARG...]: runs cint-NAME from cint's directory, as cint debug or cint workbench\n"
+    "       cint [--json] --version | --help\n";
 
 static int usage(const char *why)
 {
@@ -569,87 +576,17 @@ static void human_fault(sbuf *b, const frec *f, int64_t fuel)
                                 : "   = state: the program stopped; stdout holds what it wrote before the fault\n");
 }
 
-/* Messages of the SPEC-04 17.2 codes (LS-313); message text is not compared (SPEC-09 9.2). */
-static const struct {
-    int lo, hi;
-    const char *text;
-} DIAG_TEXT[] = {
-    {1001, 1001, "`.cint` file (legacy profile)"}, {1002, 1005, "invalid source bytes"},
-    {1010, 1013, "invalid name"}, {1020, 1024, "invalid integer literal"}, {1036, 1037, "invalid format specification"},
-    {1030, 1039, "invalid character or string literal"}, {1040, 1040, "empty statement"},
-    {1041, 1041, "assignment in a condition"}, {1042, 1042, "`++` or `--` used as an expression"},
-    {1043, 1043, "missing parentheses or braces"}, {1050, 1050, "syntax error"},
-    {2001, 2001, "type mismatch"}, {2002, 2002, "condition is not `Bool`"},
-    {2003, 2003, "literal does not fit its type"}, {2008, 2008, "no explicit conversion between the two types"},
-    {2004, 2009, "fraction, fixed-point, enum literal, or rounding rule"}, {2010, 2014, "array rule"},
-    {2020, 2022, "wrong fields or arguments"}, {2050, 2050, "uninitialized variable"},
-    {2052, 2052, "loop variable assigned"}, {2056, 2056, "integer used as `Bool`"},
-    {2058, 2058, "not an assignable place"}, {2060, 2069, "parameter or argument rule"},
-    {2101, 2101, "parentheses required"}, {2102, 2102, "chained comparison"},
-    {2103, 2103, "operator not defined for the operand type"}, {2000, 2999, "type rule"},
-    {3001, 3001, "duplicate name"}, {3004, 3004, "script local used in a function or test"},
-    {3005, 3008, "undefined or unusable name"}, {3009, 3009, "module file unreadable"},
-    {3010, 3011, "script rule"}, {3012, 3012, "`import` after other items"},
-    {3044, 3044, "`main` parameter list"}, {3000, 3999, "name or module rule"},
-    {4001, 4001, "missing return"}, {4012, 4012, "statement form not permitted"},
-    {4020, 4026, "`switch` rule"}, {4040, 4040, "recursion in `cint-boot-1`"}, {4000, 4999, "control-flow rule"},
-    {5000, 5999, "parameter mode, alias, or ABI rule"}, {6001, 6001, "fault during constant evaluation"},
-    {6002, 6002, "compile-time fuel exhausted"}, {6004, 6004, "constant expression required"},
-    {6000, 6999, "compile-time evaluation rule"}, {9001, 9001, "capacity or output size exceeded"},
-    {9002, 9002, "generated symbol over 247 bytes"}, {9003, 9003, "local array over the frame limit"},
-    {9004, 9004, "nesting beyond the implementation's limit"},
-    {9102, 9102, "not yet supported by this implementation (SPEC-04 C9102)"},
-    {9000, 9999, "implementation limit"},
-};
-
-static const char *diag_text(const cint_compiler_diag *d)
-{
-    int64_t code = d->code;
-    if (code == 3030) {
-        if (d->detail[0] == CINT_PATH_IDENTIFIER)
-            return "every segment of a module path, without the final .ci, is an identifier "
-                   "(SPEC-04 LS-15) (SPEC-09 CINTC-12)";
-        if (d->detail[0] == CINT_PATH_DEVICE)
-            return "a segment of a module path is not a Windows device name (SPEC-09 CINTC-12)";
-        if (d->detail[0] == CINT_PATH_COLLISION)
-            return "two module paths of one program are equal under ASCII case folding (SPEC-09 CINTC-12)";
-    }
-    if (code == 9001 && d->detail[0] == 31) return "cpu-c17 record layout exceeds 4294967295 bytes (LIM_RECORD_BYTES)";
-    for (size_t i = 0; i < sizeof DIAG_TEXT / sizeof DIAG_TEXT[0]; i++) {
-        if (code >= DIAG_TEXT[i].lo && code <= DIAG_TEXT[i].hi) return DIAG_TEXT[i].text;
-    }
-    return "compile error";
-}
-
 /* The module a diagnostic belongs to: its reported path, else its module in the build manifest
- * (emit-c's list, or the dependency order), else the root module. */
+ * (g.order: emit-c's manifest, or the dependency order), else the root module. */
 #define dfile(d) (g_diag_paths[(d) - g_diag] != NULL ? g_diag_paths[(d) - g_diag] : \
-    (d)->module >= 0 && (d)->module < (g.emit ? g.nfiles : g.norder) ? \
-    (g.emit ? (const char *)g.files[(d)->module] : g.order[(d)->module]) : g.rel)
-
-/* The LS-312 note of C3004, C3010, C3011 and the module-level initializer's C6004: detail[2]
- * is 1 when detail[0..1] is the first top-level statement that makes the module a script, 2
- * when it has none, and 0 for a diagnostic without the note, such as any other C6004
- * (compiler/OPEN.md CINTC-OQ-14). */
-static int script_note(const cint_compiler_diag *d, char *out, size_t cap)
-{
-    if ((d->code != 3004 && d->code != 3010 && d->code != 3011 && d->code != 6004) ||
-        (d->detail[2] != 1 && d->detail[2] != 2)) return 0;
-    if (d->detail[2] == 1) {
-        (void)snprintf(out, cap, "this module is a script because of the top-level statement at %s:%lld:%lld", dfile(d),
-                       (long long)d->detail[0], (long long)d->detail[1]);
-    } else {
-        (void)snprintf(out, cap, "this file is a module, not a script, because every top-level item is a declaration (LS-218)");
-    }
-    return 1;
-}
+    (d)->module >= 0 && (d)->module < g.norder ? g.order[(d)->module] : g.rel)
 
 /* Compile diagnostics in LS-282 order (the compiler retains them sorted). */
 void report_diags(sbuf *receipt)
 {
     int64_t count = g_diag[0].detail[0], rest = g_diag[0].detail[1];
     sbuf b = {0};
-    char note[1400];
+    char note[1400], text[200];
     for (int64_t k = 1; k <= count && k < CINT_BRIDGE_DIAG_ROWS; k++) {
         const cint_compiler_diag *d = &g_diag[k];
         /* C6001 and C6002 carry their compile-time fault in a faults-table slot (CINTC-14). */
@@ -660,15 +597,15 @@ void report_diags(sbuf *receipt)
         sbuf *o = receipt != NULL ? receipt : &b;
         if (receipt != NULL || json_mode) {
             if (receipt != NULL && k > 1) sb_s(o, ",");
-            sb_jdiag(o, d, fault ? &f : NULL, dfile(d), receipt != NULL ? NULL : diag_text(d),
-                     receipt == NULL && script_note(d, note, sizeof note) ? note : NULL);
+            sb_jdiag(o, d, fault ? &f : NULL, dfile(d), receipt != NULL ? NULL : diag_text(d, dfile(d), text, sizeof text),
+                     receipt == NULL && diag_note(d, dfile(d), note, sizeof note) ? note : NULL);
             continue;
         }
-        sb_f(&b, "error[C%04lld]: %s\n  --> %s:%lld:%lld\n", (long long)d->code, diag_text(d), dfile(d),
+        sb_f(&b, "error[C%04lld]: %s\n  --> %s:%lld:%lld\n", (long long)d->code, diag_text(d, dfile(d), text, sizeof text), dfile(d),
              (long long)d->line, (long long)d->column);
         excerpt(&b, dfile(d), strlen(dfile(d)), (uint32_t)d->line, (uint32_t)d->column, "");
         if (fault) human_fault(&b, &f, -1);
-        if (script_note(d, note, sizeof note)) sb_f(&b, "   = note: %s\n", note);
+        if (diag_note(d, dfile(d), note, sizeof note)) sb_f(&b, "   = note: %s\n", note);
     }
     if (receipt == NULL) {
         if (rest > 0 && !json_mode) sb_f(&b, "%lld more errors not shown (SPEC-04 LS-282)\n", (long long)rest);
@@ -990,7 +927,12 @@ static int start_child(const char *what, const char *const *argv, cli_sink sink,
             return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot write the width report %s", g.width);
         }
     }
+    size_t eol = 0u;   /* the runtime's line naming an extern with no host function (issue #501) */
+    if (bad && !unread && *st == CINT_EXIT_USAGE && len > 18u && memcmp(bytes, "usage: the extern `", 19u) == 0)
+        while (eol < len && bytes[eol] != '\n') eol++;
+    if (eol > 0u) tool_error(CINT_EXIT_USAGE, argv[0], *st, epath, "%s refused to start: %.*s", what, (int)eol - 7, (const char *)bytes + 7);
     free(bytes);
+    if (eol > 0u) return CINT_EXIT_USAGE;
     if (!bad) return 0;
     if (*st == CINT_EXIT_USAGE && (g.ngrants > 0 || g.nargs > 0)) {   /* the runtime's one usage line (cint_program_run_args; RT-OQ-74) */
         return tool_error(CINT_EXIT_USAGE, argv[0], *st, epath, g.nargs > 0 && g.ngrants == 0
@@ -1265,6 +1207,7 @@ static int ready(void)
  * test build or a --frame-arena build compiles the driver (write_driver) in the program file's place. */
 static int compile_c(outcome *oc, const outset *set, const char *driver, const char *bin, const char *log)
 {
+    if (qbe_backend()) return compile_qbe(set, bin, oc->exe, log);
     const char **argv = malloc((g.tc.nflags + set->n + 17u) * sizeof *argv);
     sbuf inc = {0}, stage = {0}, fe = {0}, fo = {0}, install = {0};
     int msvc = strcmp(g.tc.leg, "msvc") == 0, st = 0;
@@ -1472,6 +1415,7 @@ static int run(void)
     oc.t0 = now_ns();
     out.keep = g.receipt != NULL;
     if ((st = ready()) != 0) return st;
+    if (qbe_backend() && (g.mode == MODE_TEST || g.lib || g.app || g.arena != NULL || g.width != NULL || g.receipt != NULL)) return usage("cpu-qbe Q0 supports run/build only, without library, app, arena, width, or receipt options");
     if (g.lib && (g.tc.runtime_object = g.tc.runtime_library_object) == NULL) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "the toolchain has no runtime_library_object for --lib");
     if (locate() != 0) return usage(g.root != NULL ? "a project directory takes no --root; give FILE.ci" : "the file path is too long");
     /* The sources, through the bridge reader: identity from the reading handle (D-3). */
@@ -1491,8 +1435,9 @@ static int run(void)
         return tool_error(CINT_EXIT_INTERNAL, NULL, 0, NULL, "the digest export of the compiler failed");
     }
     free(key.p);
-    char *base = join(g.cache != NULL ? g.cache : g.tc.cache, key_hex);
-    if (cli_mkdirs(base) != 0) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot create the cache directory %s", base);
+    char *base = cache_root() != NULL ? join(cache_root(), key_hex) : NULL;   /* issue #503 */
+    if (base == NULL || cli_mkdirs(base) != 0) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot create the cache directory %s; "
+                                                                 "give --cache DIR or set CINT_CACHE", base != NULL ? base : "(no HOME)");
     cache = NULL;
     for (unsigned k = 0; k < 10000u; k++) {
         char name[32];
@@ -1534,6 +1479,7 @@ static int run(void)
     cint_bridge_root_close(lib_root);
     lib_root = NULL;
     if (!found) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "a module under %s changed while it was compiled", g.dir);
+    if (built == CINT_BUILD_UNSUPPORTED) return tool_error(CINT_EXIT_COMPILE, NULL, 0, NULL, "E_UNSUPPORTED cpu-qbe capability %s node %lld at %lld:%lld", qbe_capability(g_diag[1].detail[0]), (long long)g_diag[1].detail[1], (long long)g_diag[1].line, (long long)g_diag[1].column);
     if (built == CINT_BUILD_DIAG) {
         oc.status = CINT_EXIT_COMPILE;
         oc.kind = "compile-error";
@@ -1551,8 +1497,8 @@ static int run(void)
     if (g.mode != MODE_TEST) {
         uint8_t *text = NULL;
         size_t len;
-        char *program = join(set.stage, "cint-program.c");
-        int entry = read_file(program, &text, &len) == 0 && strstr((char *)text, "\nint main(") != NULL;
+        char *program = join(set.stage, qbe_backend() ? "cint-program.ssa" : "cint-program.c");
+        int entry = read_file(program, &text, &len) == 0 && strstr((char *)text, qbe_backend() ? "export function w $main(" : "\nint main(") != NULL;
         free(program);
         free(text);
         if (entry == g.lib) return usage(g.lib ? "--lib builds a library, whose root module has no main and no script statements" : "the root module has no main and no script statements, so there is no program; `cint test` runs its tests");
@@ -1621,6 +1567,7 @@ static int emit_c(void)
     char src_hex[65] = "";
     int st = ready(), built;
     if (st != 0) return st;
+    if (qbe_backend() != (g.mode == 4)) return usage("emit-c requires cpu-c17; emit-qbe requires a cpu-qbe toolchain");
     if (g.root == NULL || g.out == NULL) return usage("emit-c needs --root DIR and --out DIR");
     for (int i = 0; i < g.nfiles; i++)
         for (char *c = g.files[i]; *c; c++) *c = *c == '\\' ? '/' : *c;
@@ -1630,32 +1577,33 @@ static int emit_c(void)
         return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot open %s or create %s", g.root, g.out);
     }
     if ((st = open_stdlib()) != 0) return st;
+    int listed[64], nmanifest = 0, n = 0;
     for (int i = 0; i < g.nfiles; i++) {
-        int m = module_at(root, g.files[i], 0);
-        if (m < 0) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot record %s", g.files[i]);
-        if (i == g.nfiles - 1) memcpy(src_hex, g.mods[m].hex, sizeof src_hex);
+        if ((listed[i] = module_at(root, g.files[i], 0)) < 0) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot record %s", g.files[i]);
+        if (i == g.nfiles - 1) memcpy(src_hex, g.mods[listed[i]].hex, sizeof src_hex);
     }
-    /* The standard library modules the listed ones import go first in the manifest, in path
-     * byte order (they import nothing of the program); the bridge reads them under the chained
-     * root. A project module the list omits is left to the compiler to report (C3009). */
-    int nlisted = g.nfiles, nmanifest = 0;
+    /* The manifest: the standard library modules the program imports, in path byte order (they
+     * import nothing of the program), read by the bridge under the chained root; then the listed
+     * modules in their order, each after the project modules it imports that the list leaves out
+     * (emit_order, issue #511). A path no file answers is the compiler's to report (C3009). */
     for (int m = 0; m < g.nmods; m++) {
         if (g.mods[m].src != NULL && follow_imports(root, m) != 0) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "cannot record the imports of %s", g.mods[m].rel);
     }
-    const char **manifest = calloc((size_t)(g.nmods + nlisted), sizeof *manifest);
+    const char **manifest = calloc((size_t)(g.nmods + g.nfiles), sizeof *manifest);
     cli_module **v = manifest != NULL ? sorted_modules(0, &nmanifest) : NULL;
     if (v == NULL) return tool_error(CINT_EXIT_ENVIRONMENT, NULL, 0, NULL, "out of memory");
-    int n = 0;
     for (int k = 0; k < nmanifest; k++) if (v[k]->where == 2) manifest[n++] = v[k]->rel;
-    for (int i = 0; i < nlisted; i++) manifest[n++] = g.files[i];
     free(v);
+    emit_order(listed, g.nfiles, manifest, &n);
+    g.order = manifest;   /* the module of each diagnostic (dfile) */
+    g.norder = n;
     cint_bridge_root_chain(root, lib_root);
     built = cint_build_with_paths(g.ctx, root, manifest, n, g.out, g_diag, g_faults, keep_diag_path, g_diag_paths);
-    free(manifest);
     cint_bridge_root_close(root);
     cint_bridge_root_close(lib_root);
     lib_root = NULL;
     if (built == CINT_BUILD_FAULT) return internal_compiler_fault(src_hex);
+    if (built == CINT_BUILD_UNSUPPORTED) return tool_error(CINT_EXIT_COMPILE, NULL, 0, NULL, "E_UNSUPPORTED cpu-qbe capability %s node %lld at %lld:%lld", qbe_capability(g_diag[1].detail[0]), (long long)g_diag[1].detail[1], (long long)g_diag[1].line, (long long)g_diag[1].column);
     if (built == CINT_BUILD_DIAG) report_diags(NULL);
     return built == CINT_BUILD_OK ? CINT_EXIT_OK : built == CINT_BUILD_DIAG ? CINT_EXIT_COMPILE
          : tool_error(built == CINT_BUILD_IO ? CINT_EXIT_ENVIRONMENT : CINT_EXIT_INTERNAL, NULL, 0, NULL,
@@ -1707,12 +1655,17 @@ int main(int argc, char **argv)
         fputs(USAGE, stdout);
         return 0;
     }
-    static const char *const subs[4] = {"run", "build", "test", "emit-c"};
-    for (g.mode = 0; sub < argc && g.mode < 4 && strcmp(argv[sub], subs[g.mode]) != 0; g.mode++) {
+    if (sub < argc && strcmp(argv[sub], "--version") == 0) {   /* issue #503; the compiler's identity is the one ready() checks */
+        if (json_mode) printf("{\"compiler_source_identity\":\"%s\",\"name\":\"cint\",\"runtime_contract\":\"" RUNTIME_CONTRACT "\",\"version\":\"" TOOL_VERSION "\"}\n", CINT_COMPILER_SOURCE_IDENTITY);
+        else printf("cint " TOOL_VERSION "\ncompiler source identity %s\nruntime contract " RUNTIME_CONTRACT "\n", CINT_COMPILER_SOURCE_IDENTITY);
+        return 0;
+    }
+    static const char *const subs[5] = {"run", "build", "test", "emit-c", "emit-qbe"};
+    for (g.mode = 0; sub < argc && g.mode < 5 && strcmp(argv[sub], subs[g.mode]) != 0; g.mode++) {
     }
     if (sub >= argc) return usage("no subcommand");
-    if (g.mode == 4) return handoff(argc, argv, sub);
-    g.emit = g.mode == 3;
+    if (g.mode == 5) return handoff(argc, argv, sub);
+    g.emit = g.mode >= 3;
     for (i = sub + 1; i < argc; i++) {
         const char *a = argv[i];
         if (strcmp(a, "--") == 0 && g.mode == MODE_RUN) {   /* the program arguments of `main` (SPEC-06 3.1; OQ-306) */
@@ -1736,6 +1689,13 @@ int main(int argc, char **argv)
         if (strcmp(a, "--width-report") == 0 && g.mode == MODE_BUILD) {
             if (g.width != NULL) return usage("an option needs one value and is given at most once");
             g.width = "";
+            continue;
+        }
+        if (strcmp(a, "--backend") == 0 && g.emit) {   /* exact speculation (SPEC-09 BACK-17) */
+            if (i + 1 >= argc || cint_build_backend != 0 || strcmp(argv[i + 1], "cpu-c17-spec") != 0)
+                return usage("--backend takes cpu-c17-spec, at most once");
+            cint_build_backend = 1;
+            i++;
             continue;
         }
         if (strcmp(a, "--frame-arena") == 0 && (g.mode == MODE_RUN || g.mode == MODE_BUILD)) {
@@ -1773,7 +1733,7 @@ int main(int argc, char **argv)
     }
     if (g.arena != NULL && g.lib) return usage("--frame-arena sets a program's capacity; a library's host sets cint_ctx_config");
     if (g.app && g.lib) return usage("--app sets how a program reads its command line; a library has none");
-    int status = !g.emit ? run() : g.receipt != NULL || g.cache != NULL ? usage("emit-c takes no --receipt or --cache") : emit_c();
+    int status = !g.emit ? run() : g.receipt != NULL || g.cache != NULL ? usage("emit-c writes only its output set: it takes no --receipt or --cache") : emit_c();
     free_diag_paths();
     return status;
 }

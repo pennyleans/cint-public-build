@@ -297,7 +297,7 @@ static int phase_end(cint_ctx *ctx, cint_status st, const int64_t *r, int64_t ph
     cint_fault_record *f = st == CINT_FAULT ? malloc(sizeof *f) : NULL;
     bool fuel = f != NULL && cint_ctx_fault(ctx, f) == CINT_OK && f->code == CINT_E_FUEL;
     free(f);
-    if (st == CINT_OK) return *r == 0 ? -1 : CINT_BUILD_DIAG;
+    if (st == CINT_OK) return *r == 0 ? -1 : *r == 2 && diag[1].code == 10 ? CINT_BUILD_UNSUPPORTED : CINT_BUILD_DIAG;
     if (!fuel) return st == CINT_FAULT ? CINT_BUILD_FAULT : CINT_BUILD_REFUSED;
     (void)cint_ctx_clear_fault(ctx);
     memset(diag, 0, 2 * sizeof *diag);
@@ -319,11 +319,11 @@ static int64_t type_bytes(const cint_type *t)
     return (kind == 0x10u || kind == 0x20u) && w >= 1 && w <= 4 ? (int64_t)1 << (w - 1) : 0;
 }
 
-/* Output `i` of module path `rel` (or of the program): <rel without .ci>.c or .sites. */
+/* Output `i` of module path `rel` (or of the program): <rel without .ci>.c (.ssa for cpu-qbe) or .sites. */
 static char *out_name(const char *rel, int i)
 {
     size_t n = strlen(rel);
-    char *s = cint_bridge_join(rel, "", i == 0 ? ".c" : ".sites");
+    char *s = cint_bridge_join(rel, "", i == 0 ? (cint_build_backend == 2 ? ".ssa" : ".c") : ".sites");
     if (s != NULL && n > 3 && strcmp(rel + n - 3, ".ci") == 0) memmove(s + n - 3, s + n, strlen(s + n) + 1);
     return s;
 }
@@ -427,12 +427,14 @@ static int report_paths(const cint_compiler_diag *diag, const cint_table_plan *r
     return CINT_BUILD_DIAG;
 }
 
+int cint_build_backend = 0;
+
 int cint_build_with_paths(cint_ctx *ctx, cint_bridge_root *root, const char *const *rels, int64_t count,
                           const char *out, cint_compiler_diag *diag, uint8_t *faults,
                           cint_diagnostic_path_sink path_sink, void *user)
 {
     const cint_record_layout *rec = cm_4_main.records;
-    if (ctx == NULL || root == NULL || rels == NULL || count < 1 || count > 4096 || out == NULL || diag == NULL
+    if (cint_build_backend < 0 || cint_build_backend > 2 || ctx == NULL || root == NULL || rels == NULL || count < 1 || count > 4096 || out == NULL || diag == NULL
         || faults == NULL || cm_4_main.record_count < 2 || rec[0].bytes != 64 || rec[0].field_count != 7
         || rec[1].bytes != 64 || rec[1].field_count != 5) return CINT_BUILD_REFUSED;
     for (int64_t p = 0; p < count; p++) {
@@ -480,6 +482,10 @@ int cint_build_with_paths(cint_ctx *ctx, cint_bridge_root *root, const char *con
             goto done;
         if ((mem[k] = calloc((size_t)(c > 0 ? c : 1), (size_t)e)) == NULL) { res = CINT_BUILD_IO; goto done; }
         tv[k] = view_of(&b, mem[k], c, e, p->elem_type, CINT_VIEW_WRITE);
+    }
+    if (cint_build_backend != 0) {   /* pm[0].nsites: 1 cpu-c17-spec (BACK-17), 2 cpu-qbe, in a row of five or more words */
+        if (rows[0].capacity < 1 || rows[0].elem_bytes < 5 * (int64_t)sizeof(int64_t)) goto done;
+        ((int64_t *)mem[0])[4] = cint_build_backend;
     }
     for (m = 0; m < count; m++)   /* the discovery pass: every import resolved before any check */
         if ((res = compile_one(&b, rels[m], src[m], size[m], m, tv, vd, vf, diag)) >= 0) goto done;

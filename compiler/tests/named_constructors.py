@@ -9,6 +9,10 @@ import sys
 import import_views as iv
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+# Extra `cint emit-c` arguments and C defines of a caller's runs (spec_forms.py: the
+# cpu-c17-spec mode and CINT_SPEC_FORCE_RERUN); none by default.
+EMIT_ARGS = []
+COMPILE_DEFINES = ()
 
 
 def main(values=None, diagnostics=None, boundaries=None, library=None, label='named constructors', fuels=None):
@@ -55,7 +59,7 @@ def main(values=None, diagnostics=None, boundaries=None, library=None, label='na
         (directory / 'records.ci').write_bytes(library.encode('ascii'))
         ref = call([sys.executable, '-B', '-m', 'cint_ref', 'run', source, '--entry', 'run',
                     '--path', 'main.ci', '--format', '2'], ROOT / 'ref')
-        emitted = call([args.exe, '--json', 'emit-c', '--root', directory, '--out', directory / 'out',
+        emitted = call([args.exe, '--json', 'emit-c', *EMIT_ARGS, '--root', directory, '--out', directory / 'out',
                         'records.ci', 'main.ci'], ROOT)
         row = dict(case=name, source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
                    reference=ref, emit=emitted, passed=False)
@@ -89,7 +93,7 @@ def main(values=None, diagnostics=None, boundaries=None, library=None, label='na
                         path = directory / relative; path.parent.mkdir(parents=True, exist_ok=True)
                         path.write_bytes(content); sources.append(path)
                 try:
-                    objects = tc.compile(sources, directory, name)
+                    objects = tc.compile(sources, directory, name, COMPILE_DEFINES)
                     native_library = tc.link_shared(objects + runtime, directory / name, name)
                     case_list = directory / 'cases.txt'; case_list.write_bytes(b'main run\n')
                     row['run'] = call([harness, native_library, '--cases', case_list, '--format', '2'], directory, tc.env)

@@ -536,6 +536,31 @@ static inline uint64_t cint_w_div21_any(uint64_t hi, uint64_t lo, uint64_t d, ui
 #endif
 }
 
+/* u of m limbs over the one limb d != 0, from the top limb down: the quotient
+ * in q (which may be u), the remainder returned (issue 543). */
+static inline uint64_t cint_w_udiv1(uint64_t *q, const uint64_t *u, unsigned m, uint64_t d)
+{
+    uint64_t rem = 0u;
+#if CINT_W_DIV_NATIVE
+    while (m-- > 0u) q[m] = cint_rt_div_wide_b(rem, u[m], d, &rem);
+    return rem;
+#else
+    unsigned s = cint_rt_clz64(d);
+    uint64_t hi = u[m - 1u], lo;
+    if (s == 0u) {
+        while (m-- > 0u) q[m] = cint_w_div21(rem, u[m], d, &rem);
+        return rem;
+    }
+    rem = hi >> (64u - s);  /* u << s, read one limb ahead, with d << s */
+    while (m-- > 0u) {
+        lo = m > 0u ? u[m - 1u] : 0u;
+        q[m] = cint_w_div21(rem, (hi << s) | (lo >> (64u - s)), d << s, &rem);
+        hi = lo;
+    }
+    return rem >> s;
+#endif
+}
+
 /* The 2-limb magnitude u divided by the 2-limb magnitude v != 0: the quotient
  * in q and the remainder in r, 2 limbs each; q and r may not overlap u or v.
  * A divisor of two limbs gives a quotient below 2^64, estimated from the top
@@ -809,13 +834,16 @@ static inline unsigned cint_w_len(const uint64_t *a, unsigned n)
 static inline unsigned cint_w_mag(uint64_t *m, const uint64_t *a, unsigned n, bool s, bool *negative)
 {
     uint64_t fill = (uint64_t)0 - (a[n - 1u] >> 63);
-    unsigned len = n, i;
+    unsigned len, top = 0u, i;
     if (!s) {
         *negative = false;
         cint_w_copy(m, a, n);
         return cint_w_len(m, n);
     }
-    while (len > 1u && a[len - 1u] == fill && ((a[len - 2u] ^ fill) >> 63) == 0u) len--;
+    /* to the top limb that is not the fill, one more if its top bit is not the sign */
+    for (i = 1u; i < n; i++) top = a[i] != fill ? i : top;
+    len = top + 1u;
+    if (len < n && ((a[top] ^ fill) >> 63) != 0u) len++;
     *negative = fill != 0u;
     if (fill != 0u) {
         uint64_t carry = 1u;
@@ -1187,6 +1215,21 @@ CINT_RT_FOLD void cint_wn_extend4(uint64_t *r, const uint64_t *t, unsigned n, bo
     for (k = 4u; k < n; k++) r[k] = f;
 }
 
+/* a * b for n > 4 when both lie in 128 bits (cint_wn_in128), which always
+ * fits: one limb product when both magnitudes lie in 64 bits (issue 543). */
+CINT_RT_FOLD void cint_wn_mul_in128(uint64_t *r, const uint64_t *a, const uint64_t *b, unsigned n, bool s)
+{
+    uint64_t sa = s ? (uint64_t)0 - (a[1] >> 63) : 0u, sb = s ? (uint64_t)0 - (b[1] >> 63) : 0u;
+    uint64_t ma[2], mb[2], p[4] = {0u, 0u, 0u, 0u}, fill;
+    cint_w2_cneg(ma, a, sa);
+    cint_w2_cneg(mb, b, sb);
+    if ((ma[1] | mb[1]) == 0u) p[0] = cint_w_mul64(ma[0], mb[0], &p[1]);
+    else cint_w2_umul(p, ma, mb);
+    fill = (sa ^ sb) & cint_w_mask((p[0] | p[1] | p[2] | p[3]) != 0u);
+    cint_w4_cneg(r, p, sa ^ sb);
+    for (n--; n > 3u; n--) r[n] = fill;
+}
+
 /* Overflow of a * b; *r holds the product when it fits and is not written
  * when it does not. Operands of la and lb significant limbs with la + lb >
  * n + 1 overflow before any limb product. */
@@ -1210,12 +1253,10 @@ static inline bool cint_wn_mul_ovf(uint64_t *r, const uint64_t *a, const uint64_
 CINT_RT_FOLD bool cint_w_mul_ovf(uint64_t *r, const uint64_t *a, const uint64_t *b, unsigned n, bool s)
 {
 #if CINT_W_FAST
-    uint64_t t[4];
     if (n == 2u) return cint_w2_mul_ovf(r, a, b, s);
     if (n == 4u) return cint_w4_mul_ovf(r, a, b, s);
     if (cint_wn_in128(a, b, n, s)) {
-        (void)cint_w4_mul_ovf(t, a, b, s);
-        cint_wn_extend4(r, t, n, s);
+        cint_wn_mul_in128(r, a, b, n, s);
         return false;
     }
 #endif
@@ -1252,6 +1293,33 @@ static inline void cint_wn_divide(uint64_t *q, uint64_t *r, const uint64_t *a, c
         cint_w_copy(q, qm, n);
     }
     cint_w_copy(r, rm, n);
+}
+
+/* cint_wn_divide when |b| lies in one limb, which it returns: |a| over that
+ * limb by cint_w_udiv1, then cint_wn_divide's signs (issue 543). */
+CINT_RT_FOLD bool cint_wn_divide1(uint64_t *q, uint64_t *r, const uint64_t *a, const uint64_t *b, unsigned n,
+                                  unsigned kind, bool s)
+{
+    uint64_t fb = s ? (uint64_t)0 - (b[n - 1u] >> 63) : 0u, acc = 0u, mb, rm = 0u, fill, ma[16], qm[16] = {0u};
+    bool an, bn = fb != 0u, rneg;
+    unsigned la, k;
+    for (k = 1u; k < n; k++) acc |= b[k] ^ fb;
+    mb = (b[0] ^ fb) - fb;  /* 0 for -2^64, which takes two limbs */
+    if (acc != 0u || mb == 0u) return false;
+    la = cint_w_mag(ma, a, n, s, &an);
+    if (la != 0u) rm = cint_w_udiv1(qm, ma, la, mb);
+    rneg = an && kind != 2u;
+    if (rm != 0u && ((kind == 0u && an != bn) || (kind == 2u && an))) {
+        for (k = 0u; k < n && ++qm[k] == 0u; k++) {
+        }
+        rm = mb - rm;
+        rneg = kind == 0u && bn;
+    }
+    cint_w_cneg(q, qm, n, an != bn);
+    fill = cint_w_mask(rneg && rm != 0u);
+    r[0] = (rm ^ fill) - fill;
+    for (k = 1u; k < n; k++) r[k] = fill;
+    return true;
 }
 
 /* cint_w_divide at 2 limbs. */
@@ -1301,7 +1369,7 @@ CINT_RT_FOLD void cint_w_divide(uint64_t *q, uint64_t *r, const uint64_t *a, con
         cint_w4_divide(qt, rt, a, b, kind, s);
         cint_wn_extend4(q, qt, n, s);
         cint_wn_extend4(r, rt, n, s);
-    } else
+    } else if (!cint_wn_divide1(q, r, a, b, n, kind, s))
 #endif
         cint_wn_divide(q, r, a, b, n, kind, s);
 }
@@ -1362,6 +1430,9 @@ static inline bool cint_wn_div_round(uint64_t *r, const uint64_t *a, const uint6
         lq = 1u;
         cint_w_copy(rem, ma, la);
         for (i = la; i < lb; i++) rem[i] = 0u;
+    } else if (lb == 1u) {
+        rem[0] = cint_w_udiv1(q, ma, la, mb[0]);
+        lq = la;
     } else {
         cint_rt_wide_udivrem(q, rem, ma, la, mb, lb);
         lq = la - lb + 1u;

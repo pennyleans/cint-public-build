@@ -1,0 +1,7 @@
+case module/import_errunion_catch
+clause SPEC-04 LS-92 to LS-97, LS-119, LS-226 to LS-228; SPEC-09 CINTC-16
+source reference
+outcome value
+stdout-bytes 0
+return I64 477
+fuel-consumed 4

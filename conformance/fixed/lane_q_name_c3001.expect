@@ -1,0 +1,7 @@
+case fixed/lane_q_name_c3001
+clause SPEC-04 LS-329, LS-22, LS-112, 17.2 (`rhadd` is a prelude name; a function of that name is C3001)
+format 5
+source compile-error
+outcome compile-error
+diagnostic.code C3001
+diagnostic.position fixed/lane_q_name_c3001.ci:7:7

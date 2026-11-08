@@ -208,8 +208,21 @@ Bool q_builtin(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering
         Bool rounds = fold.q_frac(bo) + fold.q_frac(bt) > fold.q_frac(ty as I64);
         return mode_ok(mode) == rounds && (rounds || mode == 0);
     }
+    if (id == fold.BI_RMULH) {
+        // IM-191: a of 16- or 32-bit storage by its coefficient Q1.(w-1), half_up, of a's type.
+        I64 w = fold.ty_width(bo);
+        return bo == ty as I64 && (w == 16 || w == 32) && bt == fold.q_type(w, w - 1) && mode == 8 &&
+            operand(sir, funcs, slots, fn, i, sir[i].b as I64, tb) && tb[0] == bt;
+    }
     if (bo != ty as I64 || (id != fold.BI_MUL_INT && bt != 0)) {
         return false;
+    }
+    if (id == fold.BI_RSHR) {
+        // IM-192: half_up, by a count of any integer type.
+        return mode == 8 && operand(sir, funcs, slots, fn, i, sir[i].b as I64, tb) && lowering.is_int(tb[0] as I32);
+    }
+    if (id == fold.BI_HADD || id == fold.BI_RHADD) {
+        return mode == 0 && operand(sir, funcs, slots, fn, i, sir[i].b as I64, tb) && tb[0] == bo;
     }
     if (id == fold.BI_ABS) {
         return mode == 0;
@@ -614,7 +627,8 @@ export I64 check_func[nf](inout lowering.Sir[_] sir, in lowering.SirFunc[nf] fun
                 if (qb) {
                     ok = q_builtin(sir, funcs, slots, fn, i);
                 } else {
-                    ok = sir[i].f >= 1 && sir[i].f <= 16 && lowering.is_int(ty) && lowering.is_int(bo as I32) &&
+                    ok = ((sir[i].f >= 1 && sir[i].f <= 16) || (fold.builtin_lane(sir[i].f as I64) &&
+                        sir[i].f as I64 != fold.BI_RMULH)) && lowering.is_int(ty) && lowering.is_int(bo as I32) &&
                         operand(sir, funcs, slots, fn, i, a, ta) && ta[0] == bo;
                 }
                 if (ok && !qb && nv > 1) {

@@ -2,7 +2,7 @@
 
 The cint specification defines the cint language, the encodings of its values and records, its kernels and executors, its host interface, its tools and its toolchain. It is published in editions, and an edition does not change after the release that first publishes it.
 
-Start with [SPEC-00P.2](SPEC-00P.2-OVERVIEW.md), the overview: section 3 describes each document and section 4 gives reading orders for a learner, a C programmer, a Python user and an implementer. A reader learning the language needs only [SPEC-04P.4](SPEC-04P.4-LANGUAGE.md).
+Start with [SPEC-00P.2](SPEC-00P.2-OVERVIEW.md), the overview: section 3 describes each document and section 4 gives reading orders for a learner, a C programmer, a Python user and an implementer. A reader learning the language needs only [SPEC-04P.5](SPEC-04P.5-LANGUAGE.md).
 
 ## Editions
 
@@ -13,7 +13,7 @@ An edition is named `SPEC-NNP.E`: the document number `NN`, `P` for public and t
 - **Numbered per document.** Each document counts its own editions, so SPEC-04P can be at edition 3 while SPEC-02P is at edition 1.
 - **Stable identifiers.** Each rule ends with its clause identifier, such as `IM-106` or `LS-17`. An identifier stays with its rule when the rule moves to another section or document, and it is never reused. Section numbers belong to one edition. Every rule has an anchor named by its identifier and every section an anchor named by its title, so a link keeps working in each edition that keeps the rule or the section.
 - **Citations from tools.** A diagnostic or a fault report may cite a rule as `SPEC-04 LS-17`, by document number and identifier. The rule is in the current edition of that document, at the anchor `#LS-17`; where another document now states it, the cited document lists the identifier with a link to the edition and section that state it.
-- **What the editions state.** The rules of an edition are what the reference of its release runs. The constructs that the other tools of that release refuse are listed, with their diagnostic codes, in SPEC-09P.4 clause 12.
+- **What the editions state.** The rules of an edition are what the reference of its release runs. The constructs that the other tools of that release refuse are listed, with their diagnostic codes, in SPEC-09P.5 clause 12.
 
 ## Current editions
 
@@ -23,9 +23,9 @@ An edition is named `SPEC-NNP.E`: the document number `NN`, `P` for public and t
 | [SPEC-01P.3](SPEC-01P.3-ENCODINGS.md) | Canonical encodings and identity | cint v0.2.3 |
 | [SPEC-02P.2](SPEC-02P.2-KERNELS.md) | Kernels and executors | cint v0.2.3 |
 | [SPEC-03P.3](SPEC-03P.3-HOST-INTERFACE.md) | The host interface: C and Python | cint v0.2.4 |
-| [SPEC-04P.4](SPEC-04P.4-LANGUAGE.md) | The cint language | cint v0.2.4 |
-| [SPEC-06P.3](SPEC-06P.3-TOOLS.md) | The cint tools | cint v0.2.4 |
-| [SPEC-09P.4](SPEC-09P.4-TOOLCHAIN.md) | Toolchain and conformance | cint v0.2.8 |
+| [SPEC-04P.5](SPEC-04P.5-LANGUAGE.md) | The cint language | cint v0.2.17 |
+| [SPEC-06P.4](SPEC-06P.4-TOOLS.md) | The cint tools | cint v0.2.17 |
+| [SPEC-09P.5](SPEC-09P.5-TOOLCHAIN.md) | Toolchain and conformance | cint v0.2.17 |
 | [GLOSSARY-P.4](GLOSSARY-P.4.md) | Glossary | cint v0.2.4 |
 | [REFERENCES-P.2](REFERENCES-P.2.md) | References | cint v0.2.0 |
 
@@ -37,6 +37,9 @@ An earlier edition stays here unchanged, so that a link to it keeps working. Its
 
 | Edition | Title | Replaced by |
 | --- | --- | --- |
+| [SPEC-04P.4](SPEC-04P.4-LANGUAGE.md) | The cint language | SPEC-04P.5 |
+| [SPEC-06P.3](SPEC-06P.3-TOOLS.md) | The cint tools | SPEC-06P.4 |
+| [SPEC-09P.4](SPEC-09P.4-TOOLCHAIN.md) | Toolchain and conformance | SPEC-09P.5 |
 | [SPEC-09P.3](SPEC-09P.3-TOOLCHAIN.md) | Toolchain and conformance | SPEC-09P.4 |
 | [SPEC-03P.2](SPEC-03P.2-HOST-INTERFACE.md) | The host interface: C and Python | SPEC-03P.3 |
 | [SPEC-04P.3](SPEC-04P.3-LANGUAGE.md) | The cint language | SPEC-04P.4 |
@@ -60,6 +63,7 @@ An earlier edition stays here unchanged, so that a link to it keeps working. Its
 
 | Release | Editions |
 | --- | --- |
+| cint v0.2.17 | SPEC-04P.5, SPEC-06P.4, SPEC-09P.5 |
 | cint v0.2.8 | SPEC-09P.4 |
 | cint v0.2.4 | SPEC-03P.3, SPEC-04P.4, SPEC-06P.3, SPEC-09P.3, GLOSSARY-P.4 |
 | cint v0.2.3 | SPEC-01P.3, SPEC-02P.2, SPEC-03P.2, SPEC-04P.3, SPEC-06P.2, SPEC-09P.2, GLOSSARY-P.3 |

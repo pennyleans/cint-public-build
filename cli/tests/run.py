@@ -631,6 +631,59 @@ class RunTests(unittest.TestCase):
         self.assertEqual([(r["code"], r["file"], r["line"], r["column"]) for r in records],
                          [("C3030", "lib/Math.ci", 1, 1)], result.stderr)
 
+    def test_emit_c_reads_unlisted_imports_from_root(self):
+        # Issue #511: an import the command line leaves out is read from --root as `cint build`
+        # reads it, before its first importer; an import no file answers stays C3009.
+        project = self.project("emit-unlisted", {
+            "lib/a.ci": b"export I64 f() {\n    return 1;\n}\n",
+            "lib/b.ci": b"import lib.a;\n\nexport I64 g() {\n    return a.f() + 1;\n}\n",
+            "main.ci": b"import lib.b;\nimport lib.a;\n\nvoid main() {\n    _ = b.g() + a.f();\n}\n",
+            "gone.ci": b"import lib.zz;\n\nvoid main() {\n}\n"})
+        for listed, status in ((["main.ci"], 0), (["lib/b.ci", "main.ci"], 0), (["gone.ci"], 2)):
+            with self.subTest(listed=listed):
+                result = subprocess.run([str(self.exe), "--json", "emit-c", "--root", str(project),
+                                         "--out", str(self.out / "emit-unlisted-out"), *listed],
+                                        cwd=self.out, env=self.env, capture_output=True, check=False, timeout=120)
+                self.assertEqual(result.returncode, status, result.stderr)
+                if status == 2:
+                    records = [json.loads(v) for v in result.stderr.splitlines()]
+                    self.assertEqual([(r["code"], r["file"], r["line"], r["column"]) for r in records],
+                                     [("C3009", "gone.ci", 1, 8)], result.stderr)
+
+    def test_keyword_path_segment(self):
+        # OQ-326 A (SPEC-04I.19 LS-225): a keyword spells any segment of an import but the last.
+        root = self.project("keyword-path", {
+            "kernel/out/adder.ci": b"export I64 two() {\n    return 2;\n}\n",
+            "main.ci": b'import kernel.out.adder;\n\nvoid main() {\n    I64 v = adder.two();\n    "{v}\\n";\n}\n'})
+        result = self.command("run", ["--root", root, "main.ci"])
+        self.assertEqual((result.returncode, result.stdout), (0, b"2\n"), result.stderr)
+        result = subprocess.run([str(self.exe), "--json", "emit-c", "--root", str(root), "--out",
+                                 str(self.out / "keyword-path-out"), "main.ci"],
+                                cwd=self.out, env=self.env, capture_output=True, check=False, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_compiler_names_keyword_or_built_in_name(self):
+        # Issues #458 and #502: the code and position are unchanged, and the message names the word.
+        cases = ((b"void main() {\n    I64 out = 0;\n}\n", "C4012", 2, 5,
+                  "`out` is a keyword (SPEC-04 LS-18) and cannot name a variable", 9),
+                 (b"void main() {\n    I64 kernel = 0;\n}\n", "C4012", 2, 5,
+                  "`kernel` is a keyword (SPEC-04 LS-18) and cannot name a variable", 9),
+                 (b"void main() {\n    I64 len = 0;\n}\n", "C3001", 2, 9,
+                  "`len` is a built-in name (SPEC-04 LS-145) and cannot be declared", None),
+                 (b"import a.kernel;\n\nvoid main() {\n}\n", "C1050", 1, 10,
+                  "`kernel` is a keyword (SPEC-04 LS-18), and a name is expected here", None))
+        for k, (text, code, line, column, message, note_column) in enumerate(cases):
+            with self.subTest(k=k):
+                source = self.out / ("named_word_%d.ci" % k)
+                source.write_bytes(text)
+                result = self.invoke(["--json", source])
+                self.assertEqual(result.returncode, 2, result.stderr)
+                records = [json.loads(v) for v in result.stderr.splitlines()]
+                self.assertEqual([(r["code"], r["line"], r["column"], r["message"]) for r in records],
+                                 [(code, line, column, message)], result.stderr)
+                notes = records[0].get("notes")
+                self.assertEqual(None if notes is None else notes[0]["column"], note_column, result.stderr)
+
     def test_compiler_import_diagnostic_candidate_paths(self):
         # CINTC-12 diagnoses the candidate filename, including paths absent from the manifest.
         project = self.out / "candidate-paths"
@@ -1164,6 +1217,54 @@ export fs.FsError!void main(Grants g, in U8[_] args) {
         self.assertEqual(run(), (b"two\n", 0))
         self.assertEqual(len(list(cache.glob("exe/*/program" + (".exe" if CONFIG.leg == "msvc" else "")))), 2)
 
+    def test_version(self):
+        """Issue #503: `cint --version` names the tool, the compiler it holds and the runtime contract,
+        and needs no toolchain file."""
+        identity = sha(pathlib.Path(self.values["compiler_sources"]).read_bytes())
+        result = subprocess.run([str(self.exe), "--version"], cwd=self.out, env=self.env,
+                                capture_output=True, check=False, timeout=60)
+        self.assertEqual((result.returncode, result.stderr), (0, b""))
+        lines = result.stdout.decode("utf-8").splitlines()
+        self.assertRegex(lines[0], r"^cint \d+\.\d+\.\d+$")
+        self.assertEqual(lines[1:], ["compiler source identity " + identity, "runtime contract cint-rt-3"])
+        result = subprocess.run([str(self.exe), "--json", "--version"], cwd=self.out, env=self.env,
+                                capture_output=True, check=False, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = json.loads(result.stdout)
+        self.assertEqual(result.stdout, canonical(record) + b"\n")
+        self.assertEqual((record["name"], record["compiler_source_identity"], record["runtime_contract"],
+                          record["version"]), ("cint", identity, "cint-rt-3", lines[0][5:]))
+
+    def test_default_cache(self):
+        """Issue #503 (SPEC-06 4.2): without --cache, run, build and test use CINT_CACHE, else the
+        platform cache directory, and write nothing under the toolchain's cache; with neither
+        and no home directory, a command exits 5 and names --cache."""
+        source = self.out / "default-cache-src"
+        source.mkdir(exist_ok=True)
+        (source / "main.ci").write_bytes(b'export void main() {\n    "dc\\n";\n}\n')
+        toolchain_cache = pathlib.Path(self.values["cache"])
+        before = set(toolchain_cache.rglob("*")) if toolchain_cache.exists() else set()
+        home = self.out / "default-cache-home"
+        plain = {k: v for k, v in self.env.items() if k not in ("CINT_CACHE", "XDG_CACHE_HOME", "HOME", "LOCALAPPDATA")}
+        platform = (dict(plain, LOCALAPPDATA=str(home)), home / "cint") if os.name == "nt" else \
+                   (dict(plain, HOME=str(home)), home / ".cache" / "cint")
+        cases = [(dict(plain, CINT_CACHE=str(self.out / "default-cache-env")), self.out / "default-cache-env"), platform]
+        if os.name != "nt":
+            cases.append((dict(plain, HOME=str(home), XDG_CACHE_HOME=str(self.out / "default-cache-xdg")),
+                          self.out / "default-cache-xdg" / "cint"))
+        for env, where in cases:
+            for sub in (["run"], ["build", "--out", str(self.out / "default-cache-build")], ["test"]):
+                with self.subTest(sub=sub[0], where=str(where)):
+                    result = subprocess.run([str(self.exe), *sub, str(source / "main.ci")], cwd=self.out, env=env,
+                                            capture_output=True, check=False, timeout=120)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertTrue(list(where.glob("*/run-*")), where)
+        self.assertEqual(set(toolchain_cache.rglob("*")) if toolchain_cache.exists() else set(), before)
+        if os.name != "nt":
+            result = subprocess.run([str(self.exe), "--json", "run", str(source / "main.ci")], cwd=self.out, env=plain,
+                                    capture_output=True, check=False, timeout=120)
+            self.assertIn("--cache", self.tool_error(result, 5)["message"])
+
     def fault_record(self, operands=(), exact=None, path=b"hello.ci", kernel=None, version=2,
                      operation=b"add.checked.i64"):
         text = lambda value: struct.pack("<I", len(value)) + value
@@ -1395,6 +1496,14 @@ export fs.FsError!void main(Grants g, in U8[_] args) {
         self.assertEqual(receipt["observations"]["receipt_identity_sha256"],
                          sha(canonical({"identity": receipt["identity"], "outcome": receipt["outcome"]})))
         return receipt
+
+    def test_test_names_unresolved_extern(self):
+        # Issue #501: a module with an extern that no host function serves; the refusal names it.
+        root = self.project("unresolved-extern", {
+            "ext.ci": b'extern observe U8 f(U8 x);\n\ntest "t" {\n    assert(1 == 1);\n}\n'})
+        result = self.command("test", ["--root", root, "ext.ci"])
+        self.assertEqual(result.returncode, 4, result.stderr)
+        self.assertIn(b"the extern `f` has no host function", result.stderr)
 
     def test_test_three_tests_fixture(self):
         # Plan task 2.15 acceptance, and each test against `cint_ref run --test` (SPEC-06 1.4 fuel).
@@ -1725,6 +1834,38 @@ export fs.FsError!void main(Grants g, in U8[_] args) {
                 self.assertEqual(result.returncode, 2, result.stderr)
                 self.assertEqual([(r["code"], r["file"], r["line"], r["column"])
                                   for r in map(json.loads, result.stderr.splitlines())], [want])
+
+    def test_cross_module_calls(self):
+        # Bugfix pass B1 (#505, #506; compiler/OPEN.md CINTC-OQ-79): a call of an imported function
+        # whose result is an error union of its module's set, with `catch` and `try`, and a `Grants`
+        # handle passed to a function of another module that calls a service with it. The forms
+        # left out are C9102 with a message that names the limit (SPEC-04 C9102).
+        root = self.project("cross-module", {
+            "lib/a.ci": b'export error E { bad }\n\nexport E!I64 f(I64 n) {\n    if (n < 0) {\n'
+                        b'        return E.bad;\n    }\n    return n;\n}\n\nexport I64 g(E e) {\n    return 1;\n}\n',
+            "lib/e.ci": b'import console;\n\nexport I64 take(Grants g, I64 x) {\n    return x + 1;\n}\n\n'
+                        b'export I64 say(Grants g, in U8[] bytes) {\n    console.write(g, bytes) catch (e) {\n'
+                        b'        return -1;\n    };\n    return 0;\n}\n',
+            "main.ci": b'import lib.a;\n\na.E!I64 twice(I64 n) {\n    I64 v = try a.f(n);\n    return v * 2;\n}\n\n'
+                       b'void main() {\n    I64 x = a.f(3) catch -1;\n    I64 y = a.f(-3) catch -1;\n'
+                       b'    I64 z = twice(4) catch -1;\n    "{x} {y} {z}\\n";\n}\n',
+            "grants.ci": b'import lib.e;\n\nvoid main(Grants g) {\n    I64 r = e.say(g, "hi\\n");\n'
+                         b'    "{e.take(g, 1)} {r}\\n";\n}\n',
+            "set_param.ci": b'import lib.a;\n\nvoid main() {\n    I64 x = a.g(a.E.bad);\n    "{x}\\n";\n}\n',
+            "two_sets.ci": b'import lib.a;\n\nerror L { mine }\n\nL!I64 h() {\n    return try a.f(3);\n}\n\n'
+                           b'void main() {\n    I64 x = h() catch -1;\n    "{x}\\n";\n}\n'})
+        for name, want in (("main.ci", b"3 -1 8\n"), ("grants.ci", b"hi\n2 0\n")):
+            with self.subTest(name=name):
+                result = self.command("run", [root / name])
+                self.assertEqual((result.returncode, result.stdout), (0, want), result.stderr)
+        for name, want, limit in (("set_param.ci", ("C9102", "set_param.ci", 4, 15), "from another module"),
+                                  ("two_sets.ci", ("C9102", "two_sets.ci", 6, 12), "error sets of two modules")):
+            with self.subTest(name=name):
+                result = self.command("run", ["--json", root / name])
+                self.assertEqual(result.returncode, 2, result.stderr)
+                rows = list(map(json.loads, result.stderr.splitlines()))
+                self.assertEqual([(r["code"], r["file"], r["line"], r["column"]) for r in rows], [want])
+                self.assertIn(limit, rows[0]["message"])
 
     def test_build_and_test_usage(self):
         # A module without main or script statements has tests but no program.

@@ -1,0 +1,9 @@
+case kernel/lane_q_i16_halving
+clause SPEC-02 K-1, K-12; SPEC-01 IM-190, IM-192, IM-60, IM-113 (the lane Q built-ins on an integer I16 plane in a kernel, one work-item a cell, with no fixed-point type: on gpu-cuda the refusal is BACK-05 capability `builtin`, not `fixed`)
+format 5
+source reference
+outcome value
+stdout-bytes 28
+stdout-sha256 2db8daf008dbecc806c6db9e14dbc0cb9eab63c96d67fa146597b9775d2d454d
+return I64 -5136379026043430153
+fuel-consumed 193

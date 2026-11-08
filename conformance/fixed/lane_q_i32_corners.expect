@@ -1,0 +1,9 @@
+case fixed/lane_q_i32_corners
+clause SPEC-01 IM-190, IM-191, IM-192 (`hadd` and `rhadd` on I32 and Q16.16, and `rmulh` on Q16.16 and Q1.31 by Q1.31, over 16 corner raw values, every pair printed; `rshr` of each corner at runtime counts 0, 1, 2, 15, 16, 30 and 31)
+format 5
+source reference
+outcome value
+stdout-bytes 18393
+stdout-sha256 cdba641849efc5c17ff2e28f1ddab548384dce7d50ddd81bccfcdf4970c8f2bf
+return I64 -5790477526849579063
+fuel-consumed 609

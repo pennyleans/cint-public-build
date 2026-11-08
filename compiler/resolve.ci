@@ -200,6 +200,9 @@ export const I64 CTX_KERNEL = 3;
 // The note of a script-mode diagnostic (detail[2]).
 export const I64 NOTE_SCRIPT = 1;
 export const I64 NOTE_MODULE = 2;
+// parse.NOTE_KEYWORD is 3. A C3001 whose name is a built-in name, not a declaration of the
+// program (SPEC-04 LS-145, issue #502): detail[0..1] is the name's position.
+export const I64 NOTE_BUILTIN = 4;
 
 // Codes of SPEC-04 17.2 that resolution and checking report.
 export const I64 C_TYPE_MISMATCH = 2001;
@@ -257,6 +260,16 @@ export const I64 C_CONST_REQUIRED = 6004;
 export const I64 C_SELF_DEPENDENT = 6005;
 export const I64 C_STATIC_ASSERT = 6010;
 export const I64 C_UNSUPPORTED = 9102;
+// The cross-module limits of C9102 (bugfix pass B1; SPEC-04 C9102, "the message names the
+// limit"): detail[0] is U_CROSS and detail[1] the limit, which the `cint` command names.
+// X_ROW: a parameter, result or field of an imported row of a type this implementation does
+// not take from another module (an error set parameter, a set in a struct field). X_SETS:
+// error sets of two modules related by a conversion, a comparison or a `try`. X_COMBINED: a
+// combined error set of another module.
+export const I64 U_CROSS = 2;
+export const I64 X_ROW = 1;
+export const I64 X_SETS = 2;
+export const I64 X_COMBINED = 3;
 // I/O services lane U1 (SPEC-07 SEC-CAP-1, SEC-CAP-13; SPEC-03 A-10, H-5): a call of a service
 // extern that no `requires` of the program covers; a `requires` that names no capability of
 // the program or has the wrong arguments; `Grants` outside a parameter type; a service
@@ -282,6 +295,12 @@ export void fail_at[r](inout limits.CompilerDiag[r] diag, inout RState[_] rs, I6
 export void fail[t, r](in scan.Token[t] toks, inout limits.CompilerDiag[r] diag, inout RState[_] rs, I64 code,
         I64 tok) {
     fail_at(diag, rs, code, toks[tok].line as I64, toks[tok].col as I64, 0, 0);
+}
+
+// C9102 at token tok for cross-module limit `what` (X_ROW, X_SETS, X_COMBINED).
+export void fail_cross[t, r](in scan.Token[t] toks, inout limits.CompilerDiag[r] diag, inout RState[_] rs, I64 what,
+        I64 tok) {
+    fail_at(diag, rs, C_UNSUPPORTED, toks[tok].line as I64, toks[tok].col as I64, U_CROSS, what);
 }
 
 // The error `code` at token tok with the LS-312 note: the first top-level statement that
@@ -323,9 +342,9 @@ Bool spells[n, k](in U8[n] src, I64 s, I64 blen, in U8[k] word) {
     return true;
 }
 
-// The built-in functions of the prelude (SPEC-04 LS-145, the 57 names of `cint_ref`'s
-// PRELUDE with box 09's four and box 15's `qmul` and `mul_int`), which no declaration may
-// take (LS-22, LS-112).
+// The built-in functions of the prelude (SPEC-04 LS-145, the 61 names of `cint_ref`'s
+// PRELUDE with box 09's four, box 15's `qmul` and `mul_int` and the lane Q four of LS-329),
+// which no declaration may take (LS-22, LS-112).
 Bool prelude_name[n](in U8[n] src, I64 s, I64 blen) {
     if (blen < 3 || blen > 12) {
         return false;
@@ -343,7 +362,8 @@ Bool prelude_name[n](in U8[n] src, I64 s, I64 blen) {
         spells(src, s, blen, "shl_result") || spells(src, s, blen, "rotl") || spells(src, s, blen, "rotr") ||
         spells(src, s, blen, "mul") || spells(src, s, blen, "div") || spells(src, s, blen, "mul_wrap") ||
         spells(src, s, blen, "mul_sat") || spells(src, s, blen, "sqrt") || spells(src, s, blen, "qmul") ||
-        spells(src, s, blen, "mul_int") || spells(src, s, blen, "sum") ||
+        spells(src, s, blen, "mul_int") || spells(src, s, blen, "hadd") || spells(src, s, blen, "rhadd") ||
+        spells(src, s, blen, "rshr") || spells(src, s, blen, "rmulh") || spells(src, s, blen, "sum") ||
         spells(src, s, blen, "fold_checked") || spells(src, s, blen, "sum_wrap") || spells(src, s, blen, "sum_sat") ||
         spells(src, s, blen, "count") || spells(src, s, blen, "wrap_bits") || spells(src, s, blen, "rescale3") ||
         spells(src, s, blen, "rescale3_rem") || spells(src, s, blen, "shl3") || spells(src, s, blen, "sign") ||
@@ -435,6 +455,10 @@ export I64 builtin_id[n](in U8[n] src, I64 s, I64 blen) {
     if (spells(src, s, blen, "div")) { return fold.BI_QDIV; }
     if (spells(src, s, blen, "mul_wrap")) { return fold.BI_QMUL_WRAP; }
     if (spells(src, s, blen, "mul_sat")) { return fold.BI_QMUL_SAT; }
+    if (spells(src, s, blen, "hadd")) { return fold.BI_HADD; }
+    if (spells(src, s, blen, "rhadd")) { return fold.BI_RHADD; }
+    if (spells(src, s, blen, "rmulh")) { return fold.BI_RMULH; }
+    if (spells(src, s, blen, "rshr")) { return fold.BI_RSHR; }
     return 0;
 }
 
@@ -766,6 +790,21 @@ export I64 new_sym[t, y, r](in scan.Token[t] toks, inout Sym[y] syms, inout limi
     return k;
 }
 
+// C3001 at tok for name id, with the NOTE_BUILTIN note when no declaration binds it.
+void fail_duplicate[t, r](in scan.Token[t] toks, in Name[_] names, inout limits.CompilerDiag[r] diag,
+        inout RState[_] rs, I64 id, I64 tok) {
+    if (names[id].bind >= 0 || (names[id].cls & (NC_PRELUDE | NC_TYPE)) == 0 || rs[0].err != 0) {
+        fail(toks, diag, rs, C_DUPLICATE, tok);
+        return;
+    }
+    I64 line = toks[tok].line as I64;
+    I64 col = toks[tok].col as I64;
+    fail_at(diag, rs, C_DUPLICATE, line, col, line, col);
+    if (rs[0].row > 0) {
+        diag[rs[0].row].detail[2] = NOTE_BUILTIN;
+    }
+}
+
 // Declares a local named by token tok (C3001 when the name is visible or reserved, at tok).
 // Returns the symbol, or -1.
 export I64 declare[n, t, y, q, r](in U8[n] src, in scan.Token[t] toks, inout Sym[y] syms, inout Name[q] names,
@@ -775,7 +814,7 @@ export I64 declare[n, t, y, q, r](in U8[n] src, in scan.Token[t] toks, inout Sym
         return -1;
     }
     if (taken(syms, names, rs, id)) {
-        fail(toks, diag, rs, C_DUPLICATE, tok);
+        fail_duplicate(toks, names, diag, rs, id, tok);
         return -1;
     }
     I64 k = new_sym(toks, syms, diag, rs, kind, ty, node, tok, id);
@@ -798,7 +837,7 @@ I64 global[n, t, y, q, r](in U8[n] src, in scan.Token[t] toks, inout Sym[y] syms
         return -1;
     }
     if (names[id].bind >= 0 || (names[id].cls & (NC_PRELUDE | NC_TYPE)) != 0) {
-        fail(toks, diag, rs, C_DUPLICATE, tok);
+        fail_duplicate(toks, names, diag, rs, id, tok);
         return -1;
     }
     I64 k = new_sym(toks, syms, diag, rs, kind, TY_NONE, node, tok, id);
@@ -1492,7 +1531,7 @@ export I64 import_set_ty[y](in scan.Token[_] toks, inout Sym[y] syms, inout limi
     }
     if (row < 1 || row >= IMPORT_ROWS_MAX || decls[row].a < 0) {
         // A combined set of another module (`a` -1; compiler/OPEN.md CINTC-OQ-68).
-        fail(toks, diag, rs, C_UNSUPPORTED, tok);
+        fail_cross(toks, diag, rs, X_COMBINED, tok);
         return 0;
     }
     I64 s = new_sym(toks, syms, diag, rs, SK_ERRSET, 0, -1, tok, 0);

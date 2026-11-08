@@ -93,6 +93,7 @@ import fold;
 // Row 0 is the header: path_at the module count, path_len the bytes used of the path
 // table, nobs the modules discovered (main.compile's discovery pass), entry the index of
 // the module last hashed into the revision identity, flags the modules hashed.
+// Header nsites selects the backend: 0 cpu-c17, 1 cpu-c17-spec (BACK-17), 2 cpu-qbe.
 export struct PMod {
     I64 path_at;
     I64 path_len;
@@ -129,7 +130,9 @@ export const I64 SYMBOL_MAX = 247;
 // is never negative at a load there (loop_facts), or nn_slot is -1. While it writes the copy
 // of the counted loop at node cp, whose end is node cp_end (counted_loop), cp is that node,
 // or -1, and cp_late is 1 once it has written the store to the loop's counter. plain is 1 while
-// c_func writes a function that may write plain conversions and shifts (plain_fn).
+// c_func writes a function that may write plain conversions and shifts (plain_fn). spec is 0 in
+// a cpu-c17 build; in a cpu-c17-spec build (SPEC-09 BACK-17), 1 while the checked code is
+// written and 2 while a twin is (mark_spec).
 export struct Out {
     I64 nfunc;
     I64 module;
@@ -152,6 +155,7 @@ export struct Out {
     I64 cp_end;
     I64 cp_late;
     I64 plain;
+    I64 spec;
     I32 lean;
 }
 
@@ -176,7 +180,7 @@ void q_digits[b](inout emit.Writer[_] w, inout U8[b] dst, I32 ty, U8 sep) {
 
 // The type of ty's values in C and in the runtime's helper names: a fixed-point type's
 // storage integer (SPEC-01 IM-57), else ty.
-I32 st_of(I32 ty) {
+export I32 st_of(I32 ty) {
     if (lowering.is_q(ty)) {
         return fold.q_storage(ty as I64) as I32;
     }
@@ -215,7 +219,7 @@ void ty_name[b](inout emit.Writer[_] w, inout U8[b] dst, I32 ty) {
 
 // The type in an operation identifier and in runtime helper names (i64, bool); q16_16 for a
 // fixed-point type, whose helpers are named for its storage (st_of).
-void ty_suffix[b](inout emit.Writer[_] w, inout U8[b] dst, I32 ty) {
+export void ty_suffix[b](inout emit.Writer[_] w, inout U8[b] dst, I32 ty) {
     if (lowering.is_q(ty)) {
         emit.w_byte(w, dst, 'q');
         q_digits(w, dst, ty, '_');
@@ -416,7 +420,7 @@ void val_limbs(I32 ty, I64 v, inout I64[_] limb) {
 // limb[0 .. w / 64): val sign-extended, an integer literal's value or its negation modulo 2^w
 // (fold.ci reads the token as check.ci did), a bound of the type, a folded value in lits, or
 // an imported constant's limbs in dt.
-void const_limbs[n, t](in U8[n] text, in scan.Token[t] toks, in lowering.Sir[_] sir, I64 i, I32 ty,
+export void const_limbs[n, t](in U8[n] text, in scan.Token[t] toks, in lowering.Sir[_] sir, I64 i, I32 ty,
         inout I64[_] limb, in U8[_] lits, in limits.Decl[_] dt) {
     I64 nlimb = wide_limbs(ty);
     I32 form = sir[i].c;
@@ -584,7 +588,7 @@ void hex_upper[b](inout emit.Writer[_] w, inout U8[b] dst, I64 v) {
 }
 
 // The component C(s) = _<L>_<E(s)> of s = src[start .. start + n).
-void comp[b, n](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, I64 start, I64 nbytes) {
+export void comp[b, n](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, I64 start, I64 nbytes) {
     emit.w_byte(w, dst, '_');
     emit.w_i64(w, dst, enc_bytes(src, start, nbytes));
     emit.w_byte(w, dst, '_');
@@ -645,7 +649,7 @@ void dotted[b](inout emit.Writer[_] w, inout U8[b] dst, in U8[_] pbytes, in Out[
 }
 
 // The dotted name of module m of the program (PMod row m + 1).
-void module_dotted[b](inout emit.Writer[_] w, inout U8[b] dst, in PMod[_] pm, in U8[_] pbytes, I64 m) {
+export void module_dotted[b](inout emit.Writer[_] w, inout U8[b] dst, in PMod[_] pm, in U8[_] pbytes, I64 m) {
     I64 at = pm[m + 1].path_at;
     for i in at..at + stem_bytes(pbytes, at, pm[m + 1].path_len) {
         if (pbytes[i] == '/') {
@@ -658,7 +662,7 @@ void module_dotted[b](inout emit.Writer[_] w, inout U8[b] dst, in PMod[_] pm, in
 
 // The text of token tk, or of the field name an imported struct's field slot has instead
 // (lowering.name_at).
-void tok_text[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in scan.Token[t] toks, I64 tk) {
+export void tok_text[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in scan.Token[t] toks, I64 tk) {
     emit.w_bytes(w, dst, text, lowering.name_at(toks, tk), lowering.name_len(toks, tk));
 }
 
@@ -725,7 +729,7 @@ void c_site[b](inout emit.Writer[_] w, inout U8[b] dst, in Out[_] o, I64 ordinal
 
 // The SPEC-01 IM-130 identifier of node i (SIR-15): the opcode of SIR text and the
 // operation of its site.
-void op_name[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, I64 i) {
+export void op_name[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, I64 i) {
     I32 k = sir[i].op & lowering.OP_MASK;
     I32 ty = sir[i].ty;
     switch (k) {
@@ -819,9 +823,13 @@ void op_name[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir,
             // mul_full, muldiv), and the rounding mode.
             I64 id = sir[i].f as I64;
             fold.render_builtin(w, dst, id);
-            w_str(w, dst, ".checked.");
+            if (id == fold.BI_RMULH) {
+                w_str(w, dst, ".sat.");  // IM-134, IM-191: `rmulh.sat.<q>.<k>.half_up`
+            } else {
+                w_str(w, dst, ".checked.");
+            }
             ty_suffix(w, dst, lowering.builtin_opty(sir, i));
-            if (id == fold.BI_QMUL || id == fold.BI_MUL_INT) {
+            if (id == fold.BI_QMUL || id == fold.BI_MUL_INT || id == fold.BI_RMULH) {
                 // The second value's type (box 15 unit 4e): `qmul.checked.<a>.<b>.<r>`.
                 emit.w_byte(w, dst, '.');
                 ty_suffix(w, dst, lowering.builtin_btype(sir, i));
@@ -1994,7 +2002,7 @@ Bool uses_state(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowerin
 // Whether node i, of operation k, names a module-level struct (box 15) in a field that holds
 // a struct slot (compiler/verify.ci): a for a field or copy operation, b for a copy or a
 // field's place, f for a struct inserted into a pool.
-Bool names_struct(in lowering.Sir[_] sir, in lowering.SirSlot[_] slots, I64 nslot, I64 i, I32 k) {
+export Bool names_struct(in lowering.Sir[_] sir, in lowering.SirSlot[_] slots, I64 nslot, I64 i, I32 k) {
     I32 a = -1;
     I32 b = -1;
     switch (k) {
@@ -2025,7 +2033,7 @@ Bool names_struct(in lowering.Sir[_] sir, in lowering.SirSlot[_] slots, I64 nslo
 // Whether a node of operation k may name an array slot in a, b or c, or SO_VSLICE in e
 // (compiler/verify.ci): a function that names a module-level array this way reads the module
 // state (box 13 MLA).
-Bool array_node(I32 k) {
+export Bool array_node(I32 k) {
     switch (k) {
         case lowering.SO_ICHECK, lowering.SO_SHAPE, lowering.SO_COPY_SHAPE, lowering.SO_ACOPY, lowering.SO_EREF,
                 lowering.SO_ELOAD, lowering.SO_ESTORE, lowering.SO_VBEGIN, lowering.SO_VPICK, lowering.SO_VSLICE,
@@ -2519,7 +2527,7 @@ Bool zero_field(in limits.Decl[_] d, I64 f) {
     return field_storage(d, f) == 0;
 }
 
-Bool zero_record(in lowering.SirSlot[_] slots, I32 ty) {
+export Bool zero_record(in lowering.SirSlot[_] slots, I32 ty) {
     return ty >= lowering.T_STRUCT && slots[(ty - lowering.T_STRUCT) as I64 + 1].live % 4098 == 0;
 }
 
@@ -3027,6 +3035,51 @@ void type_tables[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text
     }
 }
 
+// The bytes of type_tables' type of element type ety as QBE data items (` <v>` each, back_qbe):
+// the definition count, the definitions mem_walk reaches, and the type. defs[0] receives the
+// count and defs[1 + j] the struct slot of definition j, for back_qbe's layout table; the
+// return is the byte count, or -1 when defs cannot hold them.
+export I64 qbe_type_bytes[b, n](inout emit.Writer[_] w, inout U8[b] dst, in U8[_] text, in scan.Token[_] toks,
+        in lowering.SirFunc[_] funcs, inout lowering.SirSlot[_] slots, in lowering.LState[_] ls, in U8[_] pbytes,
+        in PMod[_] pm, I64 mi, in limits.Decl[_] d, I32 ety, inout I64[n] defs) {
+    Out[1] o;
+    out_of(o, pm, mi, pm[0].path_at);
+    I64[4] st;
+    st[0] = -2;
+    st[1] = 0;
+    st[2] = 0;
+    st[3] = 0;
+    I64 s0 = (ety - lowering.T_STRUCT) as I64;
+    defs[0] = 0;
+    if (ety >= lowering.T_STRUCT) {
+        emit.Writer[1] m;
+        U8[1] unused;
+        emit.w_measure(m);
+        mem_walk(m, unused, st, text, toks, funcs, slots, pbytes, o, d, s0, 0);
+        if (st[1] >= n) {
+            mem_unwalk(slots, ls);
+            return -1;
+        }
+        defs[0] = st[1];
+        for k in 0..ls[0].nslot {
+            if (slots[k].kind == -1) { defs[1 + (slots[k].live as I64)] = k; }
+        }
+        mem_unwalk(slots, ls);
+    }
+    st[3] = 0;
+    sig_u32(w, dst, st, defs[0]);
+    st[1] = 0;
+    if (ety >= lowering.T_STRUCT) {
+        mem_walk(w, dst, st, text, toks, funcs, slots, pbytes, o, d, s0, 1);
+        sig_b(w, dst, st, 0x71);
+        sig_u32(w, dst, st, st[1] - 1);
+        mem_unwalk(slots, ls);
+    } else {
+        mem_elem(w, dst, st, slots, ety);
+    }
+    return st[3];
+}
+
 // The module's arena and pool table (box 12; rt/cint_mem.h): per arena or pool k, in
 // declaration order, cg<P>_mt<k>, its element type, and for a struct element cg<P>_ml<k>, its
 // layout; cg<P>_memd, one cint_mem_decl per arena or pool; and cg<P>_mem, its cint_mem_table.
@@ -3289,7 +3342,7 @@ Bool nview(in lowering.SirSlot[_] slots, I64 k) {
 
 // The charges to the frame arena that lowering.frame_proof kept, whose sites follow the
 // module's in its site table (SPEC-04 LS-110; decision 2026-10-06 on OQ-213).
-I64 frame_sites(in lowering.Sir[_] sir, in lowering.LState[_] ls) {
+export I64 frame_sites(in lowering.Sir[_] sir, in lowering.LState[_] ls) {
     I64 n = 0;
     for i in 0..ls[0].nsir {
         if ((sir[i].op & lowering.OP_MASK) == lowering.SO_FRAME && sir[i].f == 0 && sir[i].site > 0) {
@@ -3360,7 +3413,7 @@ void frame_name[b](inout emit.Writer[_] w, inout U8[b] dst, I64 part, I64 j) {
 
 // What C writes for node i, an SO_FRAME of function fn: 1 for a kept charge; for a list's
 // mark or a give-back to one, the parts it takes or gives back (frame_part); 0 for nothing.
-I32 frame_parts(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, I64 fn, I64 i) {
+export I32 frame_parts(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, I64 fn, I64 i) {
     if (sir[i].f == 0) {
         if ((funcs[fn].flags & lowering.FN_FRAME) != 0 && sir[i].site > 0) {
             return 1;
@@ -4408,6 +4461,10 @@ void fault_tail[b](inout emit.Writer[_] w, inout U8[b] dst, in Out[_] o) {
 // that sets the fuel count first, `_fq` before the store to its counter and `_gq` after it
 // (counted_exits).
 void c_fault[b](inout emit.Writer[_] w, inout U8[b] dst, in Out[_] o) {
+    if (o[0].spec == 2) {
+        spec_leave(w, dst);
+        return;
+    }
     if (o[0].cp < 0) {
         w_str(w, dst, "goto fault;");
         return;
@@ -4440,11 +4497,14 @@ void c_params[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, i
     if (public) {
         w_str(w, dst, ", int64_t fuel");
     }
-    if ((funcs[fn].lean & LN_ROOM) != 0) {
+    if ((funcs[fn].lean & LN_ROOM) != 0 || o[0].spec == 2) {
         w_str(w, dst, ", int64_t dr");
     }
-    if ((funcs[fn].lean & LN_COUNTS) != 0) {
+    if ((funcs[fn].lean & LN_COUNTS) != 0 || o[0].spec == 2) {
         w_str(w, dst, ", int64_t fu");
+    }
+    if (o[0].spec == 2) {
+        w_str(w, dst, ", uint64_t *bad");
     }
     if ((funcs[fn].flags & lowering.FN_KERNEL) != 0) {
         // A kernel's dispatch site and the writable bits of its arguments' views.
@@ -4518,6 +4578,20 @@ void c_params[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, i
 // (EMIT-22, EMIT-31 "Same build"; task 2.13 part (iii)).
 void c_signature[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in scan.Token[t] toks,
         in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, in U8[_] pbytes, in Out[_] o, I64 fn) {
+    if (o[0].spec == 2) {
+        // A twin (SPEC-09 BACK-17): `<name>_spec`, which returns the count; no name EMIT-22
+        // encodes ends in `_spec`, since a name's underscores are written x5F.
+        if ((funcs[fn].lean & LN_FOLD) != 0) {
+            w_str(w, dst, "CINT_RT_FOLD int64_t ");
+        } else {
+            w_str(w, dst, "static int64_t ");
+        }
+        fn_symbol(w, dst, text, toks, funcs, pbytes, o, fn);
+        w_str(w, dst, "_spec(");
+        c_params(w, dst, text, toks, funcs, slots, pbytes, o, fn, false);
+        emit.w_byte(w, dst, ')');
+        return;
+    }
     if ((funcs[fn].flags & lowering.FN_IMPORT) != 0) {
         w_str(w, dst, "CINT_RT_INTERNAL extern bool ");
     } else if ((funcs[fn].flags & lowering.FN_EXPORT) != 0 && o[0].root != 1) {
@@ -4693,7 +4767,7 @@ U64 fold_max(I32 ty) {
 // Whether live node i of function fn computes on a wide type (box 15 unit 4): an operation,
 // comparison, conversion, built-in or print whose operand or result is I128 to I1024. These
 // call the helpers of rt/cint_wide.h, which take a wide operand by address (c_wide).
-Bool wide_node(in lowering.Sir[_] sir, I64 i) {
+export Bool wide_node(in lowering.Sir[_] sir, I64 i) {
     I32 k = sir[i].op & lowering.OP_MASK;
     I32 ty = sir[i].ty;
     switch (k) {
@@ -4965,12 +5039,339 @@ void c_wide[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
     }
 }
 
+// ---------------------------------------------------------------- lane Q (S-1 U-1)
+//
+// SPEC-01 IM-190 to IM-192 (OQ-338, CINTC-OQ-82; docs/design/notes/2026-11-04-s1-u1-lane-q.md
+// section 4): `hadd`, `rhadd`, `rmulh` and `rshr` on 8 to 64 bits, and `+|` and `-|` on 8- to
+// 32-bit storage, each as one C expression with no helper, `ctx` or site. Signed storage of
+// 8 to 32 bits widens to int64_t and shifts with cint_rt_asr, unsigned storage widens to
+// uint64_t and shifts with C's `>>`, and 64-bit storage uses the identities (a & b) + S(a ^ b,
+// 1), (a | b) - S(a ^ b, 1) and S(a, k) + (S(a, k - 1) & 1), whose terms and sums lie in the
+// type. Only `rshr` by a count that is not a constant in 0 to w - 1 keeps a check, through
+// cint_rt_rshr_fault for its record.
+
+// Whether node i is written by c_laneq.
+Bool laneq_node(in lowering.Sir[_] sir, I64 i) {
+    I32 k = sir[i].op & lowering.OP_MASK;
+    I32 st = st_of(sir[i].ty);
+    if (k == lowering.SO_BUILTIN) {
+        return fold.builtin_lane(sir[i].f as I64) && scalar_int(st);
+    }
+    if (k == lowering.SO_AS) {
+        // `as|` between integer types into 8 to 32 bits (the clamp form, CINTC-OQ-82).
+        return sir[i].c == lowering.AS_SAT && scalar_int(sir[i].ty) && scalar_int(sir[i].f) &&
+            fold.ty_width(sir[i].ty as I64) <= 32;
+    }
+    return k == lowering.SO_BIN && sir[i].f == 2 && (sir[i].c == lowering.B_ADD || sir[i].c == lowering.B_SUB) &&
+        scalar_int(st) && fold.ty_width(st as I64) <= 32;
+}
+
+// The count of `rshr` node i when it is a constant in 0 to w - 1, else -1.
+export I64 rshr_const(in lowering.Sir[_] sir, I64 i) {
+    I64 d = sir[i].b as I64;
+    if (d < 0 || (sir[d].op & lowering.OP_MASK) != lowering.SO_CONST || !scalar_int(sir[d].ty)) {
+        return -1;
+    }
+    if (sir[d].val < 0 || sir[d].val >= fold.ty_width(st_of(sir[i].ty) as I64)) {
+        return -1;
+    }
+    return sir[d].val;
+}
+
+// `(int64_t)v` or `(uint64_t)v` by the signedness of st.
+void laneq_wide[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in scan.Token[t] toks,
+        in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I32 st, I64 v) {
+    if (lowering.is_signed(st)) {
+        w_str(w, dst, "(int64_t)");
+    } else {
+        w_str(w, dst, "(uint64_t)");
+    }
+    c_operand(w, dst, text, toks, sir, funcs, slots, fn, v);
+}
+
+// The type's bound as a C constant: its maximum, or its minimum when lo.
+void laneq_bound[b](inout emit.Writer[_] w, inout U8[b] dst, I32 st, Bool lo) {
+    I64 wd = fold.ty_width(st as I64);
+    if (!lowering.is_signed(st)) {
+        if (lo) {
+            emit.w_byte(w, dst, '0');
+        } else {
+            emit.w_i64(w, dst, (1 << wd) - 1);
+        }
+    } else if (lo) {
+        w_str(w, dst, "(-");
+        emit.w_i64(w, dst, (1 << (wd - 1)) - 1);
+        w_str(w, dst, " - 1)");
+    } else {
+        emit.w_i64(w, dst, (1 << (wd - 1)) - 1);
+    }
+}
+
+// The C statements of laneq_node i.
+void c_laneq[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in scan.Token[t] toks,
+        in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, in Out[_] o, I64 i) {
+    I64 fn = o[0].fn;
+    I32 ty = sir[i].ty;
+    I32 st = st_of(ty);
+    I64 a = sir[i].a as I64;
+    I64 bb = sir[i].b as I64;
+    Bool sg = lowering.is_signed(st);
+    Bool w64 = fold.ty_width(st as I64) == 64;
+    I64 id = 0;
+    if ((sir[i].op & lowering.OP_MASK) == lowering.SO_BUILTIN) {
+        id = sir[i].f as I64;
+    }
+    if ((sir[i].op & lowering.OP_MASK) == lowering.SO_AS) {
+        // `as|`: the source widened to 64 bits and clamped to the target; an unsigned source
+        // has no lower bound to pass.
+        I32 from = sir[i].f;
+        Bool fs = lowering.is_signed(from);
+        if (fs) {
+            w_str(w, dst, "    {{ int64_t m = ");
+        } else {
+            w_str(w, dst, "    {{ uint64_t m = ");
+        }
+        laneq_wide(w, dst, text, toks, sir, funcs, slots, fn, from, a);
+        w_str(w, dst, "; t");
+        emit.w_i64(w, dst, sir[i].dst as I64);
+        w_str(w, dst, " = (");
+        c_type(w, dst, st);
+        w_str(w, dst, ")(");
+        if (fs) {
+            w_str(w, dst, "m < ");
+            laneq_bound(w, dst, st, true);
+            w_str(w, dst, " ? ");
+            laneq_bound(w, dst, st, true);
+            w_str(w, dst, " : ");
+        }
+        w_str(w, dst, "m > ");
+        laneq_bound(w, dst, st, false);
+        w_str(w, dst, " ? ");
+        laneq_bound(w, dst, st, false);
+        w_str(w, dst, " : m); }}");
+        nl(w, dst);
+        return;
+    }
+    if (id == 0 || id == fold.BI_RMULH) {
+        // `+|`, `-|` (the widened sum clamped to the type) and `rmulh` (IM-191: the product
+        // plus 2^(w-2), shifted by w - 1; only the maximum can be passed). A sum of 8 or 16
+        // bits widens to int32_t, as C-1's lq_sadd does (note section 4).
+        Bool w32 = id == 0 && fold.ty_width(st as I64) <= 16;
+        if (w32) {
+            w_str(w, dst, "    {{ int32_t m = (int32_t)");
+            c_operand(w, dst, text, toks, sir, funcs, slots, fn, a);
+        } else {
+            w_str(w, dst, "    {{ int64_t m = ");
+        }
+        if (w32) {
+            if (sir[i].c == lowering.B_ADD) {
+                w_str(w, dst, " + (int32_t)");
+            } else {
+                w_str(w, dst, " - (int32_t)");
+            }
+            c_operand(w, dst, text, toks, sir, funcs, slots, fn, bb);
+        } else if (id == 0) {
+            laneq_wide(w, dst, text, toks, sir, funcs, slots, fn, lowering.T_I64, a);
+            if (sir[i].c == lowering.B_ADD) {
+                w_str(w, dst, " + ");
+            } else {
+                w_str(w, dst, " - ");
+            }
+            laneq_wide(w, dst, text, toks, sir, funcs, slots, fn, lowering.T_I64, bb);
+        } else {
+            I64 wd = fold.ty_width(st as I64);
+            w_str(w, dst, "cint_rt_asr(");
+            laneq_wide(w, dst, text, toks, sir, funcs, slots, fn, lowering.T_I64, a);
+            w_str(w, dst, " * ");
+            laneq_wide(w, dst, text, toks, sir, funcs, slots, fn, lowering.T_I64, bb);
+            w_str(w, dst, " + ");
+            emit.w_i64(w, dst, 1 << (wd - 2));
+            w_str(w, dst, ", ");
+            emit.w_i64(w, dst, wd - 1);
+            w_str(w, dst, "u)");
+        }
+        w_str(w, dst, "; t");
+        emit.w_i64(w, dst, sir[i].dst as I64);
+        w_str(w, dst, " = (");
+        c_type(w, dst, st);
+        w_str(w, dst, ")(");
+        if (id == 0) {
+            w_str(w, dst, "m < ");
+            laneq_bound(w, dst, st, true);
+            w_str(w, dst, " ? ");
+            laneq_bound(w, dst, st, true);
+            w_str(w, dst, " : ");
+        }
+        w_str(w, dst, "m > ");
+        laneq_bound(w, dst, st, false);
+        w_str(w, dst, " ? ");
+        laneq_bound(w, dst, st, false);
+        w_str(w, dst, " : m); }}");
+        nl(w, dst);
+        return;
+    }
+    if (id == fold.BI_HADD || id == fold.BI_RHADD) {
+        c_lhs(w, dst, sir, i);
+        if (w64) {
+            emit.w_byte(w, dst, '(');
+            c_operand(w, dst, text, toks, sir, funcs, slots, fn, a);
+            if (id == fold.BI_HADD) {
+                w_str(w, dst, " & ");
+            } else {
+                w_str(w, dst, " | ");
+            }
+            c_operand(w, dst, text, toks, sir, funcs, slots, fn, bb);
+            if (id == fold.BI_HADD) {
+                w_str(w, dst, ") + ");
+            } else {
+                w_str(w, dst, ") - ");
+            }
+            if (sg) {
+                w_str(w, dst, "cint_rt_asr(");
+            } else {
+                w_str(w, dst, "((");
+            }
+            c_operand(w, dst, text, toks, sir, funcs, slots, fn, a);
+            w_str(w, dst, " ^ ");
+            c_operand(w, dst, text, toks, sir, funcs, slots, fn, bb);
+            if (sg) {
+                w_str(w, dst, ", 1u);");
+            } else {
+                w_str(w, dst, ") >> 1u);");
+            }
+            nl(w, dst);
+            return;
+        }
+        emit.w_byte(w, dst, '(');
+        c_type(w, dst, st);
+        if (sg) {
+            w_str(w, dst, ")cint_rt_asr(");
+        } else {
+            w_str(w, dst, ")((");
+        }
+        laneq_wide(w, dst, text, toks, sir, funcs, slots, fn, st, a);
+        w_str(w, dst, " + ");
+        c_operand(w, dst, text, toks, sir, funcs, slots, fn, bb);
+        if (id == fold.BI_RHADD) {
+            w_str(w, dst, " + 1");
+        }
+        if (sg) {
+            w_str(w, dst, ", 1u);");
+        } else {
+            w_str(w, dst, ") >> 1u);");
+        }
+        nl(w, dst);
+        return;
+    }
+    // rshr (IM-192): a constant count in range is written plain, any other is checked first,
+    // then a count of 0 is a itself.
+    I64 kc = rshr_const(sir, i);
+    I32 kt = lowering.value_type(sir, funcs, slots, fn, bb);
+    if (kc < 0) {
+        w_str(w, dst, "    if (cint_count_");
+        ty_suffix(w, dst, kt);
+        emit.w_byte(w, dst, '(');
+        c_operand(w, dst, text, toks, sir, funcs, slots, fn, bb);
+        w_str(w, dst, ").bits > ");
+        emit.w_i64(w, dst, fold.ty_width(st as I64) - 1);
+        w_str(w, dst, "u && !cint_rt_rshr_fault(ctx, ");
+        c_site(w, dst, o, sir[i].site as I64);
+        w_str(w, dst, ", ");
+        tag_name(w, dst, ty);
+        w_str(w, dst, ", (uint64_t)");
+        c_operand(w, dst, text, toks, sir, funcs, slots, fn, a);
+        w_str(w, dst, ", cint_count_");
+        ty_suffix(w, dst, kt);
+        emit.w_byte(w, dst, '(');
+        c_operand(w, dst, text, toks, sir, funcs, slots, fn, bb);
+        w_str(w, dst, "))) ");
+        c_fault(w, dst, o);
+        nl(w, dst);
+    }
+    c_lhs(w, dst, sir, i);
+    if (kc == 0) {
+        c_operand(w, dst, text, toks, sir, funcs, slots, fn, a);
+        w_str(w, dst, "; (void)");
+        c_operand(w, dst, text, toks, sir, funcs, slots, fn, bb);
+        emit.w_byte(w, dst, ';');
+        nl(w, dst);
+        return;
+    }
+    if (kc < 0) {
+        c_operand(w, dst, text, toks, sir, funcs, slots, fn, bb);
+        w_str(w, dst, " == 0 ? ");
+        c_operand(w, dst, text, toks, sir, funcs, slots, fn, a);
+        w_str(w, dst, " : ");
+    }
+    if (w64) {
+        // S(a, k) + (S(a, k - 1) & 1)
+        laneq_count(w, dst, text, toks, sir, funcs, slots, fn, st, a, bb, 0);
+        w_str(w, dst, " + (");
+        laneq_count(w, dst, text, toks, sir, funcs, slots, fn, st, a, bb, 1);
+        w_str(w, dst, " & 1);");
+        nl(w, dst);
+        return;
+    }
+    emit.w_byte(w, dst, '(');
+    c_type(w, dst, st);
+    if (sg) {
+        w_str(w, dst, ")cint_rt_asr(");
+    } else {
+        w_str(w, dst, ")((");
+    }
+    laneq_wide(w, dst, text, toks, sir, funcs, slots, fn, st, a);
+    if (sg) {
+        w_str(w, dst, " + ((int64_t)1 << ");
+    } else {
+        w_str(w, dst, " + ((uint64_t)1 << ");
+    }
+    laneq_k(w, dst, text, toks, sir, funcs, slots, fn, bb, 1);
+    if (sg) {
+        w_str(w, dst, "), ");
+    } else {
+        w_str(w, dst, ")) >> ");
+    }
+    laneq_k(w, dst, text, toks, sir, funcs, slots, fn, bb, 0);
+    w_str(w, dst, ");");
+    nl(w, dst);
+}
+
+// The count of `rshr` less `less`, as an unsigned C value, `((unsigned)k - less)` of the
+// operand bb (a constant's node too, which C folds).
+void laneq_k[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in scan.Token[t] toks,
+        in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I64 bb,
+        I64 less) {
+    w_str(w, dst, "((unsigned)");
+    c_operand(w, dst, text, toks, sir, funcs, slots, fn, bb);
+    if (less != 0) {
+        w_str(w, dst, " - 1u");
+    }
+    emit.w_byte(w, dst, ')');
+}
+
+// S(a, k - less) of 64-bit storage st, for `rshr`'s count (laneq_k).
+void laneq_count[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in scan.Token[t] toks,
+        in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I32 st, I64 a,
+        I64 bb, I64 less) {
+    if (lowering.is_signed(st)) {
+        w_str(w, dst, "cint_rt_asr(");
+        c_operand(w, dst, text, toks, sir, funcs, slots, fn, a);
+        w_str(w, dst, ", ");
+    } else {
+        emit.w_byte(w, dst, '(');
+        c_operand(w, dst, text, toks, sir, funcs, slots, fn, a);
+        w_str(w, dst, " >> ");
+    }
+    laneq_k(w, dst, text, toks, sir, funcs, slots, fn, bb, less);
+    emit.w_byte(w, dst, ')');
+}
+
 // ---------------------------------------------------------------- fixed point (box 15 unit 4e)
 
 // Whether node i computes on fixed point through rt/cint_fixed.h (c_q): an operator, a
 // conversion with fixed point on one side, a built-in into a fixed-point type, a print of a
 // fixed-point value. A comparison, a load or a store of one is its storage integer's.
-Bool q_node(in lowering.Sir[_] sir, I64 i) {
+export Bool q_node(in lowering.Sir[_] sir, I64 i) {
     I32 k = sir[i].op & lowering.OP_MASK;
     I32 ty = sir[i].ty;
     switch (k) {
@@ -5243,7 +5644,7 @@ const I64 CQ_AS = 10;
 // Whether q_node i has a side of 128 bits or more (games wave G2b): a fixed-point value of
 // 128 bits, or a wide integer, which rt/cint_fixed.h's cint_rt_q_limbs and
 // cint_rt_print_q_limbs take by address (c_q_limbs; rt/OPEN.md RT-OQ-63).
-Bool q_limbs_node(in lowering.Sir[_] sir, I64 i) {
+export Bool q_limbs_node(in lowering.Sir[_] sir, I64 i) {
     I32 k = sir[i].op & lowering.OP_MASK;
     if (!q_node(sir, i)) {
         return false;
@@ -5399,6 +5800,10 @@ void c_node[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
     I32 ty = sir[i].ty;
     I64 a = sir[i].a as I64;
     I64 bb = sir[i].b as I64;
+    if (laneq_node(sir, i)) {
+        c_laneq(w, dst, text, toks, sir, funcs, slots, o, i);
+        return;
+    }
     if (q_limbs_node(sir, i)) {
         c_q_limbs(w, dst, text, toks, sir, funcs, slots, o, i);
         return;
@@ -5409,6 +5814,9 @@ void c_node[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
     }
     if (q_node(sir, i)) {
         c_q(w, dst, text, toks, sir, funcs, slots, o, i);
+        return;
+    }
+    if (o[0].spec == 2 && spec_form(w, dst, text, toks, sir, funcs, slots, pbytes, o, i)) {
         return;
     }
     switch (k) {
@@ -5486,16 +5894,18 @@ void c_node[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
                 c_icheck_extent(w, dst, text, toks, funcs, slots, fn, sir, i);
                 w_str(w, dst, ")) {{");
                 nl(w, dst);
-                w_str(w, dst, "        (void)cint_index_check(ctx, ");
-                c_site(w, dst, o, sir[i].site as I64);
-                w_str(w, dst, ", \"");
-                op_name(w, dst, sir, i);
-                w_str(w, dst, "\", ");
-                c_operand(w, dst, text, toks, sir, funcs, slots, fn, bb);
-                w_str(w, dst, ", ");
-                c_icheck_extent(w, dst, text, toks, funcs, slots, fn, sir, i);
-                w_str(w, dst, ");");
-                nl(w, dst);
+                if (o[0].spec != 2) {
+                    w_str(w, dst, "        (void)cint_index_check(ctx, ");
+                    c_site(w, dst, o, sir[i].site as I64);
+                    w_str(w, dst, ", \"");
+                    op_name(w, dst, sir, i);
+                    w_str(w, dst, "\", ");
+                    c_operand(w, dst, text, toks, sir, funcs, slots, fn, bb);
+                    w_str(w, dst, ", ");
+                    c_icheck_extent(w, dst, text, toks, funcs, slots, fn, sir, i);
+                    w_str(w, dst, ");");
+                    nl(w, dst);
+                }
                 w_str(w, dst, "        ");
                 c_fault(w, dst, o);
                 nl(w, dst);
@@ -6262,65 +6672,22 @@ void c_node[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
             if (sir[i].b == 1) {
                 host_call(w, dst, text, toks, sir, funcs, slots, o, fn, i);
             } else {
+                Bool root = o[0].spec == 1 && spec_root(sir, funcs, fn, i);
+                if (root) {
+                    spec_region(w, dst, text, toks, sir, funcs, slots, pbytes, o, i);
+                }
                 call_check(w, dst, funcs, o, a, sir[i].site as I64);
                 call_open(w, dst, text, toks, funcs, pbytes, o, a);
-                I64 nargs = sir[i].c as I64;
-                for j in i - nargs..i {
-                    w_str(w, dst, ", ");
-                    if (sir[j].e == 0) {
-                        c_operand(w, dst, text, toks, sir, funcs, slots, fn, sir[j].a as I64);
-                    } else {
-                        // A view argument is its elements, origin, extent and stride (c_view_arg);
-                        // a size parameter's argument is the extent.
-                        if (sir[j].e == 3) {
-                            c_slot(w, dst, text, toks, funcs, slots, fn, sir[j].a as I64);
-                        } else if (sir[j].e == 6) {
-                            // The address of the struct an `inout` struct parameter takes.
-                            emit.w_byte(w, dst, '&');
-                            c_slot(w, dst, text, toks, funcs, slots, fn, sir[j].a as I64);
-                        } else if (sir[j].e == 4 || sir[j].e == 5) {
-                            if (sir[j].e == 4) {
-                                emit.w_byte(w, dst, 's');
-                                emit.w_i64(w, dst, (sir[j].a as I64) - o[0].first);
-                                w_str(w, dst, ", INT64_C(0), ");
-                            }
-                            w_str(w, dst, "INT64_C(");
-                            emit.w_i64(w, dst, sir[sir[j].a as I64].c as I64);
-                            emit.w_byte(w, dst, ')');
-                            if (sir[j].e == 4) {
-                                w_str(w, dst, ", INT64_C(1)");
-                            }
-                        } else if (sir[j].e == 1) {
-                            c_view_arg(w, dst, text, toks, funcs, slots, fn, sir[j].a as I64);
-                        } else if (sir[j].e == 7) {
-                            // A view of rank 2 to 4, by its descriptor.
-                            c_slot(w, dst, text, toks, funcs, slots, fn, sir[j].a as I64);
-                        } else if (sir[j].e == 9) {
-                            // An arena or a pool (box 12): its identifier.
-                            c_container(w, dst, text, toks, funcs, slots, fn, sir[j].a as I64);
-                        } else {
-                            c_dext(w, dst, text, toks, funcs, slots, fn, sir[j].a as I64, sir[j].f as I64);
-                        }
-                    }
-                    if ((sir[j].e == 1 || sir[j].e == 6) && zero_slot(slots, sir[j].a as I64)) {
-                        w_str(w, dst, ", ");
-                        zero_place(w, dst, text, toks, funcs, slots, fn, sir[j].a as I64);
-                    }
-                }
-                if (sir[i].dst >= 0) {
-                    w_str(w, dst, ", &t");
-                    emit.w_i64(w, dst, sir[i].dst as I64);
-                } else if (sir[i].f > 0) {
-                    // A struct result goes to its struct slot (task 2.14).
-                    w_str(w, dst, ", &");
-                    c_slot(w, dst, text, toks, funcs, slots, fn, (sir[i].f - 1) as I64);
-                }
-                if ((funcs[a].flags & lowering.FN_ERRU) != 0) {
-                    // The tag goes to the SO_ETAG node right after the call (box 12).
-                    w_str(w, dst, ", &t");
-                    emit.w_i64(w, dst, sir[i + 1].dst as I64);
-                }
+                call_args(w, dst, text, toks, sir, funcs, slots, o, i);
                 call_close(w, dst, funcs, o, a, sir[i].site as I64);
+                if (root) {
+                    // The commit jumps here; a forced rerun has no commit (CINT_SPEC_FORCE_RERUN).
+                    w_str(w, dst, "#if !defined(CINT_SPEC_FORCE_RERUN)");
+                    nl(w, dst);
+                    c_label_line(w, dst, o, i, 's');
+                    w_str(w, dst, "#endif");
+                    nl(w, dst);
+                }
             }
         case lowering.SO_FRAME:
             frame_node(w, dst, sir, funcs, o, i);
@@ -6827,10 +7194,98 @@ Bool ksum_narrow(I32 ty) {
     }
 }
 
+// The value node the first store of function fn gives slot ks (lowering.bind_node), or -1.
+I64 kstore_value(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, I64 fn, I64 ks) {
+    for i in funcs[fn].first as I64..funcs[fn].last as I64 {
+        if ((sir[i].op & lowering.OP_MASK) == lowering.SO_STORE && sir[i].a as I64 == ks) {
+            return sir[i].b as I64;
+        }
+    }
+    return -1;
+}
+
+// The largest value a `where` constraint of kernel fn gives the I64 local of slot ks (a shape
+// symbol): the least c of its `ks <= c` and `ks < c` constraints on a literal, floored at 0
+// since an extent is never negative; -1 without one.
+I64 kwhere_bound(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, I64 fn, I64 ks) {
+    I64 bound = -1;
+    for i in funcs[fn].first as I64..funcs[fn].last as I64 {
+        if ((sir[i].op & lowering.OP_MASK) != lowering.SO_KWHERE) {
+            continue;
+        }
+        I64 lv = sir[i].a as I64;
+        I64 rv = sir[i].b as I64;
+        if ((sir[lv].op & lowering.OP_MASK) != lowering.SO_LOAD || sir[lv].a as I64 != ks ||
+                (sir[rv].op & lowering.OP_MASK) != lowering.SO_CONST) {
+            continue;
+        }
+        I64 c = sir[rv].val;
+        if (sir[i].f == lowering.CMP_LT) {
+            c = c - 1;
+        } else if (sir[i].f != lowering.CMP_LE) {
+            continue;
+        }
+        if (c < 0) {
+            c = 0;
+        }
+        if (bound < 0 || c < bound) {
+            bound = c;
+        }
+    }
+    return bound;
+}
+
+// Whether the running int64_t sum ka<j> of contribution node i (ksum_add) cannot overflow
+// (issue 541): every `over` extent of kernel fn is a literal or a shape symbol with a
+// kwhere_bound, so the dispatch runs at most N items, the product of those bounds (SO_KFUEL),
+// and N times the largest magnitude of the contribution's type stays below 2^63. The
+// constraints are checked at entry (SO_KWHERE), before any item runs.
+Bool ksum_fits(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, I64 fn, I64 i) {
+    I64 mag = 0;
+    switch (st_of(sir[i].val as I32)) {
+        case lowering.T_I8: mag = 128;
+        case lowering.T_I16: mag = 32768;
+        case lowering.T_I32: mag = 2147483648;
+        case lowering.T_U8: mag = 255;
+        case lowering.T_U16: mag = 65535;
+        case lowering.T_U32: mag = 4294967295;
+        default: return false;
+    }
+    I64 it = -1;
+    for q in funcs[fn].first as I64..funcs[fn].last as I64 {
+        if ((sir[q].op & lowering.OP_MASK) == lowering.SO_KITEM) {
+            it = q;
+        }
+    }
+    if (it < 0) {
+        return false;
+    }
+    I64 n = 1;
+    for d in 0..sir[it].f as I64 {
+        I64 v = kstore_value(sir, funcs, fn, (sir[it].c as I64) + d);
+        I64 b = -1;
+        if (v >= 0 && (sir[v].op & lowering.OP_MASK) == lowering.SO_CONST) {
+            b = sir[v].val;
+        } else if (v >= 0 && (sir[v].op & lowering.OP_MASK) == lowering.SO_LOAD) {
+            b = kwhere_bound(sir, funcs, fn, sir[v].a as I64);
+        }
+        if (b < 0) {
+            return false;
+        }
+        if (b > 0 && n > 9223372036854775807 / b) {
+            return false;
+        }
+        n = n * b;
+    }
+    return n <= 9223372036854775807 / mag;
+}
+
 // A sum's contribution node i (ksum_narrow) added to ka<j>, an int64_t, rather than to the
 // 256-bit za<j>: the exact total is za<j> plus ka<j>, and an addition that would overflow
 // ka<j> first moves it into za<j> (SO_KEPI adds what is left). The contribution is read as
-// its type, as cint_zacc_add reads it, then widened.
+// its type, as cint_zacc_add reads it, then widened. When ksum_fits proves ka<j> cannot
+// overflow, the addition is plain; otherwise it is checked through CINT_RT_OVF, the runtime's
+// helper of the build's mode, as the statement checks are.
 void ksum_add[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in scan.Token[t] toks,
         in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I64 i,
         Bool replay, I64 depth) {
@@ -6845,10 +7300,20 @@ void ksum_add[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, i
     w_str(w, dst, ");");
     nl(w, dst);
     emit.w_indent(w, dst, depth);
+    if (ksum_fits(sir, funcs, fn, i)) {
+        w_str(w, dst, "        ");
+        acc_name(w, dst, funcs, fn, 'k', bb);
+        w_str(w, dst, " += kv;");
+        nl(w, dst);
+        emit.w_indent(w, dst, depth);
+        w_str(w, dst, "    }}");
+        nl(w, dst);
+        return;
+    }
     w_str(w, dst, "        int64_t kt = 0;");
     nl(w, dst);
     emit.w_indent(w, dst, depth);
-    w_str(w, dst, "        if (cint_rt_add_ovf_i64_p(");
+    w_str(w, dst, "        if (CINT_RT_OVF(add, i64)(");
     acc_name(w, dst, funcs, fn, 'k', bb);
     w_str(w, dst, ", kv, &kt)) {{");
     nl(w, dst);
@@ -7676,7 +8141,11 @@ void fuel_flush[b](inout emit.Writer[_] w, inout U8[b] dst, in Out[_] o) {
 // A normal return: a lean function that counts returns its count, any other function writes
 // its local count back and returns true.
 void fuel_return[b](inout emit.Writer[_] w, inout U8[b] dst, in Out[_] o) {
-    if ((o[0].lean & LN_COUNTS) != 0) {
+    if (o[0].spec == 2) {
+        w_str(w, dst, "    *bad |= bd;");
+        nl(w, dst);
+        w_str(w, dst, "    return fu;");
+    } else if ((o[0].lean & LN_COUNTS) != 0) {
         w_str(w, dst, "    return fu;");
     } else {
         fuel_flush(w, dst, o);
@@ -7697,6 +8166,12 @@ void fault_value[b](inout emit.Writer[_] w, inout U8[b] dst, in Out[_] o) {
 // The return when cint_rt_state failed, before the function's body: a lean function's count
 // is its parameter, ahead of the head, so it goes back first.
 void state_bail[b](inout emit.Writer[_] w, inout U8[b] dst, in Out[_] o) {
+    if (o[0].spec == 2) {
+        w_str(w, dst, "        ");
+        spec_leave(w, dst);
+        nl(w, dst);
+        return;
+    }
     if ((o[0].lean & LN_COUNTS) != 0) {
         w_str(w, dst, "        cint_rt_head_of(ctx)->fuel_used = fu;");
         nl(w, dst);
@@ -7928,6 +8403,568 @@ void call_close[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.SirFunc[
     }
 }
 
+// The arguments of the call at node i after ctx and the hidden ones, each after `, `, then
+// the result's and an error union's tag's addresses (c_node, spec_form, spec_region).
+void call_args[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in scan.Token[t] toks,
+        in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, in Out[_] o, I64 i) {
+    I64 fn = o[0].fn;
+    I64 a = sir[i].a as I64;
+    I64 nargs = sir[i].c as I64;
+    for j in i - nargs..i {
+        w_str(w, dst, ", ");
+        if (sir[j].e == 0) {
+            c_operand(w, dst, text, toks, sir, funcs, slots, fn, sir[j].a as I64);
+        } else {
+            // A view argument is its elements, origin, extent and stride (c_view_arg);
+            // a size parameter's argument is the extent.
+            if (sir[j].e == 3) {
+                c_slot(w, dst, text, toks, funcs, slots, fn, sir[j].a as I64);
+            } else if (sir[j].e == 6) {
+                // The address of the struct an `inout` struct parameter takes.
+                emit.w_byte(w, dst, '&');
+                c_slot(w, dst, text, toks, funcs, slots, fn, sir[j].a as I64);
+            } else if (sir[j].e == 4 || sir[j].e == 5) {
+                if (sir[j].e == 4) {
+                    emit.w_byte(w, dst, 's');
+                    emit.w_i64(w, dst, (sir[j].a as I64) - o[0].first);
+                    w_str(w, dst, ", INT64_C(0), ");
+                }
+                w_str(w, dst, "INT64_C(");
+                emit.w_i64(w, dst, sir[sir[j].a as I64].c as I64);
+                emit.w_byte(w, dst, ')');
+                if (sir[j].e == 4) {
+                    w_str(w, dst, ", INT64_C(1)");
+                }
+            } else if (sir[j].e == 1) {
+                c_view_arg(w, dst, text, toks, funcs, slots, fn, sir[j].a as I64);
+            } else if (sir[j].e == 7) {
+                // A view of rank 2 to 4, by its descriptor.
+                c_slot(w, dst, text, toks, funcs, slots, fn, sir[j].a as I64);
+            } else if (sir[j].e == 9) {
+                // An arena or a pool (box 12): its identifier.
+                c_container(w, dst, text, toks, funcs, slots, fn, sir[j].a as I64);
+            } else {
+                c_dext(w, dst, text, toks, funcs, slots, fn, sir[j].a as I64, sir[j].f as I64);
+            }
+        }
+        if ((sir[j].e == 1 || sir[j].e == 6) && zero_slot(slots, sir[j].a as I64)) {
+            w_str(w, dst, ", ");
+            zero_place(w, dst, text, toks, funcs, slots, fn, sir[j].a as I64);
+        }
+    }
+    if (sir[i].dst >= 0) {
+        w_str(w, dst, ", &t");
+        emit.w_i64(w, dst, sir[i].dst as I64);
+    } else if (sir[i].f > 0) {
+        // A struct result goes to its struct slot (task 2.14).
+        w_str(w, dst, ", &");
+        c_slot(w, dst, text, toks, funcs, slots, fn, (sir[i].f - 1) as I64);
+    }
+    if ((funcs[a].flags & lowering.FN_ERRU) != 0) {
+        // The tag goes to the SO_ETAG node right after the call (box 12).
+        w_str(w, dst, ", &t");
+        emit.w_i64(w, dst, sir[i + 1].dst as I64);
+    }
+}
+
+// ---------------------------------------------------------------- exact speculation (OQ-339)
+
+// SPEC-09 BACK-17, docs/design/notes/2026-11-04-s1-u2-speculation-mode.md, compiler/OPEN.md
+// CINTC-OQ-83. In a cpu-c17-spec build each function of the speculation set (FN_SPEC) that a
+// region reaches gets a twin, `<name>_spec`, which takes the depth room, the count and a flag
+// pointer, returns the count, writes no record, site, frame or depth, and sets its flag `bd`
+// where the checked function would fault. funcs[fn].lean bits of the mode: LN_REACH, a region
+// reaches the twin; LN_STATE, the closure may write the module state (writes_state).
+const I32 LN_REACH = 16;
+const I32 LN_STATE = 32;
+
+// The leave of a twin (note section 2.4): the flag set, the count returned; the region reruns.
+void spec_leave[b](inout emit.Writer[_] w, inout U8[b] dst) {
+    w_str(w, dst, "{{ *bad = 1u; return fu; }}");
+}
+
+// Whether function fn can be in the speculation set by its row and its nodes: lean (so it
+// counts no fuel in the head, makes no heavy call and holds no fixed-point node), no effect,
+// and none of the nodes whose twin form this unit does not write: a print, an assertion, an
+// imported variable, a wide node, a view's index check or one of a statically empty extent,
+// and a built-in that can fault other than isqrt (note section 3.10, kept helpers).
+Bool spec_alone(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn) {
+    if ((funcs[fn].lean & LN_ON) == 0 || (funcs[fn].flags & (lowering.FN_OBSERVES | lowering.FN_UNRESTRICTED)) != 0) {
+        return false;
+    }
+    for i in funcs[fn].first as I64..funcs[fn].last as I64 {
+        I32 k = sir[i].op & lowering.OP_MASK;
+        I64 a = sir[i].a as I64;
+        if ((sir[i].op & lowering.FL_LIVE) == 0) {
+            continue;
+        }
+        if (wide_node(sir, i) || q_node(sir, i) || q_limbs_node(sir, i) || k == lowering.SO_ASSERT ||
+                k == lowering.SO_PRINT_BEGIN || k == lowering.SO_PRINT_BYTES || k == lowering.SO_PRINT_VALUE ||
+                k == lowering.SO_PRINT_END) {
+            return false;
+        }
+        if ((k == lowering.SO_LOAD || k == lowering.SO_STORE) && slots[a].kind == lowering.SK_IGLOBAL) {
+            return false;
+        }
+        if (k == lowering.SO_ICHECK && (nview(slots, a) || zero_extent(slots, a))) {
+            return false;
+        }
+        if (k == lowering.SO_BUILTIN && lowering.builtin_faults(sir, i) && sir[i].f as I64 != fold.BI_ISQRT &&
+                sir[i].f as I64 != fold.BI_ISQRT_ROUND) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Whether node i of function fn is a region root (note section 4.1): a live call, from a
+// function an entry reaches outside the set, of a function in it, with no struct result and
+// only scalar, view and struct-value arguments, so the snapshot names every place the twin
+// can write: the module state and the views passed.
+Bool spec_root(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, I64 fn, I64 i) {
+    I32 no = lowering.FN_SPEC | lowering.FN_KERNEL | lowering.FN_IMPORT | lowering.FN_EXTERN;
+    if ((sir[i].op & lowering.OP_MASK) != lowering.SO_CALL || (sir[i].op & lowering.FL_LIVE) == 0 || sir[i].b == 1 ||
+            (funcs[fn].flags & no) != 0 || (funcs[fn].flags & lowering.FN_USED) == 0 || sir[i].f > 0 ||
+            (funcs[sir[i].a as I64].flags & lowering.FN_SPEC) == 0) {
+        return false;
+    }
+    for j in i - (sir[i].c as I64)..i {
+        if (sir[j].e != 0 && sir[j].e != 1 && sir[j].e != 3) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// The speculation set of the module, its roots and what they reach (note section 4.1): the
+// greatest set of spec_alone functions closed under calls, as mark_lean's; then LN_REACH from
+// each root's callee along live calls, and LN_STATE from each function that uses the module
+// state to its callers. Each loop changes at least one function per pass or is the last.
+export void mark_spec(in lowering.Sir[_] sir, inout lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots,
+        in lowering.LState[_] ls) {
+    I64 nf = ls[0].nfunc;
+    for k in 0..nf {
+        if (spec_alone(sir, funcs, slots, k)) {
+            funcs[k].flags = funcs[k].flags | lowering.FN_SPEC;
+        }
+    }
+    Bool changed = true;
+    while (changed) {
+        changed = false;
+        for k in 0..nf {
+            if ((funcs[k].flags & lowering.FN_SPEC) == 0) {
+                continue;
+            }
+            for i in funcs[k].first as I64..funcs[k].last as I64 {
+                if ((sir[i].op & lowering.OP_MASK) == lowering.SO_CALL &&
+                        (funcs[sir[i].a as I64].flags & lowering.FN_SPEC) == 0) {
+                    funcs[k].flags = funcs[k].flags ^ lowering.FN_SPEC;
+                    changed = true;
+                    break;
+                }
+            }
+        }
+    }
+    for k in 0..nf {
+        for i in funcs[k].first as I64..funcs[k].last as I64 {
+            if (spec_root(sir, funcs, k, i)) {
+                I64 a = sir[i].a as I64;
+                funcs[a].lean = funcs[a].lean | LN_REACH;
+            }
+        }
+    }
+    changed = true;
+    while (changed) {
+        changed = false;
+        for k in 0..nf {
+            if ((funcs[k].flags & lowering.FN_SPEC) == 0) {
+                continue;
+            }
+            Bool st = (funcs[k].lean & LN_STATE) != 0 || writes_state(sir, funcs, slots, ls[0].nslot, k);
+            for i in funcs[k].first as I64..funcs[k].last as I64 {
+                if ((sir[i].op & lowering.OP_MASK) == lowering.SO_CALL && (sir[i].op & lowering.FL_LIVE) != 0) {
+                    I64 a = sir[i].a as I64;
+                    if ((funcs[k].lean & LN_REACH) != 0 && (funcs[a].lean & LN_REACH) == 0) {
+                        funcs[a].lean = funcs[a].lean | LN_REACH;
+                        changed = true;
+                    }
+                    if ((funcs[a].lean & LN_STATE) != 0) {
+                        st = true;
+                    }
+                }
+            }
+            if (st && (funcs[k].lean & LN_STATE) == 0) {
+                funcs[k].lean = funcs[k].lean | LN_STATE;
+                changed = true;
+            }
+        }
+    }
+}
+
+// Whether function fn may write the module state (LN_STATE): a store to a module variable, or
+// a node of uses_state that names a module-level array or struct and does not only read it.
+// A view of a module array passed to a call counts, whichever callee writes through it
+// (note section 2.2); a function that only reads the state needs no snapshot of it.
+Bool writes_state(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 nslot,
+        I64 fn) {
+    for i in funcs[fn].first as I64..funcs[fn].last as I64 {
+        I32 k = sir[i].op & lowering.OP_MASK;
+        if ((sir[i].op & lowering.FL_LIVE) == 0 || k == lowering.SO_LOAD || k == lowering.SO_ICHECK ||
+                k == lowering.SO_ELOAD || k == lowering.SO_EOFF || k == lowering.SO_VEXT || k == lowering.SO_SHAPE ||
+                k == lowering.SO_COPY_SHAPE || k == lowering.SO_REDUCE || k == lowering.SO_FLOAD ||
+                k == lowering.SO_FELOAD || k == lowering.SO_EFLOAD || k == lowering.SO_RETURN) {
+            continue;
+        }
+        if ((k == lowering.SO_STORE || (k == lowering.SO_ARG && sir[i].e == 8)) &&
+                slots[sir[i].a as I64].kind == lowering.SK_GLOBAL) {
+            return true;
+        }
+        if (array_node(k) && (names_array(slots, nslot, sir[i].a) || names_array(slots, nslot, sir[i].b) ||
+                names_array(slots, nslot, sir[i].c) || (k == lowering.SO_VSLICE && names_array(slots, nslot, sir[i].e)))) {
+            return true;
+        }
+        if (names_struct(sir, slots, nslot, i, k)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Whether a twin of the module is written (mark_spec).
+Bool spec_any(in lowering.SirFunc[_] funcs, in lowering.LState[_] ls) {
+    for k in 0..ls[0].nfunc {
+        if ((funcs[k].lean & LN_REACH) != 0 && (funcs[k].flags & lowering.FN_USED) != 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The macros of a module with twins: the state block without creating it (cint_rt_state's
+// test, with no record), and the bytes of a view argument (elements, origin, extent, stride)
+// with their copy to and from the snapshot buffer. Macros, so a module that leaves one unused
+// gets no warning.
+void spec_macros[b](inout emit.Writer[_] w, inout U8[b] dst) {
+    w_str(w, dst, "#include <string.h>");
+    nl(w, dst);
+    w_str(w, dst, "#ifndef cg_spec_state");
+    nl(w, dst);
+    w_str(w, dst, "#define cg_spec_state(h, d) ((h)->state != NULL && (d)->module < (h)->module_count && ");
+    w_str(w, dst, "(h)->state[(d)->module] != NULL ? (h)->state[(d)->module] : NULL)");
+    nl(w, dst);
+    w_str(w, dst, "#define cg_spec_n(n, s) ((n) <= 0 ? (size_t)0 : (size_t)((uint64_t)((n) - 1) * ");
+    w_str(w, dst, "(uint64_t)((s) < 0 ? -(s) : (s)) + 1u))");
+    nl(w, dst);
+    w_str(w, dst, "#define cg_spec_lo(o, n, s) ((s) < 0 && (n) > 0 ? (o) + ((n) - 1) * (s) : (o))");
+    nl(w, dst);
+    w_str(w, dst, "#define cg_spec_bytes(p, o, n, s) (cg_spec_n(n, s) * sizeof *(p))");
+    nl(w, dst);
+    w_str(w, dst, "#define cg_spec_save(v, z, p, o, n, s) (cg_spec_n(n, s) == 0u ? (z) : (memcpy((v) + (z), ");
+    w_str(w, dst, "(p) + cg_spec_lo(o, n, s), cg_spec_bytes(p, o, n, s)), (z) + cg_spec_bytes(p, o, n, s)))");
+    nl(w, dst);
+    w_str(w, dst, "#define cg_spec_load(v, z, p, o, n, s) (cg_spec_n(n, s) == 0u ? (z) : (memcpy((p) + ");
+    w_str(w, dst, "cg_spec_lo(o, n, s), (v) + (z), cg_spec_bytes(p, o, n, s)), (z) + cg_spec_bytes(p, o, n, s)))");
+    nl(w, dst);
+    w_str(w, dst, "#endif");
+    nl(w, dst);
+}
+
+// The twins' prototypes (defs false) or definitions (defs true), after the checked ones.
+void spec_twins[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in scan.Token[t] toks,
+        in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, in lowering.LState[_] ls,
+        in U8[_] pbytes, inout Out[_] o, in U8[_] lits, in limits.Decl[_] dt, Bool defs) {
+    if (o[0].spec != 1) {
+        return;
+    }
+    for fn in 0..ls[0].nfunc {
+        if ((funcs[fn].lean & LN_REACH) != 0 && (funcs[fn].flags & lowering.FN_USED) != 0) {
+            o[0].spec = 2;
+            if (defs) {
+                nl(w, dst);
+                c_func(w, dst, text, toks, sir, funcs, slots, pbytes, o, fn, lits, dt);
+            } else {
+                c_signature(w, dst, text, toks, funcs, slots, pbytes, o, fn);
+                emit.w_byte(w, dst, ';');
+                nl(w, dst);
+            }
+            o[0].spec = 1;
+        }
+    }
+}
+
+// The region before the checked call at root node i (note sections 2.2, 2.3, 4.2): the
+// snapshot of the module state (when the closure uses it) and of each view argument, in the
+// context's buffer; the call's charge and depth step in the twin form of 3.8; the twin; and
+// the commit when its flag is clear and the count is within the allowance, which jumps past
+// the checked call. Otherwise the snapshot goes back, every byte as it was at entry, and the
+// checked call runs from the entry state, charging once. A caller in the lean set keeps its
+// count and room in `fu` and `dr`, any other in the head.
+void spec_region[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in scan.Token[t] toks,
+        in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, in U8[_] pbytes,
+        in Out[_] o, I64 i) {
+    I64 fn = o[0].fn;
+    I64 a = sir[i].a as I64;
+    I64 nargs = sir[i].c as I64;
+    Bool st = (funcs[a].lean & LN_STATE) != 0;
+    w_str(w, dst, "    {{ cint_rt_head *sh = cint_rt_head_of(ctx); uint64_t sb = 0u; int64_t se = 0; size_t sz = 0u, so = 0u;");
+    nl(w, dst);
+    if (o[0].lean != 0) {
+        w_str(w, dst, "    int64_t su = fu, sr = dr;");
+    } else {
+        w_str(w, dst, "    int64_t su = sh->fuel_used, sr = sh->depth_limit - sh->depth;");
+    }
+    nl(w, dst);
+    w_str(w, dst, "    int64_t sc = sh->fuel_limit >= 0 ? sh->fuel_limit : INT64_MAX; unsigned char *sv = NULL; void *sp = ");
+    if (st) {
+        w_str(w, dst, "cg_spec_state(sh, &cg");
+        comp_path(w, dst, pbytes, o);
+        w_str(w, dst, "_state_desc); sz = sizeof(cg");
+        comp_path(w, dst, pbytes, o);
+        w_str(w, dst, "_state);");
+    } else {
+        w_str(w, dst, "sh;");
+    }
+    nl(w, dst);
+    for j in i - nargs..i {
+        if (sir[j].e == 1) {
+            w_str(w, dst, "    sz += cg_spec_bytes(");
+            c_view_arg(w, dst, text, toks, funcs, slots, fn, sir[j].a as I64);
+            w_str(w, dst, ");");
+            nl(w, dst);
+        }
+    }
+    w_str(w, dst, "    if (sh->faulted == 0u && sr > 0 && sc - su >= 1 && sp != NULL && ");
+    w_str(w, dst, "(sv = (unsigned char *)cint_rt_spec_buffer(ctx, sz)) != NULL) {{");
+    nl(w, dst);
+    for q in 0..2 {
+        if (q == 1) {
+            w_str(w, dst, "        se = ");
+            fn_symbol(w, dst, text, toks, funcs, pbytes, o, a);
+            w_str(w, dst, "_spec(ctx, sr - 1, su + 1, &sb");
+            call_args(w, dst, text, toks, sir, funcs, slots, o, i);
+            w_str(w, dst, ");");
+            nl(w, dst);
+            w_str(w, dst, "#if !defined(CINT_SPEC_FORCE_RERUN)");
+            nl(w, dst);
+            w_str(w, dst, "        if (sb == 0u && se <= sc) {{ ");
+            if (o[0].lean != 0) {
+                w_str(w, dst, "fu = se; goto ");
+            } else {
+                w_str(w, dst, "sh->fuel_used = se; goto ");
+            }
+            c_label(w, dst, o, i, 's');
+            w_str(w, dst, "; }}");
+            nl(w, dst);
+            w_str(w, dst, "#endif");
+            nl(w, dst);
+        }
+        // q 0: the snapshot; q 1: the restore, from the same offsets.
+        w_str(w, dst, "        so = 0u;");
+        if (st) {
+            if (q == 0) {
+                w_str(w, dst, " memcpy(sv, sp, sizeof(cg");
+            } else {
+                w_str(w, dst, " memcpy(sp, sv, sizeof(cg");
+            }
+            comp_path(w, dst, pbytes, o);
+            w_str(w, dst, "_state)); so = sizeof(cg");
+            comp_path(w, dst, pbytes, o);
+            w_str(w, dst, "_state);");
+        }
+        nl(w, dst);
+        for j in i - nargs..i {
+            if (sir[j].e == 1) {
+                if (q == 0) {
+                    w_str(w, dst, "        so = cg_spec_save(sv, so, ");
+                } else {
+                    w_str(w, dst, "        so = cg_spec_load(sv, so, ");
+                }
+                c_view_arg(w, dst, text, toks, funcs, slots, fn, sir[j].a as I64);
+                w_str(w, dst, ");");
+                nl(w, dst);
+            }
+        }
+    }
+    w_str(w, dst, "    }}");
+    nl(w, dst);
+    w_str(w, dst, "    (void)sz; (void)so; (void)se; (void)sv; (void)sb; }}");
+    nl(w, dst);
+}
+
+// Whether SO_BIN node i is written by its checked helper (c_node's last arm).
+Bool checked_bin(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in Out[_] o, I64 i) {
+    I32 op = sir[i].c;
+    I32 f = sir[i].f;
+    return op < lowering.B_AND && f != 3 && !((f == 1 && op != lowering.B_SHL) || f == 2) && !plain_shr(sir, o, i) &&
+        rem_form(sir, funcs, o, i) == 0;
+}
+
+// A twin's form of node i (note section 3). True when it wrote the node; false when it wrote
+// nothing, or a guard that leaves on every operand on which the checked statement that
+// follows would fault, so that statement writes no record: division and remainder (3.11),
+// `>>` and `<<%` (3.5b), and isqrt. Checked add, subtract, multiply, negation (3.1 to 3.4)
+// and narrowing (3.6) store the wrapped value and OR the flag; checked `<<` (3.5) leaves on
+// a count out of range and flags a shift that overflows; a fuel charge (3.9) and a call (3.8)
+// leave when the checked test fails, and a callee's flag returns at once. An index check
+// (3.7) leaves through c_fault, so no store or load sees an index outside its extent.
+Bool spec_form[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in scan.Token[t] toks,
+        in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, in U8[_] pbytes,
+        in Out[_] o, I64 i) {
+    I64 fn = o[0].fn;
+    I32 k = sir[i].op & lowering.OP_MASK;
+    I32 ty = sir[i].ty;
+    I64 a = sir[i].a as I64;
+    I64 bb = sir[i].b as I64;
+    if (k == lowering.SO_FUEL) {
+        if (o[0].cp < 0) {
+            w_str(w, dst, "    if (fcap - fu < ");
+            emit.w_i64(w, dst, sir[i].val);
+            w_str(w, dst, ") ");
+            spec_leave(w, dst);
+            nl(w, dst);
+            w_str(w, dst, "    fu += ");
+            emit.w_i64(w, dst, sir[i].val);
+            emit.w_byte(w, dst, ';');
+            nl(w, dst);
+        }
+        return true;
+    }
+    if (k == lowering.SO_CALL) {
+        w_str(w, dst, "    if (dr <= 0 || fcap - fu < 1) ");
+        spec_leave(w, dst);
+        nl(w, dst);
+        w_str(w, dst, "    fu = ");
+        fn_symbol(w, dst, text, toks, funcs, pbytes, o, a);
+        w_str(w, dst, "_spec(ctx, dr - 1, fu + 1, bad");
+        call_args(w, dst, text, toks, sir, funcs, slots, o, i);
+        w_str(w, dst, ");");
+        nl(w, dst);
+        w_str(w, dst, "    if (*bad != 0u) return fu;");
+        nl(w, dst);
+        return true;
+    }
+    if (k == lowering.SO_UN && sir[i].c == lowering.U_NEG) {
+        w_str(w, dst, "    bd |= (uint64_t)CINT_RT_OVF(sub, ");
+        ty_suffix(w, dst, ty);
+        w_str(w, dst, ")((");
+        c_type(w, dst, ty);
+        w_str(w, dst, ")0, ");
+        c_operand(w, dst, text, toks, sir, funcs, slots, fn, a);
+        w_str(w, dst, ", &t");
+        emit.w_i64(w, dst, sir[i].dst as I64);
+        w_str(w, dst, ");");
+        nl(w, dst);
+        return true;
+    }
+    if (k == lowering.SO_AS && sir[i].f != lowering.T_BOOL && !plain_as(sir, o, i) && sir[i].c < 1) {
+        I32 from = sir[i].f;
+        w_str(w, dst, "    bd |= (uint64_t)!cint_rt_fits(");
+        if (lowering.is_signed(from)) {
+            w_str(w, dst, "CINT_RT_BITS_S(");
+        } else {
+            w_str(w, dst, "CINT_RT_BITS_U(");
+        }
+        c_operand(w, dst, text, toks, sir, funcs, slots, fn, a);
+        if (lowering.is_signed(from)) {
+            w_str(w, dst, "), true, ");
+        } else {
+            w_str(w, dst, "), false, ");
+        }
+        tag_name(w, dst, ty);
+        w_str(w, dst, ");");
+        nl(w, dst);
+        w_str(w, dst, "    t");
+        emit.w_i64(w, dst, sir[i].dst as I64);
+        w_str(w, dst, " = cint_as_wrap_");
+        ty_suffix(w, dst, ty);
+        w_str(w, dst, "_from_");
+        ty_suffix(w, dst, from);
+        emit.w_byte(w, dst, '(');
+        c_operand(w, dst, text, toks, sir, funcs, slots, fn, a);
+        w_str(w, dst, ");");
+        nl(w, dst);
+        return true;
+    }
+    if (k == lowering.SO_BUILTIN && lowering.builtin_faults(sir, i) && lowering.is_signed(lowering.builtin_opty(sir, i))) {
+        // isqrt and its rounding form fault only on a negative operand (spec_alone).
+        w_str(w, dst, "    if (");
+        c_operand(w, dst, text, toks, sir, funcs, slots, fn, a);
+        w_str(w, dst, " < 0) ");
+        spec_leave(w, dst);
+        nl(w, dst);
+        return false;
+    }
+    if (k != lowering.SO_BIN || !checked_bin(sir, funcs, o, i)) {
+        return false;
+    }
+    I32 op = sir[i].c;
+    if (sir[i].f == 0 && (op == lowering.B_ADD || op == lowering.B_SUB || op == lowering.B_MUL)) {
+        w_str(w, dst, "    bd |= (uint64_t)CINT_RT_OVF(");
+        if (op == lowering.B_ADD) {
+            w_str(w, dst, "add, ");
+        } else if (op == lowering.B_SUB) {
+            w_str(w, dst, "sub, ");
+        } else {
+            w_str(w, dst, "mul, ");
+        }
+        ty_suffix(w, dst, ty);
+        w_str(w, dst, ")(");
+        c_operand(w, dst, text, toks, sir, funcs, slots, fn, a);
+        w_str(w, dst, ", ");
+        c_operand(w, dst, text, toks, sir, funcs, slots, fn, bb);
+        w_str(w, dst, ", &t");
+        emit.w_i64(w, dst, sir[i].dst as I64);
+        w_str(w, dst, ");");
+        nl(w, dst);
+        return true;
+    }
+    if (op == lowering.B_DIV || op == lowering.B_REM) {
+        // The quotient faults on 0 and, signed, on (MIN, -1); the remainder on 0 only (3.11).
+        w_str(w, dst, "    if (");
+        c_operand(w, dst, text, toks, sir, funcs, slots, fn, bb);
+        w_str(w, dst, " == 0");
+        if (op == lowering.B_DIV && lowering.is_signed(ty)) {
+            w_str(w, dst, " || (");
+            c_operand(w, dst, text, toks, sir, funcs, slots, fn, a);
+            w_str(w, dst, " == INT");
+            emit.w_i64(w, dst, fold.ty_width(ty as I64));
+            w_str(w, dst, "_MIN && ");
+            c_operand(w, dst, text, toks, sir, funcs, slots, fn, bb);
+            w_str(w, dst, " == -1)");
+        }
+        w_str(w, dst, ") ");
+        spec_leave(w, dst);
+        nl(w, dst);
+        return false;
+    }
+    // A shift: the helper's own count test (EMIT-10), and for `<<` its overflow test.
+    w_str(w, dst, "    {{ cint_count kq = cint_count_");
+    ty_suffix(w, dst, lowering.value_type(sir, funcs, slots, fn, bb));
+    emit.w_byte(w, dst, '(');
+    c_ref(w, dst, text, toks, sir, funcs, slots, fn, bb);
+    w_str(w, dst, "); if (kq.bits > ");
+    emit.w_i64(w, dst, fold.ty_width(ty as I64) - 1);
+    w_str(w, dst, "u");
+    if (op == lowering.B_SHL && sir[i].f == 0) {
+        w_str(w, dst, " || cint_rt_shl_ovf_");
+        ty_suffix(w, dst, ty);
+        emit.w_byte(w, dst, '(');
+        c_operand(w, dst, text, toks, sir, funcs, slots, fn, a);
+        w_str(w, dst, ", (unsigned)kq.bits, &t");
+        emit.w_i64(w, dst, sir[i].dst as I64);
+        w_str(w, dst, ")) ");
+        spec_leave(w, dst);
+        w_str(w, dst, " }}");
+        nl(w, dst);
+        return true;
+    }
+    w_str(w, dst, ") ");
+    spec_leave(w, dst);
+    w_str(w, dst, " }}");
+    nl(w, dst);
+    return false;
+}
+
 // Node i of a function body: a structure's label or jump, or the node's statement (c_node).
 // While c_func writes the copy of a counted loop (o's cp), the loop's own end label is the
 // original's (counted_loop).
@@ -7940,6 +8977,11 @@ void c_step[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
     I64 a = sir[i].a as I64;
     if (k == lowering.SO_LOOP && (flags & lowering.FL_HEAD) != 0) {
         c_label_line(w, dst, o, i, 'h');
+        if (o[0].spec == 2 && o[0].cp < 0) {
+            w_str(w, dst, "    if (bd != 0u) ");
+            spec_leave(w, dst);
+            nl(w, dst);
+        }
     } else if (k == lowering.SO_ARM_END) {
         if (live) {
             c_goto(w, dst, o, sir[i].b as I64, 'e');
@@ -7979,6 +9021,9 @@ void c_func[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
     o[0].fuel = 0;
     o[0].plain = plain_fn(sir, funcs, fn);
     o[0].lean = funcs[fn].lean;
+    if (o[0].spec == 2) {
+        o[0].lean = o[0].lean | LN_COUNTS | LN_ROOM;
+    }
     if ((o[0].lean & LN_COUNTS) != 0 || (o[0].lean == 0 && fuel_local(sir, funcs, fn))) {
         o[0].fuel = 1;
     }
@@ -7986,6 +9031,10 @@ void c_func[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
     nl(w, dst);
     w_str(w, dst, "{{");
     nl(w, dst);
+    if (o[0].spec == 2) {
+        w_str(w, dst, "    uint64_t bd = 0u;");
+        nl(w, dst);
+    }
     for i in first..last {
         if (sir[i].dst >= 0 && (sir[i].op & lowering.FL_LIVE) != 0) {
             w_str(w, dst, "    ");
@@ -8131,7 +9180,12 @@ void c_func[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
         comp_path(w, dst, pbytes, o);
         w_str(w, dst, "_state *const cg_st = (cg");
         comp_path(w, dst, pbytes, o);
-        w_str(w, dst, "_state *)cint_rt_state(ctx, &cg");
+        if (o[0].spec == 2) {
+            // A twin creates no block and writes no record (cg_spec_state).
+            w_str(w, dst, "_state *)cg_spec_state(cint_rt_head_of(ctx), &cg");
+        } else {
+            w_str(w, dst, "_state *)cint_rt_state(ctx, &cg");
+        }
         comp_path(w, dst, pbytes, o);
         w_str(w, dst, "_state_desc);");
         nl(w, dst);
@@ -8229,6 +9283,10 @@ void c_func[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
             w_str(w, dst, "    (void)dr;");
             nl(w, dst);
         }
+        if (o[0].spec == 2) {
+            w_str(w, dst, "    (void)fh;");
+            nl(w, dst);
+        }
         // The fuel count and the counter where a counted loop's copy begins (counted_exits).
         Bool counted = false;
         for i in first..last {
@@ -8270,7 +9328,7 @@ void c_func[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
                 I64 step = 1;
                 for j in i..e + 1 {
                     I32 kj = sir[j].op & lowering.OP_MASK;
-                    if ((sir[j].op & lowering.FL_LIVE) != 0 && kj != lowering.SO_FUEL &&
+                    if ((sir[j].op & lowering.FL_LIVE) != 0 && kj != lowering.SO_FUEL && o[0].spec != 2 &&
                             verify.exits_on_fault(sir, j) && !proven(sir, funcs, slots, o, j)) {
                         if (o[0].cp_late == 0) {
                             nf += 1;
@@ -8310,7 +9368,7 @@ void c_func[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
         }
         fuel_return(w, dst, o);
     }
-    if ((funcs[fn].flags & lowering.FN_FAULT) != 0 && exits > 0) {
+    if ((funcs[fn].flags & lowering.FN_FAULT) != 0 && exits > 0 && o[0].spec != 2) {
         w_str(w, dst, "fault:");
         nl(w, dst);
         fuel_flush(w, dst, o);
@@ -8628,7 +9686,11 @@ void counted_guard[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] te
         in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, in Out[_] o,
         I64 fn, I64 l) {
     I64 s = sir[l + 1].a as I64;
-    w_str(w, dst, "    if (!(fh->faulted == 0u && fu <= fcap && ");
+    if (o[0].spec == 2) {
+        w_str(w, dst, "    if (!(bd == 0u && fu <= fcap && ");
+    } else {
+        w_str(w, dst, "    if (!(fh->faulted == 0u && fu <= fcap && ");
+    }
     counted_bound(w, dst, text, toks, sir, funcs, slots, fn, l);
     w_str(w, dst, " > ");
     c_slot(w, dst, text, toks, funcs, slots, fn, s);
@@ -8736,6 +9798,9 @@ Bool proven(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.Si
     if (k == lowering.SO_BIN) {
         return rem_form(sir, funcs, o, i) != 0 || plain_shr(sir, o, i);
     }
+    if (k == lowering.SO_BUILTIN && sir[i].f as I64 == fold.BI_RSHR) {
+        return rshr_const(sir, i) >= 0;
+    }
     if (k == lowering.SO_AS) {
         return plain_as(sir, o, i);
     }
@@ -8778,7 +9843,7 @@ void eset_name[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, 
 
 // The name of the value that SK_EVAL slot v describes, qualified by its declaring set where
 // another member set declares the same name (SPEC-04 LS-97).
-void eset_value[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in scan.Token[t] toks,
+export void eset_value[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in scan.Token[t] toks,
         in lowering.SirSlot[_] slots, I64 v) {
     I64 q = slots[v].ty as I64;
     if (q == -3) {
@@ -9147,7 +10212,7 @@ export I64 catalog_count(in limits.Decl[_] d) {
     return nrecord;
 }
 
-I64 catalog_id(in PMod[_] pm, in limits.Decl[_] d, I64 row) {
+export I64 catalog_id(in PMod[_] pm, in limits.Decl[_] d, I64 row) {
     I64 order = pm[(d[row].module as I64) + 1].flags / 4;
     I64 nrecord = 0;
     for r in 1..d[0].a {
@@ -9350,7 +10415,7 @@ void c_catalog[b](inout emit.Writer[_] w, inout U8[b] dst, in U8[_] pbytes, in O
     nl(w, dst);
 }
 
-Bool public_view(in lowering.SirSlot[_] slots, I64 p) {
+export Bool public_view(in lowering.SirSlot[_] slots, I64 p) {
     return slots[p].kind == lowering.SK_VIEW || slots[p].kind == lowering.SK_SPARAM ||
         slots[p].kind == lowering.SK_SREF || slots[p].kind == lowering.SK_NVIEW;
 }
@@ -9363,7 +10428,7 @@ I32 public_elem(in lowering.SirSlot[_] slots, I64 p) {
 }
 
 // The N_PARAM node of parameter slot p of function or kernel fn (after its size parameters).
-I64 public_node(in parse.Node[_] nodes, in lowering.SirFunc[_] funcs, I64 fn, I64 p) {
+export I64 public_node(in parse.Node[_] nodes, in lowering.SirFunc[_] funcs, I64 fn, I64 p) {
     I64 x = nodes[funcs[fn].node as I64].b as I64;
     I64 j = p - (funcs[fn].pslot0 as I64);
     if ((funcs[fn].flags & lowering.FN_KERNEL) == 0) {
@@ -9391,7 +10456,7 @@ I64 public_dim_node(in parse.Node[_] nodes, I64 x, I64 d) {
 // literal n is n + 1, `_` VIEW_ANY, size parameter z VIEW_SIZE + z, and a struct view 2
 // (extent 1). A function's view of rank 2 to 4 reads its declaration, which lowering
 // admits for an export only in these forms (lowering.public_dims).
-I64 public_dim(in U8[_] text, in scan.Token[_] toks, in parse.Node[_] nodes, in lowering.SirFunc[_] funcs,
+export I64 public_dim(in U8[_] text, in scan.Token[_] toks, in parse.Node[_] nodes, in lowering.SirFunc[_] funcs,
         in lowering.SirSlot[_] slots, I64 fn, I64 p, I64 d) {
     I64[2] lit;
     if (slots[p].kind == lowering.SK_VIEW) { return lowering.array_extent(slots[p].ty); }
@@ -9409,7 +10474,7 @@ I64 public_dim(in U8[_] text, in scan.Token[_] toks, in parse.Node[_] nodes, in 
 
 // The first dimension, in parameter then dimension order, of the view parameters from
 // `first` whose extent code is c: res[0] the parameter slot, res[1] the dimension.
-void public_first(in U8[_] text, in scan.Token[_] toks, in parse.Node[_] nodes, in lowering.SirFunc[_] funcs,
+export void public_first(in U8[_] text, in scan.Token[_] toks, in parse.Node[_] nodes, in lowering.SirFunc[_] funcs,
         in lowering.SirSlot[_] slots, I64 fn, I64 first, I64 end, I64 c, inout I64[_] res) {
     res[0] = -1;
     res[1] = 0;
@@ -9429,10 +10494,12 @@ void public_first(in U8[_] text, in scan.Token[_] toks, in parse.Node[_] nodes, 
 // that field and the field's module holds its parent record. Restores both on
 // return, so flat declaration chains do not acquire a source-nesting limit. Uses
 // a field's zero mode/align bytes for the array cursor and restore them on return.
-I64 public_offsets[b](inout emit.Writer[_] w, inout U8[b] dst, inout limits.Decl[_] d,
-        I32 ty, I64 row, Bool write) {
+// The offsets are written by `form`: 0 none (the count only), 1 C (`3u`), 2 QBE data (`w 3`).
+export I64 public_offsets[b](inout emit.Writer[_] w, inout U8[b] dst, inout limits.Decl[_] d,
+        I32 ty, I64 row, I64 form) {
     if (ty == lowering.T_BOOL) {
-        if (write) { w_str(w, dst, "0u"); }
+        if (form == 1) { w_str(w, dst, "0u"); }
+        if (form == 2) { w_str(w, dst, "w 0"); }
         return 1;
     }
     if (ty < lowering.T_STRUCT) { return 0; }
@@ -9474,10 +10541,11 @@ I64 public_offsets[b](inout emit.Writer[_] w, inout U8[b] dst, inout limits.Decl
             continue;
         } else if (decl.row_tag(d, f) == 1) {
             for j in 0..decl.row_count(d, f) {
-                if (write) {
+                if (form > 0) {
                     if (nrecord > 0) { w_str(w, dst, ", "); }
+                    if (form == 2) { w_str(w, dst, "w "); }
                     emit.w_i64(w, dst, base + d[f].a + j);
-                    emit.w_byte(w, dst, 'u');
+                    if (form == 1) { emit.w_byte(w, dst, 'u'); }
                 }
                 nrecord += 1;
             }
@@ -9626,14 +10694,14 @@ void public_decls[b](inout emit.Writer[_] w, inout U8[b] dst, in U8[_] text, in 
             w_str(w, dst, " = {{0}};");
             nl(w, dst);
         }
-        I64 nb = public_offsets(w, dst, d, ty, row, false);
+        I64 nb = public_offsets(w, dst, d, ty, row, 0);
         if (nb > 0) {
             w_str(w, dst, "    static const uint32_t ");
             public_name(w, dst, text, toks, slots, p, 'b');
             emit.w_byte(w, dst, '[');
             emit.w_i64(w, dst, nb);
             w_str(w, dst, "] = {{");
-            _ = public_offsets(w, dst, d, ty, row, true);
+            _ = public_offsets(w, dst, d, ty, row, 1);
             w_str(w, dst, "}};");
             nl(w, dst);
         }
@@ -9657,7 +10725,7 @@ void public_binds[b](inout emit.Writer[_] w, inout U8[b] dst, in U8[_] text, in 
         I32 ty = public_elem(slots, p);
         I64 row = 0;
         if (ty >= lowering.T_STRUCT) { row = public_record(text, toks, funcs, slots, o, d, ty); }
-        I64 nb = public_offsets(w, dst, d, ty, row, false);
+        I64 nb = public_offsets(w, dst, d, ty, row, 0);
         w_str(w, dst, "        {{&");
         public_name(w, dst, text, toks, slots, p, 'p');
         w_str(w, dst, ", &");
@@ -10333,7 +11401,7 @@ void head_top[b](inout emit.Writer[_] w, inout U8[b] dst, Bool memory, Bool wide
 }
 
 // Whether the module uses a fixed-point type (box 15 unit 4e): a slot of one, an array or a
-// field of one, or a node of one.
+// field of one, or a node of one; or `rshr`, whose record rt/cint_fixed.h writes.
 Bool uses_q(in lowering.Sir[_] sir, in lowering.SirSlot[_] slots, in lowering.LState[_] ls) {
     for k in 0..ls[0].nslot {
         I32 sk = slots[k].kind;
@@ -10345,6 +11413,10 @@ Bool uses_q(in lowering.Sir[_] sir, in lowering.SirSlot[_] slots, in lowering.LS
     }
     for i in 0..ls[0].nsir {
         if (lowering.is_q(sir[i].ty) || q_node(sir, i)) {
+            return true;
+        }
+        if ((sir[i].op & lowering.OP_MASK) == lowering.SO_BUILTIN && sir[i].f as I64 == fold.BI_RSHR) {
+            // `rshr`'s fault record is written by cint_rt_rshr_fault (S-1 U-1).
             return true;
         }
     }
@@ -10561,6 +11633,9 @@ export void write_c[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] t
     if (o[0].gpu == 1) {
         c_ptx(w, dst, text, toks, sir, funcs, slots, ls, pbytes, o);
     }
+    if (o[0].spec == 1 && spec_any(funcs, ls)) {
+        spec_macros(w, dst);
+    }
     // Struct definitions, prototypes, then the functions an entry reaches (FN_USED).
     nl(w, dst);
     c_structs(w, dst, text, toks, funcs, slots, pbytes, o, ls, decls);
@@ -10575,6 +11650,7 @@ export void write_c[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] t
             nl(w, dst);
         }
     }
+    spec_twins(w, dst, text, toks, sir, funcs, slots, ls, pbytes, o, lits, decls, false);
     for fn in 0..ls[0].nfunc {
         if ((funcs[fn].flags & lowering.FN_USED) != 0 &&
                 (funcs[fn].flags & (lowering.FN_IMPORT | lowering.FN_EXTERN)) == 0) {
@@ -10582,6 +11658,7 @@ export void write_c[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] t
             c_func(w, dst, text, toks, sir, funcs, slots, pbytes, o, fn, lits, decls);
         }
     }
+    spec_twins(w, dst, text, toks, sir, funcs, slots, ls, pbytes, o, lits, decls, true);
 
     // Observer entries, public wrappers, and the program entry.
     I64 nth = 0;
@@ -10751,6 +11828,15 @@ void c_tests[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in
 // is -1 for two lowercase hexadecimal digits a byte, the form of an extern row of the SIR text
 // (sir_externs).
 void sig_b[b](inout emit.Writer[_] w, inout U8[b] dst, inout I64[_] st, I64 v) {
+    if (st[0] == -2) {
+        // QBE data items for back_qbe (qbe_signature): ` <v>`, counted in st[3]; the low byte,
+        // as the two hex digits below write it (a fixed-point type code is wider: compiler/OPEN.md
+        // cpu-qbe item 18).
+        emit.w_byte(w, dst, ' ');
+        emit.w_i64(w, dst, v & 255);
+        st[3] += 1;
+        return;
+    }
     if (st[0] < 0) {
         emit.w_hex(w, dst, v as U64, 2);
         return;
@@ -11378,9 +12464,27 @@ void w_sig_text[b, n](inout emit.Writer[_] w, inout U8[b] dst, inout I64[_] st, 
     }
 }
 
+// The type signature (SPEC-03 A-20) of export fn of module mi as QBE `b` data items, and its
+// byte count: back_qbe's reflection rows share this writer with the C rows (sig_b's st[0] -2).
+export I64 qbe_signature[b](inout emit.Writer[_] w, inout U8[b] dst, inout limits.Decl[_] d, in PMod[_] pm,
+        in U8[_] pbytes, in U8[_] text, in scan.Token[_] toks, in parse.Node[_] nodes,
+        in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 mi, I64 fn) {
+    Out[1] o;
+    out_of(o, pm, mi, pm[0].path_at);
+    I64[4] st;
+    st[0] = -2;
+    st[1] = 0;
+    st[2] = 0;
+    st[3] = 0;
+    I64 bk = decl.block_of(d, mi);
+    I64 row = table_row(text, toks, funcs, d, bk, fn, bk + 1);
+    sig_export(w, dst, st, d, pm, pbytes, text, toks, nodes, funcs, slots, o, fn, row);
+    return st[3];
+}
+
 // The function row of export fn, looked for from row `from` of the module's block on
 // (exports come in declaration order), else anywhere in the block.
-I64 table_row(in U8[_] text, in scan.Token[_] toks, in lowering.SirFunc[_] funcs, in limits.Decl[_] d,
+export I64 table_row(in U8[_] text, in scan.Token[_] toks, in lowering.SirFunc[_] funcs, in limits.Decl[_] d,
         I64 bk, I64 fn, I64 from) {
     I64 tk = funcs[fn].name as I64;
     I64 s = lowering.name_at(toks, tk);
@@ -11696,7 +12800,7 @@ void effect_name[b](inout emit.Writer[_] w, inout U8[b] dst, I32 flags) {
 
 // The index of extern row fn among the module's extern rows (lowering.FN_EXTERN), its row
 // in the module's host import table (c_host_table).
-I64 host_index(in lowering.SirFunc[_] funcs, I64 fn) {
+export I64 host_index(in lowering.SirFunc[_] funcs, I64 fn) {
     I64 k = 0;
     for j in 0..fn {
         if ((funcs[j].flags & lowering.FN_EXTERN) != 0) {
@@ -11710,7 +12814,7 @@ I64 host_index(in lowering.SirFunc[_] funcs, I64 fn) {
 // a local extern's in ntemp (lowering.declare_extern), an imported one's the values of its set's
 // copy, right before its parameters (lowering.declare_imports; I/O services lane U5), and 0 for
 // a result that is no error union.
-I64 host_errors(in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn) {
+export I64 host_errors(in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn) {
     if ((funcs[fn].flags & lowering.FN_IMPORT) == 0) {
         return funcs[fn].ntemp as I64;
     }
@@ -11772,34 +12876,10 @@ void c_host_table[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] tex
             if ((funcs[fn].flags & lowering.FN_EXTERN) == 0) {
                 continue;
             }
-            I64 tk = funcs[fn].name as I64;
-            I64 svc = -1;
-            I64 srow = -1;
-            if ((funcs[fn].flags & lowering.FN_IMPORT) == 0) {
-                svc = decl.service_attr(nodes, funcs[fn].node as I64);
-            } else {
-                srow = decl.service_row(d, funcs[fn].entry as I64);
-            }
             w_str(w, dst, "    {{{{\"");
-            I64 slen = 0;
-            if (svc >= 0) {
-                // A service extern's row is named `<service>.<name>`, the row of the runtime's
-                // standard service table (SPEC-03 A-10 as built; rt/OPEN.md RT-OQ-72).
-                I64 stk = nodes[nodes[svc].a as I64].tok as I64;
-                slen = (toks[stk].len as I64) - 1;
-                emit.w_bytes(w, dst, text, (toks[stk].start as I64) + 1, slen - 1);
-                emit.w_byte(w, dst, '.');
-            } else if (srow >= 0) {
-                // An imported service extern's, from its DK_SERVICE row (I/O services lane U5).
-                slen = (d[srow].name_len as I64) + 1;
-                for i in 0..slen - 1 {
-                    emit.w_byte(w, dst, d[srow + i / 32].name[i % 32]);
-                }
-                emit.w_byte(w, dst, '.');
-            }
-            tok_text(w, dst, text, toks, tk);
+            I64 hlen = host_name(w, dst, text, toks, nodes, funcs, d, fn);
             w_str(w, dst, "\", ");
-            emit.w_i64(w, dst, slen + lowering.name_len(toks, tk));
+            emit.w_i64(w, dst, hlen);
             w_str(w, dst, "u, 0u}}, ");
             effect_name(w, dst, funcs[fn].flags);
             w_str(w, dst, ", ");
@@ -11831,6 +12911,53 @@ void c_host_table[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] tex
         w_str(w, dst, "u, 0u, NULL}};");
     }
     nl(w, dst);
+}
+
+// The name of extern row fn in the host import table (c_host_table), and its byte count.
+export I64 host_name[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in scan.Token[t] toks,
+        in parse.Node[_] nodes, in lowering.SirFunc[_] funcs, in limits.Decl[_] d, I64 fn) {
+    I64 tk = funcs[fn].name as I64;
+    I64 svc = -1;
+    I64 srow = -1;
+    if ((funcs[fn].flags & lowering.FN_IMPORT) == 0) {
+        svc = decl.service_attr(nodes, funcs[fn].node as I64);
+    } else {
+        srow = decl.service_row(d, funcs[fn].entry as I64);
+    }
+    I64 slen = 0;
+    if (svc >= 0) {
+        // A service extern's row is named `<service>.<name>`, the row of the runtime's
+        // standard service table (SPEC-03 A-10 as built; rt/OPEN.md RT-OQ-72).
+        I64 stk = nodes[nodes[svc].a as I64].tok as I64;
+        slen = (toks[stk].len as I64) - 1;
+        emit.w_bytes(w, dst, text, (toks[stk].start as I64) + 1, slen - 1);
+        emit.w_byte(w, dst, '.');
+    } else if (srow >= 0) {
+        // An imported service extern's, from its DK_SERVICE row (I/O services lane U5).
+        slen = (d[srow].name_len as I64) + 1;
+        for i in 0..slen - 1 {
+            emit.w_byte(w, dst, d[srow + i / 32].name[i % 32]);
+        }
+        emit.w_byte(w, dst, '.');
+    }
+    tok_text(w, dst, text, toks, tk);
+    return slen + lowering.name_len(toks, tk);
+}
+
+// The canonical type signature of extern row fn of module mi, from its function row fr, as
+// QBE data (qbe_signature); its byte count.
+export I64 qbe_extern_signature[b](inout emit.Writer[_] w, inout U8[b] dst, inout limits.Decl[_] d, in PMod[_] pm,
+        in U8[_] pbytes, in U8[_] text, in scan.Token[_] toks, in parse.Node[_] nodes,
+        in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 mi, I64 fn, I64 fr) {
+    Out[1] o;
+    out_of(o, pm, mi, pm[0].path_at);
+    I64[4] st;
+    st[0] = -2;
+    st[1] = 0;
+    st[2] = 0;
+    st[3] = 0;
+    sig_export(w, dst, st, d, pm, pbytes, text, toks, nodes, funcs, slots, o, fn, fr);
+    return st[3];
 }
 
 // A call of an extern (I/O services lane U2; SPEC-03 A-15; rt/OPEN.md RT-OQ-70), SO_CALL
@@ -11962,7 +13089,7 @@ export Bool revision_ready(in PMod[_] pm) {
 }
 
 // Byte i of the name of declaration row `row`, through its continuation rows.
-U8 decl_byte(in limits.Decl[_] d, I64 row, I64 i) {
+export U8 decl_byte(in limits.Decl[_] d, I64 row, I64 i) {
     return d[row + i / 32].name[i % 32];
 }
 
@@ -12289,6 +13416,10 @@ void out_of(inout Out[_] o, in PMod[_] pm, I64 mi, I64 nmod) {
     o[0].cp_end = -1;
     o[0].cp_late = 0;
     o[0].plain = 0;
+    o[0].spec = 0;
+    if (pm[0].nsites == 1) {
+        o[0].spec = 1;
+    }
     if (mi < nmod) {
         o[0].path_at = pm[mi + 1].path_at;
         o[0].path_len = pm[mi + 1].path_len;

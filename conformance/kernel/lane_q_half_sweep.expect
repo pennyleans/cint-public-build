@@ -1,0 +1,9 @@
+case kernel/lane_q_half_sweep
+clause SPEC-02 K-1, K-12; SPEC-01 IM-190, IM-192, IM-60, IM-113 (the first half-sweep of fixed/lane_q_sweep_q5_11 as a kernel, one work-item a cell: its plane digest equals the sequential case's `half` line)
+format 5
+source reference
+outcome value
+stdout-bytes 26
+stdout-sha256 83fe45ed9c8b81e69e102eefa9eb38658203a647de012e716c716f39699e9b1c
+return I64 -8671614381695293684
+fuel-consumed 390

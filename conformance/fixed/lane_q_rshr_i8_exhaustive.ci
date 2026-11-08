@@ -1,0 +1,37 @@
+// case: fixed/lane_q_rshr_i8_exhaustive
+// clause: SPEC-01 IM-192 (`rshr` on every I8 value and every count 0 to 7, a runtime count through a parameter, 0 included, and again with constant counts; round(A / 2^k, half_up))
+// subset: cint-core-1 (fixed point, lane Q)
+// entry: run; args: none
+// spec outcome: value I64 688235502011404928; prints `688235502011404928` three times (runtime count on I8, runtime I32 count on Q1.7, constant counts), equal to Python's round(a / 2^k, half_up) digest. S-1 U-1
+
+I8 shift(I8 a, I64 k) {
+    return rshr(a, k);
+}
+
+Q1.7 shift_q(Q1.7 a, I32 k) {
+    return rshr(a, k);
+}
+
+export I64 run() {
+    I64 dr = 0;
+    I64 dq = 0;
+    I64 dc = 0;
+    for i in 0..256 {
+        I8 a = (i - 128) as I8;
+        Q1.7 qa = Q1.7.raw(a);
+        for k in 0..8 {
+            dr = dr *% 1000003 +% (shift(a, k) as I64);
+            dq = dq *% 1000003 +% (shift_q(qa, k as I32).raw as I64);
+        }
+        dc = dc *% 1000003 +% (rshr(a, 0) as I64);
+        dc = dc *% 1000003 +% (rshr(a, 1) as I64);
+        dc = dc *% 1000003 +% (rshr(a, 2) as I64);
+        dc = dc *% 1000003 +% (rshr(a, 3) as I64);
+        dc = dc *% 1000003 +% (rshr(a, 4) as I64);
+        dc = dc *% 1000003 +% (rshr(a, 5) as I64);
+        dc = dc *% 1000003 +% (rshr(a, 6) as I64);
+        dc = dc *% 1000003 +% (rshr(a, 7) as I64);
+    }
+    "{dr} {dq} {dc}\n";
+    return dr;
+}

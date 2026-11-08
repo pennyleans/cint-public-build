@@ -1,0 +1,13 @@
+// case: module/import_errunion_catch
+// clause: SPEC-04 LS-92 to LS-97, LS-119, LS-226 to LS-228; SPEC-09 CINTC-16
+// subset: cint-core-1 (a call of an imported function whose result is an error union of the imported module's set, with `catch`)
+// entry: run; args: none
+
+import module.lib.errunion_lib;
+
+export I64 run() {
+    I64 a = errunion_lib.checked_half(10) catch -1;
+    I64 b = errunion_lib.checked_half(-4) catch -2;
+    I64 c = errunion_lib.checked_half(500) catch -3;
+    return a * 100 + b * 10 + c;
+}

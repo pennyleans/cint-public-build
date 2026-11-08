@@ -1,0 +1,15 @@
+// Helper module of module/import_grants_arg and import_grants_service (not a case). Functions
+// that take the program's `Grants` handle from a function of another module.
+
+import console;
+
+export I64 take(Grants g, I64 x) {
+    return x + 1;
+}
+
+export I64 say(Grants g, in U8[] bytes) {
+    console.write(g, bytes) catch (e) {
+        return -1;
+    };
+    return 0;
+}

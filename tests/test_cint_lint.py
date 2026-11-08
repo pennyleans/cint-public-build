@@ -33,6 +33,9 @@ class CintLint(unittest.TestCase):
             "rt/cint_fs.c": "\n",
             "rt/cint_console.c": "\n",
             "rt/cint_program.c": "\n",
+            "rt/cint_qbe.c": "\n",
+            "rt/cint_qbe_wide.c": "\n",
+            "rt/cint_qbe_fixed.c": "\n",
             "rt/cint_state_internal.h": "\n",
             "rt/cint_mem.c": "\n",
             "rt/cint_mem.h": "\n",
@@ -46,6 +49,7 @@ class CintLint(unittest.TestCase):
             "cli/cint_receipt.c": "int receipt;\n",
             "cli/cint_discover.c": "int discover;\n",
             "cli/cint_cache.c": "int cache;\n",
+            "cli/cint_diag.c": "int diag;\n",
             "cli/cint_proc.h": "int cli_process(void);\n",
             "interp/sir_read.c": "int sir;\n",
             "workbench/wb.h": "int wb(void);\n",
@@ -125,7 +129,7 @@ class CintLint(unittest.TestCase):
         self.write("cli/tests/helper.c", "\n" * 3000)
         code, out = self.run_lint()
         self.assertEqual(code, 0, out)
-        self.assertIn("PASS size cint CLI (cli/*.c except cli/cint_receipt.c, cli/cint_discover.c and cli/cint_cache.c): 1,500 lines "
+        self.assertIn("PASS size cint CLI (cli/*.c except cli/cint_receipt.c, cli/cint_discover.c, cli/cint_cache.c and cli/cint_diag.c): 1,500 lines "
                       "(target 1,500, ceiling 2,500)", out)
         self.assertIn("INFO size cli headers (cli/*.h): 9,000 lines", out)
         self.write("cli/cint_proc_posix.c", "\n" * 301)
@@ -139,7 +143,7 @@ class CintLint(unittest.TestCase):
         self.write("cli/cint_receipt.c", "\n" * 400)
         code, out = self.run_lint()
         self.assertEqual(code, 0, out)
-        self.assertIn("PASS size cint CLI (cli/*.c except cli/cint_receipt.c, cli/cint_discover.c and cli/cint_cache.c): 1,500 lines", out)
+        self.assertIn("PASS size cint CLI (cli/*.c except cli/cint_receipt.c, cli/cint_discover.c, cli/cint_cache.c and cli/cint_diag.c): 1,500 lines", out)
         self.assertIn("PASS size cint CLI receipts (cli/cint_receipt.c): 400 lines (target 400, ceiling 600)", out)
         self.write("cli/cint_receipt.c", "\n" * 401)
         code, out = self.run_lint()
@@ -164,8 +168,8 @@ class CintLint(unittest.TestCase):
         code, out = self.run_lint()
         self.assertEqual(code, 0, out)
         self.assertIn("PASS size cint_wide (rt/cint_wide.c, rt/cint_wide.h): 2,000 lines (target 2,000, "
-                      "ceiling 3,000)", out)
-        self.assertRefused("rt/cint_wide.c", "\n" * 2501, "FAIL size cint_wide")
+                      "ceiling 3,100)", out)
+        self.assertRefused("rt/cint_wide.c", "\n" * 2601, "FAIL size cint_wide")
 
     def test_fixed_runtime_has_its_own_row(self):
         # Box 15 default BX15-15: rt/cint_fixed.h with its record writer rt/cint_fixed.c;

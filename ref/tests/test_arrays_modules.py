@@ -332,6 +332,16 @@ class Modules(unittest.TestCase):
         o = self.main("import m.lib.geo;\nexport I64 run() {\n    return geo.nothing();\n}\n")
         self.assertEqual(o.diagnostic.code, "C3005")
 
+    def test_keyword_path_segments(self):
+        """OQ-326 A (SPEC-04I.19 LS-225): a keyword spells any segment but the last."""
+        self.write("m/kernel/out/adder.ci", "export I64 two() { return 2; }\n")
+        o = self.main("import m.kernel.out.adder;\nexport I64 run() { return adder.two(); }\n")
+        self.assertEqual((o.kind, o.value.value), ("value", 2), o.diagnostic)
+        o = self.main("import m.kernel;\nexport I64 run() { return 0; }\n")
+        self.assertEqual((o.diagnostic.code, str(o.diagnostic.position)), ("C1050", "m/main.ci:1:10"))
+        o = self.main("import m.kernel.{f};\nexport I64 run() { return 0; }\n")
+        self.assertEqual((o.diagnostic.code, str(o.diagnostic.position)), ("C1050", "m/main.ci:1:10"))
+
     def test_load_errors_and_cycles(self):
         o = self.main("import m.nothere;\nexport I64 run() { return 0; }\n")
         self.assertEqual((o.diagnostic.code, str(o.diagnostic.position)), ("C3009", "m/main.ci:1:8"))

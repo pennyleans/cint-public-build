@@ -162,6 +162,8 @@ enum { BO_ADD, BO_SUB, BO_MUL, BO_DIV, BO_REM, BO_SHL, BO_SHR, BO_AND, BO_OR, BO
 enum { FM_CHECKED, FM_WRAP, FM_SAT, FM_RESULT, FM_RAW };
 /* The fixed-point built-ins of box 15, numbered after rotr (16) of cint_rt.h section 13. */
 enum { BI_SQRT = 17, BI_QMUL, BI_MUL_INT };
+/* The lane Q built-ins (SPEC-01 IM-190 to IM-192; S-1 U-1), compiler/fold.ci's numbers. */
+enum { BI_HADD = 30, BI_RHADD, BI_RMULH, BI_RSHR };
 /* OP_CMP sub-operations. */
 enum { CM_EQ, CM_NE, CM_LT, CM_LE, CM_GT, CM_GE };
 

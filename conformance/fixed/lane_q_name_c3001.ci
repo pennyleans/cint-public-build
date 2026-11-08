@@ -1,0 +1,13 @@
+// case: fixed/lane_q_name_c3001
+// clause: SPEC-04 LS-329, LS-22, LS-112, 17.2 (`rhadd` is a prelude name; a function of that name is C3001)
+// subset: cint-core-1 (fixed point, lane Q)
+// entry: run; args: none
+// spec outcome: compile-error C3001 at 7:7 (the name)
+
+Q5.11 rhadd(Q5.11 a, Q5.11 b) {
+    return a;
+}
+
+export I64 run() {
+    return 0;
+}

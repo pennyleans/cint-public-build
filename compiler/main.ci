@@ -75,6 +75,7 @@ import fold;
 import resolve;
 import check;
 import decl;
+import back_qbe;
 
 // Record ids of the cm record table of this program (the seed's numbering).
 const U32 R_DECL = 3;
@@ -755,6 +756,10 @@ export I64 compile[n, p, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, 
     }
     // Which functions take the lean call (OQ-320).
     back_c.mark_lean(sir, funcs, ls);
+    // The speculation set and its regions, in a cpu-c17-spec build only (SPEC-09 BACK-17).
+    if (pm[0].nsites == 1) {
+        back_c.mark_spec(sir, funcs, slots, ls);
+    }
     pm[mi + 1].nobs = nobs;
     if (ls[0].entry >= 0) {
         // 2 when `main` takes the program arguments (lowering.FN_ARGS; OQ-306), so that the
@@ -791,8 +796,25 @@ export I64 measure[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a
     for j in 0..k {
         output_bytes[j] = 0;
         if (j < limits.OUTPUTS) {
-            I64 bytes = back_c.measure_output(module_index, j, pm, pbytes, text, toks, nodes, sir, funcs, slots, ls, decls, nmod,
-                lits);
+            I64 bytes = 0;
+            if (pm[0].nsites == 2 && j == 0) {
+                I64[2] why;
+                why[0] = back_qbe.CAP_ENTRY;
+                why[1] = 0;
+                if (module_index < nmod &&
+                        back_qbe.check_qbe(text, toks, sir, funcs, slots, ls, decls, pbytes, pm, module_index, why) != 0) {
+                    I64 tk = 0;
+                    if (ls[0].nsir > 0) { tk = sir[why[1]].tok as I64; }
+                    _ = limits.diag_add(diag, 10, module_index, toks[tk].line as I64,
+                        toks[tk].col as I64, why[0], why[1]);
+                    return 2;
+                }
+                bytes = back_qbe.measure_output(module_index == nmod, text, toks, nodes, sir, funcs, slots, decls, ls, pbytes,
+                    pm, module_index, a1 - back_c.REV_BYTES + back_c.REV_DIGEST, lits);
+            } else {
+                bytes = back_c.measure_output(module_index, j, pm, pbytes, text, toks, nodes, sir, funcs, slots, ls, decls, nmod,
+                    lits);
+            }
             if (bytes < 0) {
                 _ = limits.limit_diag(diag, module_index, 1, 1, limits.LIM_OUTPUT, limits.OUTPUT_BYTES_MAX);
                 return 1;
@@ -824,8 +846,14 @@ export I64 emit[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14,
         }
         return 0;
     }
-    I64 wrote = back_c.emit_output(module_index, output_index, output, pm, pbytes, text, toks, nodes, sir, funcs, slots, ls, decls,
-        a0 - 1, lits);
+    I64 wrote = -1;
+    if (pm[0].nsites == 2 && output_index == 0) {
+        wrote = back_qbe.emit_output(module_index == a0 - 1, output, text, toks, nodes, sir, funcs, slots, decls, ls, pbytes,
+            pm, module_index, a1 - back_c.REV_BYTES + back_c.REV_DIGEST, lits);
+    } else {
+        wrote = back_c.emit_output(module_index, output_index, output, pm, pbytes, text, toks, nodes, sir, funcs, slots, ls, decls,
+            a0 - 1, lits);
+    }
     if (wrote >= 0) {
         internal(wrote);
     }

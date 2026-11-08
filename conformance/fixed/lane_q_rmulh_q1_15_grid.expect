@@ -1,0 +1,9 @@
+case fixed/lane_q_rmulh_q1_15_grid
+clause SPEC-01 IM-191 (`rmulh` on Q1.15 by Q1.15 and on Q5.11 by Q1.15 over every raw value whose low byte is 0x00, 0x01, 0x7F, 0x80 or 0xFF crossed with 64 fixed coefficients; one running digest each; the corner -1.0 by -1.0 printed alone)
+format 5
+source reference
+outcome value
+stdout-bytes 46
+stdout-sha256 f6543e5c4eab787fda9233af50a9f3044d4f70e696ffa6a36f38ece36555f898
+return I64 4589454567295672079
+fuel-consumed 83521

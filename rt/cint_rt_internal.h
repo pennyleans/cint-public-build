@@ -105,6 +105,8 @@ struct cint_ctx {
     uint32_t buffer_cap;
     uint32_t buffer_used;
     uint64_t last_lease;
+    uint8_t *spec_buf;   /* the snapshot of a speculation region (cint_rt_spec_buffer) */
+    size_t spec_cap;
     uint8_t *print_buf;  /* staging of the open print statement */
     size_t print_cap;
     size_t print_len;

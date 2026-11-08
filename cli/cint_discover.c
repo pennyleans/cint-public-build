@@ -118,6 +118,28 @@ static void place(int m)
     g.order[g.norder++] = g.mods[m].rel;
 }
 
+/* `cint emit-c` (issue #511): a project module that a listed module imports and the list leaves
+ * out goes before the first listed module that needs it, its own imports first; the listed
+ * modules keep their order, and a standard library module (where 2) is placed by the caller. */
+static void place_unlisted(int m, const char **out, int *n)
+{
+    if (g.mods[m].mark != 0 || g.mods[m].src == NULL || g.mods[m].where == 2) return;
+    g.mods[m].mark = 1;
+    for (int k = 0; k < g.mods[m].ndeps; k++) place_unlisted(g.mods[m].deps[k], out, n);
+    out[(*n)++] = g.mods[m].rel;
+}
+
+/* Appends the project modules of emit-c in build order to out (listed: the indexes of the
+ * modules named on the command line, in order). */
+void emit_order(const int *listed, int nlisted, const char **out, int *n)
+{
+    for (int i = 0; i < nlisted; i++) g.mods[listed[i]].mark = 2;
+    for (int i = 0; i < nlisted; i++) {
+        for (int k = 0; k < g.mods[listed[i]].ndeps; k++) place_unlisted(g.mods[listed[i]].deps[k], out, n);
+        out[(*n)++] = g.mods[listed[i]].rel;
+    }
+}
+
 /* The root module and, breadth first, every module its imports name. 1: the root is
  * unreadable; -1: a module cannot be recorded. */
 int discover(cint_bridge_root *root)

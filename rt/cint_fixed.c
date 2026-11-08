@@ -279,6 +279,24 @@ bool cint_rt_fixed_fault(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t mo
     return fq_operate(ctx, site, op, CINT_Q_CHECKED, mode, ta, tb, tr, &a, tb != 0u ? &b : NULL, &r, true);
 }
 
+bool cint_rt_rshr_fault(cint_ctx *ctx, cint_site site, uint32_t t, uint64_t a, cint_count k)
+{
+    cint_fault_record *rec;
+    char buf[16];
+    unsigned w = cint_rt_tag_width(t);
+    if (!fq_type_ok(t) || !count_ok(k) || k.bits <= (uint64_t)(w - 1u)) return fault_refused(ctx, site);
+    rec = cint_rt_record_begin(ctx, site, (uint16_t)CINT_E_SHIFT);
+    if (rec == NULL) return false;
+    cint_rt_record_op(rec, "rshr");
+    cint_rt_record_op(rec, "checked");
+    cint_rt_record_op(rec, fq_ident(t, buf));
+    cint_rt_record_op(rec, "half_up");
+    fq_tvalue(&rec->operands[rec->operand_count++], t, a);
+    count_operand(rec, k);
+    record_limit_i64(rec, (int64_t)(w - 1u));
+    return false;
+}
+
 bool cint_rt_q_limbs(cint_ctx *ctx, cint_site site, uint32_t op, uint32_t form, uint32_t mode, uint32_t ta, uint32_t tb,
                      uint32_t tr, const void *a, const void *b, void *out)
 {

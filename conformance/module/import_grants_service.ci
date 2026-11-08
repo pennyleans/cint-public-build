@@ -1,0 +1,11 @@
+// case: module/import_grants_service
+// clause: SPEC-04 LS-119, LS-221, LS-323 to LS-328; SPEC-07 SEC-CAP-1, SEC-CAP-13, SEC-OS-1
+// subset: cint-core-1 (a function of another module calls a service extern with the `Grants` handle `main` passes it)
+// spec outcome: value void, stdout `hi\n0\n`: console output needs no capability (SPEC-07 8.2)
+
+import module.lib.grants_lib;
+
+export void main(Grants g) {
+    I64 r = grants_lib.say(g, "hi\n");
+    "{r}\n";
+}

@@ -1,0 +1,32 @@
+// case: kernel/lane_q_i16_halving
+// clause: SPEC-02 K-1, K-12; SPEC-01 IM-190, IM-192, IM-60, IM-113 (the lane Q built-ins on an integer I16 plane in a kernel, one work-item a cell, with no fixed-point type: on gpu-cuda the refusal is BACK-05 capability `builtin`, not `fixed`)
+// subset: cint-core-1 (lane Q, kernel)
+// entry: run; args: none
+// spec outcome: value I64 -5136379026043430153; prints `digest -5136379026043430153` with a line feed. S-1 U-1
+
+kernel lanes[n](in I16[n] a, in I16[n] b, out I16[n] q) over [i: n] {
+    q[i] = hadd(rhadd(a[i], b[i]), hadd(a[i], b[i])) +| rshr(b[i], 2);
+}
+
+export I64 run() {
+    I16[64] a;
+    I16[64] b;
+    I16[64] q;
+    I64 s = 338;
+    for i in 0..64 {
+        s = s *% 6364136223846793005 +% 1442695040888963407;
+        a[i] = (s >> 48) as I16;
+        b[i] = (s >> 32) as% I16;
+    }
+    a[0] = 32767;
+    b[0] = 32767;
+    a[1] = -32768;
+    b[1] = -32768;
+    lanes(a, b, q);
+    I64 acc = 0;
+    for i in 0..64 {
+        acc = acc *% 1000003 +% (q[i] as I64);
+    }
+    "digest {acc}\n";
+    return acc;
+}

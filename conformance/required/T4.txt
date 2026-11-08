@@ -15,7 +15,9 @@
 # rows of the 28 of those cases B1 compiles and cpu-sir-interp runs; amended 2026-10-22
 # (OQ-307 A): the 18 rows of the 9 cases of byte strings and `equal`, and the 2 rows of
 # boot/refuse_byte_string, compared now that its cintc expectation is frozen; amended
-# 2026-10-24 (OQ-315 A): the 4 rows of the 2 cases of the `catch` statement.
+# 2026-10-24 (OQ-315 A): the 4 rows of the 2 cases of the `catch` statement; amended
+# 2026-11-04 (OQ-338, Proposed; S-1 U-1): the 36 rows of the 18 cases of the lane Q
+# operations.
 # Required case list of stage T4 (SPEC-09 CONF-15, and CONF-15 for T4; box 13 note section 9,
 # unit 10). One line per case and executor: <case> <compiler> <category> [<detail>], where the
 # detail is the limit identifier of an unsupported case or the Open item of a held case, and
@@ -120,6 +122,8 @@
 # category. Each executor: 1046 compared, 11 held, 67 not_applicable, 0 unsupported.
 # 2026-11-01 (CINTC-OQ-74): 14 rows for the 7 conformance/module/extent_ cases of constant
 # extents, compared by both executors. No other row changes.
+# 2026-11-02 (OQ-325 A; CINTC-OQ-79): 10 rows for the 5 conformance/module/ cases of
+# cross-module calls, compared by both executors. No other row changes.
 anchors/abs.checked.i64.001 cintc compared
 anchors/abs.checked.i64.001 cintc/cpu-sir-interp compared
 anchors/abs.checked.i64.002 cintc compared
@@ -1286,6 +1290,38 @@ fixed/kernel_scale_reduce cintc compared
 fixed/kernel_scale_reduce cintc/cpu-sir-interp compared
 fixed/kernel_scale_reduce_q80_48 cintc compared
 fixed/kernel_scale_reduce_q80_48 cintc/cpu-sir-interp compared
+fixed/lane_q_hadd_c2001 cintc compared
+fixed/lane_q_hadd_c2001 cintc/cpu-sir-interp compared
+fixed/lane_q_hadd_i8_exhaustive cintc compared
+fixed/lane_q_hadd_i8_exhaustive cintc/cpu-sir-interp compared
+fixed/lane_q_hadd_q64_64_c2103 cintc compared
+fixed/lane_q_hadd_q64_64_c2103 cintc/cpu-sir-interp compared
+fixed/lane_q_i16_grid cintc compared
+fixed/lane_q_i16_grid cintc/cpu-sir-interp compared
+fixed/lane_q_i32_corners cintc compared
+fixed/lane_q_i32_corners cintc/cpu-sir-interp compared
+fixed/lane_q_i64_corners cintc compared
+fixed/lane_q_i64_corners cintc/cpu-sir-interp compared
+fixed/lane_q_name_c3001 cintc compared
+fixed/lane_q_name_c3001 cintc/cpu-sir-interp compared
+fixed/lane_q_rmulh_c2103 cintc compared
+fixed/lane_q_rmulh_c2103 cintc/cpu-sir-interp compared
+fixed/lane_q_rmulh_coefficient_c2001 cintc compared
+fixed/lane_q_rmulh_coefficient_c2001 cintc/cpu-sir-interp compared
+fixed/lane_q_rmulh_q1_15_grid cintc compared
+fixed/lane_q_rmulh_q1_15_grid cintc/cpu-sir-interp compared
+fixed/lane_q_rshr_i8_exhaustive cintc compared
+fixed/lane_q_rshr_i8_exhaustive cintc/cpu-sir-interp compared
+fixed/lane_q_rshr_shift_fault cintc compared
+fixed/lane_q_rshr_shift_fault cintc/cpu-sir-interp compared
+fixed/lane_q_spec_examples cintc compared
+fixed/lane_q_spec_examples cintc/cpu-sir-interp compared
+fixed/lane_q_sticky_flag cintc compared
+fixed/lane_q_sticky_flag cintc/cpu-sir-interp compared
+fixed/lane_q_sweep_q5_11 cintc compared
+fixed/lane_q_sweep_q5_11 cintc/cpu-sir-interp compared
+fixed/lane_q_unsigned_corners cintc compared
+fixed/lane_q_unsigned_corners cintc/cpu-sir-interp compared
 fixed/literal_grid_q16_16 cintc compared
 fixed/literal_grid_q16_16 cintc/cpu-sir-interp compared
 fixed/literal_grid_q80_48 cintc compared
@@ -1428,12 +1464,18 @@ kernel/heat_sum_i32_epilogue cintc compared
 kernel/heat_sum_i32_epilogue cintc/cpu-sir-interp compared
 kernel/inout_copy_in_copy_out cintc compared
 kernel/inout_copy_in_copy_out cintc/cpu-sir-interp compared
+kernel/lane_q_half_sweep cintc compared
+kernel/lane_q_half_sweep cintc/cpu-sir-interp compared
+kernel/lane_q_i16_halving cintc compared
+kernel/lane_q_i16_halving cintc/cpu-sir-interp compared
 kernel/min_no_contributions cintc compared
 kernel/min_no_contributions cintc/cpu-sir-interp compared
 kernel/scale_over_2d cintc compared
 kernel/scale_over_2d cintc/cpu-sir-interp compared
 kernel/shape_two_pass cintc compared
 kernel/shape_two_pass cintc/cpu-sir-interp compared
+kernel/sum_bound_plain_add cintc compared
+kernel/sum_bound_plain_add cintc/cpu-sir-interp compared
 kernel/total_checked_fold cintc compared
 kernel/total_checked_fold cintc/cpu-sir-interp compared
 kernel/total_empty cintc compared
@@ -1572,6 +1614,16 @@ module/fold_after_dependency_c3009 cintc compared
 module/fold_after_dependency_c3009 cintc/cpu-sir-interp compared
 module/import_cycle_c3003 cintc compared
 module/import_cycle_c3003 cintc/cpu-sir-interp compared
+module/import_errunion_catch cintc compared
+module/import_errunion_catch cintc/cpu-sir-interp compared
+module/import_errunion_try cintc compared
+module/import_errunion_try cintc/cpu-sir-interp compared
+module/import_errunion_void cintc compared
+module/import_errunion_void cintc/cpu-sir-interp compared
+module/import_grants_arg cintc compared
+module/import_grants_arg cintc/cpu-sir-interp compared
+module/import_grants_service cintc compared
+module/import_grants_service cintc/cpu-sir-interp compared
 module/import_plain cintc compared
 module/import_plain cintc/cpu-sir-interp compared
 module/import_private_c3008 cintc compared

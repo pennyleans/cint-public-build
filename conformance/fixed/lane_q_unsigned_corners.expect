@@ -1,0 +1,9 @@
+case fixed/lane_q_unsigned_corners
+clause SPEC-01 IM-190, IM-192 (`hadd`, `rhadd` and `rshr` on U8, U16 and U32 over 0, 1, 2, MAX / 2, MAX / 2 + 1, MAX - 1 and MAX, every pair printed, `rshr` at every runtime count)
+format 5
+source reference
+outcome value
+stdout-bytes 11684
+stdout-sha256 04ff3425502026096059c2aa4c4b73965a6f7602c0897b9aa9649dec670dd197
+return I64 -1094597377155752751
+fuel-consumed 841

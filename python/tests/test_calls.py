@@ -20,7 +20,6 @@ import shutil
 import sys
 import tempfile
 import threading
-import time
 import unittest
 
 import cint
@@ -512,32 +511,63 @@ class Fuel(unittest.TestCase):
         self.assertEqual(ctx.spin(10_000), 10_000)
 
 
+# cint_output_fn (rt/cint_rt_host.h): the hook a context hands each print statement's bytes.
+OUTPUT_FN = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t)
+
+
 class Threads(unittest.TestCase):
     """One entry per context (A-11): Busy, and the GIL released during a call (BX10-08)."""
 
     def test_busy(self):
+        # The entry is held by a barrier, not by a long loop: say() prints, and the context's output
+        # hook blocks until the test releases it, so the entry is provably running when the second
+        # call is made, on any machine (#473). The bridge takes no host functions yet (A-10), so the
+        # hook goes in through the runtime's config for this one context.
         mod = calls()
-        ctx = mod.context(fuel=None)
+        entered, release = threading.Event(), threading.Event()
+
+        @OUTPUT_FN
+        def hold(user, data, length):
+            entered.set()
+            release.wait(120)
+            return 0
+
+        rt = mod._runtime
+        plain = rt.config
+
+        def with_hold(*args):
+            c = plain(*args)
+            c.output = ctypes.cast(hold, ctypes.c_void_p)
+            return c
+
+        rt.config = with_hold
+        try:
+            ctx = mod.context(fuel=None)
+        finally:
+            del rt.config
         done = []
-        t = threading.Thread(target=lambda: done.append(ctx.spin(60_000_000)))
+        t = threading.Thread(target=lambda: done.append(ctx.say(7)))
         t.start()
         try:
-            deadline = time.monotonic() + 30
-            while not ctx._lock.locked() and not done and time.monotonic() < deadline:
-                time.sleep(0.001)
-            if done:
-                self.skipTest("the entry ended before the second call could be made")
+            self.assertTrue(entered.wait(60), "say() never reached its print")
+            self.assertTrue(ctx._lock.locked())
             with self.assertRaisesRegex(cint.Busy, "already running"):
                 ctx.add(1, 1)
             with self.assertRaises(cint.Busy):
                 ctx.clear_fault()
             other = mod.context()
             self.assertEqual(other.add(2, 2), 4)                   # this thread runs while the other is in C
-            self.assertTrue(ctx._lock.locked() or done)
+            self.assertEqual(done, [])
         finally:
+            release.set()
             t.join(120)
-        self.assertEqual(done, [60_000_000])
+        self.assertEqual(done, [None])
         self.assertEqual(ctx.add(1, 1), 2)
+
+    def test_gil_released(self):
+        # Entries go through ctypes.CDLL, which drops the GIL for each foreign call; a PyDLL would hold it.
+        flags = calls()._runtime.lib._func_flags_
+        self.assertFalse(flags & ctypes._FUNCFLAG_PYTHONAPI)
 
 
 class Effects(unittest.TestCase):

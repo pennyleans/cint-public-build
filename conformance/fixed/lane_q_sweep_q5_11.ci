@@ -1,0 +1,91 @@
+// case: fixed/lane_q_sweep_q5_11
+// clause: SPEC-01 IM-190, IM-192, IM-60, IM-36 (trial C-1 form 2, p = hadd(rhadd(l, r), hadd(u, d)) +| rshr(dv, 2), on a 16 by 8 grid of the trials' LQ4.11, which is Q5.11 in cint; a drawn wall and one solid cell; dv from a fixed integer recurrence; 8 red and black sweeps, then the exact recentering, over 3 steps)
+// subset: cint-core-1 (fixed point, lane Q)
+// entry: run; args: none
+// spec outcome: value I64 4916817205170712654; prints `half -8671614381695293684` after the first half-sweep, then `step 0 mean 0 digest -7370849670853244249`, `step 1 mean 679 digest -1608271759196464947` and `step 2 mean 236 digest 3758030891696988708`, each with a line feed. S-1 U-1
+
+const I64 W = 16;
+const I64 H = 8;
+
+// The value of neighbor (x, y) for a cell whose own value is c: a cell outside the grid or
+// a solid cell reads as c (C-1's half_sweep_q, `sr[j] == 0 ? vr : cc`).
+Q5.11 near(in Q5.11[_] p, in I16[_] solid, I64 x, I64 y, Q5.11 c) {
+    if (x < 0 || x >= W || y < 0 || y >= H) {
+        return c;
+    }
+    I64 i = y * W + x;
+    if (solid[i] != 0) {
+        return c;
+    }
+    return p[i];
+}
+
+// One half-sweep over the cells of color `color`, (x + y) & 1 == color; they read only
+// cells of the other color, so the order of the cells does not matter.
+void half_sweep(inout Q5.11[_] p, in Q5.11[_] dv, in I16[_] solid, I64 color) {
+    for y in 0..H {
+        for x in 0..W {
+            I64 i = y * W + x;
+            if (((x + y) & 1) == color && solid[i] == 0) {
+                Q5.11 c = p[i];
+                Q5.11 l = near(p, solid, x - 1, y, c);
+                Q5.11 r = near(p, solid, x + 1, y, c);
+                Q5.11 u = near(p, solid, x, y + 1, c);
+                Q5.11 d = near(p, solid, x, y - 1, c);
+                p[i] = hadd(rhadd(l, r), hadd(u, d)) +| rshr(dv[i], 2);
+            }
+        }
+    }
+}
+
+I64 digest(in Q5.11[_] p) {
+    I64 acc = 0;
+    for i in 0..W * H {
+        acc = acc *% 1000003 +% (p[i].raw as I64);
+    }
+    return acc;
+}
+
+export I64 run() {
+    Q5.11[128] p;
+    Q5.11[128] dv;
+    I16[128] solid;
+    for y in 2..7 {
+        solid[y * W + 10] = 1;
+    }
+    solid[3 * W + 3] = 1;
+    I64 s = 338;
+    I64 total = 0;
+    for step in 0..3 {
+        for i in 0..W * H {
+            s = s *% 6364136223846793005 +% 1442695040888963407;
+            dv[i] = Q5.11.raw((((s >> 33) & 8191) - 4096) as I16);
+        }
+        for k in 0..8 {
+            half_sweep(p, dv, solid, 0);
+            if (step == 0 && k == 0) {
+                "half {digest(p)}\n";
+            }
+            half_sweep(p, dv, solid, 1);
+        }
+        I64 total_p = 0;
+        I64 n = 0;
+        for i in 0..W * H {
+            if (solid[i] == 0) {
+                total_p = total_p + (p[i].raw as I64);
+                n = n + 1;
+            }
+        }
+        I64 mean = div_trunc(total_p, n);
+        Q5.11 m = Q5.11.raw(mean as I16);
+        for i in 0..W * H {
+            if (solid[i] == 0) {
+                p[i] = p[i] -| m;
+            }
+        }
+        I64 dg = digest(p);
+        "step {step} mean {mean} digest {dg}\n";
+        total = total ^ dg;
+    }
+    return total;
+}

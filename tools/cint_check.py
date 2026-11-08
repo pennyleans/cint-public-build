@@ -13,6 +13,7 @@ Usage (from the repository root):
                                [--cint PATH] [--emit-cache DIR] [--required FILE]
                                [--write-required FILE] [--interp] [--set NAME]
                                [--backend gpu-cuda [--block {32,256}] [--stand-in]]
+                               [--backend cpu-c17-spec [--spec-rerun]]
                                [--stage {T1,T2,T3,T4}] [--receipt PATH | --no-receipt]
 
 A gcc or clang leg started on Windows runs itself again in WSL
@@ -130,6 +131,12 @@ One run:
    gains `backend`, profile `cuda`, the CUDA sources' digest and, for the stand-in, the
    stand-in's digest; the receipt goes under results/cint/box11/. --stage T3 records T3 in a
    cpu-c17 run of B1, for T3.txt's `cintc` rows.
+6c. --backend cpu-c17-spec (with --compiler b1 and --no-receipt; SPEC-09 BACK-17, Proposed
+   until the ruling on OQ-339) emits every program with `cint emit-c --backend cpu-c17-spec`,
+   exact speculation, and compares it with the frozen `.expect` as any B1 run; --spec-rerun
+   compiles every program with CINT_SPEC_FORCE_RERUN, so every region restores its snapshot
+   and runs the checked call (docs/design/notes/2026-11-04-s1-u2-speculation-mode.md, 5.3).
+   The mode has no rows in a required list and writes no receipt.
 7. A receipt of schema `cint-conformance-receipt-2`,
    results/cint/slice2/t1/receipt-<leg>-<opt>-<helpers>[-san][-quick].json (the
    schema 1 receipts of slice 1 under results/cint/t1/ are never rewritten), in
@@ -240,10 +247,19 @@ OBSERVER_SYMBOLS = {"cint_program_abi", "cint_observer_desc", "cint_observer_sta
                     "cint_imports_desc"}
 PUBLIC_PREFIXES = ("cx_", "cm_")
 INTERNAL_PREFIXES = ("ci_", "cg_")
+# cpu-qbe's form of an internal name longer than QBE reads (SPEC-09 BACK-18): `cgh` or `cih` and
+# 40 hex digits of its SHA-256, a `cgh` name then its suffix. No EMIT-22 name matches it.
+HASHED_RE = re.compile(r"c[gi]h[0-9a-f]{40}")
 ELF_LINKER_SYMBOLS = {"_init", "_fini", "__bss_start", "_edata", "_end"}
 BOOT_TYPES = {"I8", "I16", "I32", "I64", "U8", "U16", "U32", "U64"}
 BACKEND_REFUSAL_RE = re.compile(r"gpu-cuda: E_UNSUPPORTED: kernel (\S+) needs capability "
                                 r"([^,\s]+)[^\"]*")
+# The CINT-TOOL-1 refusal of `cint emit-qbe` (back_qbe.check_qbe, SPEC-09 BACK-18).
+QBE_REFUSAL_RE = re.compile(r"E_UNSUPPORTED cpu-qbe capability ([a-z]+) node (\d+) at (\d+):(\d+)")
+# The exports of a cpu-qbe program library (the linker export policy of docs/design/cpu-qbe.md):
+# QBE's `export` makes a symbol global, so the version script gives the library the exports the
+# C path's hidden visibility gives it.
+QBE_EXPORTS = "{ global: cm_*; cx_*; %s; local: *; };\n"
 DIAG_RE = re.compile(r"^(?P<path>[^:\s]+):(?P<line>\d+):(?P<col>\d+): error (?P<code>C\d{4}): "
                      r"(?P<text>.*)$")
 TREE_METHOD = ("sha256 over the lines '<sha256>  <path>\\n' (the sha256sum list format), one line "
@@ -401,6 +417,25 @@ def without_cc_overrides(env) -> dict:
     return {k: v for k, v in env.items() if k.upper() not in CC_OVERRIDES}
 
 
+def apple_sdk() -> list:
+    """The SDK version and build that xcrun reports; failing that, the same values read from the
+    SDK at xcrun's default path (SDKSettings.json and SystemVersion.plist). With xcode-select on
+    an Xcode install, xcrun answers --show-sdk-version through xcodebuild, which can fail to find
+    the Command Line Tools SDK that clang uses as its sysroot (seen with Xcode 27.2)."""
+    try:
+        return [subprocess.run(["xcrun", "--show-sdk-" + what], capture_output=True,
+                               text=True, check=True).stdout.strip()
+                for what in ("version", "build-version")]
+    except subprocess.CalledProcessError:
+        import plistlib
+        sdk = pathlib.Path(subprocess.run(["xcrun", "--show-sdk-path"], capture_output=True,
+                                          text=True, check=True).stdout.strip())
+        version = json.loads((sdk / "SDKSettings.json").read_text())["Version"]
+        with open(sdk / "System/Library/CoreServices/SystemVersion.plist", "rb") as f:
+            build = plistlib.load(f)["ProductBuildVersion"]
+        return [version, build]
+
+
 class Toolchain:
     """Compile commands of one leg: compiler, optimization, helper mode, sanitizers."""
 
@@ -427,9 +462,7 @@ class Toolchain:
                 if not banner.startswith("Apple clang"):
                     raise BuildError("the apple-clang leg needs Apple clang: %r"
                                      % banner.splitlines()[:1])
-                sdk = [subprocess.run(["xcrun", "--show-sdk-" + what], capture_output=True,
-                                      text=True, check=True).stdout.strip()
-                       for what in ("version", "build-version")]
+                sdk = apple_sdk()
                 # Recorded with the C0 (decision 25): the Apple clang version line and the SDK.
                 self.apple = {"full_version": banner.splitlines()[0].strip(),
                               "sdk": "MacOSX %s (%s)" % tuple(sdk)}
@@ -469,24 +502,24 @@ class Toolchain:
             objs.append(obj)
         return objs
 
-    def link_exe(self, objs, out: pathlib.Path, what: str) -> pathlib.Path:
+    def link_exe(self, objs, out: pathlib.Path, what: str, extra=()) -> pathlib.Path:
         exe = pathlib.Path(str(out) + self.exe)
         if self.leg == "msvc":
             cmd = [self.cc, "/nologo", *map(str, objs), "/Fe" + str(exe)]
         else:
-            cmd = [self.cc, *(SANITIZE if self.sanitize else []), *map(str, objs), "-o", str(exe)]
+            cmd = [self.cc, *(SANITIZE if self.sanitize else []), *map(str, objs), *extra, "-o", str(exe)]
             if sys.platform != "darwin":
                 cmd += ["-ldl"]
         self.run(cmd, out.parent, "%s: link" % what)
         return exe
 
-    def link_shared(self, objs, out: pathlib.Path, what: str) -> pathlib.Path:
+    def link_shared(self, objs, out: pathlib.Path, what: str, extra=()) -> pathlib.Path:
         lib = pathlib.Path(str(out) + self.lib)
         if self.leg == "msvc":
             cmd = [self.cc, "/nologo", "/LD", *map(str, objs), "/Fe" + str(lib)]
         else:
             cmd = [self.cc, "-shared", *(SANITIZE if self.sanitize else []), *map(str, objs),
-                   "-o", str(lib)]
+                   *extra, "-o", str(lib)]
         self.run(cmd, out.parent, "%s: link" % what)
         return lib
 
@@ -573,11 +606,19 @@ def msvc_environment() -> dict:
 
 # SPEC-09 CONF-14 (slice 2 decision patch D-8): every case is in exactly one category.
 CATEGORIES = ("compared", "unsupported", "held", "outside_subset", "not_applicable")
+# The CLI's exit status for a host failure (rt/cint_rt_host.h CINT_EXIT_ENVIRONMENT).
+EXIT_ENVIRONMENT = 5
 SUBSET_CODES = ("C9100", "C4040")   # the seed's refusals of a program outside cint-boot-1
-COMPILERS = {"seed": "cint-seed", "b1": "cintc"}   # B1: compiler/main.ci through `cint emit-c`
+COMPILERS = {"seed": "cint-seed", "b1": "cintc"}
+B1_EMIT_CMD = ["emit-c"]   # ["emit-qbe", "--toolchain", FILE] in a --backend cpu-qbe run
+B1_EMIT_ARGS = []   # ["--backend", "cpu-c17-spec"] in a --backend cpu-c17-spec run (item 6c)   # B1: compiler/main.ci through `cint emit-c`
 # The backend axis of a required list (SPEC-09 CONF-17): a B1 run with --backend gpu-cuda reads
 # and writes the rows, and the unsupported.txt lines, of this token; cpu-c17 rows keep `cintc`.
 GPU_TOKEN = "cintc/gpu-cuda"
+# cintc's cpu-qbe backend (SPEC-09 BACK-18, Proposed): a module back_qbe refuses is a BACK-05
+# capability refusal, written as the gpu-cuda lines are.
+QBE_TOKEN = "cintc/cpu-qbe"
+BACKEND_TOKENS = (GPU_TOKEN, QBE_TOKEN)
 # The interpreter's rows of T4.txt (SPEC-09 CONF-15 for T4): a B1 run with --interp reads and
 # writes the rows of this token. A compile refusal is B1's, so unsupported.txt has no such line.
 INTERP_TOKEN = "cintc/cpu-sir-interp"
@@ -605,15 +646,16 @@ def read_unsupported(path: pathlib.Path) -> dict:
             raise ValueError("%s line %d: expected `<case> <compiler> <code> <limit-id> <reason>`"
                              % (path.name, n))
         case, compiler, code, limit, reason = parts
-        if compiler not in COMPILERS.values() and compiler != GPU_TOKEN:
+        if compiler not in COMPILERS.values() and compiler not in BACKEND_TOKENS:
             raise ValueError("%s line %d: unknown compiler %s" % (path.name, n, compiler))
-        if compiler == GPU_TOKEN:
-            # a kernel back_ptx refuses (BACK-05): E_UNSUPPORTED, and the reason opens with
-            # the capability the refusal names (CONF-17)
-            if code != "E_UNSUPPORTED" or limit != "BACK-05" or \
+        if compiler in BACKEND_TOKENS:
+            # a kernel back_ptx refuses (BACK-05) or a module back_qbe refuses (BACK-18):
+            # E_UNSUPPORTED, and the reason opens with the capability the refusal names (CONF-17)
+            clause = "BACK-05" if compiler == GPU_TOKEN else "BACK-18"
+            if code != "E_UNSUPPORTED" or limit != clause or \
                     not re.match(r"capability [a-z.]+ ", parts[4]):
-                raise ValueError("%s line %d: a %s line is `E_UNSUPPORTED BACK-05 capability "
-                                 "<name> <reason>`" % (path.name, n, GPU_TOKEN))
+                raise ValueError("%s line %d: a %s line is `E_UNSUPPORTED %s capability "
+                                 "<name> <reason>`" % (path.name, n, compiler, clause))
         elif not re.fullmatch(r"C9\d{3}", code):
             raise ValueError("%s line %d: %s is not a C9xxx code" % (path.name, n, code))
         if not LIMIT_RE.match(limit):
@@ -628,17 +670,19 @@ def read_unsupported(path: pathlib.Path) -> dict:
     return entries
 
 
-def backend_refusal(case: str, refusal: dict, unsupported: dict) -> tuple:
-    """The category of a case whose kernel back_ptx refuses (BACK-05): unsupported when
-    unsupported.txt lists the case for `cintc/gpu-cuda` with the capability the refusal names
-    (CONF-17), else a disagreement."""
-    listed = unsupported.get((case, GPU_TOKEN))
+def backend_refusal(case: str, refusal: dict, unsupported: dict, token: str = GPU_TOKEN) -> tuple:
+    """The category of a case a backend refuses (BACK-05): a kernel back_ptx refuses, or a module
+    back_qbe refuses (token QBE_TOKEN). Unsupported when unsupported.txt lists the case for the
+    backend's token with the capability the refusal names (CONF-17), else a disagreement."""
+    listed = unsupported.get((case, token))
     if listed is not None and listed[2].startswith("capability %s " % refusal["capability"]):
-        return ("unsupported", dict(refusal, compiler=GPU_TOKEN))
+        return ("unsupported", dict(refusal, compiler=token))
+    what = "back_ptx refuses kernel %s" % refusal["kernel"] if token == GPU_TOKEN else \
+        "back_qbe refuses the program at %s" % refusal["position"]
     return ("disagreement", dict(refusal, reason=(
-        "back_ptx refuses kernel %s (capability %s), and unsupported.txt %s" % (
-            refusal["kernel"], refusal["capability"],
-            "does not list the case for %s" % GPU_TOKEN if listed is None
+        "%s (capability %s), and unsupported.txt %s" % (
+            what, refusal["capability"],
+            "does not list the case for %s" % token if listed is None
             else "names another capability"))))
 
 
@@ -711,8 +755,16 @@ def classify(case, subset, frozen, seed_rc, seed_rec, unsupported, held=None,
         return "compared", {}
     rec = list(seed_rec or [])
     if len(rec) < 3 or rec[0] != "outcome compile-error":
-        return "disagreement", {"reason": "the compiler failed with exit status %d and no "
-                                          "diagnostic" % seed_rc}
+        said = next((line.split(" ", 1)[1] for line in rec if line.startswith(("cint.stderr ", "seed.stderr "))
+                     and " " in line), "")
+        if seed_rc == EXIT_ENVIRONMENT:
+            # A host failure (a file or directory the compiler could not make), not a compiler
+            # result: the run still fails, and the reason says so and names the path (#485).
+            return "disagreement", {"environment": True, "reason": (
+                "an environment failure, not a compiler result: exit status 5 (CINT_EXIT_ENVIRONMENT)%s"
+                % ("; stderr: " + said if said else ", and nothing on stderr"))}
+        return "disagreement", {"reason": "the compiler failed with exit status %d and no diagnostic%s" % (
+            seed_rc, "; stderr: " + said if said else "")}
     code, position = rec[1].split(" ", 1)[1], rec[2].split(" ", 1)[1]
     found = {"code": code, "position": position}
     if compiler == "cint-seed" and listed is None and subset != "cint-boot-1" and code in SUBSET_CODES:
@@ -1221,6 +1273,7 @@ class EmitCache:
     def __init__(self, path: pathlib.Path, b1: dict):
         self.path = path
         self.base = {"cint_sha256": b1["sha256"], "compiler_source_identity": b1["identity"],
+                     "emit_args": list(B1_EMIT_ARGS),
                      "tool_sha256": files_digest([pathlib.Path(__file__).resolve()])}
         self.lock = threading.Lock()
         self.roots = {}
@@ -1306,7 +1359,8 @@ def run_b1(cint, root: pathlib.Path, rels: list, out: pathlib.Path, env=None, ca
     key = cache.key(root, rels, env) if cache else None
     kept = cache.load(key, out) if cache else None
     if kept is None:
-        r = subprocess.run([str(cint), "--json", "emit-c", "--root", str(root), "--out", str(out), *rels],
+        r = subprocess.run([str(cint), "--json", *B1_EMIT_CMD, *B1_EMIT_ARGS, "--root", str(root), "--out", str(out),
+                            *rels],
                            cwd=out.parent, capture_output=True, env=env)
         code, err = r.returncode, r.stderr.decode("utf-8", "replace")
         if cache:
@@ -1452,10 +1506,12 @@ def ref_check(p: Program, observed, work: pathlib.Path) -> list:
     return problems
 
 
-def not_run(res: dict, p: Program, reason: str) -> dict:
+def not_run(res: dict, p: Program, reason: str, environment: bool = False) -> dict:
     """A program classified as a disagreement before it runs: every call counts as compared and
-    disagreeing, so the run fails (CONF-14)."""
+    disagreeing, so the run fails (CONF-14). `environment`: the compiler stopped on a host
+    failure (exit status 5), which the summary counts apart from the compiler's results."""
     res["compared"] = len(p.cases)
+    res["environment"] = len(p.cases) if environment else 0
     res["disagreements"].append({"case": p.name, "reason": reason})
     return res
 
@@ -1521,7 +1577,46 @@ def table_rows(c_text: str):
     return rows, problems
 
 
-def signature_problems(files: dict, rels: list, root_rel: str, expected) -> tuple:
+QBE_DATA_RE = re.compile(r"^data \$(cg\w+_x[bs]\d+) = \{ (b[ 0-9,b]*) \}$", re.M)
+QBE_EXPORTS_RE = re.compile(r"^data \$(cg\w+)_exports = align 8 \{ (.*) \}$", re.M)
+QBE_ROW_RE = re.compile(r"l \$(cg\w+_xb(\d+)), w (\d+), w 0, w 1, w [123], w 0, w \d+, l 0, "
+                        r"l (?:0|\$cg\w+_xn\d+), l \$(cg\w+_xs(\d+)), l (\d+), l \$(cx\w+)")
+QBE_WRAPPER_RE = re.compile(r"^export function w \$(cx\w+)\(", re.M)
+
+
+def qbe_table_rows(text: str):
+    """table_rows for one module's SSA file of --backend cpu-qbe (compiler/back_qbe.ci w_table):
+    the export rows as (name, type signature bytes), and the problems that keep the table from
+    being read, as table_rows reports them for C."""
+    data, problems, rows = {}, [], []
+    for m in QBE_DATA_RE.finditer(text):
+        data[m.group(1)] = bytes(int(v) for v in re.findall(r"\d+", m.group(2)))
+    tables = list(QBE_EXPORTS_RE.finditer(text))
+    if len(tables) > 1:
+        problems.append("%d export tables in one module" % len(tables))
+    calls = []
+    for t in tables[:1]:
+        found = list(QBE_ROW_RE.finditer(t.group(2)))
+        if ", ".join(r.group(0) for r in found) != t.group(2):
+            problems.append("a row not in the form compiler/back_qbe.ci writes: " + t.group(2)[:160])
+        for r in found:
+            name_sym, j, length, sig_sym, k, siglen, call = r.groups()
+            name, sig = data.get(name_sym), data.get(sig_sym)
+            if name is None or sig is None or j != k or int(length) != len(name) or int(siglen) != len(sig):
+                problems.append("the row of %s names its length or its signature data inconsistently"
+                                % name_sym)
+                continue
+            rows.append((name.decode("utf-8", "replace"), sig))
+            calls.append(call)
+    wrappers = QBE_WRAPPER_RE.findall(text)
+    for call in sorted(set(wrappers) - set(calls)):
+        problems.append("cx wrapper %s has no row" % call)
+    for call in sorted(set(calls) - set(wrappers)):
+        problems.append("a row names %s, which the file does not define" % call)
+    return rows, problems
+
+
+def signature_problems(files: dict, rels: list, root_rel: str, expected, qbe: bool = False) -> tuple:
     """SPEC-09 CONF-16 (box 10 default BX10-29) over one output set: (exports compared,
     [disagreement]). files maps each module's C file (`<rel without .ci>.c`) to its bytes;
     expected is cint_ref's sig.Export rows of the root module root_rel, or the reason cint_ref
@@ -1533,11 +1628,11 @@ def signature_problems(files: dict, rels: list, root_rel: str, expected) -> tupl
     CINTC-OQ-58 item 8), so it is compared as a function is."""
     compared, bad = 0, []
     for rel in rels:
-        data = files.get(rel[:-3] + ".c")
+        data = files.get(rel[:-3] + (".ssa" if qbe else ".c"))
         if data is None:
-            bad.append({"module": rel, "reason": "no C file in the output set"})
+            bad.append({"module": rel, "reason": "no %s file in the output set" % ("SSA" if qbe else "C")})
             continue
-        rows, problems = table_rows(data.decode("utf-8", "replace"))
+        rows, problems = (qbe_table_rows if qbe else table_rows)(data.decode("utf-8", "replace"))
         bad += [{"module": rel, "reason": problem} for problem in problems]
         if rel != root_rel:
             want, why = [], "not the root module (SPEC-03 A-12, interim rule)"
@@ -1593,7 +1688,7 @@ def process(p: Program, tc: Toolchain, tools: dict, out: pathlib.Path, alt: path
            "sanitizer": 0, "category": None, "emitted_sha256": None, "determinism": None,
            "symbols": [], "executions": 0, "ref_checked": 0, "exports": 0, "audited": False,
            "entry": False, "compile_errors": 0, "signatures": 0, "signature_disagreements": [],
-           "labels": [label for _, label in p.cases]}
+           "environment": 0, "labels": [label for _, label in p.cases]}
     work = out / "programs" / p.name
     work.mkdir(parents=True, exist_ok=True)
     b1 = lists["compiler"] == COMPILERS["b1"]
@@ -1602,9 +1697,24 @@ def process(p: Program, tc: Toolchain, tools: dict, out: pathlib.Path, alt: path
         code, err, outset = run_b1(tools["b1"]["cint"], p.root, rels, work / "b1" / "out",
                                    cache=tools["b1"].get("cache"))
         got = b1_diagnostic(err) if code != 0 else None
-        c_file = sorted((outset[0] / rel for rel in outset[1] if rel.endswith(".c")),
+        ext = ".ssa" if "qbe" in tools else ".c"
+        c_file = sorted((outset[0] / rel for rel in outset[1] if rel.endswith(ext)),
                         key=lambda f: str(f).encode("utf-8")) if outset else None
         res["modules"] = len(rels)
+        if "qbe" in tools:   # BACK-18: a refusal of back_qbe, or a row back_qbe no longer needs
+            m = QBE_REFUSAL_RE.search(err) if code != 0 else None
+            if m:
+                res["category"] = backend_refusal(p.name, {
+                    "backend": "cpu-qbe", "capability": m.group(1), "limit": "BACK-18",
+                    "node": int(m.group(2)), "position": "%s:%s:%s" % (p.rel, m.group(3), m.group(4))},
+                    lists["unsupported"], QBE_TOKEN)
+                if res["category"][0] == "disagreement":
+                    return not_run(res, p, res["category"][1]["reason"])
+                return res
+            if code == 0 and (p.name, QBE_TOKEN) in lists["unsupported"]:
+                res["category"] = ("disagreement", {"reason": "unsupported.txt lists the case under "
+                                                    "%s, but back_qbe accepts it" % QBE_TOKEN})
+                return not_run(res, p, res["category"][1]["reason"])
     else:
         c_file = work / (pathlib.Path(p.rel).stem + ".c")
         code, err = run_seed(tools["seed"], p.root, p.rel, c_file)
@@ -1619,17 +1729,17 @@ def process(p: Program, tc: Toolchain, tools: dict, out: pathlib.Path, alt: path
         return res
     if category == "disagreement":
         return not_run(res, p, "%s%s" % (detail["reason"], " (%s at %s)" % (
-            detail["code"], detail["position"]) if "code" in detail else ""))
+            detail["code"], detail["position"]) if "code" in detail else ""), detail.get("environment", False))
     if code != 0:   # an expected compile error with the frozen code and position
         res["compile_errors"] = 1
         observed = [got] * len(p.cases)
     else:
         res["emitted_sha256"] = sha256(outset[1]["MANIFEST"] if b1 else c_file.read_bytes())
-        if tools["program_defines"]:   # --backend gpu-cuda: the PTX headers of its device code
+        if "CINT_GPU_CUDA" in tools["program_defines"]:   # --backend gpu-cuda: the PTX headers of its device code
             res["ptx"] = sorted(ptx_headers(c_file if b1 else [c_file]))
         if b1:   # CONF-16: B1 writes the reflection table (SPEC-03 A-19); the seed writes none
             res["signatures"], res["signature_disagreements"] = signature_problems(
-                outset[1], rels, p.rel, ref_exports(p))
+                outset[1], rels, p.rel, ref_exports(p), "qbe" in tools)
         alt_root = alt / p.name
         (alt_root / pathlib.Path(p.rel).parent).mkdir(parents=True, exist_ok=True)
         shutil.copyfile(p.root / p.rel, alt_root / p.rel)
@@ -1699,10 +1809,11 @@ def audit_program(objects, exports: set, rt_defined: set, leg: str) -> list:
     for i, (defined, undefined) in enumerate(objects):
         others = set().union(*(d for k, (d, _) in enumerate(objects) if k != i))
         bad += sorted("defines " + s for s in defined
-                      if not s.startswith(PUBLIC_PREFIXES + INTERNAL_PREFIXES) and s not in OBSERVER_SYMBOLS)
+                      if not s.startswith(PUBLIC_PREFIXES + INTERNAL_PREFIXES) and not HASHED_RE.match(s)
+                      and s not in OBSERVER_SYMBOLS)
         bad += sorted("refers to " + s for s in undefined
                       if not (s.startswith("cint_") and s in rt_defined) and s not in support
-                      and not (s.startswith(INTERNAL_PREFIXES) and s in others))
+                      and not ((s.startswith(INTERNAL_PREFIXES) or HASHED_RE.match(s)) and s in others))
     bad += sorted("exports " + s for s in exports
                   if not s.startswith(PUBLIC_PREFIXES) and s not in OBSERVER_SYMBOLS
                   and not (s in rt_defined and s not in ours))
@@ -1722,6 +1833,10 @@ def audit_program(objects, exports: set, rt_defined: set, leg: str) -> list:
             definers = [k for k, (d, _) in enumerate(objects) if k != i and s in d]
             if len(definers) != 1 or owner.get(ci_path(s), set()) != set(definers):
                 bad.append("refers to %s, which no single object of its module path defines" % s)
+        # A hashed name has no path to check: exactly one other object defines it.
+        for s in sorted(u for u in undefined if HASHED_RE.match(u)):
+            if sum(1 for k, (d, _) in enumerate(objects) if k != i and s in d) != 1:
+                bad.append("refers to %s, which no single other object defines" % s)
     return bad
 
 
@@ -1790,6 +1905,26 @@ def interp_refused(res: dict, r) -> bool:
     return False
 
 
+def program_objects(p: Program, tc: Toolchain, tools: dict, work: pathlib.Path, files) -> list:
+    """The objects of a program's output set, each in an object directory of its own so that
+    equal stems cannot collide: the C files compiled on the leg, or under --backend cpu-qbe the
+    SSA files through the pinned QBE and the system assembler (no C compiler driver touches
+    emitted SSA or assembly; docs/design/cpu-qbe.md)."""
+    objs = []
+    for k, f in enumerate(files):
+        d = work / "obj" / str(k)
+        d.mkdir(parents=True, exist_ok=True)
+        if "qbe" in tools:
+            q = tools["qbe"]
+            asm, obj = d / (pathlib.Path(f).stem + ".s"), d / (pathlib.Path(f).stem + tc.obj)
+            tc.run([q["qbe"], "-t", q["target"], f, "-o", asm], d, "%s: qbe %s" % (p.name, pathlib.Path(f).name))
+            tc.run([q["as"], *q["as_flags"], "-o", obj, asm], d, "%s: as %s" % (p.name, asm.name))
+            objs.append(obj)
+        else:
+            objs += tc.compile([f], d, p.name, tools["program_defines"])
+    return objs
+
+
 def run_program_entry(p: Program, tc: Toolchain, tools: dict, work: pathlib.Path, c_files, res,
                       sir_dir=None):
     """A script or `main` program of B1 (no exported entry for the harness): its output set is
@@ -1809,10 +1944,7 @@ def run_program_entry(p: Program, tc: Toolchain, tools: dict, work: pathlib.Path
         cmd = [str(tools["interp"]), "run", str(sir_dir)]
     else:
         try:
-            objs = []
-            for k, f in enumerate(c_files):
-                (work / "obj" / str(k)).mkdir(parents=True, exist_ok=True)
-                objs += tc.compile([f], work / "obj" / str(k), p.name, tools["program_defines"])
+            objs = program_objects(p, tc, tools, work, c_files)
             cmd = [str(tc.link_exe(objs + tools["link"], work / "program", p.name))]
         except BuildError as e:
             if backend_refused(res, c_files, str(e)):
@@ -1877,13 +2009,11 @@ def run_compiled(p: Program, tc: Toolchain, tools: dict, work: pathlib.Path, c_f
     else:
         try:
             if isinstance(c_file, list):
-                objs = []
-                for k, f in enumerate(c_file):
-                    (work / "obj" / str(k)).mkdir(parents=True, exist_ok=True)
-                    objs += tc.compile([f], work / "obj" / str(k), p.name, tools["program_defines"])
+                objs = program_objects(p, tc, tools, work, c_file)
             else:
                 objs = tc.compile([c_file], work, p.name, tools["program_defines"])
-            lib = tc.link_shared(objs + tools["link"], work / pathlib.Path(p.rel).stem, p.name)
+            lib = tc.link_shared(objs + tools["link"], work / pathlib.Path(p.rel).stem, p.name,
+                                 tools["qbe"]["link_shared"] if "qbe" in tools else ())
         except BuildError as e:
             if backend_refused(res, c_file if isinstance(c_file, list) else [c_file], str(e)):
                 return None
@@ -1996,6 +2126,25 @@ def build_tools(tc: Toolchain, out: pathlib.Path, backend=None) -> dict:
     h_objs = tc.compile([HARNESS / "cint_harness.c"], h_dir, "harness")
     tools["harness"] = tc.link_exe(h_objs + [tools["rt_obj"]], h_dir / "cint-harness", "harness")
     return tools
+
+
+def qbe_tool(cint: pathlib.Path, out: pathlib.Path, qbe=None) -> dict:
+    """The cpu-qbe tools of a run: B1's toolchain file extended for cpu-qbe (tools/cint_qbe_check.py,
+    which refuses a QBE binary outside its verified pins), the QBE command and the assembler, and
+    the linker export policy of program libraries."""
+    import cint_qbe_check
+    out.mkdir(parents=True, exist_ok=True)
+    tc_file = cint_qbe_check.toolchain(cint, out, qbe)
+    keys = {}
+    for line in tc_file.read_text().splitlines():
+        k, _, v = line.partition(" ")
+        keys.setdefault(k, []).append(v)
+    script = out / "exports.map"
+    script.write_text(QBE_EXPORTS % "; ".join(sorted(OBSERVER_SYMBOLS)))
+    return {"toolchain": tc_file, "qbe": keys["qbe"][0], "sha256": keys["qbe_sha256"][0],
+            "pin": cint_qbe_check.QBE_PINS[keys["qbe_sha256"][0]][1], "target": keys["target"][0],
+            "as": keys["assembler"][0], "as_flags": keys.get("as_flag", []),
+            "link_shared": ["-Wl,--version-script=" + str(script)]}
 
 
 def cuda_device(tc: Toolchain, out: pathlib.Path) -> dict:
@@ -2116,9 +2265,16 @@ def main(argv=None) -> int:
     ap.add_argument("--set", choices=sorted(SETS),
                     help="run a conformance set against its own --required list: its cases as "
                          "--only selects them, and the receipt records the set, not the stage")
-    ap.add_argument("--backend", choices=["cpu-c17", "gpu-cuda"], default="cpu-c17",
+    ap.add_argument("--backend", choices=["cpu-c17", "gpu-cuda", "cpu-c17-spec", "cpu-qbe"], default="cpu-c17",
                     help="with --compiler b1: gpu-cuda runs each kernel on the CUDA device "
-                         "(SPEC-09 CONF-17, RCPT-09)")
+                         "(SPEC-09 CONF-17, RCPT-09); cpu-c17-spec emits exact speculation "
+                         "(SPEC-09 BACK-17, item 6c); cpu-qbe emits QBE SSA (SPEC-09 BACK-18)")
+    ap.add_argument("--qbe", metavar="PATH",
+                    help="with --backend cpu-qbe: the QBE binary, one of the verified pins of "
+                         "tools/cint_qbe_check.py (default: qbe on PATH)")
+    ap.add_argument("--spec-rerun", action="store_true",
+                    help="with --backend cpu-c17-spec: compile with CINT_SPEC_FORCE_RERUN, so "
+                         "every region restores and reruns")
     ap.add_argument("--block", type=int, choices=[32, 256],
                     help="with --backend gpu-cuda: the work-items per block, the schedule "
                          "(SPEC-02 Q-3; default 256)")
@@ -2144,6 +2300,22 @@ def main(argv=None) -> int:
     if not gpu and (ns.block or ns.stand_in):
         ap.error("--block and --stand-in are for --backend gpu-cuda")
     block = ns.block or 256
+    spec = ns.backend == "cpu-c17-spec"
+    if spec and (ns.compiler != "b1" or ns.interp or not ns.no_receipt or ns.required or ns.stage):
+        ap.error("--backend cpu-c17-spec is for --compiler b1 without --interp, with --no-receipt "
+                 "and no --required or --stage: it has no rows until the ruling on OQ-339")
+    if ns.spec_rerun and not spec:
+        ap.error("--spec-rerun is for --backend cpu-c17-spec")
+    if spec:
+        B1_EMIT_ARGS[:] = ["--backend", "cpu-c17-spec"]
+    qbe = ns.backend == "cpu-qbe"
+    if qbe and (ns.compiler != "b1" or ns.interp or ns.emit_cache or not ns.no_receipt or ns.required
+                or ns.stage or ns.leg not in ("gcc", "clang") or sys.platform != "linux"):
+        ap.error("--backend cpu-qbe is for --compiler b1 on the Linux gcc and clang legs, without "
+                 "--interp or --emit-cache, with --no-receipt and no --required or --stage: it has "
+                 "no stage rows until its phases are admitted (SPEC-09 BACK-18)")
+    if ns.qbe and not qbe:
+        ap.error("--qbe is for --backend cpu-qbe")
     if ns.stage and (ns.set or (ns.stage == "T1") != (ns.compiler == "seed") or (gpu and ns.stage != "T3")
                      or (ns.interp and ns.stage != "T4")):
         ap.error("--stage: T1 is the seed's, T2 to T4 are B1's, a gpu-cuda run is T3, an "
@@ -2181,7 +2353,7 @@ def main(argv=None) -> int:
     tag = "%s-%s-%s%s%s%s%s" % (ns.leg, ns.opt, ns.helpers, "-san" if ns.sanitize else "",
                                 "-quick" if ns.quick else "", "-interp" if ns.interp else "",
                                 ("-gpu-cuda-b%d%s" % (block, "-stand-in" if ns.stand_in else ""))
-                                if gpu else "")
+                                if gpu else "") + ("-cpu-qbe" if qbe else "")
     base = default_base()
     out = pathlib.Path(ns.out) if ns.out else base / tag
     started = time.monotonic_ns()
@@ -2201,7 +2373,7 @@ def main(argv=None) -> int:
 
     compiler = COMPILERS[ns.compiler]
     # The rows of the backend axis (CONF-17) and of the interpreter (CONF-15 for T4).
-    row_compiler = GPU_TOKEN if gpu else INTERP_TOKEN if ns.interp else compiler
+    row_compiler = GPU_TOKEN if gpu else QBE_TOKEN if qbe else INTERP_TOKEN if ns.interp else compiler
     try:
         lists = {"held": gen_expect.read_held(), "compiler": compiler,
                  "unsupported": read_unsupported(CONF / "unsupported.txt")}
@@ -2234,6 +2406,8 @@ def main(argv=None) -> int:
     try:
         tc = Toolchain(ns.leg, ns.opt, ns.helpers, ns.sanitize)
         tools = build_tools(tc, out, {"block": block, "stand_in": ns.stand_in} if gpu else None)
+        if ns.spec_rerun:
+            tools["program_defines"] = tuple(tools["program_defines"]) + ("CINT_SPEC_FORCE_RERUN",)
         device = cuda_device(tc, out) if gpu and not ns.stand_in else None
         if ns.compiler == "b1":
             tools["b1"] = b1_tool(ns.leg, ns.cint, out / "b1-boot")
@@ -2241,6 +2415,11 @@ def main(argv=None) -> int:
                 tools["b1"]["cache"] = EmitCache(pathlib.Path(ns.emit_cache), tools["b1"])
             print("b1: %s %s, compiler source identity %s" % (
                 tools["b1"]["how"], tools["b1"]["cint"].name, tools["b1"]["identity"]), flush=True)
+        if qbe:
+            tools["qbe"] = qbe_tool(tools["b1"]["cint"], out / "qbe", ns.qbe)
+            B1_EMIT_CMD[:] = ["emit-qbe", "--toolchain", str(tools["qbe"]["toolchain"])]
+            print("qbe: %s, sha256 %s (%s)" % (tools["qbe"]["qbe"], tools["qbe"]["sha256"],
+                                                 tools["qbe"]["pin"]), flush=True)
         if ns.interp:
             tools["interp"] = build_interp(tc, tools, out)
     except (BuildError, OSError, subprocess.CalledProcessError) as e:
@@ -2279,6 +2458,7 @@ def main(argv=None) -> int:
     ran = [r for r in results if r["category"][0] in ("compared", "disagreement")]
     compared = sum(r["compared"] for r in ran) + len(early)
     agree = sum(r["agree"] for r in ran)
+    environment = sum(r["environment"] for r in ran)
     first = next((d for r in ran for d in r["disagreements"]), None) or \
         ({"case": early[0], "reason": cats[early[0]][1]["reason"]} if early else None)
     not_compared = {k: [] for k in ("held", "not_applicable", "outside_subset", "unsupported")
@@ -2348,7 +2528,7 @@ def main(argv=None) -> int:
         "runtime_contract_version": runtime_contract(),
         "runtime_header_sha256": runtime_header_digest(),
         "runtime_library_sha256": files_digest([RT / "cint_rt.c", RT / "cint_rt_internal.h",
-                                                 RT / "cint_host.c", RT / "cint_fs.c", RT / "cint_console.c", RT / "cint_program.c", RT / "cint_mem.c", RT / "cint_mem.h",
+                                                 RT / "cint_host.c", RT / "cint_fs.c", RT / "cint_console.c", RT / "cint_program.c", RT / "cint_qbe.c", RT / "cint_qbe_wide.c", RT / "cint_qbe_fixed.c", RT / "cint_mem.c", RT / "cint_mem.h",
                                                  RT / "cint_wide.c", RT / "cint_wide.h",
                                                  RT / "cint_fixed.c", RT / "cint_fixed.h"]),
         "schema": "cint-conformance-receipt-2",
@@ -2456,9 +2636,11 @@ def main(argv=None) -> int:
     observations["receipt_identity_sha256"] = sha256(canonical({"identity": identity,
                                                                 "outcome": outcome}))
     receipt = {"identity": identity, "observations": observations, "outcome": outcome}
-    print("%s: %d programs compiled, %d records compared, %d disagree, %d sanitizer reports, "
+    print("%s: %d programs compiled, %d records compared, %d disagree, %s%d sanitizer reports, "
           "%d nondeterministic, %d symbol audit findings, %s%d s; suite %s"
-          % (tag, len(emitted), compared, compared - agree, sanitizer, len(nondeterministic),
+          % (tag, len(emitted), compared, compared - agree - environment,
+             "%d environment failures (exit status 5), " % environment if environment else "",
+             sanitizer, len(nondeterministic),
              len(sym_bad), "%d type signatures compared, %d type signature disagreements, " % (
                  signatures, len(sig_bad)) if ns.compiler == "b1" else "",
              elapsed_ms // 1000, suite))
@@ -2474,9 +2656,11 @@ def main(argv=None) -> int:
     # CONF-14 per compiler: records compared by running, unsupported cases (each with its limit
     # and reason in conformance/unsupported.txt), records compared as an expected compile error.
     refused = sum(r["compared"] for r in ran if r["compile_errors"])
-    print("%s: %d compared, %d unsupported, %d refused, %d disagree" % (
+    print("%s: %d compared, %d unsupported, %d refused, %d disagree%s" % (
         ns.compiler, compared - refused, len(not_compared["unsupported"]), refused,
-        compared - agree))
+        compared - agree - environment, "; %d records not run: the compiler stopped on a host failure "
+        "(exit status 5), an environment failure and not a compiler result, which still fails the run"
+        % environment if environment else ""))
     if gpu:
         print("gpu-cuda: block %d, %s; %d programs ran device code; %d kernels refused (BACK-05)" % (
             block, "stand-in driver" if ns.stand_in else device["name"],

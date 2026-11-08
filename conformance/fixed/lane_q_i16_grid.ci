@@ -1,0 +1,52 @@
+// case: fixed/lane_q_i16_grid
+// clause: SPEC-01 IM-190, IM-192, IM-60, IM-30 (`hadd`, `rhadd`, `+|`, `-|` on I16 and Q5.11 over every value whose low byte is 0x00, 0x01, 0x7F, 0x80 or 0xFF crossed with 64 fixed operands, and `rshr` by 1 to 15 over the same values; one running digest a type and operation)
+// subset: cint-core-1 (fixed point, lane Q)
+// entry: run; args: none
+// spec outcome: value I64 -8932767252869879040; prints the four I16 digests, the same four for Q5.11 (raw values) and the two `rshr` digests, equal to Python's closed forms over the same order. S-1 U-1
+
+export I64 run() {
+    I16[13] corner = [-32768, -32767, -16385, -16384, -2, -1, 0, 1, 2, 16383, 16384, 32766, 32767];
+    I16[64] ops;
+    for j in 0..64 {
+        if (j < 13) {
+            ops[j] = corner[j];
+        } else {
+            ops[j] = (-32761 + 1291 * (j - 13)) as I16;
+        }
+    }
+    I64[5] low = [0, 1, 127, 128, 255];
+    I64 dh = 0;
+    I64 dr = 0;
+    I64 ds = 0;
+    I64 dt = 0;
+    I64 qh = 0;
+    I64 qr = 0;
+    I64 qs = 0;
+    I64 qt = 0;
+    I64 sh = 0;
+    I64 qsh = 0;
+    for hb in 0..256 {
+        for lb in 0..5 {
+            I16 a = ((hb * 256 + low[lb]) as% I16);
+            Q5.11 qa = Q5.11.raw(a);
+            for j in 0..64 {
+                I16 b = ops[j];
+                Q5.11 qb = Q5.11.raw(b);
+                dh = dh *% 1000003 +% (hadd(a, b) as I64);
+                dr = dr *% 1000003 +% (rhadd(a, b) as I64);
+                ds = ds *% 1000003 +% ((a +| b) as I64);
+                dt = dt *% 1000003 +% ((a -| b) as I64);
+                qh = qh *% 1000003 +% (hadd(qa, qb).raw as I64);
+                qr = qr *% 1000003 +% (rhadd(qa, qb).raw as I64);
+                qs = qs *% 1000003 +% ((qa +| qb).raw as I64);
+                qt = qt *% 1000003 +% ((qa -| qb).raw as I64);
+            }
+            for k in 1..16 {
+                sh = sh *% 1000003 +% (rshr(a, k) as I64);
+                qsh = qsh *% 1000003 +% (rshr(qa, k).raw as I64);
+            }
+        }
+    }
+    "{dh} {dr} {ds} {dt}\n{qh} {qr} {qs} {qt}\n{sh} {qsh}\n";
+    return dh;
+}

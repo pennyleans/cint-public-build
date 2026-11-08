@@ -401,6 +401,38 @@ static uint64_t pure_builtin(int id, int sc, uint64_t a, uint64_t b)
     }
 }
 
+/* The lane Q built-ins (SPEC-01 IM-190 to IM-192; S-1 U-1) on an integer or fixed-point type of 8 to
+ * 64 bits, on the 64-bit patterns as compiled C writes them (back_c.ci, c_laneq): (a & b) + S(a ^ b, 1),
+ * (a | b) - S(a ^ b, 1), S(a, k) + (S(a, k - 1) & 1) with S the type's own right shift, and rmulh's
+ * product plus 2^(w-2) shifted by w - 1 and clamped to the maximum. rshr by a count outside 0 to
+ * w - 1 faults through cint_rt_rshr_fault. 1, or 0 when it faulted. */
+static uint64_t lane_s(int sc, uint64_t a, unsigned k)
+{
+    return is_signed(sc) ? (uint64_t)cint_rt_asr(cint_rt_sext(a, 64u), k) : a >> k;
+}
+
+static int lane_q(cint_ctx *ctx, cint_site s, const si_node *n, const uint64_t *v, uint64_t *out)
+{
+    int sc = n->t1;
+    unsigned w = width(sc);
+    uint64_t a = v[0], b = v[1], r;
+    if (n->sub == BI_HADD) {
+        r = (a & b) + lane_s(sc, a ^ b, 1u);
+    } else if (n->sub == BI_RHADD) {
+        r = (a | b) - lane_s(sc, a ^ b, 1u);
+    } else if (n->sub == BI_RMULH) {
+        int64_t m = cint_rt_asr(cint_rt_sext(a, 64u) * cint_rt_sext(b, 64u) + ((int64_t)1 << (w - 2u)), w - 1u);
+        int64_t hi = (int64_t)(((uint64_t)1 << (w - 1u)) - 1u);
+        r = (uint64_t)(m > hi ? hi : m);
+    } else {
+        cint_count kc = count_of(n->t3, b);
+        if (kc.bits > (uint64_t)(w - 1u)) return cint_rt_rshr_fault(ctx, s, tag_of(sc), a, kc) ? 1 : 0;
+        r = kc.bits == 0u ? a : lane_s(sc, a, (unsigned)kc.bits) + (lane_s(sc, a, (unsigned)kc.bits - 1u) & 1u);
+    }
+    *out = canon(sc, r);
+    return 1;
+}
+
 static int arith(cint_ctx *ctx, cint_site s, const si_node *n, const uint64_t *v, cint_count k, uint64_t *out)
 {
     int sc = n->op == OP_BUILTIN ? n->t2 : n->t1;
@@ -2058,7 +2090,9 @@ static int run_body(cint_sir_image *x, cint_ctx *ctx, ex_frame *fr, uint64_t *re
                 r = n->t1 == SC_BOOL ? !v[0] : canon(n->t1, ~v[0]);
             } else {
                 uint64_t step = x->step++;
-                if (sc_is_q(n->t1) || (n->op == OP_AS && sc_is_q(n->t2))) {   /* fixed point (box 15) */
+                if (n->op == OP_BUILTIN && n->sub >= BI_HADD) {   /* lane Q (S-1 U-1) */
+                    st = lane_q(ctx, s, n, v, &r);
+                } else if (sc_is_q(n->t1) || (n->op == OP_AS && sc_is_q(n->t2))) {   /* fixed point (box 15) */
                     st = qnode(ctx, s, n, v, &r, &fr->etag);
                 } else if (n->form == FM_RESULT) {   /* `<op>.result.<t>` or `as.result` (box 12) */
                     fr->etag = result_form(ctx, s, n, v, kc, &r);

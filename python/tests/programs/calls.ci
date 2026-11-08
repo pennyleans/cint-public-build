@@ -48,18 +48,10 @@ export I64 balance() {
     return total;
 }
 
-// The wrapped product keeps the loop's work in the emitted C: a C compiler takes a bare count
-// to its closed form, and test_busy needs an entry that runs. The test on it keeps it live, and
-// holds for no count these tests use.
 export I64 spin(I64 n) {
     I64 i = 0;
-    U64 churn = 1;
     while (i < n) {
         i += 1;
-        churn = churn *% 6364136223846793005;
-    }
-    if (churn == 13) {
-        return 0;
     }
     return i;
 }

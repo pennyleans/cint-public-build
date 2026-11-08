@@ -157,6 +157,8 @@ class Parser:
         t = self.peek()
         if t.kind == "ident":
             return self.next()
+        if t.kind == "keyword":
+            error("C1050", self.pos(t), "`%s` is a keyword (SPEC-04 LS-18), and a name is expected here" % t.text)
         error("C1050", self.pos(t), "expected an identifier, found %s" % self.describe(t))
 
     @staticmethod
@@ -478,7 +480,7 @@ class Parser:
     def parse_import(self) -> Import:
         """`import a.b;`, `import a.b as x;`, `import a.b.{X, y};` (SPEC-04 LS-299)."""
         kw = self.next()
-        first = self.expect_ident()
+        first = self.path_segment()
         segments, last = [first.text], first
         selected = None
         while self.is_op("."):
@@ -496,7 +498,7 @@ class Parser:
                         break
                 self.expect_op("}")
                 break
-            last = self.expect_ident()
+            last = self.path_segment()
             segments.append(last.text)
         alias, alias_pos = (last.text, self.pos(last)) if selected is None else (None, None)
         if selected is None and self.is_kw("as"):
@@ -505,6 +507,15 @@ class Parser:
             alias, alias_pos = a.text, self.pos(a)
         self.expect_op(";")
         return Import(segments, self.pos(kw), self.pos(first), alias, alias_pos, selected)
+
+    def path_segment(self) -> Token:
+        """A segment of a module path: an identifier, or a keyword when a further segment
+        follows, since only the last segment names the module in code (SPEC-04 LS-225;
+        decision 2026-11-02 on OQ-326, A)."""
+        t = self.peek()
+        if t.kind == "keyword" and self.is_op(".", 1) and self.peek(2).kind in ("ident", "keyword"):
+            return self.next()
+        return self.expect_ident()
 
     def parse_service_attribute(self):
         """`@service("fs/1", fs.read(path))`, `@service("console/1", console.input)` or
@@ -1002,6 +1013,10 @@ class Parser:
         t = self.peek()
         k = self._place_ahead()
         after = self.peek(k) if k else None
+        # A type, a keyword, then `=` or `;` (`I64 out = 1;`): C4012 below names the keyword.
+        n = self.type_len()
+        word = self.peek(n) if n and self.peek(n).kind == "keyword" and \
+            (self.is_op("=", n + 1) or self.is_op(";", n + 1)) else None
         if after is not None and after.kind == "op" and (after.text in ASSIGN_OPS or after.text in ("++", "--")):
             target = self.parse_postfix(allow_incdec=True)
             op = self.next()
@@ -1016,6 +1031,9 @@ class Parser:
         # `call catch (e) { ... };` stands as a statement too (OQ-315 A; the checker takes only an `E!void` call).
         statement = isinstance(e, Catch) and e.block is not None and isinstance(e.left, Call)
         if not statement and not isinstance(e, Call) and not (isinstance(e, Try) and isinstance(e.operand, Call)):
+            if word is not None:
+                error("C4012", e.start, "`%s` is a keyword (SPEC-04 LS-18) and cannot name a variable" % word.text,
+                      notes=("the keyword is at %s" % self.pos(word),))
             error("C4012", e.start, "only calls, assignments, increments, print statements and declarations may stand as statements")
         if statement:
             e.statement = True

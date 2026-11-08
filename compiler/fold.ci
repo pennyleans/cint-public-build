@@ -166,6 +166,13 @@ export const I64 BI_QMUL_OP = 26;
 export const I64 BI_QDIV = 27;
 export const I64 BI_QMUL_WRAP = 28;
 export const I64 BI_QMUL_SAT = 29;
+// S-1 U-1, the lane Q built-ins (SPEC-01 IM-190 to IM-192; OQ-338, CINTC-OQ-82): `hadd` and
+// `rhadd` on integers and fixed point of 8 to 64 bits, `rmulh` of a fixed-point value by its
+// Q1.(w-1) coefficient, saturated, and `rshr`, the rounding right shift, with its count.
+export const I64 BI_HADD = 30;
+export const I64 BI_RHADD = 31;
+export const I64 BI_RMULH = 32;
+export const I64 BI_RSHR = 33;
 
 // ---------------------------------------------------------------- structs
 
@@ -684,7 +691,7 @@ export Bool builtin_mode(I64 id) {
 // call of it takes its type from its context (SPEC-04 4.2 rule 4.7).
 export Bool builtin_same(I64 id) {
     return id != BI_UABS && id != BI_MULDIV && id != BI_MUL_FULL && !builtin_result(id) && id != BI_QMUL &&
-        id != BI_MUL_INT;
+        id != BI_MUL_INT && id != BI_RMULH;
 }
 
 // Whether built-in id is a result-returning form (box 12).
@@ -692,23 +699,28 @@ export Bool builtin_result(I64 id) {
     return id >= BI_ADD_RESULT && id <= BI_SHL_RESULT;
 }
 
-// Whether built-in id can fault (SPEC-01 9.2): uabs, min, max, mul_full, mul_wrap and
-// mul_sat cannot.
+// Whether built-in id can fault (SPEC-01 9.2): uabs, min, max, mul_full, mul_wrap, mul_sat,
+// hadd, rhadd and rmulh cannot; rshr faults on its count only.
 export Bool builtin_faults(I64 id) {
     return id != BI_UABS && id != BI_MIN && id != BI_MAX && id != BI_MUL_FULL && id != BI_QMUL_WRAP &&
-        id != BI_QMUL_SAT;
+        id != BI_QMUL_SAT && !(id >= BI_HADD && id <= BI_RMULH);
+}
+
+// Whether built-in id is a lane Q operation (SPEC-01 IM-190 to IM-192).
+export Bool builtin_lane(I64 id) {
+    return id >= BI_HADD && id <= BI_RSHR;
 }
 
 // Whether built-in id is defined on fixed point (SPEC-01 IM-60 to IM-67): abs, min, max, mul,
 // div, mul_wrap, mul_sat and sqrt take operands of one fixed-point type; qmul and mul_int
 // (check.ci h_mixed) operands of their own.
 export Bool builtin_q(I64 id) {
-    return id == BI_ABS || id == BI_MIN || id == BI_MAX || (id >= BI_SQRT && id <= BI_QMUL_SAT);
+    return id == BI_ABS || id == BI_MIN || id == BI_MAX || (id >= BI_SQRT && id <= BI_QMUL_SAT) || builtin_lane(id);
 }
 
 // Whether built-in id is defined on fixed point only.
 export Bool builtin_q_only(I64 id) {
-    return id >= BI_SQRT && id <= BI_QMUL_SAT;
+    return (id >= BI_SQRT && id <= BI_QMUL_SAT) || id == BI_RMULH;
 }
 
 // The 128-bit magnitude hi:lo divided by d != 0, bit by bit: the quotient goes to f's
@@ -810,7 +822,7 @@ export void fold_builtin[r](inout Folded[r] f, I64 id, I64 mode, I64 ty, I64 rty
         return;
     }
     f[0].mode = mode;
-    Bool rot = id == BI_ROTL || id == BI_ROTR;
+    Bool rot = id == BI_ROTL || id == BI_ROTR || id == BI_RSHR;
     operand(f, ty, a);
     if (rot) {
         operand(f, kty, b);
@@ -896,6 +908,27 @@ export void fold_builtin[r](inout Folded[r] f, I64 id, I64 mode, I64 ty, I64 rty
         case BI_MUL_FULL:
             exact_mul(f, na != nb, ma, mb);
             settle(f, rty);
+        case BI_HADD, BI_RHADD:
+            // IM-190: (a & b) + S(a ^ b, 1) and (a | b) - S(a ^ b, 1), S the type's own right
+            // shift of the 64-bit pattern; neither sum leaves the type.
+            U64 half = shift_right(ty, a ^ b, 1);
+            if (id == BI_HADD) {
+                value(f, ty, ty_wrap(ty, (a & b) +% half));
+            } else {
+                value(f, ty, ty_wrap(ty, (a | b) -% half));
+            }
+        case BI_RSHR:
+            // IM-192: a for a count of 0, else S(a, k) + (S(a, k - 1) & 1); E_SHIFT outside
+            // 0 ..= w - 1 as for `>>`.
+            I64 rk = shift_count(f, ty, kty, b);
+            if (rk < 0) {
+                return;
+            }
+            if (rk == 0) {
+                value(f, ty, a);
+            } else {
+                value(f, ty, ty_wrap(ty, shift_right(ty, a, rk) +% (shift_right(ty, a, rk - 1) & 1)));
+            }
         case BI_ISQRT, BI_ISQRT_ROUND:
             if (na) {
                 f[0].fault = F_DOMAIN;
@@ -925,6 +958,15 @@ export void fold_builtin[r](inout Folded[r] f, I64 id, I64 mode, I64 ty, I64 rty
                 value(f, ty, ty_wrap(ty, (a <<% sh) | (a >> (w - sh))));
             }
     }
+}
+
+// The 64-bit pattern v of type ty shifted right by k, 0 <= k <= 63: arithmetic for a signed
+// type, whose patterns are sign-extended, logical for an unsigned one.
+U64 shift_right(I64 ty, U64 v, I64 k) {
+    if (ty_signed(ty) && (v >> 63) == 1) {
+        return ~((~v) >> k);
+    }
+    return v >> k;
 }
 
 // ---------------------------------------------------------------- fixed point (box 15 unit 4e)
@@ -999,6 +1041,10 @@ export void fold_q_builtin[r](inout Folded[r] f, I64 id, I64 mode, I64 ty, I64 t
         ty2 = rty;
     }
     begin(f, OP_BUILTIN + id, FORM_CHECKED, ty, ty2);
+    if (id == BI_RMULH) {
+        // IM-191: qmul(Q, a, k, half_up) into the type of a, saturated.
+        f[0].form = FORM_SAT;
+    }
     f[0].mode = mode;
     operand(f, ty, a);
     if (id != BI_SQRT) {
@@ -1713,9 +1759,13 @@ export void render_operation[b, r](inout emit.Writer[_] w, inout U8[b] dst, in F
     if (f[0].name > OP_BUILTIN) {
         I64 id = f[0].name - OP_BUILTIN;
         render_builtin(w, dst, id);
-        emit.w_text(w, dst, ".checked.");
+        if (id == BI_RMULH) {
+            emit.w_text(w, dst, ".sat.");
+        } else {
+            emit.w_text(w, dst, ".checked.");
+        }
         render_type(w, dst, f[0].ty1, true);
-        if (id == BI_QMUL || id == BI_MUL_INT) {
+        if (id == BI_QMUL || id == BI_MUL_INT || id == BI_RMULH) {
             // The second operand's type: `qmul.checked.<a>.<b>.<r>`, `mul_int.checked.<q>.<n>`.
             emit.w_byte(w, dst, '.');
             render_type(w, dst, f[0].op_ty[1], true);
@@ -1792,6 +1842,10 @@ export void render_builtin[b](inout emit.Writer[_] w, inout U8[b] dst, I64 id) {
         case BI_SQRT: emit.w_text(w, dst, "sqrt");
         case BI_QMUL: emit.w_text(w, dst, "qmul");
         case BI_MUL_INT: emit.w_text(w, dst, "mul_int");
+        case BI_HADD: emit.w_text(w, dst, "hadd");
+        case BI_RHADD: emit.w_text(w, dst, "rhadd");
+        case BI_RMULH: emit.w_text(w, dst, "rmulh");
+        case BI_RSHR: emit.w_text(w, dst, "rshr");
         default: emit.w_text(w, dst, "rotr");
     }
 }

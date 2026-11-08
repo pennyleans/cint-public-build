@@ -1,0 +1,8 @@
+// Helper module of the ivar probe: module state that another module reads and writes.
+
+export I64 total = 40;
+export U8 small = 7;
+
+export void bump() {
+    total = total + 1;
+}

@@ -1,0 +1,12 @@
+// case: fixed/lane_q_rmulh_coefficient_c2001
+// clause: SPEC-01 IM-191; SPEC-04 LS-145, 17.2 (the coefficient of `rmulh` on a 16-bit Q is Q1.15; a Q2.14 coefficient is C2001)
+// subset: cint-core-1 (fixed point, lane Q)
+// entry: run; args: none
+// spec outcome: compile-error C2001 at 10:24 (the coefficient)
+
+export I64 run() {
+    Q5.11 a = 1.0;
+    Q2.14 k = 0.5;
+    Q5.11 c = rmulh(a, k);
+    return c.raw as I64;
+}

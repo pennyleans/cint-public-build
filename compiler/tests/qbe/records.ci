@@ -1,0 +1,10 @@
+struct Pair {
+    I64 a;
+    I64 b;
+}
+
+void main() {
+    Pair p;
+    p.a = 1;
+    "{p.a}\n";
+}

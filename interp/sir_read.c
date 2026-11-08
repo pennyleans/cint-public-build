@@ -40,7 +40,8 @@ static const char *const CMP_NAMES[] = {"eq", "ne", "lt", "le", "gt", "ge"};
 static const char *const FORM_NAMES[] = {"checked", "wrap", "sat", "result", "raw"};
 static const char *const BUILTIN_NAMES[] = {"", "abs", "uabs", "min", "max", "clamp", "div_trunc", "rem_trunc",
                                             "div_euclid", "rem_euclid", "div_round", "muldiv", "mul_full",
-                                            "isqrt", "isqrt_round", "rotl", "rotr", "sqrt", "qmul", "mul_int"};
+                                            "isqrt", "isqrt_round", "rotl", "rotr", "sqrt", "qmul", "mul_int",
+                                            "", "", "", "", "", "", "", "", "", "", "hadd", "rhadd", "rmulh", "rshr"};
 static const char *const MODE_NAMES[] = {"", "floor", "ceil", "trunc", "away", "half_even", "half_away",
                                          "half_trunc", "half_up", "half_down"};
 
@@ -1048,17 +1049,20 @@ static int arith_name(const uint8_t *t, si_name w, si_node *n)
                    !(f == FM_RESULT && (is_limbs(from) || is_limbs(to)));
         return p.n == 4u && f >= 0 && from > 0 && is_arith(to) && (f != FM_SAT || from != SC_BOOL);
     }
-    int id = lookup(t, p.p[0], BUILTIN_NAMES, 20);
-    if (id < 1 || p.n < 3u || !name_is(t, p.p[1], "checked")) return 0;
+    int id = lookup(t, p.p[0], BUILTIN_NAMES, 34);   /* rmulh is `rmulh.sat.<q>.<k>.half_up` (IM-134) */
+    if (id < 1 || p.n < 3u || !name_is(t, p.p[1], id == BI_RMULH ? "sat" : "checked")) return 0;
     int sc = scalar_of(t, p.p[2], 1);
     uint32_t k = 3;
     n->op = OP_BUILTIN;
     n->sub = (uint8_t)id;
     n->t1 = (uint16_t)(sc & 0xFFFF);
     n->t2 = n->t1;
-    if (id == BI_QMUL || id == BI_MUL_INT) {   /* the second operand's type */
+    if (id == BI_QMUL || id == BI_MUL_INT || id == BI_RMULH) {   /* the second operand's type */
         int y = k < p.n ? scalar_of(t, p.p[k++], 1) : -1;
-        if (id == BI_QMUL ? !sc_is_q(y) : !is_arith(y)) return 0;
+        if (id == BI_MUL_INT ? !is_arith(y) : !sc_is_q(y)) return 0;
+        if (id == BI_RMULH && (!sc_is_q(sc) || (width_of(sc) != 16u && width_of(sc) != 32u) ||
+                               width_of(y) != width_of(sc) || sc_qfrac(y) != width_of(sc) - 1u))
+            return 0;   /* IM-191: a of 16- or 32-bit storage by its Q1.(w-1) coefficient */
         n->t3 = (uint16_t)y;
     }
     if (id == BI_UABS || id == BI_MUL_FULL || id == BI_MULDIV || id == BI_QMUL) {
@@ -1066,14 +1070,15 @@ static int arith_name(const uint8_t *t, si_name w, si_node *n)
         if (id == BI_QMUL ? !sc_is_q(r) : !is_arith(r)) return 0;
         n->t2 = (uint16_t)r;
     }
-    if (id == BI_DIV_ROUND || id == BI_ISQRT_ROUND || id == BI_MULDIV || id == BI_SQRT ||
-        (id == BI_QMUL && sc_qfrac(sc) + sc_qfrac(n->t3) > sc_qfrac(n->t2))) {
+    if (id == BI_DIV_ROUND || id == BI_ISQRT_ROUND || id == BI_MULDIV || id == BI_SQRT || id == BI_RMULH ||
+        id == BI_RSHR || (id == BI_QMUL && sc_qfrac(sc) + sc_qfrac(n->t3) > sc_qfrac(n->t2))) {
         int md = k < p.n ? lookup(t, p.p[k++], MODE_NAMES, 10) : -1;
-        if (md < 1) return 0;
+        if (md < 1 || ((id == BI_RMULH || id == BI_RSHR) && md != 8)) return 0;   /* half_up (IM-191, IM-192) */
         n->mode = (uint8_t)md;
     }
+    if (id >= BI_HADD && (sc < 1 || width_of(sc) > 64u)) return 0;   /* lane Q: 8 to 64 bits */
     if (sc_is_q(sc)) return k == p.n && (id == 1 || id == BI_MIN || id == BI_MAX || id >= BI_SQRT);
-    return k == p.n && is_arith(sc) && id < BI_SQRT;
+    return k == p.n && is_arith(sc) && (id < BI_SQRT || (id >= BI_HADD && id != BI_RMULH));
 }
 
 /* Whether a node of this operation can fault, so carries a site (SIR-04, SIR-10; the
@@ -1126,7 +1131,8 @@ static int can_fault(const si_node *n)
     case OP_AS:
         return n->form == FM_CHECKED && n->t1 != SC_BOOL;
     case OP_BUILTIN:
-        return n->sub != BI_UABS && n->sub != BI_MIN && n->sub != BI_MAX && n->sub != BI_MUL_FULL;
+        return n->sub != BI_UABS && n->sub != BI_MIN && n->sub != BI_MAX && n->sub != BI_MUL_FULL &&
+               n->sub != BI_HADD && n->sub != BI_RHADD && n->sub != BI_RMULH;
     case OP_ICHECK: case OP_BSHAPE: case OP_CSHAPE: case OP_CALL: case OP_ASSERT: case OP_FUEL:
     case OP_PRINT_BEGIN: case OP_VSLICE: case OP_VCOPY: case OP_REDUCE: case OP_CALIAS: case OP_VALLOC: case OP_VFILL:
     case OP_FCHARGE: case OP_KCALL: case OP_MEMBER: case OP_HVIEW: case OP_HLEASE: case OP_PDEREF:
@@ -2113,11 +2119,13 @@ static int node_body(rd *r, si_node *n, si_name word)
         for (int k = 0; k < arity && st == CINT_SIR_OK; k++) {
             st = expect(r, k == 0 ? " " : ", ");
             int shift = n->op == OP_BIN && (n->sub == BO_SHL || n->sub == BO_SHR);
-            int count = k == 1 && (shift || (n->op == OP_BUILTIN && (n->sub == BI_ROTL || n->sub == BI_ROTR)));
+            int count = k == 1 && (shift || (n->op == OP_BUILTIN && (n->sub == BI_ROTL || n->sub == BI_ROTR ||
+                                                                     n->sub == BI_RSHR)));
             /* a shift's count may be wide (RT-OQ-52); a rotation's, which B1 refuses, may not */
             if (st == CINT_SIR_OK)   /* qmul's and mul_int's second operand: its own type (box 15) */
                 st = val(r, count ? (shift ? ANY_COUNT : ANY_INTEGER)
-                            : k == 1 && n->op == OP_BUILTIN && n->sub >= BI_QMUL ? scalar_type(n->t3) : a);
+                            : k == 1 && n->op == OP_BUILTIN && (n->sub == BI_QMUL || n->sub == BI_MUL_INT ||
+                                                                 n->sub == BI_RMULH) ? scalar_type(n->t3) : a);
             if (st == CINT_SIR_OK && count) n->t3 = type_of(r, r->m->opds[r->m->nopd - 1u]).scalar;
         }
         return st != CINT_SIR_OK ? st : define(r, n, res);

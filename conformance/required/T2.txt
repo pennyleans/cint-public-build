@@ -28,7 +28,8 @@
 # the run-time cases once cpu-sir-interp runs service calls (U5c); amended 2026-10-22
 # (OQ-307 A): the 18 rows of the 9 cases of byte strings and `equal`, and the cintc row of
 # boot/refuse_byte_string, compared now that its expectation is frozen; amended 2026-10-24
-# (OQ-315 A): the 4 rows of the 2 cases of the `catch` statement.
+# (OQ-315 A): the 4 rows of the 2 cases of the `catch` statement; amended 2026-11-04 (OQ-338,
+# Proposed; S-1 U-1): the 36 rows of the 18 cases of the lane Q operations.
 # SPEC-09 CONF-14, CONF-15, STAGE-01; D-15; plan tasks 2.12b, 2.13, 2.14, 2.18.
 # Requirements only. These categories are obligations, not new measured outcomes.
 # Seed requirements retain the reviewed T1 classifications of the available suite.
@@ -305,6 +306,9 @@
 # task gates.
 # 2026-11-01 (CINTC-OQ-74): 14 rows for the 7 conformance/module/extent_ cases of constant
 # extents, frozen from cint_ref: seed outside_subset (C9100), B1 compared. No other row changes.
+# 2026-11-02 (OQ-325 A; CINTC-OQ-79): 10 rows for the 5 conformance/module/ cases of
+# cross-module calls, frozen from cint_ref: seed outside_subset (C9100), B1 compared. No other
+# row changes.
 # Reference: anchors/abs.checked.i64.001 cint-seed SPEC-09 CONF-14.5; SPEC-09 5.5; no cint-boot-1 operator form; anchor operation abs.checked.i64
 anchors/abs.checked.i64.001 cint-seed not_applicable
 # Reference: anchors/abs.checked.i64.001 cintc SPEC-09 5.5, CONF-14.1; D-15 rows 1/2/3; anchor operation abs.checked.i64
@@ -2637,6 +2641,70 @@ fixed/kernel_scale_reduce cintc compared
 fixed/kernel_scale_reduce_q80_48 cint-seed outside_subset
 # Reference: fixed/kernel_scale_reduce_q80_48 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from games wave G2b (OQ-293); frozen from cint_ref, games wave G2a (OQ-292)
 fixed/kernel_scale_reduce_q80_48 cintc compared
+# Reference: fixed/lane_q_hadd_c2001 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_hadd_c2001 cint-seed outside_subset
+# Reference: fixed/lane_q_hadd_c2001 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-82; frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_hadd_c2001 cintc compared
+# Reference: fixed/lane_q_hadd_i8_exhaustive cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 14:9 (a fixed-point type); frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_hadd_i8_exhaustive cint-seed outside_subset
+# Reference: fixed/lane_q_hadd_i8_exhaustive cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-82; frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_hadd_i8_exhaustive cintc compared
+# Reference: fixed/lane_q_hadd_q64_64_c2103 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_hadd_q64_64_c2103 cint-seed outside_subset
+# Reference: fixed/lane_q_hadd_q64_64_c2103 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-82; frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_hadd_q64_64_c2103 cintc compared
+# Reference: fixed/lane_q_i16_grid cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 31:13 (a fixed-point type); frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_i16_grid cint-seed outside_subset
+# Reference: fixed/lane_q_i16_grid cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-82; frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_i16_grid cintc compared
+# Reference: fixed/lane_q_i32_corners cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 11:1 (a fixed-point type); frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_i32_corners cint-seed outside_subset
+# Reference: fixed/lane_q_i32_corners cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-82; frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_i32_corners cintc compared
+# Reference: fixed/lane_q_i64_corners cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 16:17 (an array literal); frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_i64_corners cint-seed outside_subset
+# Reference: fixed/lane_q_i64_corners cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-82; frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_i64_corners cintc compared
+# Reference: fixed/lane_q_name_c3001 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (a fixed-point type); frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_name_c3001 cint-seed outside_subset
+# Reference: fixed/lane_q_name_c3001 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-82; frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_name_c3001 cintc compared
+# Reference: fixed/lane_q_rmulh_c2103 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_rmulh_c2103 cint-seed outside_subset
+# Reference: fixed/lane_q_rmulh_c2103 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-82; frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_rmulh_c2103 cintc compared
+# Reference: fixed/lane_q_rmulh_coefficient_c2001 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_rmulh_coefficient_c2001 cint-seed outside_subset
+# Reference: fixed/lane_q_rmulh_coefficient_c2001 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-82; frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_rmulh_coefficient_c2001 cintc compared
+# Reference: fixed/lane_q_rmulh_q1_15_grid cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 9:5 (a fixed-point type); frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_rmulh_q1_15_grid cint-seed outside_subset
+# Reference: fixed/lane_q_rmulh_q1_15_grid cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-82; frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_rmulh_q1_15_grid cintc compared
+# Reference: fixed/lane_q_rshr_i8_exhaustive cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 11:1 (a fixed-point type); frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_rshr_i8_exhaustive cint-seed outside_subset
+# Reference: fixed/lane_q_rshr_i8_exhaustive cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-82; frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_rshr_i8_exhaustive cintc compared
+# Reference: fixed/lane_q_rshr_shift_fault cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 12:5 (a fixed-point type); frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_rshr_shift_fault cint-seed outside_subset
+# Reference: fixed/lane_q_rshr_shift_fault cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-82; frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_rshr_shift_fault cintc compared
+# Reference: fixed/lane_q_spec_examples cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 22:5 (a fixed-point type); frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_spec_examples cint-seed outside_subset
+# Reference: fixed/lane_q_spec_examples cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-82; frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_spec_examples cintc compared
+# Reference: fixed/lane_q_sticky_flag cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:17 (a fixed-point type); frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_sticky_flag cint-seed outside_subset
+# Reference: fixed/lane_q_sticky_flag cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-82; frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_sticky_flag cintc compared
+# Reference: fixed/lane_q_sweep_q5_11 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 12:1 (a fixed-point type); frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_sweep_q5_11 cint-seed outside_subset
+# Reference: fixed/lane_q_sweep_q5_11 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-82; frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_sweep_q5_11 cintc compared
+# Reference: fixed/lane_q_unsigned_corners cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 20:15 (an array literal); frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_unsigned_corners cint-seed outside_subset
+# Reference: fixed/lane_q_unsigned_corners cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-82; frozen from cint_ref, S-1 U-1 (OQ-338)
+fixed/lane_q_unsigned_corners cintc compared
 # Reference: fixed/literal_grid_q16_16 cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 8:5 (a fixed-point type); frozen from cint_ref, box 15 unit 1
 fixed/literal_grid_q16_16 cint-seed outside_subset
 # Reference: fixed/literal_grid_q16_16 cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-15; B1 from box 15 unit 4e (OQ-291); frozen from cint_ref, box 15 unit 1
@@ -2921,6 +2989,14 @@ kernel/heat_sum_i32_epilogue cintc compared
 kernel/inout_copy_in_copy_out cint-seed outside_subset
 # Reference: kernel/inout_copy_in_copy_out cintc SPEC-09 CONF-14.1; OQ-197; compiler/OPEN.md CINTC-OQ-42 (box 09 forms); SPEC-02 K-2, P-4
 kernel/inout_copy_in_copy_out cintc compared
+# Reference: kernel/lane_q_half_sweep cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:25 (a fixed-point type); frozen from cint_ref, S-1 U-1 (OQ-338)
+kernel/lane_q_half_sweep cint-seed outside_subset
+# Reference: kernel/lane_q_half_sweep cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-82; frozen from cint_ref, S-1 U-1 (OQ-338)
+kernel/lane_q_half_sweep cintc compared
+# Reference: kernel/lane_q_i16_halving cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (`kernel` at module level); frozen from cint_ref, S-1 U-1 (OQ-338)
+kernel/lane_q_i16_halving cint-seed outside_subset
+# Reference: kernel/lane_q_i16_halving cintc SPEC-09 CONF-14.1; SPEC-09 5.5; compiler/OPEN.md CINTC-OQ-82; frozen from cint_ref, S-1 U-1 (OQ-338)
+kernel/lane_q_i16_halving cintc compared
 # Reference: kernel/min_no_contributions cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (`kernel` at module level); box 09 freeze OQ-197
 kernel/min_no_contributions cint-seed outside_subset
 # Reference: kernel/min_no_contributions cintc SPEC-09 CONF-14.1; OQ-197; compiler/OPEN.md CINTC-OQ-42 (box 09 forms); SPEC-02 R-2, R-7 (min with no contributions faults E_SHAPE in the epilogue); O-9
@@ -2933,6 +3009,10 @@ kernel/scale_over_2d cintc compared
 kernel/shape_two_pass cint-seed outside_subset
 # Reference: kernel/shape_two_pass cintc SPEC-09 CONF-14.1; OQ-197; compiler/OPEN.md CINTC-OQ-42 (box 09 forms); SPEC-02 K-6
 kernel/shape_two_pass cintc compared
+# Reference: kernel/sum_bound_plain_add cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; C9100 (`kernel` at module level); issue 541
+kernel/sum_bound_plain_add cint-seed outside_subset
+# Reference: kernel/sum_bound_plain_add cintc SPEC-09 CONF-14.1; SPEC-01 IM-77; issue 541 (the bounded sum's plain add and the checked add with its spill)
+kernel/sum_bound_plain_add cintc compared
 # Reference: kernel/total_checked_fold cint-seed SPEC-09 CONF-14.4; SPEC-09 5.5; measured C9100 at 7:1 (`kernel` at module level); box 09 freeze OQ-197, after B1's box 09 support
 kernel/total_checked_fold cint-seed outside_subset
 # Reference: kernel/total_checked_fold cintc SPEC-09 CONF-14.1; box 09 freeze OQ-197, after B1's box 09 support; SPEC-02 R-1, R-6, F-6a, 8.5 (the total_checked row)
@@ -3209,6 +3289,26 @@ module/fold_after_dependency_c3009 cintc compared
 module/import_cycle_c3003 cint-seed compared
 # Reference: module/import_cycle_c3003 cintc SPEC-09 CONF-14.1; SPEC-04 LS-230 (no import cycles: C3003); SPEC-09 CINTC-05
 module/import_cycle_c3003 cintc compared
+# Reference: module/import_errunion_catch cint-seed SPEC-09 CONF-14.4; SPEC-04 LS-92 to LS-97, LS-119, LS-226 to LS-228; SPEC-09 CINTC-16; compiler/OPEN.md CINTC-OQ-79 (a call of an imported function with an error-union result, `catch`)
+module/import_errunion_catch cint-seed outside_subset
+# Reference: module/import_errunion_catch cintc SPEC-09 CONF-14.1; SPEC-04 LS-92 to LS-97, LS-119, LS-226 to LS-228; SPEC-09 CINTC-16; compiler/OPEN.md CINTC-OQ-79 (a call of an imported function with an error-union result, `catch`)
+module/import_errunion_catch cintc compared
+# Reference: module/import_errunion_try cint-seed SPEC-09 CONF-14.4; SPEC-04 LS-92 to LS-97, LS-119, LS-226 to LS-228; SPEC-09 CINTC-16; compiler/OPEN.md CINTC-OQ-79 (`try` on a call of an imported function into a union of the same imported set)
+module/import_errunion_try cint-seed outside_subset
+# Reference: module/import_errunion_try cintc SPEC-09 CONF-14.1; SPEC-04 LS-92 to LS-97, LS-119, LS-226 to LS-228; SPEC-09 CINTC-16; compiler/OPEN.md CINTC-OQ-79 (`try` on a call of an imported function into a union of the same imported set)
+module/import_errunion_try cintc compared
+# Reference: module/import_errunion_void cint-seed SPEC-09 CONF-14.4; SPEC-04 LS-92 to LS-97, LS-119, LS-131a, LS-226 to LS-228; SPEC-09 CINTC-16; compiler/OPEN.md CINTC-OQ-79 (a `catch` statement on an imported `E!void` call)
+module/import_errunion_void cint-seed outside_subset
+# Reference: module/import_errunion_void cintc SPEC-09 CONF-14.1; SPEC-04 LS-92 to LS-97, LS-119, LS-131a, LS-226 to LS-228; SPEC-09 CINTC-16; compiler/OPEN.md CINTC-OQ-79 (a `catch` statement on an imported `E!void` call)
+module/import_errunion_void cintc compared
+# Reference: module/import_grants_arg cint-seed SPEC-09 CONF-14.4; SPEC-04 LS-119, LS-221, LS-326; SPEC-07 SEC-CAP-1, SEC-OS-1; compiler/OPEN.md CINTC-OQ-79 (`Grants` passed to a function of another module)
+module/import_grants_arg cint-seed outside_subset
+# Reference: module/import_grants_arg cintc SPEC-09 CONF-14.1; SPEC-04 LS-119, LS-221, LS-326; SPEC-07 SEC-CAP-1, SEC-OS-1; compiler/OPEN.md CINTC-OQ-79 (`Grants` passed to a function of another module)
+module/import_grants_arg cintc compared
+# Reference: module/import_grants_service cint-seed SPEC-09 CONF-14.4; SPEC-04 LS-119, LS-221, LS-323 to LS-328; SPEC-07 SEC-CAP-1, SEC-CAP-13, SEC-OS-1; compiler/OPEN.md CINTC-OQ-79 (a service call from another module with the `Grants` handle `main` passes)
+module/import_grants_service cint-seed outside_subset
+# Reference: module/import_grants_service cintc SPEC-09 CONF-14.1; SPEC-04 LS-119, LS-221, LS-323 to LS-328; SPEC-07 SEC-CAP-1, SEC-CAP-13, SEC-OS-1; compiler/OPEN.md CINTC-OQ-79 (a service call from another module with the `Grants` handle `main` passes)
+module/import_grants_service cintc compared
 # Reference: module/import_plain cint-seed SPEC-09 CONF-14.1; SPEC-09 BOOT-01 (import_decl, module_path, qualified); SPEC-04 LS-225, LS-226, LS-227, LS-229
 module/import_plain cint-seed compared
 # Reference: module/import_plain cintc SPEC-09 CONF-14.1; SPEC-09 BOOT-01 (import_decl, module_path, qualified); SPEC-04 LS-225, LS-226, LS-227, LS-229

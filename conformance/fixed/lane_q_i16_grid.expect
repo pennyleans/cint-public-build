@@ -1,0 +1,9 @@
+case fixed/lane_q_i16_grid
+clause SPEC-01 IM-190, IM-192, IM-60, IM-30 (`hadd`, `rhadd`, `+|`, `-|` on I16 and Q5.11 over every value whose low byte is 0x00, 0x01, 0x7F, 0x80 or 0xFF crossed with 64 fixed operands, and `rshr` by 1 to 15 over the same values; one running digest a type and operation)
+format 5
+source reference
+outcome value
+stdout-bytes 204
+stdout-sha256 b36da7a5444c759a66ced3811470e40faaa1b8bfc79e0bb8bae74b86fc9f2525
+return I64 -8932767252869879040
+fuel-consumed 102721

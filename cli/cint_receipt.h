@@ -1,5 +1,5 @@
-/* cint_receipt.h: what cli/cint_main.c, cli/cint_receipt.c, cli/cint_discover.c and cli/cint_cache.c
- * share (decision 26).
+/* cint_receipt.h: what cli/cint_main.c, cli/cint_receipt.c, cli/cint_discover.c, cli/cint_cache.c and
+ * cli/cint_diag.c share (decision 26).
  *
  * Internal to the `cint` command. cint_receipt.c writes canonical JSON strings, this tool's
  * errors, the fault, error, diagnostic and test objects, the receipts, and the retained fault of a
@@ -23,6 +23,11 @@
 #ifndef CINT_COMPILER_SOURCE_IDENTITY
 #define CINT_COMPILER_SOURCE_IDENTITY ""
 #endif
+
+/* The tool version and runtime contract a receipt's identity and `cint --version` name. From the next tag,
+ * the commit a tag cint-v<x.y.z> names sets TOOL_VERSION to <x.y.z> (decision 2026-11-02, OQ-324 B). */
+#define TOOL_VERSION "0.2.17"
+#define RUNTIME_CONTRACT "cint-rt-3"
 
 /* Byte buffers and canonical JSON (SPEC-09 RCPT-02, SPEC-04 LS-289). */
 typedef struct sbuf {
@@ -58,12 +63,17 @@ const char *module_key(const cli_module *m, char *buf, size_t n);
 #define CLI_MAX_RT 32u
 
 typedef struct toolchain {
-    char *leg, *cc, *cc_version, *include, *runtime_object, *cache, *host, *compiler_sources, *executable_sha256;
+    char *leg, *cc, *cc_version, *include, *runtime_object, *host, *compiler_sources, *executable_sha256;
     char *runtime_library_object;   /* the runtime compiled with CINT_RT_LIBRARY, for `build --lib` */
+    char *backend, *qbe, *qbe_sha256, *qbe_commit, *target, *assembler, *linker;
+    char *as_flags[32], *link_before[32], *link_after[32];
+    size_t nas_flags, nlink_before, nlink_after;
     char *flags[64], *rt_sources[CLI_MAX_RT + 1u];   /* one row more than the most, so load_toolchain refuses it */
     size_t nflags, nrt;
     char file_hex[65];   /* SHA-256 of the toolchain file's bytes, part of the run cache key (OQ-313) */
 } toolchain;
+int qbe_backend(void);
+const char *qbe_capability(int64_t capability);
 
 typedef struct cli_state {
     const char *receipt, *root, *toolchain, *cache, *file, *out;
@@ -161,6 +171,7 @@ typedef struct outset {
     char **rel;
     size_t n;
 } outset;
+int compile_qbe(const outset *set, const char *bin, const char *exe, const char *log);
 
 typedef struct outcome {
     int status;      /* the exit status of `cint run` */
@@ -191,8 +202,9 @@ size_t blank(const uint8_t *s, size_t n, size_t i);
 size_t ident(const uint8_t *s, size_t n, size_t i);
 int word(const uint8_t *s, size_t n, size_t i, const char *w);
 
-/* cint_cache.c: the toolchain file and the run cache (OQ-313) */
+/* cint_cache.c: the toolchain file, the cache directory (issue #503) and the run cache (OQ-313) */
 int load_toolchain(const char *path);
+const char *cache_root(void);
 int run_cacheable(void);
 char *run_cache_lookup(void);
 char *run_cache_store(const char *exe);
@@ -203,9 +215,15 @@ int open_stdlib(void);
 int module_at(cint_bridge_root *root, const char *rel, int import);
 int follow_imports(cint_bridge_root *root, int m);
 int discover(cint_bridge_root *root);
+void emit_order(const int *listed, int nlisted, const char **out, int *n);
 int same_inputs(cint_bridge_root *root, cint_bridge_root *lib);
 int snapshot_inputs(const char *dir, cint_bridge_root **snap);
 cli_module **sorted_modules(int all, int *count);
+
+/* cint_diag.c */
+const cli_module *module_source(const char *path);
+const char *diag_text(const cint_compiler_diag *d, const char *file, char *buf, size_t cap);
+int diag_note(const cint_compiler_diag *d, const char *file, char *out, size_t cap);
 
 /* cint_receipt.c */
 int tool_error(int status, const char *tool, int tool_status, const char *log, const char *fmt, ...);

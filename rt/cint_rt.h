@@ -1093,6 +1093,8 @@ static inline void cint_rt_call_leave(cint_ctx *ctx)
  * `dr`; a check that fails calls cint_rt_lean_fail, which writes the record
  * through cint_rt_call_enter_slow. A caller whose lean callee failed calls
  * cint_rt_lean_unwind with its site, which adds it to the record. */
+/* A speculation region's snapshot buffer, writes no record (SPEC-09 BACK-17; rt/cint_rt.c). */
+void *cint_rt_spec_buffer(cint_ctx *ctx, size_t bytes);
 void cint_rt_lean_fail(cint_ctx *ctx, cint_site site, int64_t dr, int64_t fu);
 void cint_rt_lean_unwind(cint_ctx *ctx, cint_site site);
 CINT_RT_FOLD bool cint_rt_lean_enter(cint_ctx *ctx, cint_site site)
@@ -1153,11 +1155,13 @@ CINT_RT_FOLD bool cint_rt_tag_signed(uint32_t tag)
 }
 
 /* True when the integer with pattern `bits` (signed when src_signed) lies in
- * the range of the type `to_tag` (SPEC-09 EMIT-11). */
+ * the range of the type `to_tag` (SPEC-09 EMIT-11). Signed to signed under 64
+ * bits: v + 2^(w-1) in 0..2^w - 1, no branch on the sign of v (RT-OQ-81). */
 CINT_RT_FOLD bool cint_rt_fits(uint64_t bits, bool src_signed, uint32_t to_tag)
 {
     unsigned w = cint_rt_tag_width(to_tag);
     bool to_signed = cint_rt_tag_signed(to_tag);
+    if (src_signed && to_signed && w < 64u) return bits + ((uint64_t)1 << ((w - 1u) & 63u)) <= cint_rt_mask(w);
     uint64_t max = to_signed ? ((uint64_t)1 << ((w - 1u) & 63u)) - 1u : cint_rt_mask(w);
     if (!src_signed || (bits >> 63) == 0u) return bits <= max;
     return to_signed && (uint64_t)0 - bits <= (uint64_t)1 << ((w - 1u) & 63u);

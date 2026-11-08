@@ -1,0 +1,31 @@
+// case: kernel/sum_bound_plain_add
+// clause: SPEC-01 IM-77 (an exact sum, one final range check); SPEC-02 K-1, F-5 check 5 (a `where` bound holds at every item)
+// subset: cint-core-1 (kernel)
+// entry: run; args: none
+// spec outcome: value I64 2147483653. The two kernels sum exactly; the first's bound (n <= 16, I32 elements: at most 2^35 in magnitude) lets an implementation add without a per-element check, the second's I64 elements pass through 2^63 twice on the way to 0. Issue 541
+
+kernel bounded[n](in I32[n] x, out I64 s) over [i: n] where n <= 16 {
+    reduce s = sum(x[i]);
+}
+
+kernel unbounded[n](in I64[n] x, out I64 s) over [i: n] {
+    reduce s = sum(x[i]);
+}
+
+export I64 run() {
+    I32[4] a;
+    a[0] = 2147483647;
+    a[1] = 2147483647;
+    a[2] = -2147483647 - 1;
+    a[3] = 7;
+    I64 sa = 0;
+    bounded(a, sa);
+    I64[4] b;
+    b[0] = 9223372036854775807;
+    b[1] = 9223372036854775807;
+    b[2] = -9223372036854775807;
+    b[3] = -9223372036854775807;
+    I64 sb = 0;
+    unbounded(b, sb);
+    return sa + sb;
+}

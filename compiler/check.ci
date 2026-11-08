@@ -257,7 +257,7 @@ I64 first_value(in parse.Node[_] nodes, in resolve.Sem[_] sem, I64 x) {
 I64 typed_values(in resolve.Sem[_] sem, I64 x) {
     I64 id = sem[x].lit_at;
     I64 n = fold.builtin_values(id);
-    if (id == fold.BI_ROTL || id == fold.BI_ROTR || id == fold.BI_SHL_RESULT) {
+    if (id == fold.BI_ROTL || id == fold.BI_ROTR || id == fold.BI_SHL_RESULT || id == fold.BI_RSHR) {
         n -= 1;
     }
     return n;
@@ -1205,8 +1205,12 @@ Bool op_on(I32 op, I64 t) {
 // The diagnostic of built-in call x of id when its operand type is t (`cint_ref`
 // _builtin_result, rules that do not depend on a target type), or 0: C2103 for one not
 // defined on fixed point t, for one defined on fixed point only and an integer type t, for an
-// operand type that is neither, and for a rotation of a signed type.
+// operand type that is neither, for a rotation of a signed type, and for a lane Q operation
+// on a type wider than 64 bits (SPEC-01 IM-190, IM-192).
 I64 builtin_on(I64 id, I64 t) {
+    if (fold.builtin_lane(id) && (resolve.is_int(t) || fold.ty_q(t)) && fold.ty_width(t) > 64) {
+        return resolve.C_NO_OPERATOR;
+    }
     if (fold.ty_q(t)) {
         if (!fold.builtin_q(id) || id == fold.BI_QMUL || id == fold.BI_MUL_INT) {
             return resolve.C_NO_OPERATOR;
@@ -1490,13 +1494,13 @@ Bool expect_set[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
         return set_value(src, toks, nodes, sem, decls, diag, rs, x, w);
     }
     if (!resolve.is_errset(got) || !resolve.errset_holds(nodes, sem, w, got)) {
-        I64 at_code = code;
         if (resolve.is_errset(got) && (resolve.is_import_set(w) || resolve.is_import_set(got))) {
             // Whether one module's set holds another's is not checked across modules
             // (compiler/OPEN.md CINTC-OQ-68): C9102.
-            at_code = resolve.C_UNSUPPORTED;
+            resolve.fail_cross(toks, diag, rs, resolve.X_SETS, first(nodes, x));
+            return false;
         }
-        resolve.fail(toks, diag, rs, at_code, first(nodes, x));
+        resolve.fail(toks, diag, rs, code, first(nodes, x));
         return false;
     }
     widen(nodes, sem, x, w);
@@ -1537,7 +1541,7 @@ I64 compare_sets[n](in U8[n] src, in scan.Token[_] toks, in parse.Node[_] nodes,
             return tr;
         }
         if (resolve.is_import_set(tl) || resolve.is_import_set(tr)) {
-            resolve.fail(toks, diag, rs, resolve.C_UNSUPPORTED, first(nodes, b));
+            resolve.fail_cross(toks, diag, rs, resolve.X_SETS, first(nodes, b));
             return 0;
         }
     }
@@ -1657,7 +1661,8 @@ void h_try[s, r](in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.Se
         I64 code = resolve.C_SET_NARROW;
         if (rs[0].ctx == resolve.CTX_FUNCTION && resolve.is_errunion(want) &&
                 (resolve.is_import_set(resolve.union_set(want)) || resolve.is_import_set(resolve.union_set(u)))) {
-            code = resolve.C_UNSUPPORTED;
+            resolve.fail_cross(toks, diag, rs, resolve.X_SETS, tok_of(nodes, x));
+            return;
         }
         resolve.fail(toks, diag, rs, code, tok_of(nodes, x));
         return;
@@ -2475,7 +2480,12 @@ void h_builtin[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes
         h_mixed(src, toks, nodes, sem, wk, diag, rs, cs, f);
         return;
     }
-    Bool rot = id == fold.BI_ROTL || id == fold.BI_ROTR;
+    if (id == fold.BI_RMULH) {
+        h_rmulh(toks, nodes, sem, wk, diag, rs, cs, f);
+        return;
+    }
+    // `rshr`'s count is inferred and settled as a rotation's (SPEC-04 LS-329).
+    Bool rot = id == fold.BI_ROTL || id == fold.BI_ROTR || id == fold.BI_RSHR;
     I64 nv = typed_values(sem, x);
     if (wk[f].d < 0) {
         I64 argc = 0;
@@ -2522,6 +2532,10 @@ void h_builtin[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes
                 resolve.fail(toks, diag, rs, resolve.C_WRONG_KIND, first(nodes, ma));
                 return;
             }
+        }
+        if (id == fold.BI_RSHR) {
+            // IM-192: `rshr` rounds half_up; its operation names the mode.
+            sem[x].lit_len = 8;
         }
         wk[f].b = 0;
         wk[f].d = 1;
@@ -2712,6 +2726,75 @@ void h_mixed[s, r](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] nodes, 
     pop(cs);
 }
 
+// K_INFER on `rmulh(a, k)`, call x of frame f (`cint_ref` _rmulh; SPEC-01 IM-191, SPEC-04
+// LS-329): C2063 at a named argument, C2022 for other than 2 arguments; a and k inferred in
+// order; an untyped a takes the type of a fixed-point k, else I64; C2103 at an a that is not
+// fixed point of 16- or 32-bit storage; an untyped k settles to the coefficient type
+// Q1.(w-1), C2001 at a k of another type. The call has the type of a (opty and ty) and rounds
+// half_up (lit_len). Frame: b the values inferred, d 0 once begun.
+void h_rmulh[s, r](in scan.Token[_] toks, in parse.Node[_] nodes, inout resolve.Sem[_] sem, inout parse.Frame[s] wk,
+        inout limits.CompilerDiag[r] diag, inout resolve.RState[_] rs, inout CState[_] cs, I64 f) {
+    I64 x = wk[f].node as I64;
+    if (wk[f].d < 0) {
+        I64 g = nodes[x].b as I64;
+        while (g >= 0) {
+            if (nodes[g].kind == parse.N_NAMEDARG) {
+                resolve.fail(toks, diag, rs, C_NO_PARAM, tok_of(nodes, g));
+                return;
+            }
+            g = nodes[g].next as I64;
+        }
+        if (list_length(nodes, nodes[x].b as I64) != 2) {
+            resolve.fail(toks, diag, rs, resolve.C_ARG_COUNT, first(nodes, x));
+            return;
+        }
+        sem[x].lit_len = 8;
+        wk[f].b = 0;
+        wk[f].d = 0;
+    }
+    if (wk[f].b < 2) {
+        I64 v = builtin_value(nodes, sem, x, wk[f].b as I64);
+        wk[f].b += 1;
+        _ = push(toks, nodes, wk, diag, rs, cs, K_INFER, v, 0);
+        return;
+    }
+    I64 a = builtin_value(nodes, sem, x, 0);
+    I64 k = builtin_value(nodes, sem, x, 1);
+    I64 ta = sem[a].ty;
+    if (ta == resolve.TY_NONE) {
+        ta = fold.TY_I64;
+        if (fold.ty_q(sem[k].ty)) {
+            ta = sem[k].ty;
+        }
+        settle(toks, nodes, sem, wk, diag, rs, cs, a, ta);
+        if (rs[0].err != 0) {
+            return;
+        }
+    }
+    I64 w = fold.ty_width(ta);
+    if (!fold.ty_q(ta) || (w != 16 && w != 32)) {
+        resolve.fail(toks, diag, rs, resolve.C_NO_OPERATOR, first(nodes, a));
+        return;
+    }
+    I64 coef = fold.q_type(w, w - 1);
+    if (sem[k].ty == resolve.TY_NONE) {
+        settle(toks, nodes, sem, wk, diag, rs, cs, k, coef);
+        if (rs[0].err != 0) {
+            return;
+        }
+    }
+    if (sem[k].ty != coef) {
+        resolve.fail(toks, diag, rs, resolve.C_TYPE_MISMATCH, first(nodes, k));
+        return;
+    }
+    sem[x].opty = ta;
+    sem[x].ty = ta;
+    if (is_const(sem, a) && is_const(sem, k)) {
+        sem[x].flags = sem[x].flags | resolve.SEM_CONST;
+    }
+    pop(cs);
+}
+
 // K_INFER on `Q<i>.<f>.raw(n)`, call x of frame f (`cint_ref` _raw_ctor; SPEC-01 IM-57,
 // SPEC-04 LS-38; box 15 unit 4e): the value whose storage integer is n, exact. C2005 at the
 // type's name when it names none, C2063 at a named argument, C2022 for other than one
@@ -2782,7 +2865,8 @@ void builtin_result[r](in scan.Token[_] toks, in parse.Node[_] nodes, inout reso
         return;
     }
     if ((fold.ty_limbs(t) && fold.builtin_result(id)) ||
-            ((id == fold.BI_ROTL || id == fold.BI_ROTR) && fold.ty_wide(sem[builtin_value(nodes, sem, x, 1)].ty)) ||
+            ((id == fold.BI_ROTL || id == fold.BI_ROTR || id == fold.BI_RSHR) &&
+                fold.ty_wide(sem[builtin_value(nodes, sem, x, 1)].ty)) ||
             (id == fold.BI_MULDIV && fold.ty_wide(target) && !fold.ty_wide(t))) {
         // `add_result` and the others on a wide type or fixed point of 128 bits (an error
         // union's value type is a code below 256, resolve.union_type), a rotation by a wide
@@ -5919,7 +6003,7 @@ void h_eval[s, l, r, nw](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] n
             }
             I64 oty = builtin_opty(sem, x);
             I64 kty = fold.TY_I64;
-            if (id == fold.BI_ROTL || id == fold.BI_ROTR) {
+            if (id == fold.BI_ROTL || id == fold.BI_ROTR || id == fold.BI_RSHR) {
                 kty = ety(sem, builtin_value(nodes, sem, x, 1));
             }
             U64 v0 = sem[builtin_value(nodes, sem, x, 0)].bits;
@@ -5939,7 +6023,7 @@ void h_eval[s, l, r, nw](in U8[_] src, in scan.Token[_] toks, in parse.Node[_] n
                 } else {
                     fold.fold_q_binary(fres, qname, qform, sem[x].lit_len, oty, v0, v1);
                 }
-            } else if (id == fold.BI_SQRT || id == fold.BI_QMUL || id == fold.BI_MUL_INT) {
+            } else if (id == fold.BI_SQRT || id == fold.BI_QMUL || id == fold.BI_MUL_INT || id == fold.BI_RMULH) {
                 I64 tb = fold.TY_I64;
                 if (nb > 1) {
                     tb = ety(sem, builtin_value(nodes, sem, x, 1));

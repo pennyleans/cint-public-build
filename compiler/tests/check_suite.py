@@ -58,10 +58,12 @@ PRELUDE = ref_check.PRELUDE   # cintc's prelude: boxes 09 and 12
 # box 07, the result-returning forms of box 12 (`add_result` and the others), which take no
 # type argument, and of which `mul_result` and `div_result` take a trailing mode on fixed point
 # (OQ-273), and the fixed-point built-ins of box 15 unit 4e, `qmul(R, a, b[, mode])` and
-# `mul_int(a, n)` among them (check.ci given_mode).
+# `mul_int(a, n)` among them (check.ci given_mode), and the lane Q built-ins of S-1 U-1, whose
+# `rmulh(a, k)` is `cint_ref`'s _rmulh, outside its BUILTIN_SIGS (SPEC-04 LS-329).
 BUILTIN_SIGS = dict(ref_check.BUILTIN_SIGS)
 BUILTIN_SIGS.update({name: ("E", 2, False, name in ref_check.RESULT_MODES) for name in ref_check.RESULT_BUILTINS})
-BUILTIN_SIGS.update({"qmul": ("R", 3, True, "optional"), "mul_int": ("T", 2, False, False)})
+BUILTIN_SIGS.update({"qmul": ("R", 3, True, "optional"), "mul_int": ("T", 2, False, False),
+                     "rmulh": ("T", 2, False, False)})
 # The array built-ins of box 09 that check.ci's gate admits (check.ci mark_arrayfn); `min`
 # and `max` are BUILTIN_SIGS'. check.ci h_reshape refuses the `reshape`s of reshape_out.
 ARRAY_FNS = frozenset({"len", "extent", "size", "copy", "fill", "transpose", "reverse", "reshape", "sum",
@@ -157,6 +159,7 @@ class Subset:
         self.sizes = ()
         self.local_extents = []
         self.nd_extents = []
+        self.script = False
         self.late = False
         self.reshape_big = False
         self.in_function = True
@@ -201,7 +204,10 @@ class Subset:
                 return False
             if self.scalar(t.name) or t.name in self.structs or (
                     t.name not in INT_TYPES and t.name not in GATED_TYPES and t.name != "_"):
-                self.local_extents.append((t.shape, where == "local" and self.in_function))
+                # The limit of a rank-1 extent: a function's local array BIG_EXTENT_MAX (OQ-213), a
+                # module-level array MODULE_ARRAY_MAX (OQ-297), anything else ARRAY_EXTENT_MAX.
+                self.local_extents.append((t.shape, 2 ** 32 if where == "local" and self.in_function else
+                                           65536 if where == "local" and not self.script else 65534))
                 return True
         if t.shape is not None or t.module is not None:
             return False
@@ -535,7 +541,7 @@ class Subset:
             # A module-level arena or pool (box 12), not exported.
             if getattr(d, "exported", False) or not self.mem_ok(d.type, "memory") or not self.expr(d.init):
                 return False
-        script = any(not isinstance(s, T.VarDecl) for s in m.statements)
+        script = self.script = any(not isinstance(s, T.VarDecl) for s in m.statements)
         for s in list(m.consts) + list(m.statements):
             if isinstance(s, T.VarDecl) and getattr(s.type, "inner", None) is not None and (
                     not script or s.is_const or getattr(s, "exported", False)):
@@ -764,12 +770,13 @@ def outcome(data: bytes, path: str) -> dict:
 def past_extent(subset, before=None) -> bool:
     """Whether a folded array extent of the module is past B1's limits: resolve.ARRAY_EXTENT_MAX
     at rank 1, BIG_EXTENT_MAX for a function's local array (decision 2026-10-06 on OQ-213),
+    MODULE_ARRAY_MAX for a module-level array (decision 2026-10-19 on OQ-297),
     NARRAY_EXTENT_MAX above. With position `before`, only an extent that comes before it, which
     check.ci refuses with C9102 where it reaches it, ahead of `cint_ref`'s later diagnostic."""
     def early(e):
         return before is None or (e.pos.line, e.pos.column) < (before.line, before.column)
-    return any(e.const is not None and e.const.value > (2 ** 32 if big else 65534) and early(e)
-               for e, big in subset.local_extents) or any(
+    return any(e.const is not None and e.const.value > limit and early(e)
+               for e, limit in subset.local_extents) or any(
         e.const is not None and e.const.value > 3070 and early(e) for e in subset.nd_extents)
 
 

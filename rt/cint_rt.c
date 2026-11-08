@@ -908,6 +908,23 @@ cint_status cint_ctx_create(const cint_ctx_config *config, cint_ctx **out)
 #include "cint_host.c" /* the host table and the extern call (RT-OQ-70), counted in their own 4.2 row */
 #include "cint_fs.c"   /* the fs/1 service of the standard service table (RT-OQ-72), counted in its own 4.2 row */
 #include "cint_console.c" /* the console/1 service and the service table's lookup (RT-OQ-73), counted in its own 4.2 row */
+/* The snapshot buffer of a speculation region (SPEC-09 BACK-17), at least `bytes` long; grown
+ * by doubling, never shrunk; NULL when it cannot grow, and the region then runs checked. */
+void *cint_rt_spec_buffer(cint_ctx *ctx, size_t bytes)
+{
+    if (bytes > ctx->spec_cap) {
+        size_t cap = ctx->spec_cap > 0u ? ctx->spec_cap : 4096u;
+        while (cap < bytes && cap <= SIZE_MAX / 2u) cap *= 2u;
+        if (cap < bytes) return NULL;
+        void *p = ctx->allocator.alloc(ctx->allocator.user, cap, 8u);
+        if (p == NULL) return NULL;
+        if (ctx->spec_buf != NULL) ctx->allocator.release(ctx->allocator.user, ctx->spec_buf, ctx->spec_cap, 8u);
+        ctx->spec_buf = (uint8_t *)p;
+        ctx->spec_cap = cap;
+    }
+    return ctx->spec_buf != NULL ? (void *)ctx->spec_buf : (void *)&ctx->spec_cap;
+}
+
 void cint_ctx_destroy(cint_ctx *ctx)
 {
     cint_allocator a;
@@ -919,6 +936,7 @@ void cint_ctx_destroy(cint_ctx *ctx)
     scratch_free(ctx, 0);
     mem_destroy(ctx);
     if (ctx->print_buf != NULL) a.release(a.user, ctx->print_buf, ctx->print_cap, 1u);
+    if (ctx->spec_buf != NULL) a.release(a.user, ctx->spec_buf, ctx->spec_cap, 8u);
     for (uint32_t i = 0u; i < ctx->buffer_used; i++) {
         const buffer_slot *s = &ctx->buffers[i];
         if (s->live != 0u && s->storage == STORAGE_CREATED && s->base != NULL)
@@ -3312,3 +3330,6 @@ void cint_rt_scratch_release(cint_ctx *ctx, int64_t mark)
 {
     scratch_free(ctx, mark);
 }
+#include "cint_qbe.c" /* the cpu-qbe entry points (RT-OQ-82), counted in its own 4.2 row */
+#include "cint_qbe_wide.c" /* the cpu-qbe wide-integer entry points (RT-OQ-82), counted in its own 4.2 row */
+#include "cint_qbe_fixed.c" /* the cpu-qbe fixed-point entry points (RT-OQ-82), counted in its own 4.2 row */

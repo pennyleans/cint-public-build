@@ -1,0 +1,12 @@
+// case: fixed/lane_q_hadd_c2001
+// clause: SPEC-01 IM-190; SPEC-04 LS-145, 17.2 (`hadd` of two fixed-point types is C2001)
+// subset: cint-core-1 (fixed point, lane Q)
+// entry: run; args: none
+// spec outcome: compile-error C2001 at 10:23 (the second argument)
+
+export I64 run() {
+    Q5.11 a = 1.0;
+    Q8.8 b = 1.0;
+    Q5.11 c = hadd(a, b);
+    return c.raw as I64;
+}

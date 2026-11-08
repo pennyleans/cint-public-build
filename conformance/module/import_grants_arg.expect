@@ -1,0 +1,7 @@
+case module/import_grants_arg
+clause SPEC-04 LS-119, LS-221, LS-323 to LS-328; SPEC-07 SEC-CAP-1, SEC-OS-1
+source reference
+outcome value
+stdout-bytes 2
+stdout-sha256 53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3
+fuel-consumed 2
