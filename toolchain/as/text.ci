@@ -1,0 +1,97 @@
+// toolchain/as/text.ci: bytes for cint-as (docs/design/notes/2026-11-07-cint-as.md section 2):
+// character classes, name comparison and little-endian stores. No state.
+
+export Bool is_space(U8 c) {
+    return c == ' ' || c == '\t' || c == '\r';
+}
+
+export Bool is_digit(U8 c) {
+    return c >= '0' && c <= '9';
+}
+
+export Bool is_name_start(U8 c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '.';
+}
+
+export Bool is_name(U8 c) {
+    return is_name_start(c) || is_digit(c) || c == '$';
+}
+
+// Whether a[at..at + n] holds exactly the bytes of w.
+export Bool same(in U8[_] a, I64 at, I64 n, in U8[_] w) {
+    if (n != len(w)) {
+        return false;
+    }
+    for i in 0..n {
+        if (a[at + i] != w[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// The index of the word a[at..at + n] in a list of words each ended by one space, or -1.
+export I64 find(in U8[_] a, I64 at, I64 n, in U8[_] words) {
+    I64 k = 0;
+    I64 i = 0;
+    I64 m = len(words);
+    while (i < m) {
+        I64 j = i;
+        while (words[j] != ' ') {
+            j += 1;
+        }
+        if (j - i == n) {
+            Bool eq = true;
+            for t in 0..n {
+                if (eq && a[at + t] != words[i + t]) {
+                    eq = false;
+                }
+            }
+            if (eq) {
+                return k;
+            }
+        }
+        k += 1;
+        i = j + 1;
+    }
+    return -1;
+}
+
+// Stores the low n bytes of v at b[at], least significant first.
+export void put(inout U8[_] b, I64 at, I64 v, I64 n) {
+    for i in 0..n {
+        b[at + i] = ((v >> (8 * i)) & 255) as U8;
+    }
+}
+
+// The value of the n little-endian bytes at b[at], n at most 7.
+export I64 get(in U8[_] b, I64 at, I64 n) {
+    I64 v = 0;
+    for i in 0..n {
+        v = v | ((b[at + i] as I64) << (8 * i));
+    }
+    return v;
+}
+
+// Whether v fits a signed field of `bits` bits.
+export Bool fits(I64 v, I64 bits) {
+    if (bits >= 64) {
+        return true;
+    }
+    I64 h = 1 << (bits - 1);
+    return v >= 0 - h && v < h;
+}
+
+// v reduced to `bytes` bytes and sign-extended back (two's complement), bytes 1, 2, 4 or 8.
+export I64 narrow(I64 v, I64 bytes) {
+    if (bytes >= 8) {
+        return v;
+    }
+    I64 m = (1 << (8 * bytes)) - 1;
+    I64 u = v & m;
+    I64 h = 1 << (8 * bytes - 1);
+    if (u >= h) {
+        return u - (m + 1);
+    }
+    return u;
+}

@@ -1,0 +1,472 @@
+// toolchain/as/elf.ci: the ELF64 writer of cint-as (docs/design/notes/2026-11-07-cint-as.md section 4, rules
+// G-1, G-2, G-4, G-7, G-10): symbol order, suffix-merged string tables, file layout, section contents with the
+// final jumps and NOP fill, relocations and headers. Shared knowledge for the static linker unit: the merge of
+// `merge` is binutils `_bfd_elf_strtab_finalize`.
+
+import toolchain.as.text;
+import toolchain.as.x86;
+import toolchain.as.obj;
+
+// GNU as 2.42's NOP patterns for 1 to 11 bytes (G-10), each at NOP_AT[n - 1].
+I64[11] nop_at = [0, 1, 3, 6, 10, 15, 21, 28, 36, 45, 55];
+
+// strrevcmp of binutils: compares strings from their last byte; a suffix sorts before the longer string.
+I64 revcmp(in U8[_] b, in I64[_] ss, in I64[_] sl, I64 x, I64 y) {
+    I64 lx = sl[x];
+    I64 ly = sl[y];
+    I64 l = lx;
+    if (ly < l) {
+        l = ly;
+    }
+    for i in 1..l + 1 {
+        I64 cx = b[ss[x] + lx - i] as I64;
+        I64 cy = b[ss[y] + ly - i] as I64;
+        if (cx != cy) {
+            return cx - cy;
+        }
+    }
+    return lx - ly;
+}
+
+Bool suffix_of(in U8[_] b, in I64[_] ss, in I64[_] sl, I64 e, I64 c) {
+    if (sl[e] <= sl[c]) {
+        return false;
+    }
+    I64 d = sl[e] - sl[c];
+    for i in 0..sl[c] {
+        if (b[ss[e] + d + i] != b[ss[c] + i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// The offsets sx of k strings b[ss[i]..ss[i] + sl[i]] in a suffix-merged table (G-7); returns the table size.
+// wk holds 3 k values: the sorted order, a sort buffer, and each merged string's keeper.
+export I64 merge(in U8[_] b, in I64[_] ss, in I64[_] sl, I64 k, inout I64[_] sx, inout I64[_] wk) {
+    if (k == 0) {
+        return 1;
+    }
+    for i in 0..k {
+        wk[i] = i;
+        wk[2 * k + i] = -1;
+    }
+    I64 w = 1;
+    while (w < k) {
+        I64 lo = 0;
+        while (lo < k) {
+            I64 mid = lo + w;
+            if (mid > k) {
+                mid = k;
+            }
+            I64 hi = lo + 2 * w;
+            if (hi > k) {
+                hi = k;
+            }
+            I64 i = lo;
+            I64 j = mid;
+            I64 t = lo;
+            while (t < hi) {
+                if (j >= hi || (i < mid && revcmp(b, ss, sl, wk[i], wk[j]) <= 0)) {
+                    wk[k + t] = wk[i];
+                    i += 1;
+                } else {
+                    wk[k + t] = wk[j];
+                    j += 1;
+                }
+                t += 1;
+            }
+            lo = hi;
+        }
+        for i in 0..k {
+            wk[i] = wk[k + i];
+        }
+        w = 2 * w;
+    }
+    I64 e = wk[k - 1];
+    I64 t = k - 2;
+    while (t >= 0) {
+        I64 c = wk[t];
+        if (suffix_of(b, ss, sl, e, c)) {
+            wk[2 * k + c] = e;
+        } else {
+            e = c;
+        }
+        t -= 1;
+    }
+    I64 off = 1;
+    for i in 0..k {
+        if (wk[2 * k + i] < 0) {
+            sx[i] = off;
+            off += sl[i] + 1;
+        }
+    }
+    for i in 0..k {
+        I64 p = wk[2 * k + i];
+        if (p >= 0) {
+            sx[i] = sx[p] + sl[p] - sl[i];
+        }
+    }
+    return off;
+}
+
+// Writes the table of merge at out[at].
+void put_table(in U8[_] b, in I64[_] ss, in I64[_] sl, in I64[_] sx, I64 k, inout U8[_] ob, I64 at) {
+    ob[at] = 0;
+    for i in 0..k {
+        for t in 0..sl[i] {
+            ob[at + sx[i] + t] = b[ss[i] + t];
+        }
+        ob[at + sx[i] + sl[i]] = 0;
+    }
+}
+
+I64 up(I64 v, I64 a) {
+    return (v + a - 1) & (0 - a);
+}
+
+Bool is_global(in I64[_] sy, I64 k) {
+    return sy[k * obj.Y_W + obj.Y_BIND] == 1 || sy[k * obj.Y_W + obj.Y_SEC] <= 0;
+}
+
+Bool emitted(in I64[_] sy, I64 k) {
+    if (sy[k * obj.Y_W + obj.Y_LABEL] == 1) {
+        return false;
+    }
+    if (sy[k * obj.Y_W + obj.Y_TY] == obj.T_SECTION) {
+        return sy[k * obj.Y_W + obj.Y_USED] == 1;
+    }
+    return true;
+}
+
+void shdr(inout U8[_] ob, I64 at, I64 name, I64 ty, I64 flags, I64 off, I64 nbytes, I64 link, I64 info, I64 align,
+        I64 ent) {
+    text.put(ob, at, name, 4);
+    text.put(ob, at + 4, ty, 4);
+    text.put(ob, at + 8, flags, 8);
+    text.put(ob, at + 24, off, 8);
+    text.put(ob, at + 32, nbytes, 8);
+    text.put(ob, at + 40, link, 4);
+    text.put(ob, at + 44, info, 4);
+    text.put(ob, at + 48, align, 8);
+    text.put(ob, at + 56, ent, 8);
+}
+
+// sh_entsize of a section of type ty: 8 for the three array types, else 0.
+I64 entsize(I64 ty) {
+    if (ty == obj.SHT_INIT_ARRAY || ty == obj.SHT_FINI_ARRAY || ty == obj.SHT_PREINIT_ARRAY) {
+        return 8;
+    }
+    return 0;
+}
+
+// The bytes of section s at out[at]: fragments, final jumps (G-9) and alignment fill (G-10).
+void contents(in I64[_] sy, in I64[_] se, in I64[_] fr, in U8[_] code, I64 s, inout U8[_] ob, I64 at) {
+    in U8[_] nopb = b"\x90\x66\x90\x0f\x1f\x00\x0f\x1f\x40\x00\x0f\x1f\x44\x00\x00\x66\x0f\x1f\x44\x00\x00\x0f\x1f\x80\x00\x00\x00\x00\x0f\x1f\x84\x00\x00\x00\x00\x00\x66\x0f\x1f\x84\x00\x00\x00\x00\x00\x66\x2e\x0f\x1f\x84\x00\x00\x00\x00\x00\x66\x66\x2e\x0f\x1f\x84\x00\x00\x00\x00\x00";
+    Bool nops = (se[s * obj.C_W + obj.C_FLAGS] & obj.SHF_EXEC) != 0;
+    I64 f = se[s * obj.C_W + obj.C_FIRST];
+    while (f >= 0) {
+        I64 p = at + fr[f * obj.G_W + obj.G_ADDR];
+        for i in 0..fr[f * obj.G_W + obj.G_FIX] {
+            ob[p + i] = code[fr[f * obj.G_W + obj.G_AT] + i];
+        }
+        I64 q = p + fr[f * obj.G_W + obj.G_FIX];
+        I64 v = obj.var_size(fr, f);
+        if (fr[f * obj.G_W + obj.G_KIND] == obj.F_JUMP) {
+            I64 d = obj.jump_disp(sy, fr, f);
+            I64 cc = fr[f * obj.G_W + obj.G_CC];
+            if (fr[f * obj.G_W + obj.G_BIG] == 0) {
+                if (cc == x86.JMP) {
+                    ob[q - 1] = 0xEB;
+                } else {
+                    ob[q - 1] = (0x70 + cc) as U8;
+                }
+                text.put(ob, q, d, 1);
+            } else if (cc == x86.JMP) {
+                ob[q - 1] = 0xE9;
+                text.put(ob, q, d, 4);
+            } else {
+                ob[q - 1] = 0x0F;
+                ob[q] = (0x80 + cc) as U8;
+                text.put(ob, q + 1, d, 4);
+            }
+        } else if (fr[f * obj.G_W + obj.G_KIND] == obj.F_ALIGN && nops) {
+            I64 left = v;
+            if (left > 0 && fr[f * obj.G_W + obj.G_CC] == 1) {
+                ob[q] = 0x90;
+                q += 1;
+                left -= 1;
+            }
+            if (left / 11 > 7) {
+                if (left - 2 <= 127) {
+                    ob[q] = 0xEB;
+                    ob[q + 1] = (left - 2) as U8;
+                    q += 2;
+                    left -= 2;
+                } else {
+                    ob[q] = 0xE9;
+                    text.put(ob, q + 1, left - 5, 4);
+                    q += 5;
+                    left -= 5;
+                }
+            }
+            while (left > 0) {
+                I64 m = left;
+                if (m > 11) {
+                    m = 11;
+                }
+                for i in 0..m {
+                    ob[q + i] = nopb[nop_at[m - 1] + i];
+                }
+                q += m;
+                left -= m;
+            }
+        }
+        f = fr[f * obj.G_W + obj.G_NEXT];
+    }
+}
+
+// Writes the object into out; returns its size, or -1 (st[S_ERR] set) when out is too small.
+// wk holds 7 values per symbol table row.
+export I64 write(inout I64[_] st, inout I64[_] sy, inout I64[_] se, in I64[_] fr, in I64[_] fi,
+        in U8[_] code, in U8[_] nm, inout I64[_] wk, inout U8[_] ob) {
+    I64 K = st[obj.S_CAPSYM];
+    I64 ns = st[obj.S_NSYM];
+    I64 nsec = st[obj.S_NSEC];
+    // Symbol order (G-4): the locals, then the globals, each in creation order; wk[0..n] lists them.
+    I64 n = 0;
+    for k in 0..ns {
+        if (emitted(sy, k) && !is_global(sy, k)) {
+            wk[n] = k;
+            n += 1;
+        }
+    }
+    I64 nlocal = n;
+    for k in 0..ns {
+        if (emitted(sy, k) && is_global(sy, k)) {
+            wk[n] = k;
+            n += 1;
+        }
+    }
+    // .strtab: the names of the rows that have one.
+    I64 m = 0;
+    for i in 0..n {
+        I64 k = wk[i];
+        sy[k * obj.Y_W + obj.Y_OB] = i + 1;
+        sy[k * obj.Y_W + obj.Y_STRX] = 0;
+        if (sy[k * obj.Y_W + obj.Y_TY] != obj.T_SECTION) {
+            wk[K + m] = sy[k * obj.Y_W + obj.Y_NAME];
+            wk[2 * K + m] = sy[k * obj.Y_W + obj.Y_NLEN];
+            m += 1;
+        }
+    }
+    I64 strsize = merge(nm, wk[K..2 * K], wk[2 * K..3 * K], m, wk[3 * K..4 * K], wk[4 * K..7 * K]);
+    m = 0;
+    for i in 0..n {
+        I64 k = wk[i];
+        if (sy[k * obj.Y_W + obj.Y_TY] != obj.T_SECTION) {
+            sy[k * obj.Y_W + obj.Y_STRX] = wk[3 * K + m];
+            m += 1;
+        }
+    }
+    // Section indices (G-1).
+    I64 x = 1;
+    for s in 0..nsec {
+        se[s * obj.C_W + obj.C_NDX] = x;
+        x += 1;
+        if (se[s * obj.C_W + obj.C_NREL] > 0) {
+            se[s * obj.C_W + obj.C_RNDX] = x;
+            x += 1;
+        }
+    }
+    // An object without symbols has no .symtab and no .strtab.
+    I64 nt = 3;
+    if (n == 0) {
+        nt = 1;
+    }
+    I64 symtab = x;
+    I64 shnum = x + nt;
+    // .shstrtab (G-7): .symtab .strtab .shstrtab (or .shstrtab alone), then the sections by index.
+    U8[32768] sn;
+    I64[256] ss;
+    I64[256] sl;
+    I64[256] sx;
+    I64[768] w2;
+    I64 q = 0;
+    I64 c = 0;
+    sn[0..9] = b".shstrtab";
+    sn[9..16] = b".symtab";
+    sn[16..23] = b".strtab";
+    q = 23;
+    c = nt;
+    ss[nt - 1] = 0;
+    sl[nt - 1] = 9;
+    if (nt == 3) {
+        ss[0] = 9;
+        sl[0] = 7;
+        ss[1] = 16;
+        sl[1] = 7;
+    }
+    for s in 0..nsec {
+        I64 l = se[s * obj.C_W + obj.C_NLEN];
+        if (q + 2 * l + 5 > len(sn)) {
+            _ = obj.fail(st, obj.E_FULL);
+            return -1;
+        }
+        for i in 0..l {
+            sn[q + i] = nm[se[s * obj.C_W + obj.C_NAME] + i];
+        }
+        ss[c] = q;
+        sl[c] = l;
+        q += l;
+        c += 1;
+        if (se[s * obj.C_W + obj.C_NREL] > 0) {
+            sn[q..q + 5] = b".rela";
+            for i in 0..l {
+                sn[q + 5 + i] = nm[se[s * obj.C_W + obj.C_NAME] + i];
+            }
+            ss[c] = q;
+            sl[c] = l + 5;
+            q += l + 5;
+            c += 1;
+        }
+    }
+    I64 shsize = merge(sn, ss, sl, c, sx, w2);
+    I64 cn = c;
+    c = nt;
+    for s in 0..nsec {
+        se[s * obj.C_W + obj.C_SHNAME] = sx[c];
+        c += 1;
+        if (se[s * obj.C_W + obj.C_NREL] > 0) {
+            se[s * obj.C_W + obj.C_RNAME] = sx[c];
+            c += 1;
+        }
+    }
+    // Layout (G-2).
+    I64 off = 64;
+    for s in 0..nsec {
+        off = up(off, se[s * obj.C_W + obj.C_ALIGN]);
+        se[s * obj.C_W + obj.C_OFF] = off;
+        if (se[s * obj.C_W + obj.C_TY] != obj.SHT_NOBITS) {
+            off += se[s * obj.C_W + obj.C_NBYTES];
+        }
+    }
+    I64 symoff = off;
+    I64 stroff = off;
+    if (nt == 3) {
+        off = up(off, 8);
+        symoff = off;
+        off += 24 * (n + 1);
+        stroff = off;
+        off += strsize;
+    }
+    for s in 0..nsec {
+        if (se[s * obj.C_W + obj.C_NREL] > 0) {
+            off = up(off, 8);
+            se[s * obj.C_W + obj.C_ROFF] = off;
+            off += 24 * se[s * obj.C_W + obj.C_NREL];
+        }
+    }
+    I64 shstroff = off;
+    off += shsize;
+    I64 shoff = up(off, 8);
+    I64 total = shoff + 64 * shnum;
+    if (total > len(ob)) {
+        _ = obj.fail(st, obj.E_FULL);
+        return -1;
+    }
+    for i in 0..total {
+        ob[i] = 0;
+    }
+    // The ELF header.
+    ob[0] = 0x7F;
+    ob[1] = 'E';
+    ob[2] = 'L';
+    ob[3] = 'F';
+    ob[4] = 2;
+    ob[5] = 1;
+    ob[6] = 1;
+    text.put(ob, 16, 1, 2);
+    text.put(ob, 18, 62, 2);
+    text.put(ob, 20, 1, 4);
+    text.put(ob, 40, shoff, 8);
+    text.put(ob, 52, 64, 2);
+    text.put(ob, 58, 64, 2);
+    text.put(ob, 60, shnum, 2);
+    text.put(ob, 62, shnum - 1, 2);
+    for s in 0..nsec {
+        if (se[s * obj.C_W + obj.C_TY] != obj.SHT_NOBITS) {
+            contents(sy, se, fr, code, s, ob, se[s * obj.C_W + obj.C_OFF]);
+        }
+    }
+    // .symtab rows.
+    for i in 0..n {
+        I64 k = wk[i];
+        I64 at = symoff + 24 * (i + 1);
+        I64 bind = 0;
+        if (i >= nlocal) {
+            bind = 1;
+        }
+        I64 ty = sy[k * obj.Y_W + obj.Y_TY];
+        if (ty != obj.T_SECTION && sy[k * obj.Y_W + obj.Y_TLS] == 1) {
+            ty = 6;
+        }
+        I64 shndx = 0;
+        I64 v = obj.value(sy, fr, k);
+        if (sy[k * obj.Y_W + obj.Y_SEC] > 0) {
+            shndx = se[(sy[k * obj.Y_W + obj.Y_SEC] - 1) * obj.C_W + obj.C_NDX];
+        } else if (sy[k * obj.Y_W + obj.Y_SEC] == obj.COMMON) {
+            shndx = 0xFFF2;
+            v = sy[k * obj.Y_W + obj.Y_ALIGN];
+        }
+        text.put(ob, at, sy[k * obj.Y_W + obj.Y_STRX], 4);
+        ob[at + 4] = ((bind << 4) | ty) as U8;
+        text.put(ob, at + 6, shndx, 2);
+        text.put(ob, at + 8, v, 8);
+        text.put(ob, at + 16, sy[k * obj.Y_W + obj.Y_NBYTES], 8);
+    }
+    // .strtab.
+    m = 0;
+    for i in 0..n {
+        I64 k = wk[i];
+        if (sy[k * obj.Y_W + obj.Y_TY] != obj.T_SECTION) {
+            wk[K + m] = sy[k * obj.Y_W + obj.Y_NAME];
+            wk[2 * K + m] = sy[k * obj.Y_W + obj.Y_NLEN];
+            m += 1;
+        }
+    }
+    if (nt == 3) {
+        put_table(nm, wk[K..2 * K], wk[2 * K..3 * K], wk[3 * K..4 * K], m, ob, stroff);
+    }
+    // Relocations, each section's in fixup order.
+    for s in 0..nsec {
+        if (se[s * obj.C_W + obj.C_NREL] > 0) {
+            I64 at = se[s * obj.C_W + obj.C_ROFF];
+            for j in 0..st[obj.S_NFIX] {
+                if (fi[j * obj.X_W + obj.X_RTYPE] != 0 && fr[(fi[j * obj.X_W + obj.X_FRAG]) * obj.G_W + obj.G_SEC] == s) {
+                    text.put(ob, at, fr[(fi[j * obj.X_W + obj.X_FRAG]) * obj.G_W + obj.G_ADDR] + fi[j * obj.X_W + obj.X_OFF], 8);
+                    text.put(ob, at + 8, fi[j * obj.X_W + obj.X_RTYPE], 4);
+                    text.put(ob, at + 12, sy[(fi[j * obj.X_W + obj.X_RSYM]) * obj.Y_W + obj.Y_OB], 4);
+                    text.put(ob, at + 16, fi[j * obj.X_W + obj.X_RADD], 8);
+                    at += 24;
+                }
+            }
+        }
+    }
+    put_table(sn, ss, sl, sx, cn, ob, shstroff);
+    // Section headers.
+    for s in 0..nsec {
+        I64 h = shoff + 64 * se[s * obj.C_W + obj.C_NDX];
+        shdr(ob, h, se[s * obj.C_W + obj.C_SHNAME], se[s * obj.C_W + obj.C_TY], se[s * obj.C_W + obj.C_FLAGS], se[s * obj.C_W + obj.C_OFF], se[s * obj.C_W + obj.C_NBYTES], 0, 0, se[s * obj.C_W + obj.C_ALIGN], entsize(se[s * obj.C_W + obj.C_TY]));
+        if (se[s * obj.C_W + obj.C_NREL] > 0) {
+            h = shoff + 64 * se[s * obj.C_W + obj.C_RNDX];
+            shdr(ob, h, se[s * obj.C_W + obj.C_RNAME], 4, 64, se[s * obj.C_W + obj.C_ROFF], 24 * se[s * obj.C_W + obj.C_NREL], symtab, se[s * obj.C_W + obj.C_NDX], 8, 24);
+        }
+    }
+    if (nt == 3) {
+        shdr(ob, shoff + 64 * symtab, sx[0], 2, 0, symoff, 24 * (n + 1), symtab + 1, nlocal + 1, 8, 24);
+        shdr(ob, shoff + 64 * (symtab + 1), sx[1], 3, 0, stroff, strsize, 0, 0, 1, 0);
+    }
+    shdr(ob, shoff + 64 * (shnum - 1), sx[nt - 1], 3, 0, shstroff, shsize, 0, 0, 1, 0);
+    return total;
+}

@@ -1,0 +1,1262 @@
+// toolchain/as/x86.ci: operands and the instruction encoder of cint-as (docs/design/notes/2026-11-07-cint-as.md
+// sections 3 and 4, rule G-11). One instruction in, its bytes and at most two fixups out. A direct jump is not
+// encoded here: encode reports it and the object layer relaxes it (G-9).
+
+import toolchain.as.text;
+
+// One operand. kind: OK_REG, OK_IMM or OK_MEM. A register has reg (0 to 15, RIP 16) and size (1, 2, 4, 8, or
+// XMM for an SSE register); hi8 marks %spl %bpl %sil %dil, which need a REX prefix. An immediate or a
+// displacement is sym (a symbol index, or -1) plus val, with rel a relocation operator (REL_*). A memory operand
+// has base and index (-1 for none, RIP for %rip), scale, seg (1 for %fs), star (written after `*`) and bare
+// (written without parentheses: a direct call or jump target, or an absolute address).
+export const I64 O_KIND = 0;
+export const I64 O_REG = 1;
+export const I64 O_NBYTES = 2;
+export const I64 O_HI8 = 3;
+export const I64 O_SYM = 4;
+export const I64 O_VAL = 5;
+export const I64 O_REL = 6;
+export const I64 O_BASE = 7;
+export const I64 O_INDEX = 8;
+export const I64 O_SCALE = 9;
+export const I64 O_SEG = 10;
+export const I64 O_STAR = 11;
+export const I64 O_BARE = 12;
+export const I64 O_W = 13;
+
+export const I64 OK_REG = 1;
+export const I64 OK_IMM = 2;
+export const I64 OK_MEM = 3;
+export const I64 RIP = 16;
+export const I64 XMM = 16;
+
+export const I64 REL_NONE = 0;
+export const I64 REL_PLT = 1;
+export const I64 REL_GOTPCREL = 2;
+export const I64 REL_GOTTPOFF = 3;
+export const I64 REL_TPOFF = 4;
+
+// Fixup kinds. FK_CALL is a call's rel32, decided by the object layer (G-8).
+export const I64 FK_ABS = 1;
+export const I64 FK_PC = 2;
+export const I64 FK_CALL = 3;
+export const I64 FK_GOTPCRELX = 4;
+export const I64 FK_REX_GOTPCRELX = 5;
+export const I64 FK_GOTTPOFF = 6;
+export const I64 FK_TPOFF = 7;
+
+// The fixup record of encode: fx[FX_N] fixups, each FX_W values from 1 + FX_W * k: the byte offset in the
+// instruction, the size, the kind, the symbol, the constant, and whether a 4-byte absolute value is signed.
+// fx[FX_JUMP] is NO_JUMP, or JMP, or a condition code 0 to 15, for a direct jump left to the object layer, and
+// fx[FX_JSYM], fx[FX_JADD] its target.
+export const I64 FX_N = 0;
+export const I64 FX_W = 6;
+export const I64 FX_JUMP = 13;
+export const I64 FX_JSYM = 14;
+export const I64 FX_JADD = 15;
+export const I64 FX_SIZE = 16;
+export const I64 NO_JUMP = -2;
+export const I64 JMP = -1;
+
+// Errors (negative results of encode); asm.ci words them.
+export const I64 E_MNEMONIC = -1;
+export const I64 E_OPERANDS = -2;
+export const I64 E_SIZE = -3;
+export const I64 E_IMM = -4;
+export const I64 E_MEM = -5;
+export const I64 E_RELOC = -6;
+
+const I64 B_TEST = 8;
+const I64 B_IMUL = 9;
+const I64 B_SHL = 10;
+const I64 B_SAR = 13;
+const I64 B_NEG = 14;
+const I64 B_MUL = 18;
+const I64 B_MOV = 19;
+const I64 B_LEA = 20;
+const I64 B_XCHG = 21;
+const I64 B_PUSH = 22;
+const I64 B_POP = 23;
+const I64 B_CALL = 24;
+const I64 B_JMP = 25;
+const I64 B_MOVABS = 26;
+
+const I64 S_MOVX = 10;
+const I64 S_MOVSS = 21;
+const I64 S_ARITH = 24;
+const I64 S_CVTF = 32;
+const I64 S_CVTT = 34;
+const I64 S_CVTSI = 40;
+const I64 S_UCOMI = 46;
+const I64 S_XORP = 48;
+
+I64[30] ccv = [0, 1, 2, 2, 2, 3, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15];
+
+// The register named by a[at..at + n] (without `%`): reg | size << 8 | hi8 << 16, RIP | 8 << 8 for %rip, -1.
+export I64 register(in U8[_] a, I64 at, I64 n) {
+    I64 k = text.find(a, at, n, b"rax rcx rdx rbx rsp rbp rsi rdi r8 r9 r10 r11 r12 r13 r14 r15 ");
+    if (k >= 0) {
+        return k | (8 << 8);
+    }
+    k = text.find(a, at, n, b"eax ecx edx ebx esp ebp esi edi r8d r9d r10d r11d r12d r13d r14d r15d ");
+    if (k >= 0) {
+        return k | (4 << 8);
+    }
+    k = text.find(a, at, n, b"ax cx dx bx sp bp si di r8w r9w r10w r11w r12w r13w r14w r15w ");
+    if (k >= 0) {
+        return k | (2 << 8);
+    }
+    k = text.find(a, at, n, b"al cl dl bl spl bpl sil dil r8b r9b r10b r11b r12b r13b r14b r15b ");
+    if (k >= 0) {
+        I64 h = 0;
+        if (k >= 4 && k < 8) {
+            h = 1;
+        }
+        return k | (1 << 8) | (h << 16);
+    }
+    k = text.find(a, at, n, b"xmm0 xmm1 xmm2 xmm3 xmm4 xmm5 xmm6 xmm7 xmm8 xmm9 xmm10 xmm11 xmm12 xmm13 xmm14 xmm15 ");
+    if (k >= 0) {
+        return k | (XMM << 8);
+    }
+    if (text.same(a, at, n, b"rip")) {
+        return RIP | (8 << 8);
+    }
+    return -1;
+}
+
+// The form being built: legacy prefixes, REX.W, opcode bytes, the ModRM reg field, the operand in ModRM.rm
+// (an index into the operands, or -1), a register added to the last opcode byte, and the immediate.
+I64 f66 = 0;
+I64 frep = 0;
+I64 fw = 0;
+I64 f40 = 0;
+I64 fnop = 0;
+I64 fo0 = 0;
+I64 fo1 = 0;
+I64 fo2 = 0;
+I64 freg = 0;
+I64 frm = -1;
+I64 fplus = -1;
+I64 fimm = 0;
+I64 fimmop = -1;
+I64 fgot = 0;
+I64 fu32 = 0;     // 1: an absolute disp takes R_X86_64_32, as GAS gives lea a 16- or 32-bit destination
+
+void form(I64 nop, I64 a, I64 b, I64 c) {
+    f66 = 0;
+    frep = 0;
+    fw = 0;
+    f40 = 0;
+    fnop = nop;
+    fo0 = a;
+    fo1 = b;
+    fo2 = c;
+    freg = 0;
+    frm = -1;
+    fplus = -1;
+    fimm = 0;
+    fimmop = -1;
+    fgot = 0;
+    fu32 = 0;
+}
+
+void sized(I64 sz) {
+    if (sz == 2) {
+        f66 = 1;
+    }
+    if (sz == 8) {
+        fw = 1;
+    }
+}
+
+// Notes REX 40 for a byte register that needs it.
+void byte_reg(in I64[_] o, I64 i) {
+    if (o[i * O_W + O_KIND] == OK_REG && o[i * O_W + O_HI8] == 1) {
+        f40 = 1;
+    }
+}
+
+void add_fix(inout I64[_] fx, I64 off, I64 sz, I64 kind, I64 sym, I64 val, I64 signed) {
+    I64 k = 1 + FX_W * fx[FX_N];
+    fx[k] = off;
+    fx[k + 1] = sz;
+    fx[k + 2] = kind;
+    fx[k + 3] = sym;
+    fx[k + 4] = val;
+    fx[k + 5] = signed;
+    fx[FX_N] += 1;
+}
+
+I64 scale_bits(I64 s) {
+    if (s == 2) {
+        return 1;
+    }
+    if (s == 4) {
+        return 2;
+    }
+    if (s == 8) {
+        return 3;
+    }
+    return 0;
+}
+
+// Writes the built form; returns its length or an error.
+I64 emit(in I64[_] o, inout U8[_] b, inout I64[_] fx) {
+    I64 n = 0;
+    I64 rex = 0;
+    if (fw == 1) {
+        rex = rex | 8;
+    }
+    if (freg >= 8) {
+        rex = rex | 4;
+    }
+    if (fplus >= 8) {
+        rex = rex | 1;
+    }
+    I64 seg = 0;
+    if (frm >= 0) {
+        if (o[frm * O_W + O_KIND] == OK_REG) {
+            if (o[frm * O_W + O_REG] >= 8) {
+                rex = rex | 1;
+            }
+        } else {
+            if (o[frm * O_W + O_BASE] >= 8 && o[frm * O_W + O_BASE] < RIP) {
+                rex = rex | 1;
+            }
+            if (o[frm * O_W + O_INDEX] >= 8) {
+                rex = rex | 2;
+            }
+            seg = o[frm * O_W + O_SEG];
+        }
+    }
+    if (seg == 1) {
+        b[n] = 0x64;
+        n += 1;
+    }
+    if (f66 == 1) {
+        b[n] = 0x66;
+        n += 1;
+    }
+    if (frep != 0) {
+        b[n] = frep as U8;
+        n += 1;
+    }
+    Bool has_rex = rex != 0 || f40 == 1;
+    if (has_rex) {
+        b[n] = (0x40 | rex) as U8;
+        n += 1;
+    }
+    I64 last = fo0;
+    if (fnop == 2) {
+        last = fo1;
+    }
+    if (fnop == 3) {
+        last = fo2;
+    }
+    if (fplus >= 0) {
+        last = last + (fplus & 7);
+    }
+    if (fnop == 1) {
+        b[n] = last as U8;
+        n += 1;
+    } else if (fnop == 2) {
+        b[n] = fo0 as U8;
+        b[n + 1] = last as U8;
+        n += 2;
+    } else {
+        b[n] = fo0 as U8;
+        b[n + 1] = fo1 as U8;
+        b[n + 2] = last as U8;
+        n += 3;
+    }
+    I64 r3 = (freg & 7) << 3;
+    if (frm >= 0) {
+        if (o[frm * O_W + O_KIND] == OK_REG) {
+            b[n] = (0xC0 | r3 | (o[frm * O_W + O_REG] & 7)) as U8;
+            n += 1;
+        } else {
+            I64 st = mem(o, frm, r3, b, n, fx, has_rex);
+            if (st < 0) {
+                return st;
+            }
+            n = st;
+        }
+    }
+    if (fimm > 0) {
+        I64 s = o[fimmop * O_W + O_SYM];
+        if (s >= 0) {
+            if (o[fimmop * O_W + O_REL] != REL_NONE) {
+                return E_RELOC;
+            }
+            I64 sg = 0;
+            if (fimm == 4 && fw == 1) {
+                sg = 1;
+            }
+            add_fix(fx, n, fimm, FK_ABS, s, o[fimmop * O_W + O_VAL], sg);
+            text.put(b, n, 0, fimm);
+        } else {
+            text.put(b, n, o[fimmop * O_W + O_VAL], fimm);
+        }
+        n += fimm;
+    }
+    return n;
+}
+
+// Writes ModRM, SIB and the displacement of memory operand i at b[n]; returns the new length.
+I64 mem(in I64[_] o, I64 i, I64 r3, inout U8[_] b, I64 at, inout I64[_] fx, Bool has_rex) {
+    I64 n = at;
+    I64 base = o[i * O_W + O_BASE];
+    I64 index = o[i * O_W + O_INDEX];
+    I64 s = o[i * O_W + O_SYM];
+    I64 rel = o[i * O_W + O_REL];
+    I64 v = o[i * O_W + O_VAL];
+    if (index == 4 || index == RIP || (index >= 0 && base == RIP)) {
+        return E_MEM;
+    }
+    if (s < 0 && rel != REL_NONE) {
+        return E_RELOC;
+    }
+    I64 kind = FK_ABS;
+    if (base == RIP) {
+        kind = FK_PC;
+        if (rel == REL_GOTPCREL) {
+            if (fgot == 0) {
+                return E_RELOC;
+            }
+            kind = FK_GOTPCRELX;
+            if (has_rex) {
+                kind = FK_REX_GOTPCRELX;
+            }
+        } else if (rel == REL_GOTTPOFF) {
+            kind = FK_GOTTPOFF;
+        } else if (rel != REL_NONE) {
+            return E_RELOC;
+        }
+    } else {
+        if (rel == REL_TPOFF) {
+            kind = FK_TPOFF;
+        } else if (rel != REL_NONE) {
+            return E_RELOC;
+        }
+    }
+    I64 dsz = 4;
+    if (base == RIP) {
+        b[n] = (0x05 | r3) as U8;
+        n += 1;
+    } else if (base < 0) {
+        b[n] = (0x04 | r3) as U8;
+        if (index < 0) {
+            b[n + 1] = 0x25;
+        } else {
+            b[n + 1] = ((scale_bits(o[i * O_W + O_SCALE]) << 6) | ((index & 7) << 3) | 5) as U8;
+        }
+        n += 2;
+    } else {
+        I64 b3 = base & 7;
+        Bool sib = index >= 0 || b3 == 4;
+        I64 md = 2;
+        if (s < 0) {
+            if (v == 0 && b3 != 5) {
+                md = 0;
+                dsz = 0;
+            } else if (text.fits(v, 8)) {
+                md = 1;
+                dsz = 1;
+            }
+        }
+        I64 rm = b3;
+        if (sib) {
+            rm = 4;
+        }
+        b[n] = ((md << 6) | r3 | rm) as U8;
+        n += 1;
+        if (sib) {
+            I64 ix = 4;
+            if (index >= 0) {
+                ix = index & 7;
+            }
+            b[n] = ((scale_bits(o[i * O_W + O_SCALE]) << 6) | (ix << 3) | b3) as U8;
+            n += 1;
+        }
+    }
+    if (dsz > 0) {
+        if (s >= 0) {
+            I64 sg = 0;
+            if (kind == FK_ABS && fu32 == 0) {
+                sg = 1;
+            }
+            add_fix(fx, n, 4, kind, s, v, sg);
+            text.put(b, n, 0, 4);
+        } else {
+            if (!text.fits(v, 32)) {
+                return E_MEM;
+            }
+            text.put(b, n, v, dsz);
+        }
+        n += dsz;
+    }
+    return n;
+}
+
+Bool is_reg(in I64[_] o, I64 i) {
+    return o[i * O_W + O_KIND] == OK_REG && o[i * O_W + O_NBYTES] != XMM && o[i * O_W + O_REG] != RIP;
+}
+
+Bool is_xmm(in I64[_] o, I64 i) {
+    return o[i * O_W + O_KIND] == OK_REG && o[i * O_W + O_NBYTES] == XMM;
+}
+
+Bool is_rm(in I64[_] o, I64 i) {
+    return is_reg(o, i) || (o[i * O_W + O_KIND] == OK_MEM && o[i * O_W + O_STAR] == 0 && o[i * O_W + O_BARE] == 0) || (o[i * O_W + O_KIND] == OK_MEM && o[i * O_W + O_BARE] == 1 && o[i * O_W + O_STAR] == 0 && o[i * O_W + O_REL] == REL_NONE);
+}
+
+Bool is_mem(in I64[_] o, I64 i) {
+    return o[i * O_W + O_KIND] == OK_MEM && o[i * O_W + O_STAR] == 0;
+}
+
+// The size of the operation: the suffix, else the size of the last integer register operand; a register
+// of another size is E_SIZE. skip names an operand left out of the check (a shift's %cl), or -1.
+I64 op_size(in I64[_] o, I64 nops, I64 suffix, I64 skip) {
+    I64 sz = suffix;
+    for i in 0..nops {
+        if (i != skip && is_reg(o, i)) {
+            if (sz == 0) {
+                sz = o[i * O_W + O_NBYTES];
+            } else if (o[i * O_W + O_NBYTES] != sz) {
+                return E_SIZE;
+            }
+        }
+    }
+    if (sz == 0) {
+        return E_SIZE;
+    }
+    return sz;
+}
+
+Bool small(in I64[_] o, I64 i, I64 sz) {
+    I64 w = sz;
+    if (w > 4) {
+        w = 4;
+    }
+    return o[i * O_W + O_SYM] < 0 && text.fits(text.narrow(o[i * O_W + O_VAL], w), 8);
+}
+
+// An immediate that a sign-extended 32-bit field must hold in a 64-bit operation.
+Bool imm_ok(in I64[_] o, I64 i, I64 sz) {
+    return sz != 8 || o[i * O_W + O_SYM] >= 0 || text.fits(o[i * O_W + O_VAL], 32);
+}
+
+I64 zsize(I64 sz) {
+    if (sz == 2) {
+        return 2;
+    }
+    if (sz == 1) {
+        return 1;
+    }
+    return 4;
+}
+
+// add or adc sbb and sub xor cmp: group g.
+I64 alu(I64 g, in I64[_] o, I64 n, I64 suffix, inout U8[_] b, inout I64[_] fx) {
+    if (n != 2) {
+        return E_OPERANDS;
+    }
+    I64 sz = op_size(o, n, suffix, -1);
+    if (sz < 0) {
+        return sz;
+    }
+    I64 e = 8 * g;
+    if (o[0 * O_W + O_KIND] == OK_IMM && is_rm(o, 1)) {
+        if (!imm_ok(o, 0, sz)) {
+            return E_IMM;
+        }
+        Bool acc = is_reg(o, 1) && o[1 * O_W + O_REG] == 0;
+        if (sz == 1) {
+            if (acc) {
+                form(1, e + 4, 0, 0);
+            } else {
+                form(1, 0x80, 0, 0);
+                freg = g;
+                frm = 1;
+            }
+            fimm = 1;
+        } else if (small(o, 0, sz)) {
+            form(1, 0x83, 0, 0);
+            freg = g;
+            frm = 1;
+            fimm = 1;
+        } else if (acc) {
+            form(1, e + 5, 0, 0);
+            fimm = zsize(sz);
+        } else {
+            form(1, 0x81, 0, 0);
+            freg = g;
+            frm = 1;
+            fimm = zsize(sz);
+        }
+        fimmop = 0;
+    } else if (is_reg(o, 0) && is_rm(o, 1)) {
+        form(1, e + 1, 0, 0);
+        if (sz == 1) {
+            fo0 = e;
+        }
+        freg = o[0 * O_W + O_REG];
+        frm = 1;
+    } else if (is_mem(o, 0) && is_reg(o, 1)) {
+        form(1, e + 3, 0, 0);
+        if (sz == 1) {
+            fo0 = e + 2;
+        }
+        freg = o[1 * O_W + O_REG];
+        frm = 0;
+    } else {
+        return E_OPERANDS;
+    }
+    sized(sz);
+    byte_reg(o, 0);
+    byte_reg(o, 1);
+    return emit(o, b, fx);
+}
+
+I64 test_op(in I64[_] o, I64 n, I64 suffix, inout U8[_] b, inout I64[_] fx) {
+    if (n != 2) {
+        return E_OPERANDS;
+    }
+    I64 sz = op_size(o, n, suffix, -1);
+    if (sz < 0) {
+        return sz;
+    }
+    I64 one = 0;
+    if (sz == 1) {
+        one = 1;
+    }
+    if (o[0 * O_W + O_KIND] == OK_IMM && is_rm(o, 1)) {
+        if (!imm_ok(o, 0, sz)) {
+            return E_IMM;
+        }
+        if (is_reg(o, 1) && o[1 * O_W + O_REG] == 0) {
+            form(1, 0xA9 - one, 0, 0);
+        } else {
+            form(1, 0xF7 - one, 0, 0);
+            frm = 1;
+        }
+        fimm = zsize(sz);
+        fimmop = 0;
+    } else if (is_reg(o, 0) && is_rm(o, 1)) {
+        form(1, 0x85 - one, 0, 0);
+        freg = o[0 * O_W + O_REG];
+        frm = 1;
+    } else if (is_mem(o, 0) && is_reg(o, 1)) {
+        form(1, 0x85 - one, 0, 0);
+        freg = o[1 * O_W + O_REG];
+        frm = 0;
+    } else {
+        return E_OPERANDS;
+    }
+    sized(sz);
+    byte_reg(o, 0);
+    byte_reg(o, 1);
+    return emit(o, b, fx);
+}
+
+I64 imul(in I64[_] o, I64 n, I64 suffix, inout U8[_] b, inout I64[_] fx) {
+    I64 sz = op_size(o, n, suffix, -1);
+    if (sz < 0) {
+        return sz;
+    }
+    if (sz == 1) {
+        return E_SIZE;
+    }
+    I64 src = -1;
+    I64 dst = -1;
+    I64 im = -1;
+    if (n == 3 && o[0 * O_W + O_KIND] == OK_IMM && is_rm(o, 1) && is_reg(o, 2)) {
+        im = 0;
+        src = 1;
+        dst = 2;
+    } else if (n == 2 && o[0 * O_W + O_KIND] == OK_IMM && is_reg(o, 1)) {
+        im = 0;
+        src = 1;
+        dst = 1;
+    } else if (n == 2 && is_rm(o, 0) && is_reg(o, 1)) {
+        src = 0;
+        dst = 1;
+    } else {
+        return E_OPERANDS;
+    }
+    if (im >= 0) {
+        if (!imm_ok(o, im, sz)) {
+            return E_IMM;
+        }
+        if (small(o, im, sz)) {
+            form(1, 0x6B, 0, 0);
+            fimm = 1;
+        } else {
+            form(1, 0x69, 0, 0);
+            fimm = zsize(sz);
+        }
+        fimmop = im;
+    } else {
+        form(2, 0x0F, 0xAF, 0);
+    }
+    freg = o[dst * O_W + O_REG];
+    frm = src;
+    sized(sz);
+    return emit(o, b, fx);
+}
+
+I64 shift(I64 e, in I64[_] o, I64 n, I64 suffix, inout U8[_] b, inout I64[_] fx) {
+    I64 one = 0;
+    if (n == 1 && is_rm(o, 0)) {
+        I64 sz = op_size(o, n, suffix, -1);
+        if (sz < 0) {
+            return sz;
+        }
+        if (sz == 1) {
+            one = 1;
+        }
+        form(1, 0xD1 - one, 0, 0);
+        freg = e;
+        frm = 0;
+        sized(sz);
+        byte_reg(o, 0);
+        return emit(o, b, fx);
+    }
+    if (n != 2 || !is_rm(o, 1)) {
+        return E_OPERANDS;
+    }
+    I64 sz = op_size(o, n, suffix, 0);
+    if (sz < 0) {
+        return sz;
+    }
+    if (sz == 1) {
+        one = 1;
+    }
+    if (o[0 * O_W + O_KIND] == OK_IMM) {
+        if (o[0 * O_W + O_SYM] >= 0) {
+            return E_IMM;
+        }
+        if (o[0 * O_W + O_VAL] == 1) {
+            form(1, 0xD1 - one, 0, 0);
+        } else {
+            form(1, 0xC1 - one, 0, 0);
+            fimm = 1;
+            fimmop = 0;
+        }
+    } else if (is_reg(o, 0) && o[0 * O_W + O_REG] == 1 && o[0 * O_W + O_NBYTES] == 1) {
+        form(1, 0xD3 - one, 0, 0);
+    } else {
+        return E_OPERANDS;
+    }
+    freg = e;
+    frm = 1;
+    sized(sz);
+    byte_reg(o, 1);
+    return emit(o, b, fx);
+}
+
+I64 unary(I64 e, in I64[_] o, I64 n, I64 suffix, inout U8[_] b, inout I64[_] fx) {
+    if (n != 1 || !is_rm(o, 0)) {
+        return E_OPERANDS;
+    }
+    I64 sz = op_size(o, n, suffix, -1);
+    if (sz < 0) {
+        return sz;
+    }
+    I64 one = 0;
+    if (sz == 1) {
+        one = 1;
+    }
+    form(1, 0xF7 - one, 0, 0);
+    freg = e;
+    frm = 0;
+    sized(sz);
+    byte_reg(o, 0);
+    return emit(o, b, fx);
+}
+
+I64 mov(in I64[_] o, I64 n, I64 suffix, inout U8[_] b, inout I64[_] fx) {
+    if (n != 2) {
+        return E_OPERANDS;
+    }
+    if (is_xmm(o, 0) || is_xmm(o, 1)) {
+        if (suffix != 8) {
+            return E_OPERANDS;
+        }
+        return movq_x(o, b, fx);
+    }
+    I64 sz = op_size(o, n, suffix, -1);
+    if (sz < 0) {
+        return sz;
+    }
+    I64 one = 0;
+    if (sz == 1) {
+        one = 1;
+    }
+    if (o[0 * O_W + O_KIND] == OK_IMM && is_reg(o, 1)) {
+        if (sz == 8 && (o[0 * O_W + O_SYM] >= 0 || text.fits(o[0 * O_W + O_VAL], 32))) {
+            form(1, 0xC7, 0, 0);
+            frm = 1;
+            fimm = 4;
+        } else if (sz == 1) {
+            form(1, 0xB0, 0, 0);
+            fplus = o[1 * O_W + O_REG];
+            fimm = 1;
+        } else {
+            form(1, 0xB8, 0, 0);
+            fplus = o[1 * O_W + O_REG];
+            fimm = sz;
+        }
+        fimmop = 0;
+    } else if (o[0 * O_W + O_KIND] == OK_IMM && is_mem(o, 1)) {
+        if (!imm_ok(o, 0, sz)) {
+            return E_IMM;
+        }
+        form(1, 0xC7 - one, 0, 0);
+        frm = 1;
+        fimm = zsize(sz);
+        fimmop = 0;
+    } else if (is_reg(o, 0) && is_rm(o, 1)) {
+        form(1, 0x89 - one, 0, 0);
+        freg = o[0 * O_W + O_REG];
+        frm = 1;
+    } else if (is_mem(o, 0) && is_reg(o, 1)) {
+        form(1, 0x8B - one, 0, 0);
+        freg = o[1 * O_W + O_REG];
+        frm = 0;
+        fgot = 1;
+    } else {
+        return E_OPERANDS;
+    }
+    sized(sz);
+    byte_reg(o, 0);
+    byte_reg(o, 1);
+    return emit(o, b, fx);
+}
+
+I64 movabs(in I64[_] o, I64 n, I64 suffix, inout U8[_] b, inout I64[_] fx) {
+    if (n != 2 || o[0 * O_W + O_KIND] != OK_IMM || !is_reg(o, 1) || o[1 * O_W + O_NBYTES] != 8 || (suffix != 0 && suffix != 8)) {
+        return E_OPERANDS;
+    }
+    form(1, 0xB8, 0, 0);
+    fplus = o[1 * O_W + O_REG];
+    fw = 1;
+    fimm = 8;
+    fimmop = 0;
+    return emit(o, b, fx);
+}
+
+// movsbw movsbl movsbq movswl movswq movslq movzbw movzbl movzbq movzwl movzwq: k from 0.
+I64 movx(I64 k, in I64[_] o, I64 n, inout U8[_] b, inout I64[_] fx) {
+    if (n != 2 || !is_rm(o, 0) || !is_reg(o, 1)) {
+        return E_OPERANDS;
+    }
+    I64 from = 1;
+    I64 to = 2;
+    I64 op = 0xBE;
+    if (k == 1 || k == 7) {
+        to = 4;
+    }
+    if (k == 2 || k == 8) {
+        to = 8;
+    }
+    if (k == 3 || k == 9) {
+        from = 2;
+        to = 4;
+    }
+    if (k == 4 || k == 10) {
+        from = 2;
+        to = 8;
+    }
+    if (k == 5) {
+        from = 4;
+        to = 8;
+    }
+    if (from == 2) {
+        op = 0xBF;
+    }
+    if (k >= 6) {
+        op = op - 8;
+    }
+    if (o[1 * O_W + O_NBYTES] != to || (is_reg(o, 0) && o[0 * O_W + O_NBYTES] != from)) {
+        return E_SIZE;
+    }
+    if (k == 5) {
+        form(1, 0x63, 0, 0);
+    } else {
+        form(2, 0x0F, op, 0);
+    }
+    freg = o[1 * O_W + O_REG];
+    frm = 0;
+    sized(to);
+    byte_reg(o, 0);
+    return emit(o, b, fx);
+}
+
+I64 lea(in I64[_] o, I64 n, I64 suffix, inout U8[_] b, inout I64[_] fx) {
+    if (n != 2 || !is_mem(o, 0) || !is_reg(o, 1)) {
+        return E_OPERANDS;
+    }
+    I64 sz = op_size(o, n, suffix, -1);
+    if (sz < 2) {
+        return E_SIZE;
+    }
+    form(1, 0x8D, 0, 0);
+    freg = o[1 * O_W + O_REG];
+    frm = 0;
+    sized(sz);
+    if (sz < 8) {
+        fu32 = 1;
+    }
+    return emit(o, b, fx);
+}
+
+I64 xchg(in I64[_] o, I64 n, I64 suffix, inout U8[_] b, inout I64[_] fx) {
+    if (n != 2) {
+        return E_OPERANDS;
+    }
+    I64 sz = op_size(o, n, suffix, -1);
+    if (sz < 0) {
+        return sz;
+    }
+    I64 one = 0;
+    if (sz == 1) {
+        one = 1;
+    }
+    if (is_reg(o, 0) && is_reg(o, 1)) {
+        I64 a = o[0 * O_W + O_REG];
+        I64 c = o[1 * O_W + O_REG];
+        if (sz == 8 && a == 0 && c == 0) {
+            form(1, 0x90, 0, 0);     // GAS drops REX.W from xchg %rax,%rax
+            return emit(o, b, fx);
+        }
+        if (sz > 1 && (a == 0 || c == 0) && !(sz == 4 && a == c)) {
+            form(1, 0x90, 0, 0);
+            fplus = a + c;
+        } else {
+            form(1, 0x87 - one, 0, 0);
+            freg = a;
+            frm = 1;
+        }
+    } else if (is_reg(o, 0) && is_mem(o, 1)) {
+        form(1, 0x87 - one, 0, 0);
+        freg = o[0 * O_W + O_REG];
+        frm = 1;
+    } else if (is_mem(o, 0) && is_reg(o, 1)) {
+        form(1, 0x87 - one, 0, 0);
+        freg = o[1 * O_W + O_REG];
+        frm = 0;
+    } else {
+        return E_OPERANDS;
+    }
+    sized(sz);
+    byte_reg(o, 0);
+    byte_reg(o, 1);
+    return emit(o, b, fx);
+}
+
+I64 cmov(I64 cc, in I64[_] o, I64 n, inout U8[_] b, inout I64[_] fx) {
+    if (n != 2 || !is_rm(o, 0) || !is_reg(o, 1)) {
+        return E_OPERANDS;
+    }
+    I64 sz = op_size(o, n, 0, -1);
+    if (sz < 2) {
+        return E_SIZE;
+    }
+    form(2, 0x0F, 0x40 + cc, 0);
+    freg = o[1 * O_W + O_REG];
+    frm = 0;
+    sized(sz);
+    return emit(o, b, fx);
+}
+
+I64 setcc(I64 cc, in I64[_] o, I64 n, inout U8[_] b, inout I64[_] fx) {
+    if (n != 1 || !is_rm(o, 0) || (is_reg(o, 0) && o[0 * O_W + O_NBYTES] != 1)) {
+        return E_OPERANDS;
+    }
+    form(2, 0x0F, 0x90 + cc, 0);
+    frm = 0;
+    byte_reg(o, 0);
+    return emit(o, b, fx);
+}
+
+I64 pushpop(I64 op, in I64[_] o, I64 n, I64 suffix, inout U8[_] b, inout I64[_] fx) {
+    if (n != 1 || !is_reg(o, 0) || o[0 * O_W + O_NBYTES] != 8 || (suffix != 0 && suffix != 8)) {
+        return E_OPERANDS;
+    }
+    form(1, op, 0, 0);
+    fplus = o[0 * O_W + O_REG];
+    return emit(o, b, fx);
+}
+
+// call: a direct target (a name, or name@plt) or `*` a register or memory operand.
+I64 call(in I64[_] o, I64 n, I64 suffix, inout U8[_] b, inout I64[_] fx) {
+    if (n != 1 || (suffix != 0 && suffix != 8)) {
+        return E_OPERANDS;
+    }
+    if (o[0 * O_W + O_STAR] == 1) {
+        form(1, 0xFF, 0, 0);
+        freg = 2;
+        frm = 0;
+        if (o[0 * O_W + O_KIND] == OK_REG && (o[0 * O_W + O_NBYTES] != 8 || o[0 * O_W + O_REG] == RIP)) {
+            return E_OPERANDS;
+        }
+        return emit(o, b, fx);
+    }
+    if (o[0 * O_W + O_KIND] != OK_MEM || o[0 * O_W + O_BARE] != 1 || o[0 * O_W + O_SYM] < 0 || o[0 * O_W + O_SEG] != 0 || (o[0 * O_W + O_REL] != REL_NONE && o[0 * O_W + O_REL] != REL_PLT)) {
+        return E_OPERANDS;
+    }
+    b[0] = 0xE8;
+    text.put(b, 1, 0, 4);
+    add_fix(fx, 1, 4, FK_CALL, o[0 * O_W + O_SYM], o[0 * O_W + O_VAL], 0);
+    return 5;
+}
+
+// jmp and jCC: a `.L` target goes to the object layer; jmp `*` a register is encoded.
+I64 jump(I64 cc, in I64[_] o, I64 n, inout U8[_] b, inout I64[_] fx) {
+    if (n != 1) {
+        return E_OPERANDS;
+    }
+    if (o[0 * O_W + O_STAR] == 1 && cc == JMP) {
+        if (o[0 * O_W + O_KIND] == OK_REG && (o[0 * O_W + O_NBYTES] != 8 || o[0 * O_W + O_REG] == RIP)) {
+            return E_OPERANDS;
+        }
+        form(1, 0xFF, 0, 0);
+        freg = 4;
+        frm = 0;
+        return emit(o, b, fx);
+    }
+    if (o[0 * O_W + O_KIND] != OK_MEM || o[0 * O_W + O_BARE] != 1 || o[0 * O_W + O_SYM] < 0 || o[0 * O_W + O_REL] != REL_NONE || o[0 * O_W + O_SEG] != 0) {
+        return E_OPERANDS;
+    }
+    fx[FX_JUMP] = cc;
+    fx[FX_JSYM] = o[0 * O_W + O_SYM];
+    fx[FX_JADD] = o[0 * O_W + O_VAL];
+    return 0;
+}
+
+// The SSE forms: prefix, opcode, and which operand goes in ModRM.reg.
+I64 sse(I64 pfx, I64 op, I64 regop, I64 rmop, in I64[_] o, inout U8[_] b, inout I64[_] fx) {
+    form(2, 0x0F, op, 0);
+    if (pfx == 0x66) {
+        f66 = 1;
+    } else {
+        frep = pfx;
+    }
+    freg = o[regop * O_W + O_REG];
+    frm = rmop;
+    return emit(o, b, fx);
+}
+
+I64 movq_x(in I64[_] o, inout U8[_] b, inout I64[_] fx) {
+    if (is_xmm(o, 1) && is_reg(o, 0)) {
+        if (o[0 * O_W + O_NBYTES] != 8) {
+            return E_SIZE;
+        }
+        form(2, 0x0F, 0x6E, 0);
+        f66 = 1;
+        fw = 1;
+        freg = o[1 * O_W + O_REG];
+        frm = 0;
+        return emit(o, b, fx);
+    }
+    if (is_xmm(o, 0) && is_reg(o, 1)) {
+        if (o[1 * O_W + O_NBYTES] != 8) {
+            return E_SIZE;
+        }
+        form(2, 0x0F, 0x7E, 0);
+        f66 = 1;
+        fw = 1;
+        freg = o[0 * O_W + O_REG];
+        frm = 1;
+        return emit(o, b, fx);
+    }
+    if (is_xmm(o, 1) && (is_xmm(o, 0) || is_mem(o, 0))) {
+        return sse(0xF3, 0x7E, 1, 0, o, b, fx);
+    }
+    if (is_xmm(o, 0) && is_mem(o, 1)) {
+        return sse(0x66, 0xD6, 0, 1, o, b, fx);
+    }
+    return E_OPERANDS;
+}
+
+// movss movsd movaps addss ... xorpd: b"ret leave ud2 endbr64 cltd cqto cltq nop retq leaveq movsbw movsbl movsbq movswl movswq movslq movzbw movzbl movzbq movzwl movzwq movss movsd movaps addss addsd subss subsd mulss mulsd divss divsd cvtss2sd cvtsd2ss cvttss2si cvttss2sil cvttss2siq cvttsd2si cvttsd2sil cvttsd2siq cvtsi2ss cvtsi2ssl cvtsi2ssq cvtsi2sd cvtsi2sdl cvtsi2sdq ucomiss ucomisd xorps xorpd " index k.
+I64 sse_op(I64 k, in I64[_] o, I64 n, inout U8[_] b, inout I64[_] fx) {
+    if (n != 2) {
+        return E_OPERANDS;
+    }
+    if (k <= S_MOVSS + 2) {
+        I64 pfx = 0xF3;
+        if (k == S_MOVSS + 1) {
+            pfx = 0xF2;
+        }
+        I64 ld = 0x10;
+        if (k == S_MOVSS + 2) {
+            pfx = 0;
+            ld = 0x28;
+        }
+        if (is_xmm(o, 1) && (is_xmm(o, 0) || is_mem(o, 0))) {
+            return sse(pfx, ld, 1, 0, o, b, fx);
+        }
+        if (is_xmm(o, 0) && is_mem(o, 1)) {
+            return sse(pfx, ld + 1, 0, 1, o, b, fx);
+        }
+        return E_OPERANDS;
+    }
+    if (k < S_CVTT) {
+        // addss addsd subss subsd mulss mulsd divss divsd, cvtss2sd cvtsd2ss
+        if (!is_xmm(o, 1) || !(is_xmm(o, 0) || is_mem(o, 0))) {
+            return E_OPERANDS;
+        }
+        I64 j = k - S_ARITH;
+        I64 pfx = 0xF3;
+        if (j % 2 == 1) {
+            pfx = 0xF2;
+        }
+        I64 op = 0x5A;
+        if (j < 2) {
+            op = 0x58;
+        } else if (j < 4) {
+            op = 0x5C;
+        } else if (j < 6) {
+            op = 0x59;
+        } else if (j < 8) {
+            op = 0x5E;
+        }
+        return sse(pfx, op, 1, 0, o, b, fx);
+    }
+    if (k < S_CVTSI) {
+        // cvttss2si[l q] cvttsd2si[l q]
+        I64 j = k - S_CVTT;
+        I64 pfx = 0xF3;
+        if (j >= 3) {
+            pfx = 0xF2;
+        }
+        I64 suf = j % 3;
+        if (!is_reg(o, 1) || !(is_xmm(o, 0) || is_mem(o, 0))) {
+            return E_OPERANDS;
+        }
+        if ((suf == 1 && o[1 * O_W + O_NBYTES] != 4) || (suf == 2 && o[1 * O_W + O_NBYTES] != 8) || o[1 * O_W + O_NBYTES] < 4) {
+            return E_SIZE;
+        }
+        form(2, 0x0F, 0x2C, 0);
+        frep = pfx;
+        sized(o[1 * O_W + O_NBYTES]);
+        freg = o[1 * O_W + O_REG];
+        frm = 0;
+        return emit(o, b, fx);
+    }
+    if (k < S_UCOMI) {
+        // cvtsi2ss[l q] cvtsi2sd[l q]; a memory source without a suffix is 32 bits, as GNU as defaults
+        I64 j = k - S_CVTSI;
+        I64 pfx = 0xF3;
+        if (j >= 3) {
+            pfx = 0xF2;
+        }
+        I64 suf = j % 3;
+        if (!is_xmm(o, 1) || !(is_reg(o, 0) || is_mem(o, 0))) {
+            return E_OPERANDS;
+        }
+        I64 sz = 4;
+        if (suf == 2) {
+            sz = 8;
+        }
+        if (is_reg(o, 0)) {
+            if (o[0 * O_W + O_NBYTES] < 4 || (suf != 0 && o[0 * O_W + O_NBYTES] != sz)) {
+                return E_SIZE;
+            }
+            sz = o[0 * O_W + O_NBYTES];
+        }
+        form(2, 0x0F, 0x2A, 0);
+        frep = pfx;
+        sized(sz);
+        freg = o[1 * O_W + O_REG];
+        frm = 0;
+        return emit(o, b, fx);
+    }
+    if (!is_xmm(o, 1) || !(is_xmm(o, 0) || is_mem(o, 0))) {
+        return E_OPERANDS;
+    }
+    I64 pfx = 0;
+    if (k == S_UCOMI + 1 || k == S_XORP + 1) {
+        pfx = 0x66;
+    }
+    I64 op = 0x2E;
+    if (k >= S_XORP) {
+        op = 0x57;
+    }
+    return sse(pfx, op, 1, 0, o, b, fx);
+}
+
+I64 fixed(I64 k, I64 n, inout U8[_] b) {
+    if (n != 0) {
+        return E_OPERANDS;
+    }
+    if (k == 0 || k == 8) {
+        b[0] = 0xC3;
+        return 1;
+    }
+    if (k == 1 || k == 9) {
+        b[0] = 0xC9;
+        return 1;
+    }
+    if (k == 2) {
+        b[0] = 0x0F;
+        b[1] = 0x0B;
+        return 2;
+    }
+    if (k == 3) {
+        b[0] = 0xF3;
+        b[1] = 0x0F;
+        b[2] = 0x1E;
+        b[3] = 0xFA;
+        return 4;
+    }
+    if (k == 4) {
+        b[0] = 0x99;
+        return 1;
+    }
+    if (k == 5) {
+        b[0] = 0x48;
+        b[1] = 0x99;
+        return 2;
+    }
+    if (k == 6) {
+        b[0] = 0x48;
+        b[1] = 0x98;
+        return 2;
+    }
+    b[0] = 0x90;
+    return 1;
+}
+
+I64 cc_of(in U8[_] a, I64 at, I64 n) {
+    I64 k = text.find(a, at, n, b"o no b c nae ae nb nc e z ne nz be na a nbe s ns p pe np po l nge ge nl le ng g nle ");
+    if (k < 0) {
+        return -1;
+    }
+    return ccv[k];
+}
+
+I64 suffix_size(U8 c) {
+    if (c == 'b') {
+        return 1;
+    }
+    if (c == 'w') {
+        return 2;
+    }
+    if (c == 'l') {
+        return 4;
+    }
+    if (c == 'q') {
+        return 8;
+    }
+    return 0;
+}
+
+// Encodes the instruction a[at..at + n] with operands o[0..nops] into b; returns its length or E_*. fx gets
+// the fixups and, for a direct jump, its condition and target.
+export I64 encode(in U8[_] a, I64 at, I64 n, in I64[_] o, I64 nops, inout U8[_] b, inout I64[_] fx) {
+    fx[FX_N] = 0;
+    fx[FX_JUMP] = NO_JUMP;
+    I64 k = text.find(a, at, n, b"add or adc sbb and sub xor cmp test imul shl sal shr sar neg not div idiv mul mov lea xchg push pop call jmp movabs ");
+    I64 suffix = 0;
+    if (k < 0) {
+        I64 s = text.find(a, at, n, b"ret leave ud2 endbr64 cltd cqto cltq nop retq leaveq movsbw movsbl movsbq movswl movswq movslq movzbw movzbl movzbq movzwl movzwq movss movsd movaps addss addsd subss subsd mulss mulsd divss divsd cvtss2sd cvtsd2ss cvttss2si cvttss2sil cvttss2siq cvttsd2si cvttsd2sil cvttsd2siq cvtsi2ss cvtsi2ssl cvtsi2ssq cvtsi2sd cvtsi2sdl cvtsi2sdq ucomiss ucomisd xorps xorpd ");
+        if (s >= 0) {
+            if (s < S_MOVX) {
+                return fixed(s, nops, b);
+            }
+            if (s < S_MOVSS) {
+                return movx(s - S_MOVX, o, nops, b, fx);
+            }
+            return sse_op(s, o, nops, b, fx);
+        }
+        if (n > 1 && a[at] == 'j') {
+            I64 cc = cc_of(a, at + 1, n - 1);
+            if (cc >= 0) {
+                return jump(cc, o, nops, b, fx);
+            }
+        }
+        if (n > 3 && text.same(a, at, 3, b"set")) {
+            I64 cc = cc_of(a, at + 3, n - 3);
+            if (cc >= 0) {
+                return setcc(cc, o, nops, b, fx);
+            }
+        }
+        if (n > 4 && text.same(a, at, 4, b"cmov")) {
+            I64 cc = cc_of(a, at + 4, n - 4);
+            if (cc >= 0) {
+                return cmov(cc, o, nops, b, fx);
+            }
+        }
+        suffix = suffix_size(a[at + n - 1]);
+        if (suffix == 0) {
+            return E_MNEMONIC;
+        }
+        k = text.find(a, at, n - 1, b"add or adc sbb and sub xor cmp test imul shl sal shr sar neg not div idiv mul mov lea xchg push pop call jmp movabs ");
+        if (k < 0) {
+            return E_MNEMONIC;
+        }
+    }
+    if (k < B_TEST) {
+        return alu(k, o, nops, suffix, b, fx);
+    }
+    if (k == B_TEST) {
+        return test_op(o, nops, suffix, b, fx);
+    }
+    if (k == B_IMUL) {
+        return imul(o, nops, suffix, b, fx);
+    }
+    if (k <= B_SAR) {
+        I64 e = 4;
+        if (k == B_SHL + 2) {
+            e = 5;
+        }
+        if (k == B_SAR) {
+            e = 7;
+        }
+        return shift(e, o, nops, suffix, b, fx);
+    }
+    if (k <= B_MUL) {
+        I64 e = 3;
+        if (k == B_NEG + 1) {
+            e = 2;
+        }
+        if (k == B_NEG + 2) {
+            e = 6;
+        }
+        if (k == B_NEG + 3) {
+            e = 7;
+        }
+        if (k == B_MUL) {
+            e = 4;
+        }
+        return unary(e, o, nops, suffix, b, fx);
+    }
+    if (k == B_MOV) {
+        return mov(o, nops, suffix, b, fx);
+    }
+    if (k == B_LEA) {
+        return lea(o, nops, suffix, b, fx);
+    }
+    if (k == B_XCHG) {
+        return xchg(o, nops, suffix, b, fx);
+    }
+    if (k == B_PUSH) {
+        return pushpop(0x50, o, nops, suffix, b, fx);
+    }
+    if (k == B_POP) {
+        return pushpop(0x58, o, nops, suffix, b, fx);
+    }
+    if (k == B_CALL) {
+        return call(o, nops, suffix, b, fx);
+    }
+    if (k == B_JMP) {
+        if (suffix != 0 && suffix != 8) {
+            return E_MNEMONIC;
+        }
+        return jump(JMP, o, nops, b, fx);
+    }
+    return movabs(o, nops, suffix, b, fx);
+}

@@ -1,0 +1,243 @@
+// link/ld.ci: the linker's driver for `cint run` and `cint build` (docs/design/notes/
+// 2026-11-07-static-linker.md section 3): `ld OUT IN...`, at most 64 inputs, in link order.
+// Each argument reaches the program as /argK/<last part>, its directory granted by SPEC-07
+// SEC-CAP-6a; the inputs are read whole into one view, core.link() links them, and fs.put
+// writes the executable whole or not at all. Two tiers (section 4.5, #597): inputs of up to
+// core.MAX_IN bytes link in the small one (core.MAX_OUT of output, --frame-arena 67108864), larger
+// ones, up to core.BIG_IN, in the large one (core.BIG_OUT of output, --frame-arena 134217728). A
+// function's frame arrays are taken only when it is called, so the small tier maps what it did.
+
+import console;
+import fs;
+import link.core;
+
+requires fs.write("/arg1");
+requires fs.read("/arg2");
+requires fs.read("/arg3");
+requires fs.read("/arg4");
+requires fs.read("/arg5");
+requires fs.read("/arg6");
+requires fs.read("/arg7");
+requires fs.read("/arg8");
+requires fs.read("/arg9");
+requires fs.read("/arg10");
+requires fs.read("/arg11");
+requires fs.read("/arg12");
+requires fs.read("/arg13");
+requires fs.read("/arg14");
+requires fs.read("/arg15");
+requires fs.read("/arg16");
+requires fs.read("/arg17");
+requires fs.read("/arg18");
+requires fs.read("/arg19");
+requires fs.read("/arg20");
+requires fs.read("/arg21");
+requires fs.read("/arg22");
+requires fs.read("/arg23");
+requires fs.read("/arg24");
+requires fs.read("/arg25");
+requires fs.read("/arg26");
+requires fs.read("/arg27");
+requires fs.read("/arg28");
+requires fs.read("/arg29");
+requires fs.read("/arg30");
+requires fs.read("/arg31");
+requires fs.read("/arg32");
+requires fs.read("/arg33");
+requires fs.read("/arg34");
+requires fs.read("/arg35");
+requires fs.read("/arg36");
+requires fs.read("/arg37");
+requires fs.read("/arg38");
+requires fs.read("/arg39");
+requires fs.read("/arg40");
+requires fs.read("/arg41");
+requires fs.read("/arg42");
+requires fs.read("/arg43");
+requires fs.read("/arg44");
+requires fs.read("/arg45");
+requires fs.read("/arg46");
+requires fs.read("/arg47");
+requires fs.read("/arg48");
+requires fs.read("/arg49");
+requires fs.read("/arg50");
+requires fs.read("/arg51");
+requires fs.read("/arg52");
+requires fs.read("/arg53");
+requires fs.read("/arg54");
+requires fs.read("/arg55");
+requires fs.read("/arg56");
+requires fs.read("/arg57");
+requires fs.read("/arg58");
+requires fs.read("/arg59");
+requires fs.read("/arg60");
+requires fs.read("/arg61");
+requires fs.read("/arg62");
+requires fs.read("/arg63");
+requires fs.read("/arg64");
+requires fs.read("/arg65");
+
+export error LdError { usage, input, link, output }
+
+const I64 MAX_ARGS = 65;
+
+// Writes "/argK/<last part of argument a..e>" into p; its length, or -1 when the last part is empty
+// or the path is longer than p.
+I64 logical(in U8[_] args, I64 a, I64 e, I64 k, inout U8[_] p) {
+    I64 start = a;
+    for i in a..e {
+        if (args[i] == '/') {
+            start = i + 1;
+        }
+    }
+    if (start == e) {
+        return -1;
+    }
+    p[0..4] = b"/arg";
+    I64 n = 4;
+    if (k >= 10) {
+        p[n] = (48 + k / 10) as U8;
+        n += 1;
+    }
+    p[n] = (48 + k % 10) as U8;
+    p[n + 1] = '/';
+    n += 2;
+    if (n + e - start > len(p)) {
+        return -1;
+    }
+    for i in start..e {
+        p[n + i - start] = args[i];
+    }
+    return n + e - start;
+}
+
+void line(Grants g, in U8[_] a, in U8[_] b) {
+    _ = console.write(g, a);
+    _ = console.write(g, b);
+    _ = console.write(g, "\n");
+}
+
+export LdError!void main(Grants g, in U8[_] args) {
+    U8[512] p;
+    I64[66] from;
+    I64[66] to;
+
+    // the arguments, each its bytes and a NUL
+    I64 nargs = 0;
+    I64 a = 0;
+    for i in 0..len(args) {
+        if (args[i] == 0) {
+            if (nargs >= MAX_ARGS) {
+                _ = console.write(g, "ld: at most 64 inputs\n");
+                return LdError.usage;
+            }
+            from[nargs] = a;
+            to[nargs] = i;
+            nargs += 1;
+            a = i + 1;
+        }
+    }
+    if (nargs < 2) {
+        _ = console.write(g, "usage: ld OUT IN...\n");
+        return LdError.usage;
+    }
+
+    // the bytes the inputs and their names take in fb, which picks the tier
+    I64 need = 0;
+    for k in 1..nargs {
+        I64 pn = logical(args, from[k], to[k], k + 1, p);
+        if (pn < 0) {
+            line(g, "ld: not a file: ", args[from[k]..to[k]]);
+            return LdError.usage;
+        }
+        I64 n = fs.stat(g, p[0..pn]) catch -1;
+        if (n < 0) {
+            line(g, "ld: cannot read ", args[from[k]..to[k]]);
+            return LdError.input;
+        }
+        need = need + n + to[k] - from[k] + 1;
+    }
+    if (need > core.BIG_IN) {
+        _ = console.write(g, "ld: limit: the inputs are larger than 64 MiB\n");
+        return LdError.input;
+    }
+    if (need > core.MAX_IN) {
+        try large(g, args, from, to, nargs);
+    } else {
+        try small(g, args, from, to, nargs);
+    }
+}
+
+// The small tier: 16 MiB of input, 8 MiB of output, under --frame-arena 67108864.
+LdError!void small(Grants g, in U8[_] args, in I64[_] from, in I64[_] to, I64 nargs) {
+    U8[core.MAX_IN] fb;
+    U8[core.MAX_OUT] ob;
+    try run(g, args, from, to, nargs, fb, ob);
+}
+
+// The large tier: 64 MiB of input, 32 MiB of output, under --frame-arena 134217728 (cint's own link).
+LdError!void large(Grants g, in U8[_] args, in I64[_] from, in I64[_] to, I64 nargs) {
+    U8[core.BIG_IN] fb;
+    U8[core.BIG_OUT] ob;
+    try run(g, args, from, to, nargs, fb, ob);
+}
+
+// Reads the inputs whole into fb, links them into ob and writes the executable.
+LdError!void run(Grants g, in U8[_] args, in I64[_] from, in I64[_] to, I64 nargs, inout U8[_] fb, inout U8[_] ob) {
+    I64[core.T_SIZE] t;
+    U8[1024] msg;
+    U8[512] p;
+
+    // the inputs, whole, one after another; each name after its bytes
+    I64 used = 0;
+    for k in 1..nargs {
+        I64 pn = logical(args, from[k], to[k], k + 1, p);
+        if (pn < 0) {
+            line(g, "ld: not a file: ", args[from[k]..to[k]]);
+            return LdError.usage;
+        }
+        I64 n = fs.stat(g, p[0..pn]) catch -1;
+        I64 nl = to[k] - from[k];
+        if (n < 0) {
+            line(g, "ld: cannot read ", args[from[k]..to[k]]);
+            return LdError.input;
+        }
+        if (used + n + nl + 1 > len(fb)) {
+            _ = console.write(g, "ld: an input changed while it was read\n");
+            return LdError.input;
+        }
+        I64 got = 0;
+        if (n > 0) {
+            got = fs.read(g, p[0..pn], 0, fb[used..used + n]) catch -1;
+        }
+        if (got != n) {
+            line(g, "ld: cannot read ", args[from[k]..to[k]]);
+            return LdError.input;
+        }
+        I64 r = core.FILE_T + (k - 1) * core.FW;
+        t[r + core.F_OFF] = used;
+        t[r + core.F_LEN] = n;
+        t[r + core.F_NAME] = used + n;
+        for i in 0..nl {
+            fb[used + n + i] = args[from[k] + i];
+        }
+        fb[used + n + nl] = 0;
+        used = used + n + nl + 1;
+    }
+    t[core.R_NFILE] = nargs - 1;
+
+    I64 n = core.link(fb[0..used], t, ob, msg);
+    if (n < 0) {
+        line(g, msg[0..t[core.R_MSG]], "");
+        return LdError.link;
+    }
+    I64 pn = logical(args, from[0], to[0], 1, p);
+    if (pn < 0) {
+        line(g, "ld: not a file: ", args[from[0]..to[0]]);
+        return LdError.usage;
+    }
+    fs.put(g, p[0..pn], ob[0..n]) catch (e) {
+        line(g, "ld: cannot write ", args[from[0]..to[0]]);
+        return LdError.output;
+    };
+}

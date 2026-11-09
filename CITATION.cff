@@ -17,5 +17,5 @@ keywords:
   - integer arithmetic
   - deterministic computation
   - C17
-version: 0.2.17
-date-released: "2026-11-08"
+version: 0.2.18
+date-released: "2026-11-09"

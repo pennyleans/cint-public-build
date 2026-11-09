@@ -26,7 +26,7 @@
 
 /* The tool version and runtime contract a receipt's identity and `cint --version` name. From the next tag,
  * the commit a tag cint-v<x.y.z> names sets TOOL_VERSION to <x.y.z> (decision 2026-11-02, OQ-324 B). */
-#define TOOL_VERSION "0.2.17"
+#define TOOL_VERSION "0.2.18"
 #define RUNTIME_CONTRACT "cint-rt-3"
 
 /* Byte buffers and canonical JSON (SPEC-09 RCPT-02, SPEC-04 LS-289). */

@@ -1,0 +1,211 @@
+// toolchain/as/main.ci: the `fs/1` driver of cint-as (docs/design/notes/2026-11-07-cint-as.md section 2).
+//   cint run --frame-arena 67108864 toolchain/as/main.ci -- IN.s OUT.o
+// Reads IN.s, writes OUT.o only when the whole file assembles; otherwise one line `cint-as: LINE: what` (LINE 0
+// for a fault found after the last line) and the error AsError.failed (exit status 6). The tables below are the
+// limits of section 5, in two tiers (#596): an input of up to SRC bytes assembles in the small one under
+// --frame-arena 67108864, a larger one, up to BIG_SRC, in the large one under --frame-arena 134217728 (cint's own
+// compiler modules). A function's frame arrays are taken only when it is called, so the small tier maps what it did.
+
+import fs;
+import toolchain.as.x86;
+import toolchain.as.obj;
+import toolchain.as.asm;
+
+requires fs.read("/arg1");
+requires fs.write("/arg2");
+
+export error AsError { usage, read, failed, write }
+
+// The small tier.
+const I64 SRC = 4194304;
+const I64 OUT = 8388608;
+const I64 CODE = 8388608;
+const I64 NAMES = 2097152;
+const I64 ROWS = 65536;
+const I64 SYMS = 1179648;     // ROWS rows of obj.Y_W
+const I64 FRAGS = 851968;     // ROWS rows of obj.G_W
+const I64 FIXES = 720896;     // ROWS rows of obj.X_W
+// The large tier: twice the high water of the largest input it is for, QBE's back_c.s of compiler/main.ci at
+// be88da62 (10,600,428 bytes: a 4,665,248-byte object, 2,091,014 bytes of sections, 639,499 of names, 33,256
+// symbols, 77,507 fragments, 46,563 fixups), each rounded up to a power of two and no smaller than the small tier's.
+const I64 BIG_SRC = 33554432;
+const I64 BIG_OUT = 16777216;
+const I64 BIG_SYMROWS = 131072;
+const I64 BIG_FRAGROWS = 262144;
+const I64 BIG_FIXROWS = 131072;
+const I64 BIG_SYMS = 2359296;     // BIG_SYMROWS rows of obj.Y_W
+const I64 BIG_FRAGS = 3407872;    // BIG_FRAGROWS rows of obj.G_W
+const I64 BIG_FIXES = 1441792;    // BIG_FIXROWS rows of obj.X_W
+const I64 SECS = 1088;        // 64 rows of obj.C_W, both tiers
+
+U8[262] path;
+
+// "/argK/" and the last part of argument word w (from a to b) in path; returns its length.
+I64 arg_path(I64 k, in U8[_] args, I64 a, I64 b) {
+    path[0..5] = b"/arg1";
+    path[4] = ('0' as I64 + k) as U8;
+    path[5] = '/';
+    I64 s = a;
+    for i in a..b {
+        if (args[i] == '/' || args[i] == '\\') {
+            s = i + 1;
+        }
+    }
+    if (b - s <= 0 || b - s > 256) {
+        return -1;
+    }
+    for i in s..b {
+        path[6 + i - s] = args[i];
+    }
+    return 6 + b - s;
+}
+
+void say(I64 line, I64 code) {
+    "cint-as: {line}: ";
+    if (code == -x86.E_MNEMONIC) {
+        "unknown instruction\n";
+    } else if (code == -x86.E_OPERANDS) {
+        "operands not accepted for this instruction\n";
+    } else if (code == -x86.E_SIZE) {
+        "operand size missing or mismatched\n";
+    } else if (code == -x86.E_IMM) {
+        "immediate out of range\n";
+    } else if (code == -x86.E_MEM) {
+        "memory operand not accepted\n";
+    } else if (code == -x86.E_RELOC) {
+        "relocation operator not accepted here\n";
+    } else if (code == asm.E_SYNTAX) {
+        "syntax error\n";
+    } else if (code == asm.E_DIRECTIVE) {
+        "directive or its arguments not accepted\n";
+    } else if (code == asm.E_EXPR) {
+        "expression not accepted\n";
+    } else if (code == obj.E_REDEF) {
+        "symbol already defined\n";
+    } else if (code == obj.E_FULL) {
+        "a table is full: input over the limits of the spec note, section 5\n";
+    } else if (code == obj.E_JUMP) {
+        "jump target is not a local label of this section\n";
+    } else if (code == obj.E_UNDEF_LOCAL) {
+        "a .L label is used and never defined\n";
+    } else if (code == obj.E_NOBITS) {
+        "nonzero data in a NOBITS section\n";
+    } else if (code == obj.E_SIZEDIR) {
+        ".size takes a constant or . - NAME of the same section\n";
+    } else if (code == asm.E_SECTION) {
+        "section flags or type not accepted\n";
+    } else if (code == asm.E_STRING) {
+        "string not accepted\n";
+    } else if (code == obj.E_RANGE) {
+        "pc-relative value out of range\n";
+    } else if (code == asm.E_LONG) {
+        "line too long\n";
+    } else {
+        "error {code}\n";
+    }
+}
+
+export AsError!void main(Grants g, in U8[_] args) {
+    I64 n = len(args);
+    I64 z = 0;
+    while (z < n && args[z] != 0) {
+        z += 1;
+    }
+    if (n == 0 || z + 1 >= n || args[n - 1] != 0) {
+        usage();
+        return AsError.usage;
+    }
+    for i in z + 1..n - 1 {
+        if (args[i] == 0) {
+            usage();
+            return AsError.usage;
+        }
+    }
+    I64 pl = arg_path(1, args, 0, z);
+    if (pl < 0) {
+        "cint-as: input name not accepted\n";
+        return AsError.usage;
+    }
+    I64 sz = fs.stat(g, path[0..pl]) catch -1;
+    if (sz < 0) {
+        "cint-as: cannot read the input\n";
+        return AsError.read;
+    }
+    if (sz > BIG_SRC) {
+        "cint-as: the input is over 33554432 bytes (4194304 assemble under --frame-arena 67108864, 33554432 under --frame-arena 134217728)\n";
+        return AsError.read;
+    }
+    if (sz > SRC) {
+        try large(g, args, z, n, pl, sz);
+    } else {
+        try small(g, args, z, n, pl, sz);
+    }
+}
+
+void usage() {
+    "usage: cint run --frame-arena 67108864 toolchain/as/main.ci -- IN.s OUT.o (an IN.s over 4194304 bytes, up to 33554432: --frame-arena 134217728)\n";
+}
+
+// The small tier: inputs up to 4 MiB, under --frame-arena 67108864.
+AsError!void small(Grants g, in U8[_] args, I64 z, I64 n, I64 pl, I64 sz) {
+    U8[SRC] src;
+    U8[OUT] ob;
+    U8[CODE] code;
+    U8[NAMES] nm;
+    I64[SYMS] sy;
+    I64[FRAGS] fr;
+    I64[FIXES] fi;
+    I64[ROWS] hs;
+    I64[7 * ROWS] wk;
+    try run(g, args, z, n, pl, sz, ROWS, ROWS, ROWS, src, ob, code, nm, sy, fr, fi, hs, wk);
+}
+
+// The large tier: inputs up to 32 MiB, under --frame-arena 134217728 (cint's own compiler modules).
+AsError!void large(Grants g, in U8[_] args, I64 z, I64 n, I64 pl, I64 sz) {
+    U8[BIG_SRC] src;
+    U8[BIG_OUT] ob;
+    U8[CODE] code;
+    U8[NAMES] nm;
+    I64[BIG_SYMS] sy;
+    I64[BIG_FRAGS] fr;
+    I64[BIG_FIXES] fi;
+    I64[BIG_SYMROWS] hs;
+    I64[7 * BIG_SYMROWS] wk;
+    try run(g, args, z, n, pl, sz, BIG_SYMROWS, BIG_FRAGROWS, BIG_FIXROWS, src, ob, code, nm, sy, fr, fi, hs, wk);
+}
+
+// Reads the sz bytes of the input (its path in path[0..pl]) into src, assembles them with these tables and writes
+// the object to the second argument.
+AsError!void run(Grants g, in U8[_] args, I64 z, I64 n, I64 pl, I64 sz, I64 nsym, I64 nfrag, I64 nfix,
+        inout U8[_] src, inout U8[_] ob, inout U8[_] code, inout U8[_] nm, inout I64[_] sy, inout I64[_] fr,
+        inout I64[_] fi, inout I64[_] hs, inout I64[_] wk) {
+    I64[SECS] se;
+    I64[obj.S_SIZE] st;
+
+    I64 got = 0;
+    if (sz > 0) {
+        got = fs.read(g, path[0..pl], 0, src[0..sz]) catch -1;
+    }
+    if (got != sz) {
+        "cint-as: cannot read the input\n";
+        return AsError.read;
+    }
+    st[obj.S_CAPSYM] = nsym;
+    st[obj.S_CAPFRAG] = nfrag;
+    st[obj.S_CAPFIX] = nfix;
+    st[obj.S_CAPSEC] = 64;
+    I64 w = asm.assemble(src[0..sz], st, sy, se, fr, fi, code, nm, hs, wk, ob);
+    if (w < 0) {
+        say(st[obj.S_LINE], st[obj.S_ERR]);
+        return AsError.failed;
+    }
+    I64 ql = arg_path(2, args, z + 1, n - 1);
+    if (ql < 0) {
+        "cint-as: output name not accepted\n";
+        return AsError.usage;
+    }
+    fs.put(g, path[0..ql], ob[0..w]) catch (e) {
+        "cint-as: cannot write the output\n";
+        return AsError.write;
+    };
+}

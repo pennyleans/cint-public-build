@@ -1,0 +1,659 @@
+// toolchain/as/obj.ci: the object of cint-as (docs/design/notes/2026-11-07-cint-as.md section 4): sections,
+// symbols, fragments and fixups; jump relaxation as GNU as's relax_segment does it (G-9); symbol values and
+// the choice between a resolved fixup and a relocation (G-8). Every table is a view the caller sized.
+//
+// A fragment is a run of fixed bytes in `code` that ends in nothing, a jump (its opcode byte is the last fixed
+// byte; the variable part is the displacement, and one more opcode byte for a near jCC) or an alignment.
+
+import toolchain.as.text;
+import toolchain.as.x86;
+
+// A symbol. sec: 0 undefined, k + 1 for section k, COMMON. type: T_*. bind: 1 after .globl. label: a `.L`
+// name. szkind: 0 no .size, 1 the constant size, 2 `. - name` at (szfrag, szoff). out: its symbol table index.
+export const I64 Y_NAME = 0;
+export const I64 Y_NLEN = 1;
+export const I64 Y_SEC = 2;
+export const I64 Y_FRAG = 3;
+export const I64 Y_OFF = 4;
+export const I64 Y_BIND = 5;
+export const I64 Y_TY = 6;
+export const I64 Y_TLS = 7;
+export const I64 Y_NBYTES = 8;
+export const I64 Y_SZKIND = 9;
+export const I64 Y_SZFRAG = 10;
+export const I64 Y_SZOFF = 11;
+export const I64 Y_ALIGN = 12;
+export const I64 Y_USED = 13;
+export const I64 Y_OB = 14;
+export const I64 Y_LABEL = 15;
+export const I64 Y_NEXT = 16;
+export const I64 Y_STRX = 17;
+export const I64 Y_W = 18;
+
+// A section: its name in `nm`, ELF type and flags, alignment, section symbol, fragment chain, size, relocation
+// count, and the output indices, file offsets and name offsets the writer fills.
+export const I64 C_NAME = 0;
+export const I64 C_NLEN = 1;
+export const I64 C_TY = 2;
+export const I64 C_FLAGS = 3;
+export const I64 C_ALIGN = 4;
+export const I64 C_SYM = 5;
+export const I64 C_FIRST = 6;
+export const I64 C_LAST = 7;
+export const I64 C_NBYTES = 8;
+export const I64 C_NREL = 9;
+export const I64 C_NDX = 10;
+export const I64 C_RNDX = 11;
+export const I64 C_OFF = 12;
+export const I64 C_ROFF = 13;
+export const I64 C_SHNAME = 14;
+export const I64 C_RNAME = 15;
+export const I64 C_RAW = 16;      // 1 when the last bytes put in the section were data, not an instruction
+export const I64 C_W = 17;
+
+export const I64 G_SEC = 0;
+export const I64 G_AT = 1;
+export const I64 G_FIX = 2;
+export const I64 G_KIND = 3;
+export const I64 G_CC = 4;
+export const I64 G_SYM = 5;
+export const I64 G_ADD = 6;
+export const I64 G_BIG = 7;
+export const I64 G_ALIGN = 8;
+export const I64 G_ADDR = 9;
+export const I64 G_REGION = 10;
+export const I64 G_MARK = 11;
+export const I64 G_NEXT = 12;
+export const I64 G_W = 13;
+
+// A fixup at (frag, off): size bytes of kind (x86.FK_*) for sym + add; pc-relative addends already subtract the
+// bytes to the instruction's end. rtype, rsym, radd: the relocation it becomes (rtype 0: resolved).
+export const I64 X_FRAG = 0;
+export const I64 X_OFF = 1;
+export const I64 X_NBYTES = 2;
+export const I64 X_KIND = 3;
+export const I64 X_SYM = 4;
+export const I64 X_ADD = 5;
+export const I64 X_SIGNED = 6;
+export const I64 X_LINE = 7;
+export const I64 X_RTYPE = 8;
+export const I64 X_RSYM = 9;
+export const I64 X_RADD = 10;
+export const I64 X_W = 11;
+
+export const I64 COMMON = -1;
+export const I64 T_NOTYPE = 0;
+export const I64 T_OBJECT = 1;
+export const I64 T_FUNC = 2;
+export const I64 T_SECTION = 3;
+
+export const I64 F_PLAIN = 0;
+export const I64 F_JUMP = 1;
+export const I64 F_ALIGN = 2;
+
+export const I64 SHT_PROGBITS = 1;
+export const I64 SHT_NOBITS = 8;
+export const I64 SHT_NOTE = 7;
+export const I64 SHT_INIT_ARRAY = 14;
+export const I64 SHT_FINI_ARRAY = 15;
+export const I64 SHT_PREINIT_ARRAY = 16;
+export const I64 SHF_WRITE = 1;
+export const I64 SHF_ALLOC = 2;
+export const I64 SHF_EXEC = 4;
+export const I64 SHF_TLS = 1024;
+
+// The state vector st: counts and the current place.
+export const I64 S_NSYM = 0;
+export const I64 S_NSEC = 1;
+export const I64 S_NFRAG = 2;
+export const I64 S_NFIX = 3;
+export const I64 S_CODE = 4;
+export const I64 S_NAMES = 5;
+export const I64 S_CUR = 6;
+export const I64 S_FRAG = 7;
+export const I64 S_ERR = 8;
+export const I64 S_LINE = 9;
+export const I64 S_GOT = 10;
+// The capacities of the caller's tables, set before start (len of a struct view is not yet available).
+export const I64 S_CAPSYM = 11;
+export const I64 S_CAPFRAG = 12;
+export const I64 S_CAPFIX = 13;
+export const I64 S_CAPSEC = 14;
+export const I64 S_SIZE = 16;
+
+// Errors in st[S_ERR]; asm.ci and main.ci word them.
+export const I64 E_FULL = 14;
+export const I64 E_REDEF = 13;
+export const I64 E_JUMP = 15;
+export const I64 E_UNDEF_LOCAL = 16;
+export const I64 E_NOBITS = 17;
+export const I64 E_SIZEDIR = 18;
+export const I64 E_RANGE = 21;
+
+// R_X86_64_* types.
+export const I64 R_64 = 1;
+export const I64 R_PC32 = 2;
+export const I64 R_PLT32 = 4;
+export const I64 R_32 = 10;
+export const I64 R_32S = 11;
+export const I64 R_16 = 12;
+export const I64 R_8 = 14;
+export const I64 R_GOTTPOFF = 22;
+export const I64 R_TPOFF32 = 23;
+export const I64 R_GOTPCRELX = 41;
+export const I64 R_REX_GOTPCRELX = 42;
+
+export Bool fail(inout I64[_] st, I64 code) {
+    if (st[S_ERR] == 0) {
+        st[S_ERR] = code;
+    }
+    return false;
+}
+
+I64 hash(in U8[_] a, I64 at, I64 n) {
+    I64 h = 1469598103;
+    for i in 0..n {
+        h = (h ^ (a[at + i] as I64)) *% 16777619;
+    }
+    return h & 0x7FFFFFFF;
+}
+
+// Copies a name into nm; returns its offset, or -1 when nm is full.
+I64 keep(inout I64[_] st, inout U8[_] nm, in U8[_] a, I64 at, I64 n) {
+    I64 p = st[S_NAMES];
+    if (p + n > len(nm)) {
+        return -1;
+    }
+    for i in 0..n {
+        nm[p + i] = a[at + i];
+    }
+    st[S_NAMES] = p + n;
+    return p;
+}
+
+I64 new_sym(inout I64[_] st, inout I64[_] sy, I64 name, I64 n) {
+    I64 k = st[S_NSYM];
+    if (k >= st[S_CAPSYM]) {
+        return -1;
+    }
+    st[S_NSYM] = k + 1;
+    sy[k * Y_W + Y_NAME] = name;
+    sy[k * Y_W + Y_NLEN] = n;
+    sy[k * Y_W + Y_SEC] = 0;
+    sy[k * Y_W + Y_FRAG] = 0;
+    sy[k * Y_W + Y_OFF] = 0;
+    sy[k * Y_W + Y_BIND] = 0;
+    sy[k * Y_W + Y_TY] = T_NOTYPE;
+    sy[k * Y_W + Y_TLS] = 0;
+    sy[k * Y_W + Y_NBYTES] = 0;
+    sy[k * Y_W + Y_SZKIND] = 0;
+    sy[k * Y_W + Y_SZFRAG] = 0;
+    sy[k * Y_W + Y_SZOFF] = 0;
+    sy[k * Y_W + Y_ALIGN] = 0;
+    sy[k * Y_W + Y_USED] = 0;
+    sy[k * Y_W + Y_OB] = 0;
+    sy[k * Y_W + Y_LABEL] = 0;
+    sy[k * Y_W + Y_NEXT] = -1;
+    sy[k * Y_W + Y_STRX] = 0;
+    return k;
+}
+
+// The symbol named a[at..at + n], created at its first mention (G-4); -1 when a table is full.
+export I64 intern(inout I64[_] st, inout I64[_] sy, inout U8[_] nm, inout I64[_] hs, in U8[_] a, I64 at, I64 n) {
+    I64 h = hash(a, at, n) & (len(hs) - 1);
+    I64 k = hs[h] - 1;
+    while (k >= 0) {
+        if (sy[k * Y_W + Y_NLEN] == n) {
+            Bool eq = true;
+            for i in 0..n {
+                if (eq && nm[sy[k * Y_W + Y_NAME] + i] != a[at + i]) {
+                    eq = false;
+                }
+            }
+            if (eq) {
+                return k;
+            }
+        }
+        k = sy[k * Y_W + Y_NEXT];
+    }
+    I64 p = keep(st, nm, a, at, n);
+    if (p < 0) {
+        _ = fail(st, E_FULL);
+        return -1;
+    }
+    k = new_sym(st, sy, p, n);
+    if (k < 0) {
+        _ = fail(st, E_FULL);
+        return -1;
+    }
+    sy[k * Y_W + Y_NEXT] = hs[h] - 1;
+    hs[h] = k + 1;
+    if (n >= 2 && a[at] == '.' && a[at + 1] == 'L') {
+        sy[k * Y_W + Y_LABEL] = 1;
+    }
+    return k;
+}
+
+I64 new_frag(inout I64[_] st, inout I64[_] se, inout I64[_] fr, I64 s) {
+    I64 f = st[S_NFRAG];
+    if (f >= st[S_CAPFRAG]) {
+        _ = fail(st, E_FULL);
+        return -1;
+    }
+    st[S_NFRAG] = f + 1;
+    fr[f * G_W + G_SEC] = s;
+    fr[f * G_W + G_AT] = st[S_CODE];
+    fr[f * G_W + G_FIX] = 0;
+    fr[f * G_W + G_KIND] = F_PLAIN;
+    fr[f * G_W + G_CC] = 0;
+    fr[f * G_W + G_SYM] = -1;
+    fr[f * G_W + G_ADD] = 0;
+    fr[f * G_W + G_BIG] = 0;
+    fr[f * G_W + G_ALIGN] = 1;
+    fr[f * G_W + G_ADDR] = 0;
+    fr[f * G_W + G_REGION] = 0;
+    fr[f * G_W + G_MARK] = 0;
+    fr[f * G_W + G_NEXT] = -1;
+    if (se[s * C_W + C_LAST] >= 0) {
+        fr[(se[s * C_W + C_LAST]) * G_W + G_NEXT] = f;
+    } else {
+        se[s * C_W + C_FIRST] = f;
+    }
+    se[s * C_W + C_LAST] = f;
+    st[S_FRAG] = f;
+    return f;
+}
+
+// A new section named a[at..at + n] with its section symbol (G-1, G-4); returns its index or -1.
+export I64 new_section(inout I64[_] st, inout I64[_] sy, inout I64[_] se, inout U8[_] nm, in U8[_] a, I64 at, I64 n,
+        I64 ty, I64 flags) {
+    I64 s = st[S_NSEC];
+    if (s >= st[S_CAPSEC]) {
+        _ = fail(st, E_FULL);
+        return -1;
+    }
+    I64 p = keep(st, nm, a, at, n);
+    if (p < 0) {
+        _ = fail(st, E_FULL);
+        return -1;
+    }
+    I64 k = new_sym(st, sy, p, n);
+    if (k < 0) {
+        _ = fail(st, E_FULL);
+        return -1;
+    }
+    sy[k * Y_W + Y_SEC] = s + 1;
+    sy[k * Y_W + Y_TY] = T_SECTION;
+    st[S_NSEC] = s + 1;
+    se[s * C_W + C_NAME] = p;
+    se[s * C_W + C_NLEN] = n;
+    se[s * C_W + C_TY] = ty;
+    se[s * C_W + C_FLAGS] = flags;
+    se[s * C_W + C_ALIGN] = 1;
+    se[s * C_W + C_SYM] = k;
+    se[s * C_W + C_FIRST] = -1;
+    se[s * C_W + C_LAST] = -1;
+    se[s * C_W + C_NBYTES] = 0;
+    se[s * C_W + C_NREL] = 0;
+    se[s * C_W + C_NDX] = 0;
+    se[s * C_W + C_RNDX] = 0;
+    se[s * C_W + C_OFF] = 0;
+    se[s * C_W + C_ROFF] = 0;
+    se[s * C_W + C_SHNAME] = 0;
+    se[s * C_W + C_RNAME] = 0;
+    se[s * C_W + C_RAW] = 0;
+    return s;
+}
+
+// The section named a[at..at + n], or -1.
+export I64 find_section(in I64[_] st, in I64[_] se, in U8[_] nm, in U8[_] a, I64 at, I64 n) {
+    for s in 0..st[S_NSEC] {
+        if (se[s * C_W + C_NLEN] == n) {
+            Bool eq = true;
+            for i in 0..n {
+                if (eq && nm[se[s * C_W + C_NAME] + i] != a[at + i]) {
+                    eq = false;
+                }
+            }
+            if (eq) {
+                return s;
+            }
+        }
+    }
+    return -1;
+}
+
+// Makes section s current: the fragment in hand ends, and s gets a new one.
+export Bool switch_to(inout I64[_] st, inout I64[_] se, inout I64[_] fr, I64 s) {
+    st[S_CUR] = s;
+    return new_frag(st, se, fr, s) >= 0;
+}
+
+// The tables of an empty object: .text .data .bss, current .text (G-1).
+export Bool start(inout I64[_] st, inout I64[_] sy, inout I64[_] se, inout I64[_] fr, inout U8[_] nm, inout I64[_] hs) {
+    for i in 0..S_CAPSYM {
+        st[i] = 0;
+    }
+    for i in 0..len(hs) {
+        hs[i] = 0;
+    }
+    st[S_GOT] = -1;
+    if (new_section(st, sy, se, nm, b".text", 0, 5, SHT_PROGBITS, SHF_ALLOC | SHF_EXEC) < 0) {
+        return false;
+    }
+    if (new_section(st, sy, se, nm, b".data", 0, 5, SHT_PROGBITS, SHF_ALLOC | SHF_WRITE) < 0) {
+        return false;
+    }
+    if (new_section(st, sy, se, nm, b".bss", 0, 4, SHT_NOBITS, SHF_ALLOC | SHF_WRITE) < 0) {
+        return false;
+    }
+    return switch_to(st, se, fr, 0);
+}
+
+// Appends n bytes of b to the current fragment; a NOBITS section takes only zeros and stores none.
+export Bool put_bytes(inout I64[_] st, in I64[_] se, inout I64[_] fr, inout U8[_] code, in U8[_] b, I64 n) {
+    I64 f = st[S_FRAG];
+    if (se[(st[S_CUR]) * C_W + C_TY] == SHT_NOBITS) {
+        for i in 0..n {
+            if (b[i] != 0) {
+                return fail(st, E_NOBITS);
+            }
+        }
+        fr[f * G_W + G_FIX] += n;
+        return true;
+    }
+    I64 p = st[S_CODE];
+    if (p + n > len(code)) {
+        return fail(st, E_FULL);
+    }
+    for i in 0..n {
+        code[p + i] = b[i];
+    }
+    st[S_CODE] = p + n;
+    fr[f * G_W + G_FIX] += n;
+    return true;
+}
+
+// Appends n zero bytes (`.fill`, `.comm`-free zero data).
+export Bool put_zeros(inout I64[_] st, in I64[_] se, inout I64[_] fr, inout U8[_] code, I64 n) {
+    I64 f = st[S_FRAG];
+    if (se[(st[S_CUR]) * C_W + C_TY] != SHT_NOBITS) {
+        I64 p = st[S_CODE];
+        if (p + n > len(code)) {
+            return fail(st, E_FULL);
+        }
+        for i in 0..n {
+            code[p + i] = 0;
+        }
+        st[S_CODE] = p + n;
+    }
+    fr[f * G_W + G_FIX] += n;
+    return true;
+}
+
+// Records a fixup at byte off of the bytes about to be appended to the current fragment.
+export Bool add_fix(inout I64[_] st, in I64[_] fr, inout I64[_] fi, I64 off, I64 nbytes, I64 kind, I64 sym, I64 add,
+        I64 signed) {
+    I64 k = st[S_NFIX];
+    if (k >= st[S_CAPFIX]) {
+        return fail(st, E_FULL);
+    }
+    st[S_NFIX] = k + 1;
+    I64 f = st[S_FRAG];
+    fi[k * X_W + X_FRAG] = f;
+    fi[k * X_W + X_OFF] = fr[f * G_W + G_FIX] + off;
+    fi[k * X_W + X_NBYTES] = nbytes;
+    fi[k * X_W + X_KIND] = kind;
+    fi[k * X_W + X_SYM] = sym;
+    fi[k * X_W + X_ADD] = add;
+    fi[k * X_W + X_SIGNED] = signed;
+    fi[k * X_W + X_LINE] = st[S_LINE];
+    fi[k * X_W + X_RTYPE] = 0;
+    fi[k * X_W + X_RSYM] = -1;
+    fi[k * X_W + X_RADD] = 0;
+    return true;
+}
+
+// Defines label k at the current place.
+export Bool define(inout I64[_] st, inout I64[_] sy, in I64[_] se, in I64[_] fr, I64 k) {
+    if (sy[k * Y_W + Y_SEC] != 0) {
+        return fail(st, E_REDEF);
+    }
+    I64 f = st[S_FRAG];
+    sy[k * Y_W + Y_SEC] = st[S_CUR] + 1;
+    sy[k * Y_W + Y_FRAG] = f;
+    sy[k * Y_W + Y_OFF] = fr[f * G_W + G_FIX];
+    if ((se[(st[S_CUR]) * C_W + C_FLAGS] & SHF_TLS) != 0) {
+        sy[k * Y_W + Y_TLS] = 1;
+    }
+    return true;
+}
+
+// Ends the current fragment with a jump (cc x86.JMP or a condition) to sym + add.
+export Bool jump(inout I64[_] st, inout I64[_] se, inout I64[_] fr, inout U8[_] code, I64 cc, I64 sym, I64 add) {
+    U8[1] op;
+    if (!put_bytes(st, se, fr, code, op, 1)) {
+        return false;
+    }
+    I64 f = st[S_FRAG];
+    fr[f * G_W + G_KIND] = F_JUMP;
+    fr[f * G_W + G_CC] = cc;
+    fr[f * G_W + G_SYM] = sym;
+    fr[f * G_W + G_ADD] = add;
+    return new_frag(st, se, fr, st[S_CUR]) >= 0;
+}
+
+// Ends the current fragment with an alignment to `bytes` (a power of two) (G-3).
+export Bool align(inout I64[_] st, inout I64[_] se, inout I64[_] fr, I64 bytes) {
+    I64 s = st[S_CUR];
+    I64 f = st[S_FRAG];
+    fr[f * G_W + G_KIND] = F_ALIGN;
+    fr[f * G_W + G_ALIGN] = bytes;
+    fr[f * G_W + G_CC] = se[s * C_W + C_RAW];
+    if (bytes > se[s * C_W + C_ALIGN]) {
+        se[s * C_W + C_ALIGN] = bytes;
+    }
+    return new_frag(st, se, fr, s) >= 0;
+}
+
+I64 pad(I64 addr, I64 bytes) {
+    return ((addr + bytes - 1) & (0 - bytes)) - addr;
+}
+
+// The variable bytes of fragment f at its current address.
+export I64 var_size(in I64[_] fr, I64 f) {
+    if (fr[f * G_W + G_KIND] == F_JUMP) {
+        if (fr[f * G_W + G_BIG] == 0) {
+            return 1;
+        }
+        if (fr[f * G_W + G_CC] == x86.JMP) {
+            return 4;
+        }
+        return 5;
+    }
+    if (fr[f * G_W + G_KIND] == F_ALIGN) {
+        return pad(fr[f * G_W + G_ADDR] + fr[f * G_W + G_FIX], fr[f * G_W + G_ALIGN]);
+    }
+    return 0;
+}
+
+// Checks each jump's target: a defined local label of the jump's own section (section 3, G-9).
+export Bool check_jumps(inout I64[_] st, in I64[_] sy, in I64[_] fr) {
+    for f in 0..st[S_NFRAG] {
+        if (fr[f * G_W + G_KIND] == F_JUMP) {
+            I64 k = fr[f * G_W + G_SYM];
+            if (sy[k * Y_W + Y_SEC] != fr[f * G_W + G_SEC] + 1 || sy[k * Y_W + Y_BIND] == 1) {
+                return fail(st, E_JUMP);
+            }
+        }
+    }
+    for k in 0..st[S_NSYM] {
+        if (sy[k * Y_W + Y_LABEL] == 1 && sy[k * Y_W + Y_SEC] == 0) {
+            return fail(st, E_UNDEF_LOCAL);
+        }
+    }
+    return true;
+}
+
+// Relaxes the jumps of section s and gives its fragments their addresses and the section its size (G-9).
+export void relax(inout I64[_] se, inout I64[_] fr, in I64[_] sy, I64 s) {
+    I64 addr = 0;
+    I64 region = 0;
+    I64 f = se[s * C_W + C_FIRST];
+    while (f >= 0) {
+        fr[f * G_W + G_REGION] = region;
+        fr[f * G_W + G_MARK] = 0;
+        fr[f * G_W + G_ADDR] = addr;
+        addr += fr[f * G_W + G_FIX];
+        if (fr[f * G_W + G_KIND] == F_JUMP) {
+            fr[f * G_W + G_BIG] = 0;
+            addr += 1;
+        } else if (fr[f * G_W + G_KIND] == F_ALIGN) {
+            addr += pad(addr, fr[f * G_W + G_ALIGN]);
+            region += 1;
+        }
+        f = fr[f * G_W + G_NEXT];
+    }
+    Bool stretched = true;
+    while (stretched) {
+        stretched = false;
+        I64 stretch = 0;
+        f = se[s * C_W + C_FIRST];
+        while (f >= 0) {
+            fr[f * G_W + G_MARK] = 1 - fr[f * G_W + G_MARK];
+            I64 was = fr[f * G_W + G_ADDR];
+            fr[f * G_W + G_ADDR] = was + stretch;
+            I64 a = fr[f * G_W + G_ADDR] + fr[f * G_W + G_FIX];
+            I64 growth = 0;
+            if (fr[f * G_W + G_KIND] == F_ALIGN) {
+                growth = pad(a, fr[f * G_W + G_ALIGN]) - pad(was + fr[f * G_W + G_FIX], fr[f * G_W + G_ALIGN]);
+            } else if (fr[f * G_W + G_KIND] == F_JUMP && fr[f * G_W + G_BIG] == 0) {
+                I64 k = fr[f * G_W + G_SYM];
+                I64 tf = sy[k * Y_W + Y_FRAG];
+                I64 target = fr[tf * G_W + G_ADDR] + sy[k * Y_W + Y_OFF] + fr[f * G_W + G_ADD];
+                Bool skip = false;
+                if (stretch != 0 && fr[tf * G_W + G_MARK] != fr[f * G_W + G_MARK]) {
+                    if (stretch < 0 || fr[tf * G_W + G_REGION] == fr[f * G_W + G_REGION]) {
+                        target += stretch;
+                    } else if (target < a) {
+                        skip = true;
+                    }
+                }
+                I64 aim = target - a;
+                if (!skip && (aim < -127 || aim > 128)) {
+                    fr[f * G_W + G_BIG] = 1;
+                    growth = var_size(fr, f) - 1;
+                }
+            }
+            if (growth != 0) {
+                stretch += growth;
+                stretched = true;
+            }
+            f = fr[f * G_W + G_NEXT];
+        }
+    }
+    I64 last = se[s * C_W + C_LAST];
+    if (last < 0) {
+        se[s * C_W + C_NBYTES] = 0;
+        return;
+    }
+    se[s * C_W + C_NBYTES] = fr[last * G_W + G_ADDR] + fr[last * G_W + G_FIX] + var_size(fr, last);
+}
+
+export I64 value(in I64[_] sy, in I64[_] fr, I64 k) {
+    if (sy[k * Y_W + Y_TY] == T_SECTION || sy[k * Y_W + Y_SEC] <= 0) {
+        return 0;
+    }
+    return fr[(sy[k * Y_W + Y_FRAG]) * G_W + G_ADDR] + sy[k * Y_W + Y_OFF];
+}
+
+// Gives each `.size NAME, . - NAME` its value (section 3).
+export Bool sizes(inout I64[_] st, inout I64[_] sy, in I64[_] fr) {
+    for k in 0..st[S_NSYM] {
+        if (sy[k * Y_W + Y_SZKIND] == 2) {
+            if (sy[k * Y_W + Y_SEC] != fr[(sy[k * Y_W + Y_SZFRAG]) * G_W + G_SEC] + 1) {
+                return fail(st, E_SIZEDIR);
+            }
+            sy[k * Y_W + Y_NBYTES] = fr[(sy[k * Y_W + Y_SZFRAG]) * G_W + G_ADDR] + sy[k * Y_W + Y_SZOFF] - value(sy, fr, k);
+        }
+    }
+    return true;
+}
+
+Bool keeps_symbol(in I64[_] sy, I64 k) {
+    return sy[k * Y_W + Y_BIND] == 1 || sy[k * Y_W + Y_SEC] <= 0 || sy[k * Y_W + Y_TLS] == 1;
+}
+
+// Resolves each fixup or turns it into a relocation (G-8); patches resolved values into code.
+export Bool resolve(inout I64[_] st, inout I64[_] sy, inout I64[_] se, in I64[_] fr, inout I64[_] fi,
+        inout U8[_] code) {
+    for j in 0..st[S_NFIX] {
+        I64 k = fi[j * X_W + X_SYM];
+        I64 f = fi[j * X_W + X_FRAG];
+        I64 s = fr[f * G_W + G_SEC];
+        I64 kind = fi[j * X_W + X_KIND];
+        I64 p = fr[f * G_W + G_ADDR] + fi[j * X_W + X_OFF];
+        Bool local = !keeps_symbol(sy, k);
+        I64 rt = 0;
+        if (kind == x86.FK_PC || kind == x86.FK_CALL) {
+            if (local && sy[k * Y_W + Y_SEC] == s + 1) {
+                I64 v = value(sy, fr, k) + fi[j * X_W + X_ADD] - p;
+                if (!text.fits(v, 32)) {
+                    st[S_LINE] = fi[j * X_W + X_LINE];
+                    return fail(st, E_RANGE);
+                }
+                text.put(code, fr[f * G_W + G_AT] + fi[j * X_W + X_OFF], v, 4);
+            } else {
+                rt = R_PC32;
+                if (kind == x86.FK_CALL && !local) {
+                    rt = R_PLT32;
+                }
+            }
+        } else if (kind == x86.FK_ABS) {
+            if (fi[j * X_W + X_NBYTES] == 8) {
+                rt = R_64;
+            } else if (fi[j * X_W + X_NBYTES] == 4) {
+                rt = R_32;
+                if (fi[j * X_W + X_SIGNED] == 1) {
+                    rt = R_32S;
+                }
+            } else if (fi[j * X_W + X_NBYTES] == 2) {
+                rt = R_16;
+            } else {
+                rt = R_8;
+            }
+        } else {
+            local = false;
+            rt = R_GOTPCRELX;
+            if (kind == x86.FK_REX_GOTPCRELX) {
+                rt = R_REX_GOTPCRELX;
+            }
+            if (kind == x86.FK_GOTTPOFF) {
+                rt = R_GOTTPOFF;
+            }
+            if (kind == x86.FK_TPOFF) {
+                rt = R_TPOFF32;
+            }
+        }
+        fi[j * X_W + X_RTYPE] = rt;
+        if (rt != 0) {
+            if (local) {
+                I64 ss = se[(sy[k * Y_W + Y_SEC] - 1) * C_W + C_SYM];
+                sy[ss * Y_W + Y_USED] = 1;
+                fi[j * X_W + X_RSYM] = ss;
+                fi[j * X_W + X_RADD] = value(sy, fr, k) + fi[j * X_W + X_ADD];
+            } else {
+                fi[j * X_W + X_RSYM] = k;
+                fi[j * X_W + X_RADD] = fi[j * X_W + X_ADD];
+            }
+            se[s * C_W + C_NREL] += 1;
+        }
+    }
+    return true;
+}
+
+// The displacement of jump fragment f and its byte count, for the writer.
+export I64 jump_disp(in I64[_] sy, in I64[_] fr, I64 f) {
+    I64 end = fr[f * G_W + G_ADDR] + fr[f * G_W + G_FIX] + var_size(fr, f);
+    return value(sy, fr, fr[f * G_W + G_SYM]) + fr[f * G_W + G_ADD] - end;
+}

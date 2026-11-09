@@ -1,0 +1,43 @@
+// link/le.ci: little-endian fields in a byte view (docs/design/notes/2026-11-07-static-linker.md
+// section 2). Reads return I64; a 64-bit read of a value at or above 2^63 faults (no address of a
+// static executable is that high). Writes take the low bytes of an I64, two's complement.
+
+export I64 u8(in U8[_] b, I64 at) {
+    return b[at] as I64;
+}
+
+export I64 u16(in U8[_] b, I64 at) {
+    return (b[at] as I64) | ((b[at + 1] as I64) << 8);
+}
+
+export I64 u32(in U8[_] b, I64 at) {
+    return u16(b, at) | (u16(b, at + 2) << 16);
+}
+
+// A signed 64-bit field (an addend); the full I64 range.
+export I64 s64(in U8[_] b, I64 at) {
+    U64 v = 0;
+    for i in 0..8 {
+        v = v | ((b[at + i] as U64) <<% (8 * i));
+    }
+    return v as% I64;
+}
+
+export void put8(inout U8[_] b, I64 at, I64 v) {
+    b[at] = (v & 255) as U8;
+}
+
+export void put16(inout U8[_] b, I64 at, I64 v) {
+    put8(b, at, v);
+    put8(b, at + 1, v >> 8);
+}
+
+export void put32(inout U8[_] b, I64 at, I64 v) {
+    put16(b, at, v);
+    put16(b, at + 2, v >> 16);
+}
+
+export void put64(inout U8[_] b, I64 at, I64 v) {
+    put32(b, at, v);
+    put32(b, at + 4, v >> 32);
+}

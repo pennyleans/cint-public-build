@@ -146,7 +146,13 @@ class Case17(BorrowCase):
         a = numpy.arange(4, dtype=numpy.int64)
         a.flags.writeable = False
         self.refused(a, "writable=True over a read-only export (SPEC-03 P-7)", writable=True)
-        self.refused(DLPackOnly(a), "read-only DLPack tensor", writable=True)
+        try:
+            a.__dlpack__(max_version=(1, 0), copy=False)
+        except TypeError:
+            # Legacy producers cannot encode read-only status and refuse the export themselves.
+            self.refused(DLPackOnly(a), "the DLPack producer could not export", "readonly", writable=True)
+        else:
+            self.refused(DLPackOnly(a), "read-only DLPack tensor", writable=True)
         self.assertEqual(self.borrowed(a).writable, False)
 
     @unittest.skipIf(numpy is None, "NumPy is not installed")

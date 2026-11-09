@@ -2,6 +2,20 @@
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), with one section added: **Compiler coverage**, the conformance counts for the release and the cases that moved from unsupported to compared. Versions follow [Semantic Versioning](https://semver.org/); before 1.0, a minor version may break anything.
 
+## [0.2.18] - 2026-11-09
+
+### Added
+
+- Source and tests for the x86-64 assembler in `toolchain/as/` and the ELF linker in `link/`. These files were omitted from the 0.2.17 source release.
+
+### Changed
+
+- `cint --version` reports 0.2.18. The language and public specification editions remain those of 0.2.17.
+
+### Fixed
+
+- The Python binding test now distinguishes legacy DLPack producers from versioned producers when checking read-only NumPy arrays. The borrow still refuses the export; runtime behavior is unchanged.
+
 ## [0.2.17] - 2026-11-08
 
 0.2.17 is the last release of the 0.2 line. It takes in 0.2.9 to 0.2.16, which were not published on their own and are listed below. 0.3.0 follows as an experimental pre-release. Across the nine versions, the language gains four halving and rounding operations, and calls across modules take error unions and grants. `cint` gains `--version` and a cache outside its own directory. The executor `cpu-c17-spec` runs some calls speculatively without changing any outcome, and the experimental executor `cpu-qbe` builds a program through QBE with no C compiler. No expected output that an earlier release published for a conformance case changes.

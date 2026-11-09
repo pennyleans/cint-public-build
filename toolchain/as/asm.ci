@@ -1,0 +1,997 @@
+// toolchain/as/asm.ci: cint-as, the x86-64 assembler for QBE's output (docs/design/notes/2026-11-07-cint-as.md).
+// assemble reads GNU assembler text and writes an ELF64 relocatable object byte-equal to GNU as 2.42's, or
+// sets st[S_ERR] and st[S_LINE] and writes nothing. This module holds the line reader, the operand and
+// expression parser and the directives; x86.ci encodes, obj.ci lays out, elf.ci writes.
+
+import toolchain.as.text;
+import toolchain.as.x86;
+import toolchain.as.obj;
+import toolchain.as.elf;
+
+// Errors of this module in st[S_ERR] (x86's E_* are stored negated: 1 to 6).
+export const I64 E_SYNTAX = 10;
+export const I64 E_DIRECTIVE = 11;
+export const I64 E_EXPR = 12;
+export const I64 E_SECTION = 19;
+export const I64 E_STRING = 20;
+export const I64 E_LONG = 22;
+
+
+const I64 LINE_MAX = 8192;
+
+// The expression cursor, what the last primary met, and the second result of the functions below.
+I64 r2 = 0;
+I64 ep = 0;
+I64 erel = 0;
+Bool edot = false;
+
+void skip(in U8[_] ln, I64 e) {
+    while (ep < e && text.is_space(ln[ep])) {
+        ep += 1;
+    }
+}
+
+I64 rel_of(in U8[_] ln, I64 at, I64 n) {
+    I64 k = text.find(ln, at, n, b"plt gotpcrel gottpoff tpoff PLT GOTPCREL GOTTPOFF TPOFF ");
+    if (k < 0) {
+        return -1;
+    }
+    return 1 + k % 4;
+}
+
+I64 digit_value(U8 c) {
+    if (c >= '0' && c <= '9') {
+        return (c - '0') as I64;
+    }
+    if (c >= 'a' && c <= 'f') {
+        return (c - 'a') as I64 + 10;
+    }
+    if (c >= 'A' && c <= 'F') {
+        return (c - 'A') as I64 + 10;
+    }
+    return 99;
+}
+
+// A primary: a number, a name (with an optional @operator), `.`, `-` primary or a parenthesized sum.
+I64 prim(in U8[_] ln, I64 e, inout I64[_] st, inout I64[_] sy, inout U8[_] nm, inout I64[_] hs) {
+    skip(ln, e);
+    if (ep >= e) {
+        _ = obj.fail(st, E_EXPR);
+        r2 = 0;
+        return -1;
+    }
+    U8 c = ln[ep];
+    if (c == '-') {
+        ep += 1;
+        I64 s = prim(ln, e, st, sy, nm, hs);
+        I64 v = r2;
+        if (s >= 0) {
+            _ = obj.fail(st, E_EXPR);
+        }
+        r2 = 0 -% v;
+        return -1;
+    }
+    if (c == '(') {
+        ep += 1;
+        I64 s = terms(ln, e, st, sy, nm, hs);
+        I64 v = r2;
+        skip(ln, e);
+        if (ep >= e || ln[ep] != ')') {
+            _ = obj.fail(st, E_EXPR);
+            r2 = 0;
+            return -1;
+        }
+        ep += 1;
+        r2 = v;
+        return s;
+    }
+    if (text.is_digit(c)) {
+        I64 base = 10;
+        if (c == '0' && ep + 1 < e && (ln[ep + 1] == 'x' || ln[ep + 1] == 'X')) {
+            base = 16;
+            ep += 2;
+        } else if (c == '0' && ep + 1 < e && (ln[ep + 1] == 'b' || ln[ep + 1] == 'B')) {
+            base = 2;
+            ep += 2;
+        } else if (c == '0') {
+            base = 8;
+        }
+        I64 v = 0;
+        I64 nd = 0;
+        while (ep < e && digit_value(ln[ep]) < base) {
+            v = v *% base +% digit_value(ln[ep]);
+            ep += 1;
+            nd += 1;
+        }
+        if (nd == 0 || (ep < e && text.is_name(ln[ep]))) {
+            _ = obj.fail(st, E_EXPR);
+        }
+        r2 = v;
+        return -1;
+    }
+    if (text.is_name_start(c)) {
+        I64 a = ep;
+        while (ep < e && text.is_name(ln[ep])) {
+            ep += 1;
+        }
+        I64 n = ep - a;
+        if (n == 1 && c == '.') {
+            edot = true;
+            r2 = 0;
+            return -1;
+        }
+        if (ep < e && ln[ep] == '@') {
+            I64 r0 = ep + 1;
+            I64 r1 = r0;
+            while (r1 < e && text.is_name(ln[r1])) {
+                r1 += 1;
+            }
+            I64 r = rel_of(ln, r0, r1 - r0);
+            if (r < 0 || erel != 0) {
+                _ = obj.fail(st, E_EXPR);
+                r2 = 0;
+                return -1;
+            }
+            erel = r;
+            ep = r1;
+            if ((r == x86.REL_GOTPCREL || r == x86.REL_GOTTPOFF) && st[obj.S_GOT] < 0) {
+                st[obj.S_GOT] = obj.intern(st, sy, nm, hs, b"_GLOBAL_OFFSET_TABLE_", 0, 21);
+            }
+        }
+        I64 k = obj.intern(st, sy, nm, hs, ln, a, n);
+        r2 = 0;
+        return k;
+    }
+    _ = obj.fail(st, E_EXPR);
+    r2 = 0;
+    return -1;
+}
+
+I64 shifted(in U8[_] ln, I64 e, inout I64[_] st, inout I64[_] sy, inout U8[_] nm, inout I64[_] hs) {
+    I64 s = prim(ln, e, st, sy, nm, hs);
+    I64 v = r2;
+    skip(ln, e);
+    while (ep + 1 < e && ((ln[ep] == '>' && ln[ep + 1] == '>') || (ln[ep] == '<' && ln[ep + 1] == '<'))) {
+        Bool right = ln[ep] == '>';
+        ep += 2;
+        I64 s2 = prim(ln, e, st, sy, nm, hs);
+        I64 v2 = r2;
+        if (s >= 0 || s2 >= 0 || v2 < 0 || v2 > 63) {
+            _ = obj.fail(st, E_EXPR);
+            r2 = 0;
+            return -1;
+        }
+        if (right) {
+            v = v >> v2;
+        } else {
+            v = v <<% v2;
+        }
+        skip(ln, e);
+    }
+    r2 = v;
+    return s;
+}
+
+// A sum of terms: at most one name, added (G-8 values are a name plus a constant).
+I64 terms(in U8[_] ln, I64 e, inout I64[_] st, inout I64[_] sy, inout U8[_] nm, inout I64[_] hs) {
+    I64 s = shifted(ln, e, st, sy, nm, hs);
+    I64 v = r2;
+    skip(ln, e);
+    while (ep < e && (ln[ep] == '+' || ln[ep] == '-')) {
+        Bool plus = ln[ep] == '+';
+        ep += 1;
+        I64 s2 = shifted(ln, e, st, sy, nm, hs);
+        I64 v2 = r2;
+        if (plus) {
+            if (s >= 0 && s2 >= 0) {
+                _ = obj.fail(st, E_EXPR);
+            }
+            if (s2 >= 0) {
+                s = s2;
+            }
+            v = v +% v2;
+        } else {
+            if (s2 >= 0) {
+                _ = obj.fail(st, E_EXPR);
+            }
+            v = v -% v2;
+        }
+        skip(ln, e);
+    }
+    r2 = v;
+    return s;
+}
+
+// The whole of ln[a..e] as one value; anything left over is E_EXPR.
+I64 value(in U8[_] ln, I64 a, I64 e, inout I64[_] st, inout I64[_] sy, inout U8[_] nm, inout I64[_] hs) {
+    ep = a;
+    erel = 0;
+    edot = false;
+    I64 s = terms(ln, e, st, sy, nm, hs);
+    I64 v = r2;
+    skip(ln, e);
+    if (ep != e || edot) {
+        _ = obj.fail(st, E_EXPR);
+    }
+    r2 = v;
+    return s;
+}
+
+I64 trim_start(in U8[_] ln, I64 a, I64 e) {
+    I64 p = a;
+    while (p < e && text.is_space(ln[p])) {
+        p += 1;
+    }
+    return p;
+}
+
+I64 trim_end(in U8[_] ln, I64 a, I64 e) {
+    I64 p = e;
+    while (p > a && text.is_space(ln[p - 1])) {
+        p -= 1;
+    }
+    return p;
+}
+
+// The end of the comma-separated item that starts at a (parentheses and strings nest).
+I64 item_end(in U8[_] ln, I64 a, I64 e) {
+    I64 depth = 0;
+    Bool q = false;
+    I64 p = a;
+    while (p < e) {
+        U8 c = ln[p];
+        if (q) {
+            if (c == '\\') {
+                p += 1;
+            } else if (c == '"') {
+                q = false;
+            }
+        } else if (c == '"') {
+            q = true;
+        } else if (c == '(') {
+            depth += 1;
+        } else if (c == ')') {
+            depth -= 1;
+        } else if (c == ',' && depth == 0) {
+            return p;
+        }
+        p += 1;
+    }
+    return e;
+}
+
+// A 64-bit address register at ln[a..e] (`%rax`, `%rip`), or -1.
+I64 addr_reg(in U8[_] ln, I64 a, I64 e) {
+    if (e - a < 2 || ln[a] != '%') {
+        return -1;
+    }
+    I64 r = x86.register(ln, a + 1, e - a - 1);
+    if (r < 0 || ((r >> 8) & 255) != 8) {
+        return -1;
+    }
+    return r & 255;
+}
+
+// One operand ln[a..e] into o[i].
+Bool operand(in U8[_] ln, I64 a0, I64 e0, inout I64[_] o, I64 i, inout I64[_] st, inout I64[_] sy,
+        inout U8[_] nm, inout I64[_] hs) {
+    I64 a = trim_start(ln, a0, e0);
+    I64 e = trim_end(ln, a, e0);
+    o[i * x86.O_W + x86.O_KIND] = 0;
+    o[i * x86.O_W + x86.O_REG] = 0;
+    o[i * x86.O_W + x86.O_NBYTES] = 0;
+    o[i * x86.O_W + x86.O_HI8] = 0;
+    o[i * x86.O_W + x86.O_SYM] = -1;
+    o[i * x86.O_W + x86.O_VAL] = 0;
+    o[i * x86.O_W + x86.O_REL] = 0;
+    o[i * x86.O_W + x86.O_BASE] = -1;
+    o[i * x86.O_W + x86.O_INDEX] = -1;
+    o[i * x86.O_W + x86.O_SCALE] = 1;
+    o[i * x86.O_W + x86.O_SEG] = 0;
+    o[i * x86.O_W + x86.O_STAR] = 0;
+    o[i * x86.O_W + x86.O_BARE] = 0;
+    if (a >= e) {
+        return obj.fail(st, E_SYNTAX);
+    }
+    if (ln[a] == '*') {
+        o[i * x86.O_W + x86.O_STAR] = 1;
+        a = trim_start(ln, a + 1, e);
+    }
+    if (a < e && ln[a] == '$') {
+        I64 s = value(ln, a + 1, e, st, sy, nm, hs);
+        I64 v = r2;
+        o[i * x86.O_W + x86.O_KIND] = x86.OK_IMM;
+        o[i * x86.O_W + x86.O_SYM] = s;
+        o[i * x86.O_W + x86.O_VAL] = v;
+        o[i * x86.O_W + x86.O_REL] = erel;
+        return st[obj.S_ERR] == 0;
+    }
+    if (a + 3 < e && ln[a] == '%' && ln[a + 1] == 'f' && ln[a + 2] == 's' && ln[a + 3] == ':') {
+        o[i * x86.O_W + x86.O_SEG] = 1;
+        a = trim_start(ln, a + 4, e);
+    } else if (a < e && ln[a] == '%') {
+        I64 r = x86.register(ln, a + 1, e - a - 1);
+        if (r < 0) {
+            return obj.fail(st, -x86.E_OPERANDS);
+        }
+        o[i * x86.O_W + x86.O_KIND] = x86.OK_REG;
+        o[i * x86.O_W + x86.O_REG] = r & 255;
+        o[i * x86.O_W + x86.O_NBYTES] = (r >> 8) & 255;
+        o[i * x86.O_W + x86.O_HI8] = r >> 16;
+        return true;
+    }
+    o[i * x86.O_W + x86.O_KIND] = x86.OK_MEM;
+    // An address part: the last top-level parenthesis group, when it starts with % or a comma.
+    I64 lp = -1;
+    if (e > a && ln[e - 1] == ')') {
+        I64 depth = 0;
+        I64 p = e - 1;
+        while (p >= a && lp < 0) {
+            if (ln[p] == ')') {
+                depth += 1;
+            } else if (ln[p] == '(') {
+                depth -= 1;
+                if (depth == 0) {
+                    lp = p;
+                }
+            }
+            p -= 1;
+        }
+        if (lp >= 0) {
+            I64 q = trim_start(ln, lp + 1, e - 1);
+            if (q >= e - 1 || (ln[q] != '%' && ln[q] != ',')) {
+                lp = -1;
+            }
+        }
+    }
+    if (lp < 0) {
+        o[i * x86.O_W + x86.O_BARE] = 1;
+        I64 s = value(ln, a, e, st, sy, nm, hs);
+        I64 v = r2;
+        o[i * x86.O_W + x86.O_SYM] = s;
+        o[i * x86.O_W + x86.O_VAL] = v;
+        o[i * x86.O_W + x86.O_REL] = erel;
+        return st[obj.S_ERR] == 0;
+    }
+    if (trim_end(ln, a, lp) > a) {
+        I64 s = value(ln, a, lp, st, sy, nm, hs);
+        I64 v = r2;
+        o[i * x86.O_W + x86.O_SYM] = s;
+        o[i * x86.O_W + x86.O_VAL] = v;
+        o[i * x86.O_W + x86.O_REL] = erel;
+        if (st[obj.S_ERR] != 0) {
+            return false;
+        }
+    }
+    I64 c1 = item_end(ln, lp + 1, e - 1);
+    I64 b0 = trim_start(ln, lp + 1, c1);
+    I64 b1 = trim_end(ln, b0, c1);
+    if (b1 > b0) {
+        o[i * x86.O_W + x86.O_BASE] = addr_reg(ln, b0, b1);
+        if (o[i * x86.O_W + x86.O_BASE] < 0) {
+            return obj.fail(st, -x86.E_MEM);
+        }
+    }
+    if (c1 < e - 1) {
+        I64 c2 = item_end(ln, c1 + 1, e - 1);
+        I64 x0 = trim_start(ln, c1 + 1, c2);
+        I64 x1 = trim_end(ln, x0, c2);
+        o[i * x86.O_W + x86.O_INDEX] = addr_reg(ln, x0, x1);
+        if (o[i * x86.O_W + x86.O_INDEX] < 0 || o[i * x86.O_W + x86.O_INDEX] == x86.RIP) {
+            return obj.fail(st, -x86.E_MEM);
+        }
+        if (c2 < e - 1) {
+            I64 s0 = trim_start(ln, c2 + 1, e - 1);
+            I64 s1 = trim_end(ln, s0, e - 1);
+            if (s1 - s0 != 1 || (ln[s0] != '1' && ln[s0] != '2' && ln[s0] != '4' && ln[s0] != '8')) {
+                return obj.fail(st, -x86.E_MEM);
+            }
+            o[i * x86.O_W + x86.O_SCALE] = (ln[s0] - '0') as I64;
+        }
+    }
+    return true;
+}
+
+Bool instruction(in U8[_] ln, I64 ma, I64 mb, I64 e, inout I64[_] st, inout I64[_] sy, inout I64[_] se,
+        inout I64[_] fr, inout I64[_] fi, inout U8[_] code, inout U8[_] nm, inout I64[_] hs) {
+    I64[52] o;
+    I64 n = 0;
+    I64 p = trim_start(ln, mb, e);
+    while (p < e) {
+        I64 q = item_end(ln, p, e);
+        if (n == 3) {
+            return obj.fail(st, -x86.E_OPERANDS);
+        }
+        if (!operand(ln, p, q, o, n, st, sy, nm, hs)) {
+            return false;
+        }
+        n += 1;
+        p = q + 1;
+        if (q < e && trim_start(ln, p, e) >= e) {
+            return obj.fail(st, E_SYNTAX);
+        }
+    }
+    U8[32] b;
+    I64[16] fx;
+    I64 r = x86.encode(ln, ma, mb - ma, o, n, b, fx);
+    if (r < 0) {
+        return obj.fail(st, -r);
+    }
+    if (fx[x86.FX_JUMP] != x86.NO_JUMP) {
+        return obj.jump(st, se, fr, code, fx[x86.FX_JUMP], fx[x86.FX_JSYM], fx[x86.FX_JADD]);
+    }
+    for k in 0..fx[x86.FX_N] {
+        I64 at = 1 + x86.FX_W * k;
+        I64 off = fx[at];
+        I64 kind = fx[at + 2];
+        I64 s = fx[at + 3];
+        I64 add = fx[at + 4];
+        if (kind != x86.FK_ABS && kind != x86.FK_TPOFF) {
+            add = add - (r - off);
+        }
+        if (kind == x86.FK_TPOFF || kind == x86.FK_GOTTPOFF) {
+            sy[s * obj.Y_W + obj.Y_TLS] = 1;
+        }
+        if (!obj.add_fix(st, fr, fi, off, fx[at + 1], kind, s, add, fx[at + 5])) {
+            return false;
+        }
+    }
+    return obj.put_bytes(st, se, fr, code, b, r);
+}
+
+// A name at ln[a..], its end; a = the end when there is none.
+I64 name_end(in U8[_] ln, I64 a, I64 e) {
+    I64 p = a;
+    if (p < e && text.is_name_start(ln[p])) {
+        while (p < e && text.is_name(ln[p])) {
+            p += 1;
+        }
+    }
+    return p;
+}
+
+// A constant ln[a..e].
+Bool constant(in U8[_] ln, I64 a, I64 e, inout I64[_] st, inout I64[_] sy, inout U8[_] nm, inout I64[_] hs) {
+    I64 s = value(ln, a, e, st, sy, nm, hs);
+    I64 v = r2;
+    if (s >= 0 || erel != 0) {
+        _ = obj.fail(st, E_EXPR);
+    }
+    r2 = v;
+    return st[obj.S_ERR] == 0;
+}
+
+Bool section_directive(in U8[_] ln, I64 a0, I64 e, inout I64[_] st, inout I64[_] sy, inout I64[_] se,
+        inout I64[_] fr, inout U8[_] nm) {
+    I64 a = trim_start(ln, a0, e);
+    I64 b = a;
+    while (b < e && ln[b] != ',' && !text.is_space(ln[b])) {
+        b += 1;
+    }
+    if (b == a) {
+        return obj.fail(st, E_DIRECTIVE);
+    }
+    I64 ty = obj.SHT_PROGBITS;
+    I64 flags = 0;
+    if (text.same(ln, a, b - a, b".text") || (b - a > 6 && text.same(ln, a, 6, b".text."))) {
+        flags = obj.SHF_ALLOC | obj.SHF_EXEC;
+    } else if (text.same(ln, a, b - a, b".data") || (b - a > 6 && text.same(ln, a, 6, b".data."))) {
+        flags = obj.SHF_ALLOC | obj.SHF_WRITE;
+    } else if (text.same(ln, a, b - a, b".bss") || (b - a > 5 && text.same(ln, a, 5, b".bss."))) {
+        ty = obj.SHT_NOBITS;
+        flags = obj.SHF_ALLOC | obj.SHF_WRITE;
+    } else if (text.same(ln, a, b - a, b".rodata") || (b - a > 8 && text.same(ln, a, 8, b".rodata."))) {
+        flags = obj.SHF_ALLOC;
+    } else if (text.same(ln, a, b - a, b".tdata") || (b - a > 7 && text.same(ln, a, 7, b".tdata."))) {
+        flags = obj.SHF_ALLOC | obj.SHF_WRITE | obj.SHF_TLS;
+    } else if (text.same(ln, a, b - a, b".tbss") || (b - a > 6 && text.same(ln, a, 6, b".tbss."))) {
+        ty = obj.SHT_NOBITS;
+        flags = obj.SHF_ALLOC | obj.SHF_WRITE | obj.SHF_TLS;
+    } else if (b - a >= 5 && text.same(ln, a, 5, b".note")) {
+        ty = obj.SHT_NOTE;
+    } else if (text.same(ln, a, b - a, b".init_array") || (b - a > 12 && text.same(ln, a, 12, b".init_array."))) {
+        ty = obj.SHT_INIT_ARRAY;
+        flags = obj.SHF_ALLOC | obj.SHF_WRITE;
+    } else if (text.same(ln, a, b - a, b".fini_array") || (b - a > 12 && text.same(ln, a, 12, b".fini_array."))) {
+        ty = obj.SHT_FINI_ARRAY;
+        flags = obj.SHF_ALLOC | obj.SHF_WRITE;
+    } else if (text.same(ln, a, b - a, b".preinit_array") || (b - a > 15 && text.same(ln, a, 15, b".preinit_array."))) {
+        ty = obj.SHT_PREINIT_ARRAY;
+        flags = obj.SHF_ALLOC | obj.SHF_WRITE;
+    }
+    I64 p = trim_start(ln, b, e);
+    if (p < e) {
+        if (ln[p] != ',') {
+            return obj.fail(st, E_SYNTAX);
+        }
+        p = trim_start(ln, p + 1, e);
+        if (p >= e || ln[p] != '"') {
+            return obj.fail(st, E_SECTION);
+        }
+        p += 1;
+        flags = 0;
+        while (p < e && ln[p] != '"') {
+            U8 c = ln[p];
+            if (c == 'a') {
+                flags = flags | obj.SHF_ALLOC;
+            } else if (c == 'w') {
+                flags = flags | obj.SHF_WRITE;
+            } else if (c == 'x') {
+                flags = flags | obj.SHF_EXEC;
+            } else if (c == 'T') {
+                flags = flags | obj.SHF_TLS;
+            } else {
+                return obj.fail(st, E_SECTION);
+            }
+            p += 1;
+        }
+        if (p >= e) {
+            return obj.fail(st, E_SECTION);
+        }
+        p = trim_start(ln, p + 1, e);
+        if (p < e) {
+            if (ln[p] != ',') {
+                return obj.fail(st, E_SYNTAX);
+            }
+            p = trim_start(ln, p + 1, e);
+            I64 q = trim_end(ln, p, e);
+            if (text.same(ln, p, q - p, b"@progbits") || text.same(ln, p, q - p, b"%progbits")) {
+                ty = obj.SHT_PROGBITS;
+            } else if (text.same(ln, p, q - p, b"@nobits") || text.same(ln, p, q - p, b"%nobits")) {
+                ty = obj.SHT_NOBITS;
+            } else {
+                return obj.fail(st, E_SECTION);
+            }
+        }
+    }
+    I64 s = obj.find_section(st, se, nm, ln, a, b - a);
+    if (s < 0) {
+        s = obj.new_section(st, sy, se, nm, ln, a, b - a, ty, flags);
+        if (s < 0) {
+            return false;
+        }
+    }
+    return obj.switch_to(st, se, fr, s);
+}
+
+// .byte .short .int .long .quad: each item a constant or a name plus a constant.
+Bool data(in U8[_] ln, I64 a, I64 e, I64 nbytes, inout I64[_] st, inout I64[_] sy, inout I64[_] se,
+        inout I64[_] fr, inout I64[_] fi, inout U8[_] code, inout U8[_] nm, inout I64[_] hs) {
+    I64 p = a;
+    U8[8] b;
+    while (p < e) {
+        I64 q = item_end(ln, p, e);
+        I64 s = value(ln, p, q, st, sy, nm, hs);
+        I64 v = r2;
+        if (st[obj.S_ERR] != 0) {
+            return false;
+        }
+        if (erel != 0) {
+            return obj.fail(st, E_EXPR);
+        }
+        if (s >= 0) {
+            if (!obj.add_fix(st, fr, fi, 0, nbytes, x86.FK_ABS, s, v, 0)) {
+                return false;
+            }
+            text.put(b, 0, 0, nbytes);
+        } else {
+            text.put(b, 0, v, nbytes);
+        }
+        if (!obj.put_bytes(st, se, fr, code, b, nbytes)) {
+            return false;
+        }
+        p = q + 1;
+        if (q < e && trim_start(ln, p, e) >= e) {
+            return obj.fail(st, E_SYNTAX);
+        }
+    }
+    return true;
+}
+
+Bool ascii(in U8[_] ln, I64 a, I64 e, inout I64[_] st, inout I64[_] se, inout I64[_] fr, inout U8[_] code) {
+    I64 p = trim_start(ln, a, e);
+    U8[1] b;
+    if (p >= e) {
+        return obj.fail(st, E_STRING);
+    }
+    while (p < e) {
+        if (ln[p] != '"') {
+            return obj.fail(st, E_STRING);
+        }
+        p += 1;
+        while (p < e && ln[p] != '"') {
+            I64 c = ln[p] as I64;
+            p += 1;
+            if (c == '\\') {
+                if (p >= e) {
+                    return obj.fail(st, E_STRING);
+                }
+                U8 d = ln[p];
+                p += 1;
+                if (d >= '0' && d <= '7') {
+                    c = (d - '0') as I64;
+                    I64 t = 1;
+                    while (t < 3 && p < e && ln[p] >= '0' && ln[p] <= '7') {
+                        c = c * 8 + (ln[p] - '0') as I64;
+                        p += 1;
+                        t += 1;
+                    }
+                    c = c & 255;
+                } else if (d == 'x' || d == 'X') {
+                    c = 0;
+                    while (p < e && digit_value(ln[p]) < 16) {
+                        c = (c * 16 + digit_value(ln[p])) & 255;
+                        p += 1;
+                    }
+                } else if (d == 'n') {
+                    c = 10;
+                } else if (d == 't') {
+                    c = 9;
+                } else if (d == 'r') {
+                    c = 13;
+                } else if (d == 'b') {
+                    c = 8;
+                } else if (d == 'f') {
+                    c = 12;
+                } else if (d == 'v') {
+                    c = 11;
+                } else {
+                    c = d as I64;
+                }
+            }
+            b[0] = c as U8;
+            if (!obj.put_bytes(st, se, fr, code, b, 1)) {
+                return false;
+            }
+        }
+        if (p >= e) {
+            return obj.fail(st, E_STRING);
+        }
+        p = trim_start(ln, p + 1, e);
+        if (p < e) {
+            if (ln[p] != ',') {
+                return obj.fail(st, E_STRING);
+            }
+            p = trim_start(ln, p + 1, e);
+            if (p >= e) {
+                return obj.fail(st, E_STRING);
+            }
+        }
+    }
+    return true;
+}
+
+// The name argument at the start of ln[a..e]: its symbol and the position after it, or -1.
+I64 name_arg(in U8[_] ln, I64 a, I64 e, inout I64[_] st, inout I64[_] sy, inout U8[_] nm, inout I64[_] hs) {
+    I64 p = trim_start(ln, a, e);
+    I64 q = name_end(ln, p, e);
+    if (q == p || (q - p == 1 && ln[p] == '.')) {
+        _ = obj.fail(st, E_DIRECTIVE);
+        r2 = q;
+        return -1;
+    }
+    r2 = q;
+    return obj.intern(st, sy, nm, hs, ln, p, q - p);
+}
+
+I64 after_comma(in U8[_] ln, I64 a, I64 e) {
+    I64 p = trim_start(ln, a, e);
+    if (p >= e || ln[p] != ',') {
+        return -1;
+    }
+    return p + 1;
+}
+
+Bool directive(in U8[_] ln, I64 da, I64 db, I64 e, inout I64[_] st, inout I64[_] sy, inout I64[_] se,
+        inout I64[_] fr, inout I64[_] fi, inout U8[_] code, inout U8[_] nm, inout I64[_] hs) {
+    I64 d = text.find(ln, da, db - da, b".text .data .bss .section .balign .p2align .globl .global .type .size .comm .byte .short .int .long .quad .ascii .fill .zero ");
+    I64 a = trim_start(ln, db, e);
+    if (d < 0) {
+        return obj.fail(st, E_DIRECTIVE);
+    }
+    if (d <= 2) {
+        if (a != e) {
+            return obj.fail(st, E_SYNTAX);
+        }
+        return obj.switch_to(st, se, fr, d);
+    }
+    if (d == 3) {
+        return section_directive(ln, a, e, st, sy, se, fr, nm);
+    }
+    if (d == 4 || d == 5) {
+        Bool ok = constant(ln, a, e, st, sy, nm, hs);
+        I64 v = r2;
+        if (!ok) {
+            return false;
+        }
+        I64 bytes = v;
+        if (d == 5) {
+            if (v < 0 || v > 15) {
+                return obj.fail(st, E_DIRECTIVE);
+            }
+            bytes = 1 << v;
+        }
+        if (bytes < 1 || (bytes & (bytes - 1)) != 0 || bytes > 32768) {
+            return obj.fail(st, E_DIRECTIVE);
+        }
+        return obj.align(st, se, fr, bytes);
+    }
+    if (d == 6 || d == 7) {
+        I64 k = name_arg(ln, a, e, st, sy, nm, hs);
+        I64 q = r2;
+        if (k < 0 || trim_start(ln, q, e) != e || sy[k * obj.Y_W + obj.Y_LABEL] == 1) {
+            return obj.fail(st, E_DIRECTIVE);
+        }
+        sy[k * obj.Y_W + obj.Y_BIND] = 1;
+        return true;
+    }
+    if (d == 8) {
+        I64 k = name_arg(ln, a, e, st, sy, nm, hs);
+        I64 q = r2;
+        I64 p = after_comma(ln, q, e);
+        if (k < 0 || p < 0) {
+            return obj.fail(st, E_DIRECTIVE);
+        }
+        p = trim_start(ln, p, e);
+        I64 t = trim_end(ln, p, e);
+        if (text.same(ln, p, t - p, b"@function") || text.same(ln, p, t - p, b"%function")) {
+            sy[k * obj.Y_W + obj.Y_TY] = obj.T_FUNC;
+        } else if (text.same(ln, p, t - p, b"@object") || text.same(ln, p, t - p, b"%object")) {
+            sy[k * obj.Y_W + obj.Y_TY] = obj.T_OBJECT;
+        } else {
+            return obj.fail(st, E_DIRECTIVE);
+        }
+        return true;
+    }
+    if (d == 9) {
+        I64 k = name_arg(ln, a, e, st, sy, nm, hs);
+        I64 q = r2;
+        I64 p = after_comma(ln, q, e);
+        if (k < 0 || p < 0) {
+            return obj.fail(st, E_DIRECTIVE);
+        }
+        p = trim_start(ln, p, e);
+        if (p < e && ln[p] == '.' && (p + 1 >= e || !text.is_name(ln[p + 1]))) {
+            I64 m = after_comma(ln, p + 1, e);
+            I64 r = trim_start(ln, p + 1, e);
+            if (r >= e || ln[r] != '-' || m >= 0) {
+                return obj.fail(st, obj.E_SIZEDIR);
+            }
+            I64 k2 = name_arg(ln, r + 1, e, st, sy, nm, hs);
+            I64 q2 = r2;
+            if (k2 != k || trim_start(ln, q2, e) != e) {
+                return obj.fail(st, obj.E_SIZEDIR);
+            }
+            sy[k * obj.Y_W + obj.Y_SZKIND] = 2;
+            sy[k * obj.Y_W + obj.Y_SZFRAG] = st[obj.S_FRAG];
+            sy[k * obj.Y_W + obj.Y_SZOFF] = fr[(st[obj.S_FRAG]) * obj.G_W + obj.G_FIX];
+            return true;
+        }
+        Bool ok = constant(ln, p, e, st, sy, nm, hs);
+        I64 v = r2;
+        if (!ok) {
+            return false;
+        }
+        sy[k * obj.Y_W + obj.Y_SZKIND] = 1;
+        sy[k * obj.Y_W + obj.Y_NBYTES] = v;
+        return true;
+    }
+    if (d == 10) {
+        I64 k = name_arg(ln, a, e, st, sy, nm, hs);
+        I64 q = r2;
+        I64 p = after_comma(ln, q, e);
+        if (k < 0 || p < 0 || sy[k * obj.Y_W + obj.Y_SEC] != 0 || sy[k * obj.Y_W + obj.Y_LABEL] == 1) {
+            return obj.fail(st, E_DIRECTIVE);
+        }
+        I64 c = item_end(ln, p, e);
+        Bool ok = constant(ln, p, c, st, sy, nm, hs);
+        I64 v = r2;
+        if (!ok || v < 0) {
+            return obj.fail(st, E_DIRECTIVE);
+        }
+        I64 al = 1;
+        while (al < v && al < 16) {
+            al = al * 2;
+        }
+        if (c < e) {
+            Bool ok2 = constant(ln, c + 1, e, st, sy, nm, hs);
+            I64 v2 = r2;
+            if (!ok2 || v2 < 1 || (v2 & (v2 - 1)) != 0) {
+                return obj.fail(st, E_DIRECTIVE);
+            }
+            al = v2;
+        }
+        sy[k * obj.Y_W + obj.Y_SEC] = obj.COMMON;
+        sy[k * obj.Y_W + obj.Y_NBYTES] = v;
+        sy[k * obj.Y_W + obj.Y_ALIGN] = al;
+        sy[k * obj.Y_W + obj.Y_TY] = obj.T_OBJECT;
+        return true;
+    }
+    if (d >= 11) {
+        se[(st[obj.S_CUR]) * obj.C_W + obj.C_RAW] = 1;
+    }
+    if (d >= 11 && d <= 15) {
+        I64 nbytes = 1;
+        if (d == 12) {
+            nbytes = 2;
+        }
+        if (d == 13 || d == 14) {
+            nbytes = 4;
+        }
+        if (d == 15) {
+            nbytes = 8;
+        }
+        if (a >= e) {
+            return obj.fail(st, E_DIRECTIVE);
+        }
+        return data(ln, a, e, nbytes, st, sy, se, fr, fi, code, nm, hs);
+    }
+    if (d == 16) {
+        return ascii(ln, a, e, st, se, fr, code);
+    }
+    // .fill N[, SIZE[, VALUE]] and .zero N
+    I64 c1 = item_end(ln, a, e);
+    Bool ok = constant(ln, a, c1, st, sy, nm, hs);
+    I64 reps = r2;
+    if (!ok || reps < 0) {
+        return obj.fail(st, E_DIRECTIVE);
+    }
+    I64 nbytes = 1;
+    I64 v = 0;
+    if (c1 < e) {
+        if (d == 18) {
+            return obj.fail(st, E_DIRECTIVE);
+        }
+        I64 c2 = item_end(ln, c1 + 1, e);
+        Bool ok2 = constant(ln, c1 + 1, c2, st, sy, nm, hs);
+        I64 s2 = r2;
+        if (!ok2 || s2 < 0 || s2 > 8) {
+            return obj.fail(st, E_DIRECTIVE);
+        }
+        nbytes = s2;
+        if (c2 < e) {
+            Bool ok3 = constant(ln, c2 + 1, e, st, sy, nm, hs);
+            I64 v3 = r2;
+            if (!ok3) {
+                return false;
+            }
+            v = v3 & 0xFFFFFFFF;
+        }
+    }
+    if (v == 0) {
+        return obj.put_zeros(st, se, fr, code, reps * nbytes);
+    }
+    U8[8] b;
+    text.put(b, 0, v, 8);
+    for i in 0..reps {
+        if (!obj.put_bytes(st, se, fr, code, b, nbytes)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+
+Bool statement(in U8[_] ln, I64 e, inout I64[_] st, inout I64[_] sy, inout I64[_] se, inout I64[_] fr,
+        inout I64[_] fi, inout U8[_] code, inout U8[_] nm, inout I64[_] hs) {
+    I64 p = 0;
+    while (true) {
+        p = trim_start(ln, p, e);
+        if (p >= e) {
+            return true;
+        }
+        I64 q = name_end(ln, p, e);
+        if (q == p) {
+            return obj.fail(st, E_SYNTAX);
+        }
+        I64 r = trim_start(ln, q, e);
+        if (r < e && ln[r] == ':') {
+            if (q - p == 1 && ln[p] == '.') {
+                return obj.fail(st, E_SYNTAX);
+            }
+            I64 k = obj.intern(st, sy, nm, hs, ln, p, q - p);
+            if (k < 0 || !obj.define(st, sy, se, fr, k)) {
+                return false;
+            }
+            p = r + 1;
+        } else if (ln[p] == '.') {
+            return directive(ln, p, q, e, st, sy, se, fr, fi, code, nm, hs);
+        } else {
+            if (q < e && !text.is_space(ln[q])) {
+                return obj.fail(st, E_SYNTAX);
+            }
+            se[(st[obj.S_CUR]) * obj.C_W + obj.C_RAW] = 0;
+            return instruction(ln, p, q, e, st, sy, se, fr, fi, code, nm, hs);
+        }
+    }
+    return true;
+}
+
+// Assembles src into out; returns the object's size, or -1 with st[S_ERR] and st[S_LINE] set. wk holds
+// 7 I64 per row of sy; hs is a power of two in length.
+export I64 assemble(in U8[_] src, inout I64[_] st, inout I64[_] sy, inout I64[_] se, inout I64[_] fr,
+        inout I64[_] fi, inout U8[_] code, inout U8[_] nm, inout I64[_] hs, inout I64[_] wk, inout U8[_] ob) {
+    if (!obj.start(st, sy, se, fr, nm, hs)) {
+        return -1;
+    }
+    U8[LINE_MAX] ln;
+    I64 n = len(src);
+    I64 i = 0;
+    Bool block = false;
+    st[obj.S_LINE] = 1;
+    while (i < n) {
+        I64 m = 0;
+        Bool quote = false;
+        while (i < n && src[i] != '\n') {
+            U8 c = src[i];
+            if (m >= LINE_MAX - 2) {
+                _ = obj.fail(st, E_LONG);
+                return -1;
+            }
+            if (block) {
+                if (c == '*' && i + 1 < n && src[i + 1] == '/') {
+                    block = false;
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            } else if (quote) {
+                ln[m] = c;
+                m += 1;
+                if (c == '\\' && i + 1 < n && src[i + 1] != '\n') {
+                    ln[m] = src[i + 1];
+                    m += 1;
+                    i += 1;
+                } else if (c == '"') {
+                    quote = false;
+                }
+                i += 1;
+            } else if (c == '"') {
+                quote = true;
+                ln[m] = c;
+                m += 1;
+                i += 1;
+            } else if (c == '/' && i + 1 < n && src[i + 1] == '*') {
+                block = true;
+                ln[m] = ' ';
+                m += 1;
+                i += 2;
+            } else if (c == '#') {
+                while (i < n && src[i] != '\n') {
+                    i += 1;
+                }
+            } else if (c == ';') {
+                if (!statement(ln, m, st, sy, se, fr, fi, code, nm, hs)) {
+                    return -1;
+                }
+                m = 0;
+                i += 1;
+            } else {
+                ln[m] = c;
+                m += 1;
+                i += 1;
+            }
+        }
+        if (!statement(ln, m, st, sy, se, fr, fi, code, nm, hs)) {
+            return -1;
+        }
+        i += 1;
+        if (i <= n) {
+            st[obj.S_LINE] += 1;
+        }
+    }
+    st[obj.S_LINE] = 0;
+    if (block || !obj.check_jumps(st, sy, fr)) {
+        if (block) {
+            _ = obj.fail(st, E_SYNTAX);
+        }
+        return -1;
+    }
+    for s in 0..st[obj.S_NSEC] {
+        obj.relax(se, fr, sy, s);
+    }
+    if (!obj.sizes(st, sy, fr) || !obj.resolve(st, sy, se, fr, fi, code)) {
+        return -1;
+    }
+    return elf.write(st, sy, se, fr, fi, code, nm, wk, ob);
+}

@@ -1,0 +1,1118 @@
+// link/core.ci: the static ELF linker (docs/design/notes/2026-11-07-static-linker.md). No effects:
+// every input file's bytes are in one view (fb), every table in one I64 view (t), and the
+// executable is written to ob. link() returns its length, or -1 with a message in msg.
+//
+// The tables of t, each a region of fixed-width rows, in the order the linker fills them:
+//   R     registers (counts, group bounds, the message length)
+//   FILE  one row per input file, filled by the driver: its bytes in fb, its name in fb
+//   OBJ   one row per object, a whole input or an archive member, loaded or not
+//   SEC   one row per section of each loaded object, indexed by the object's first row + shndx
+//   MAP   one I64 per symbol of each loaded object: its global row, or -1 for a local
+//   GLOB  one row per global or weak name
+//   HASH  open addressing over GLOB by name, row + 1, 0 empty
+import link.le;
+
+// Registers.
+export const I64 R_NFILE = 0;
+export const I64 R_MSG = 1;
+const I64 R_NOBJ = 2;
+const I64 R_NSEC = 3;
+const I64 R_NSYM = 4;
+const I64 R_NGLOB = 5;
+const I64 R_NGOT = 6;
+const I64 R_ENTRY = 7;
+const I64 R_END = 8;       // the end of the image in memory (after .bss and the common symbols)
+const I64 R_FEND = 9;      // the end of the file-backed part of the image
+const I64 R_GSTART = 16;   // + group: the group's first address
+const I64 R_GEND = 32;     // + group: its end
+
+// Input files (the driver's rows).
+export const I64 FW = 4;
+export const I64 F_OFF = 0;
+export const I64 F_LEN = 1;
+export const I64 F_NAME = 2;  // fb offset of the file's name, NUL-terminated
+export const I64 MAXF = 64;
+export const I64 FILE_T = 128;
+
+const I64 OW = 16;
+const I64 O_BASE = 0;
+const I64 O_SIZE = 1;
+const I64 O_FILE = 2;
+const I64 O_NAME = 3;     // fb offset of the member name, or -1 for a whole file
+const I64 O_NLEN = 4;
+const I64 O_SHOFF = 5;
+const I64 O_SHNUM = 6;
+const I64 O_SYMOFF = 7;
+const I64 O_NSYM = 8;
+const I64 O_STROFF = 9;
+const I64 O_SHSTR = 10;
+const I64 O_SEC0 = 11;
+const I64 O_SYM0 = 12;
+const I64 O_LOADED = 13;
+const I64 MAXO = 4096;
+const I64 OBJ_T = FILE_T + FW * MAXF;
+
+const I64 SW = 10;
+const I64 S_GROUP = 0;
+const I64 S_KEY = 1;
+const I64 S_ADDR = 2;
+const I64 S_OFF = 3;
+const I64 S_SIZE = 4;
+const I64 S_ALIGN = 5;
+const I64 S_TYPE = 6;
+const I64 S_FLAGS = 7;
+const I64 S_NAME = 8;
+const I64 S_INFO = 9;
+const I64 MAXS = 65536;
+const I64 SEC_T = OBJ_T + OW * MAXO;
+
+const I64 MAXY = 524288;
+const I64 MAP_T = SEC_T + SW * MAXS;
+
+const I64 GW = 11;
+const I64 G_NAME = 0;
+const I64 G_DEF = 1;      // DEF_*
+const I64 G_REF = 2;      // 0 none, 1 weak references only, 2 a strong reference
+const I64 G_OBJ = 3;
+const I64 G_SHNDX = 4;
+const I64 G_VALUE = 5;
+const I64 G_SIZE = 6;
+const I64 G_ALIGN = 7;
+const I64 G_ADDR = 8;
+const I64 G_GOT = 9;      // .got slot, or -1
+const I64 G_LDEF = 10;    // linker-defined symbol LD_*, or 0
+const I64 MAXG = 65536;
+const I64 GLOB_T = MAP_T + MAXY;
+
+const I64 NH = 131072;
+const I64 HASH_T = GLOB_T + GW * MAXG;
+
+// The extent t must have.
+export const I64 T_SIZE = HASH_T + NH;
+// The extents fb and ob may have at most: the small tier, and the large one (#597; cint's own link, its 16
+// compiler objects 17,078,952 bytes beside musl's libc.a).
+export const I64 MAX_IN = 16777216;
+export const I64 MAX_OUT = 8388608;
+export const I64 BIG_IN = 67108864;
+export const I64 BIG_OUT = 33554432;
+
+const I64 DEF_NONE = 0;
+const I64 DEF_WEAK = 1;
+const I64 DEF_STRONG = 2;
+const I64 DEF_COMMON = 3;
+
+// Output groups, in address order after .rodata and .text.
+const I64 GR_RODATA = 0;
+const I64 GR_TEXT = 1;
+const I64 GR_PREINIT = 2;
+const I64 GR_INIT = 3;
+const I64 GR_FINI = 4;
+const I64 GR_GOT = 5;
+const I64 GR_DATA = 6;
+const I64 GR_BSS = 7;
+const I64 NGROUP = 8;
+
+// ELF.
+const I64 SHT_PROGBITS = 1;
+const I64 SHT_SYMTAB = 2;
+const I64 SHT_STRTAB = 3;
+const I64 SHT_RELA = 4;
+const I64 SHT_NOTE = 7;
+const I64 SHT_NOBITS = 8;
+const I64 SHT_REL = 9;
+const I64 SHT_INIT_ARRAY = 14;
+const I64 SHT_FINI_ARRAY = 15;
+const I64 SHT_PREINIT_ARRAY = 16;
+const I64 SHT_X86_64_UNWIND = 0x70000001;
+const I64 SHF_WRITE = 1;
+const I64 SHF_ALLOC = 2;
+const I64 SHF_EXECINSTR = 4;
+const I64 SHF_TLS = 0x400;
+const I64 SHN_UNDEF = 0;
+const I64 SHN_LORESERVE = 0xff00;
+const I64 SHN_ABS = 0xfff1;
+const I64 SHN_COMMON = 0xfff2;
+const I64 STB_LOCAL = 0;
+const I64 STB_GLOBAL = 1;
+const I64 STB_WEAK = 2;
+const I64 STT_SECTION = 3;
+const I64 STT_TLS = 6;
+
+const I64 BASE = 0x400000;
+const I64 PAGE = 0x1000;
+const I64 NPHDR = 4;
+const I64 HDR = 64 + 56 * NPHDR;
+
+// Linker-defined names (4.2), LD_* in the order of ld_name.
+const I64 NLD = 16;
+
+// ---- the message ----
+
+void say(inout U8[_] msg, inout I64[_] t, in U8[_] text) {
+    I64 n = t[R_MSG];
+    I64 k = len(text);
+    if (n + k > len(msg)) {
+        k = len(msg) - n;
+    }
+    for i in 0..k {
+        msg[n + i] = text[i];
+    }
+    t[R_MSG] = n + k;
+}
+
+// A NUL-terminated name of fb.
+void say_name(inout U8[_] msg, inout I64[_] t, in U8[_] fb, I64 at) {
+    I64 i = at;
+    while (i < len(fb) && fb[i] != 0 && t[R_MSG] < len(msg)) {
+        msg[t[R_MSG]] = fb[i];
+        t[R_MSG] = t[R_MSG] + 1;
+        i += 1;
+    }
+}
+
+void say_num(inout U8[_] msg, inout I64[_] t, I64 v) {
+    U8[24] d;
+    I64 n = 0;
+    I64 x = v;
+    if (x < 0) {
+        say(msg, t, "-");
+        x = 0 - x;
+    }
+    while (n == 0 || x > 0) {
+        d[n] = (48 + x % 10) as U8;
+        x = x / 10;
+        n += 1;
+    }
+    for i in 0..n {
+        say(msg, t, d[n - 1 - i..n - i]);
+    }
+}
+
+// The object, as `file` or `file(member)`.
+void say_obj(inout U8[_] msg, inout I64[_] t, in U8[_] fb, I64 o) {
+    I64 r = OBJ_T + o * OW;
+    say_name(msg, t, fb, t[FILE_T + t[r + O_FILE] * FW + F_NAME]);
+    if (t[r + O_NAME] >= 0) {
+        say(msg, t, "(");
+        I64 a = t[r + O_NAME];
+        say(msg, t, fb[a..a + t[r + O_NLEN]]);
+        say(msg, t, ")");
+    }
+}
+
+I64 fail(inout U8[_] msg, inout I64[_] t, in U8[_] text) {
+    say(msg, t, "ld: ");
+    say(msg, t, text);
+    return -1;
+}
+
+I64 fail_obj(inout U8[_] msg, inout I64[_] t, in U8[_] fb, in U8[_] text, I64 o) {
+    _ = fail(msg, t, text);
+    say_obj(msg, t, fb, o);
+    return -1;
+}
+
+I64 fail_name(inout U8[_] msg, inout I64[_] t, in U8[_] fb, in U8[_] text, I64 at) {
+    _ = fail(msg, t, text);
+    say_name(msg, t, fb, at);
+    return -1;
+}
+
+// ---- names ----
+
+Bool name_eq(in U8[_] fb, I64 a, I64 b) {
+    I64 i = 0;
+    while (fb[a + i] == fb[b + i]) {
+        if (fb[a + i] == 0) {
+            return true;
+        }
+        i += 1;
+    }
+    return false;
+}
+
+// Whether the name at fb[a] is exactly s.
+Bool name_is(in U8[_] fb, I64 a, in U8[_] s) {
+    for i in 0..len(s) {
+        if (fb[a + i] != s[i]) {
+            return false;
+        }
+    }
+    return fb[a + len(s)] == 0;
+}
+
+Bool name_starts(in U8[_] fb, I64 a, in U8[_] s) {
+    for i in 0..len(s) {
+        if (fb[a + i] != s[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// FNV-1a over a name's bytes, to a slot of HASH.
+I64 slot_of(U64 h) {
+    return (h % (NH as U64)) as I64;
+}
+
+I64 hash_at(in U8[_] fb, I64 a) {
+    U64 h = 0xcbf29ce484222325;
+    I64 i = a;
+    while (fb[i] != 0) {
+        h = (h ^ (fb[i] as U64)) *% 0x100000001b3;
+        i += 1;
+    }
+    return slot_of(h);
+}
+
+I64 hash_lit(in U8[_] s) {
+    U64 h = 0xcbf29ce484222325;
+    for i in 0..len(s) {
+        h = (h ^ (s[i] as U64)) *% 0x100000001b3;
+    }
+    return slot_of(h);
+}
+
+// The global row of the name at fb[a], or -1.
+I64 find(in U8[_] fb, in I64[_] t, I64 a) {
+    I64 h = hash_at(fb, a);
+    while (t[HASH_T + h] != 0) {
+        I64 g = t[HASH_T + h] - 1;
+        if (name_eq(fb, t[GLOB_T + g * GW + G_NAME], a)) {
+            return g;
+        }
+        h = (h + 1) % NH;
+    }
+    return -1;
+}
+
+I64 find_lit(in U8[_] fb, in I64[_] t, in U8[_] s) {
+    I64 h = hash_lit(s);
+    while (t[HASH_T + h] != 0) {
+        I64 g = t[HASH_T + h] - 1;
+        if (name_is(fb, t[GLOB_T + g * GW + G_NAME], s)) {
+            return g;
+        }
+        h = (h + 1) % NH;
+    }
+    return -1;
+}
+
+// The global row of the name at fb[a], made when new; -1 when GLOB is full.
+I64 intern(in U8[_] fb, inout I64[_] t, I64 a) {
+    I64 h = hash_at(fb, a);
+    while (t[HASH_T + h] != 0) {
+        I64 g = t[HASH_T + h] - 1;
+        if (name_eq(fb, t[GLOB_T + g * GW + G_NAME], a)) {
+            return g;
+        }
+        h = (h + 1) % NH;
+    }
+    I64 g = t[R_NGLOB];
+    if (g >= MAXG) {
+        return -1;
+    }
+    t[R_NGLOB] = g + 1;
+    I64 r = GLOB_T + g * GW;
+    for i in 0..GW {
+        t[r + i] = 0;
+    }
+    t[r + G_NAME] = a;
+    t[r + G_GOT] = -1;
+    t[HASH_T + h] = g + 1;
+    return g;
+}
+
+// ---- objects ----
+
+// Registers the object at fb[base..base+n) of file f (member name at fb[name], -1 for none) and reads
+// its section headers far enough to find its symbols; the row, or -1 with the message said.
+I64 add_obj(in U8[_] fb, inout I64[_] t, inout U8[_] msg, I64 f, I64 base, I64 n, I64 name, I64 nlen) {
+    I64 o = t[R_NOBJ];
+    if (o >= MAXO) {
+        return fail(msg, t, "limit: more than 4,096 objects");
+    }
+    t[R_NOBJ] = o + 1;
+    I64 r = OBJ_T + o * OW;
+    for i in 0..OW {
+        t[r + i] = 0;
+    }
+    t[r + O_BASE] = base;
+    t[r + O_SIZE] = n;
+    t[r + O_FILE] = f;
+    t[r + O_NAME] = name;
+    t[r + O_NLEN] = nlen;
+    Bool ok = n >= 64 && fb[base] == 0x7f && fb[base + 1] == 'E' && fb[base + 2] == 'L' && fb[base + 3] == 'F';
+    ok = ok && fb[base + 4] == 2 && fb[base + 5] == 1;           // ELFCLASS64, ELFDATA2LSB
+    ok = ok && le.u16(fb, base + 16) == 1 && le.u16(fb, base + 18) == 62;   // ET_REL, EM_X86_64
+    if (!ok) {
+        return fail_obj(msg, t, fb, "not an x86-64 ELF relocatable object: ", o);
+    }
+    I64 shoff = le.s64(fb, base + 0x28);
+    I64 shnum = le.u16(fb, base + 0x3c);
+    I64 shstr = le.u16(fb, base + 0x3e);
+    if (le.u16(fb, base + 0x3a) != 64 || shnum == 0 || shstr >= shnum || shoff < 0 || shoff + 64 * shnum > n) {
+        return fail_obj(msg, t, fb, "bad section header table (or SHN_XINDEX) in ", o);
+    }
+    t[r + O_SHOFF] = base + shoff;
+    t[r + O_SHNUM] = shnum;
+    for i in 0..shnum {
+        I64 h = base + shoff + 64 * i;
+        I64 ty = le.u32(fb, h + 4);
+        I64 off = le.s64(fb, h + 24);
+        I64 sz = le.s64(fb, h + 32);
+        if (ty != SHT_NOBITS && (off < 0 || sz < 0 || off + sz > n)) {
+            return fail_obj(msg, t, fb, "a section lies outside ", o);
+        }
+        if (i == shstr) {
+            t[r + O_SHSTR] = base + off;
+        }
+        if (ty == SHT_SYMTAB) {
+            I64 lk = le.u32(fb, h + 40);
+            if (lk >= shnum) {
+                return fail_obj(msg, t, fb, "bad symbol table in ", o);
+            }
+            t[r + O_SYMOFF] = base + off;
+            t[r + O_NSYM] = sz / 24;
+            t[r + O_STROFF] = base + le.s64(fb, base + shoff + 64 * lk + 24);
+        }
+    }
+    return o;
+}
+
+// Fields of symbol i of object row r.
+I64 sym_at(in I64[_] t, I64 r, I64 i) {
+    return t[r + O_SYMOFF] + 24 * i;
+}
+
+I64 sym_name(in U8[_] fb, in I64[_] t, I64 r, I64 i) {
+    return t[r + O_STROFF] + le.u32(fb, sym_at(t, r, i));
+}
+
+// Whether the not-yet-loaded object o defines a name that is wanted: undefined, with a strong reference.
+Bool wanted(in U8[_] fb, in I64[_] t, I64 o) {
+    I64 r = OBJ_T + o * OW;
+    for i in 1..t[r + O_NSYM] {
+        I64 s = sym_at(t, r, i);
+        I64 bind = (fb[s + 4] >> 4) as I64;
+        I64 shndx = le.u16(fb, s + 6);
+        if ((bind == STB_GLOBAL || bind == STB_WEAK) && shndx != SHN_UNDEF) {
+            I64 g = find(fb, t, sym_name(fb, t, r, i));
+            if (g >= 0 && t[GLOB_T + g * GW + G_DEF] == DEF_NONE && t[GLOB_T + g * GW + G_REF] == 2) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// The group and key of section row s (4.3); -1 drops it. -2: a TLS section.
+I64 group_of(in U8[_] fb, inout I64[_] t, I64 s) {
+    I64 ty = t[s + S_TYPE];
+    I64 fl = t[s + S_FLAGS];
+    I64 nm = t[s + S_NAME];
+    t[s + S_KEY] = 0;
+    if ((fl & SHF_ALLOC) == 0 || ty == SHT_NOTE || ty == SHT_X86_64_UNWIND || name_is(fb, nm, ".eh_frame")) {
+        return -1;
+    }
+    if ((fl & SHF_TLS) != 0) {
+        return -2;
+    }
+    if (ty == SHT_PREINIT_ARRAY || ty == SHT_INIT_ARRAY || ty == SHT_FINI_ARRAY) {
+        // .init_array.N before the plain ones, by N ascending.
+        t[s + S_KEY] = 65536;
+        if (name_starts(fb, nm, ".init_array.") || name_starts(fb, nm, ".fini_array.")) {
+            I64 v = 0;
+            I64 i = nm + 12;
+            while (fb[i] >= '0' && fb[i] <= '9' && v < 65536) {
+                v = v * 10 + (fb[i] - '0') as I64;
+                i += 1;
+            }
+            if (fb[i] == 0 && v < 65536) {
+                t[s + S_KEY] = v;
+            }
+        }
+        if (ty == SHT_PREINIT_ARRAY) {
+            return GR_PREINIT;
+        }
+        if (ty == SHT_INIT_ARRAY) {
+            return GR_INIT;
+        }
+        return GR_FINI;
+    }
+    if ((fl & SHF_EXECINSTR) != 0) {
+        t[s + S_KEY] = 1;
+        if (name_is(fb, nm, ".init")) {
+            t[s + S_KEY] = 0;
+        }
+        if (name_is(fb, nm, ".fini")) {
+            t[s + S_KEY] = 2;
+        }
+        return GR_TEXT;
+    }
+    if ((fl & SHF_WRITE) != 0) {
+        if (ty == SHT_NOBITS) {
+            return GR_BSS;
+        }
+        return GR_DATA;
+    }
+    return GR_RODATA;
+}
+
+// Loads object o: its sections and its symbols enter the tables, its globals resolve (4.2). 0, or -1.
+I64 load(in U8[_] fb, inout I64[_] t, inout U8[_] msg, I64 o) {
+    I64 r = OBJ_T + o * OW;
+    t[r + O_LOADED] = 1;
+    I64 shnum = t[r + O_SHNUM];
+    I64 s0 = t[R_NSEC];
+    if (s0 + shnum > MAXS) {
+        return fail(msg, t, "limit: more than 65,536 input sections");
+    }
+    t[R_NSEC] = s0 + shnum;
+    t[r + O_SEC0] = s0;
+    for i in 0..shnum {
+        I64 h = t[r + O_SHOFF] + 64 * i;
+        I64 s = SEC_T + (s0 + i) * SW;
+        t[s + S_TYPE] = le.u32(fb, h + 4);
+        t[s + S_FLAGS] = le.s64(fb, h + 8);
+        t[s + S_OFF] = t[r + O_BASE] + le.s64(fb, h + 24);
+        t[s + S_SIZE] = le.s64(fb, h + 32);
+        t[s + S_INFO] = le.u32(fb, h + 44);
+        I64 al = le.s64(fb, h + 48);
+        if (al < 1) {
+            al = 1;
+        }
+        t[s + S_ALIGN] = al;
+        t[s + S_NAME] = t[r + O_SHSTR] + le.u32(fb, h);
+        t[s + S_ADDR] = 0;
+        I64 g = group_of(fb, t, s);
+        if (g == -2) {
+            return fail_obj(msg, t, fb, "thread-local storage is not supported: ", o);
+        }
+        t[s + S_GROUP] = g;
+    }
+    I64 nsym = t[r + O_NSYM];
+    I64 y0 = t[R_NSYM];
+    if (y0 + nsym > MAXY) {
+        return fail(msg, t, "limit: more than 524,288 input symbols");
+    }
+    t[R_NSYM] = y0 + nsym;
+    t[r + O_SYM0] = y0;
+    for i in 0..nsym {
+        t[MAP_T + y0 + i] = -1;
+        I64 sa = sym_at(t, r, i);
+        I64 bind = (fb[sa + 4] >> 4) as I64;
+        I64 sty = (fb[sa + 4] & 15) as I64;
+        if (sty == STT_TLS) {
+            return fail_obj(msg, t, fb, "thread-local storage is not supported: ", o);
+        }
+        if (i > 0 && bind != STB_LOCAL) {
+            if (bind != STB_GLOBAL && bind != STB_WEAK) {
+                return fail_obj(msg, t, fb, "unknown symbol binding in ", o);
+            }
+            I64 nm = sym_name(fb, t, r, i);
+            I64 g = intern(fb, t, nm);
+            if (g < 0) {
+                return fail(msg, t, "limit: more than 65,536 global names");
+            }
+            t[MAP_T + y0 + i] = g;
+            I64 gr = GLOB_T + g * GW;
+            I64 shndx = le.u16(fb, sa + 6);
+            I64 value = le.s64(fb, sa + 8);
+            I64 sz = le.s64(fb, sa + 16);
+            Bool strong = bind == STB_GLOBAL;
+            I64 def = t[gr + G_DEF];
+            if (shndx == SHN_UNDEF) {
+                if (strong) {
+                    t[gr + G_REF] = 2;
+                } else if (t[gr + G_REF] == 0) {
+                    t[gr + G_REF] = 1;
+                }
+            } else if (shndx == SHN_COMMON) {
+                if (def == DEF_NONE || def == DEF_WEAK) {
+                    t[gr + G_DEF] = DEF_COMMON;
+                    t[gr + G_SIZE] = sz;
+                    t[gr + G_ALIGN] = value;
+                    t[gr + G_OBJ] = o;
+                } else if (def == DEF_COMMON) {
+                    if (sz > t[gr + G_SIZE]) {
+                        t[gr + G_SIZE] = sz;
+                    }
+                    if (value > t[gr + G_ALIGN]) {
+                        t[gr + G_ALIGN] = value;
+                    }
+                }
+            } else {
+                if (shndx >= SHN_LORESERVE && shndx != SHN_ABS) {
+                    return fail_obj(msg, t, fb, "unsupported special section index in ", o);
+                }
+                if (shndx < SHN_LORESERVE && shndx >= shnum) {
+                    return fail_obj(msg, t, fb, "bad section index in ", o);
+                }
+                Bool take = def == DEF_NONE || def == DEF_COMMON || (def == DEF_WEAK && strong);
+                if (def == DEF_STRONG && strong) {
+                    _ = fail_name(msg, t, fb, "duplicate symbol: ", nm);
+                    say(msg, t, " in ");
+                    say_obj(msg, t, fb, o);
+                    say(msg, t, " and ");
+                    say_obj(msg, t, fb, t[gr + G_OBJ]);
+                    return -1;
+                }
+                if (take) {
+                    if (strong) {
+                        t[gr + G_DEF] = DEF_STRONG;
+                    } else {
+                        t[gr + G_DEF] = DEF_WEAK;
+                    }
+                    t[gr + G_OBJ] = o;
+                    t[gr + G_SHNDX] = shndx;
+                    t[gr + G_VALUE] = value;
+                    t[gr + G_SIZE] = sz;
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+// Reads a decimal field of an archive header; -1 when it is not one.
+I64 ar_num(in U8[_] fb, I64 at, I64 n) {
+    I64 v = 0;
+    I64 digits = 0;
+    for i in 0..n {
+        U8 c = fb[at + i];
+        if (c >= '0' && c <= '9' && v < 1_000_000_000_000) {
+            v = v * 10 + (c - '0') as I64;
+            digits += 1;
+        } else if (c != ' ') {
+            return -1;
+        }
+    }
+    if (digits == 0) {
+        return -1;
+    }
+    return v;
+}
+
+// Archive file f: every member becomes an object row; then members load while any is wanted, the
+// archive scanned again after each pass that loaded one (4.1). 0, or -1.
+I64 archive(in U8[_] fb, inout I64[_] t, inout U8[_] msg, I64 f) {
+    I64 base = t[FILE_T + f * FW + F_OFF];
+    I64 n = t[FILE_T + f * FW + F_LEN];
+    I64 first = t[R_NOBJ];
+    I64 longnames = -1;
+    I64 at = 8;
+    while (at + 60 <= n) {
+        I64 h = base + at;
+        I64 sz = ar_num(fb, h + 48, 10);
+        if (sz < 0 || fb[h + 58] != 0x60 || fb[h + 59] != '\n' || at + 60 + sz > n) {
+            _ = fail_name(msg, t, fb, "bad archive member header in ", t[FILE_T + f * FW + F_NAME]);
+            return -1;
+        }
+        I64 data = h + 60;
+        if (fb[h] == '/' && fb[h + 1] == '/' && fb[h + 2] == ' ') {
+            longnames = data;
+        } else if (fb[h] == '/' && (fb[h + 1] == ' ' || (fb[h + 1] == 'S' && fb[h + 2] == 'Y'))) {
+            // the symbol index: definitions come from each member's own symbol table
+        } else {
+            I64 nm = h;
+            I64 nl = 0;
+            if (fb[h] == '/') {
+                I64 k = ar_num(fb, h + 1, 15);
+                if (longnames < 0 || k < 0) {
+                    _ = fail_name(msg, t, fb, "bad long member name in ", t[FILE_T + f * FW + F_NAME]);
+                    return -1;
+                }
+                nm = longnames + k;
+            }
+            while (nl < 255 && fb[nm + nl] != '/' && fb[nm + nl] != '\n' && (fb[h] == '/' || nl < 16)) {
+                nl += 1;
+            }
+            if (add_obj(fb, t, msg, f, data, sz, nm, nl) < 0) {
+                return -1;
+            }
+        }
+        at = at + 60 + sz + sz % 2;
+    }
+    I64 last = t[R_NOBJ];
+    Bool more = true;
+    while (more) {
+        more = false;
+        for o in first..last {
+            if (t[OBJ_T + o * OW + O_LOADED] == 0 && wanted(fb, t, o)) {
+                if (load(fb, t, msg, o) < 0) {
+                    return -1;
+                }
+                more = true;
+            }
+        }
+    }
+    return 0;
+}
+
+// ---- layout ----
+
+I64 align_up(I64 v, I64 a) {
+    return (v + a - 1) / a * a;
+}
+
+// Places every section of group gr from address at, by key ascending, input order within a key.
+I64 place(inout I64[_] t, I64 gr, I64 start) {
+    I64 at = start;
+    I64 key = -1;
+    while (true) {
+        I64 next = -1;
+        for i in 0..t[R_NSEC] {
+            I64 s = SEC_T + i * SW;
+            if (t[s + S_GROUP] == gr && t[s + S_KEY] > key && (next < 0 || t[s + S_KEY] < next)) {
+                next = t[s + S_KEY];
+            }
+        }
+        if (next < 0) {
+            return at;
+        }
+        for i in 0..t[R_NSEC] {
+            I64 s = SEC_T + i * SW;
+            if (t[s + S_GROUP] == gr && t[s + S_KEY] == next) {
+                at = align_up(at, t[s + S_ALIGN]);
+                t[s + S_ADDR] = at;
+                at = at + t[s + S_SIZE];
+            }
+        }
+        key = next;
+    }
+    return at;
+}
+
+// Places group gr at start (aligned to its strictest section) and records its bounds; its end.
+I64 group(inout I64[_] t, I64 gr, I64 start) {
+    I64 al = 1;
+    for i in 0..t[R_NSEC] {
+        I64 s = SEC_T + i * SW;
+        if (t[s + S_GROUP] == gr && t[s + S_ALIGN] > al) {
+            al = t[s + S_ALIGN];
+        }
+    }
+    I64 a = align_up(start, al);
+    t[R_GSTART + gr] = a;
+    I64 e = place(t, gr, a);
+    t[R_GEND + gr] = e;
+    return e;
+}
+
+// The address of linker-defined symbol k (ld_name).
+I64 ld_value(in I64[_] t, I64 k) {
+    if (k == 1) { return t[R_GSTART + GR_INIT]; }
+    if (k == 2) { return t[R_GEND + GR_INIT]; }
+    if (k == 3) { return t[R_GSTART + GR_FINI]; }
+    if (k == 4) { return t[R_GEND + GR_FINI]; }
+    if (k == 5) { return t[R_GSTART + GR_PREINIT]; }
+    if (k == 6) { return t[R_GEND + GR_PREINIT]; }
+    if (k == 7) { return t[R_GSTART + GR_GOT]; }
+    if (k == 8 || k == 9) { return BASE; }
+    if (k == 10 || k == 11) { return t[R_GEND + GR_TEXT]; }
+    if (k == 12 || k == 13) { return t[R_GEND + GR_DATA]; }
+    if (k == 14) { return t[R_GSTART + GR_BSS]; }
+    return t[R_END];
+}
+
+// Marks the linker-defined names that are referenced and not defined (4.2).
+void ld_mark(in U8[_] fb, inout I64[_] t, in U8[_] nm, I64 k) {
+    I64 g = find_lit(fb, t, nm);
+    if (g >= 0 && t[GLOB_T + g * GW + G_DEF] == DEF_NONE) {
+        t[GLOB_T + g * GW + G_LDEF] = k;
+    }
+}
+
+void ld_names(in U8[_] fb, inout I64[_] t) {
+    ld_mark(fb, t, "__init_array_start", 1);
+    ld_mark(fb, t, "__init_array_end", 2);
+    ld_mark(fb, t, "__fini_array_start", 3);
+    ld_mark(fb, t, "__fini_array_end", 4);
+    ld_mark(fb, t, "__preinit_array_start", 5);
+    ld_mark(fb, t, "__preinit_array_end", 6);
+    ld_mark(fb, t, "_GLOBAL_OFFSET_TABLE_", 7);
+    ld_mark(fb, t, "__ehdr_start", 8);
+    ld_mark(fb, t, "__executable_start", 9);
+    ld_mark(fb, t, "_etext", 10);
+    ld_mark(fb, t, "etext", 11);
+    ld_mark(fb, t, "_edata", 12);
+    ld_mark(fb, t, "edata", 13);
+    ld_mark(fb, t, "__bss_start", 14);
+    ld_mark(fb, t, "_end", 15);
+    ld_mark(fb, t, "end", 16);
+}
+
+Bool is_got(I64 ty) {
+    return ty == 9 || ty == 41 || ty == 42;
+}
+
+// Gives each global a GOTPCREL relocation reaches a .got slot. 0, or -1.
+I64 got_scan(in U8[_] fb, inout I64[_] t, inout U8[_] msg) {
+    for o in 0..t[R_NOBJ] {
+        I64 r = OBJ_T + o * OW;
+        if (t[r + O_LOADED] == 1) {
+            I64 s0 = t[r + O_SEC0];
+            for i in 0..t[r + O_SHNUM] {
+                I64 s = SEC_T + (s0 + i) * SW;
+                if (t[s + S_TYPE] == SHT_RELA && t[s + S_INFO] < t[r + O_SHNUM]
+                    && t[SEC_T + (s0 + t[s + S_INFO]) * SW + S_GROUP] >= 0) {
+                    I64 n = t[s + S_SIZE] / 24;
+                    for k in 0..n {
+                        I64 e = t[s + S_OFF] + 24 * k;
+                        I64 ty = le.u32(fb, e + 8);
+                        I64 sym = le.u32(fb, e + 12);
+                        if (is_got(ty)) {
+                            if (sym >= t[r + O_NSYM] || t[MAP_T + t[r + O_SYM0] + sym] < 0) {
+                                return fail_obj(msg, t, fb, "GOTPCREL to a local symbol is not supported: ", o);
+                            }
+                            I64 g = t[MAP_T + t[r + O_SYM0] + sym];
+                            if (t[GLOB_T + g * GW + G_GOT] < 0) {
+                                t[GLOB_T + g * GW + G_GOT] = t[R_NGOT];
+                                t[R_NGOT] = t[R_NGOT] + 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+// ---- writing ----
+
+// The address of symbol i of object row r: -1 with the message said when it lies in a dropped section.
+I64 sym_addr(in U8[_] fb, inout I64[_] t, inout U8[_] msg, I64 r, I64 o, I64 i) {
+    I64 g = t[MAP_T + t[r + O_SYM0] + i];
+    if (g >= 0) {
+        return t[GLOB_T + g * GW + G_ADDR];
+    }
+    I64 sa = sym_at(t, r, i);
+    I64 shndx = le.u16(fb, sa + 6);
+    I64 value = le.s64(fb, sa + 8);
+    if (shndx == SHN_UNDEF) {
+        return 0;
+    }
+    if (shndx == SHN_ABS) {
+        return value;
+    }
+    if (shndx >= t[r + O_SHNUM]) {
+        return fail_obj(msg, t, fb, "bad section index in ", o);
+    }
+    I64 s = SEC_T + (t[r + O_SEC0] + shndx) * SW;
+    if (t[s + S_GROUP] < 0) {
+        _ = fail_obj(msg, t, fb, "a kept section refers to the dropped section ", o);
+        say(msg, t, " ");
+        say_name(msg, t, fb, t[s + S_NAME]);
+        return -1;
+    }
+    return t[s + S_ADDR] + value;
+}
+
+// Applies the relocations of object o to its kept sections in ob (4.4). 0, or -1.
+I64 relocate(in U8[_] fb, inout I64[_] t, inout U8[_] ob, inout U8[_] msg, I64 o) {
+    I64 r = OBJ_T + o * OW;
+    I64 s0 = t[r + O_SEC0];
+    for i in 0..t[r + O_SHNUM] {
+        I64 s = SEC_T + (s0 + i) * SW;
+        I64 ty = t[s + S_TYPE];
+        if ((ty == SHT_RELA || ty == SHT_REL) && t[s + S_INFO] < t[r + O_SHNUM]) {
+            I64 tg = SEC_T + (s0 + t[s + S_INFO]) * SW;
+            if (t[tg + S_GROUP] >= 0) {
+                if (ty == SHT_REL || t[tg + S_TYPE] == SHT_NOBITS) {
+                    return fail_obj(msg, t, fb, "relocations of this kind are not supported: ", o);
+                }
+                I64 n = t[s + S_SIZE] / 24;
+                for k in 0..n {
+                    I64 e = t[s + S_OFF] + 24 * k;
+                    I64 off = le.s64(fb, e);
+                    I64 rt = le.u32(fb, e + 8);
+                    I64 sym = le.u32(fb, e + 12);
+                    I64 a = le.s64(fb, e + 16);
+                    if (off < 0 || off > t[tg + S_SIZE] - 4 || sym >= t[r + O_NSYM]) {
+                        return fail_obj(msg, t, fb, "bad relocation in ", o);
+                    }
+                    I64 p = t[tg + S_ADDR] + off;
+                    I64 at = p - BASE;
+                    if (rt != 0) {
+                        I64 sv = sym_addr(fb, t, msg, r, o, sym);
+                        if (sv == -1 && t[R_MSG] > 0) {
+                            return -1;
+                        }
+                        I64 v = 0;
+                        I64 field = 0;    // 64, 32 unsigned, -32 signed
+                        if (rt == 1) {
+                            v = sv + a;
+                            field = 64;
+                        } else if (rt == 2 || rt == 4) {
+                            v = sv + a - p;
+                            field = -32;
+                        } else if (is_got(rt)) {
+                            I64 g = t[MAP_T + t[r + O_SYM0] + sym];
+                            v = t[R_GSTART + GR_GOT] + 8 * t[GLOB_T + g * GW + G_GOT] + a - p;
+                            field = -32;
+                        } else if (rt == 10) {
+                            v = sv + a;
+                            field = 32;
+                        } else if (rt == 11) {
+                            v = sv + a;
+                            field = -32;
+                        } else if (rt == 24) {
+                            v = sv + a - p;
+                            field = 64;
+                        } else {
+                            _ = fail(msg, t, "unsupported relocation type ");
+                            say_num(msg, t, rt);
+                            say(msg, t, " in ");
+                            say_obj(msg, t, fb, o);
+                            return -1;
+                        }
+                        if (field == 64) {
+                            if (off > t[tg + S_SIZE] - 8) {
+                                return fail_obj(msg, t, fb, "bad relocation in ", o);
+                            }
+                            le.put64(ob, at, v);
+                        } else {
+                            Bool fits = (field == 32 && v >= 0 && v <= 0xffffffff)
+                                || (field == -32 && v >= -2147483648 && v <= 2147483647);
+                            if (!fits) {
+                                _ = fail(msg, t, "relocation overflow (type ");
+                                say_num(msg, t, rt);
+                                say(msg, t, ") in ");
+                                say_obj(msg, t, fb, o);
+                                return -1;
+                            }
+                            le.put32(ob, at, v);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+// One section header of the output.
+I64 shdr(inout U8[_] ob, I64 at, I64 name, I64 ty, I64 fl, I64 addr, I64 off, I64 sz, I64 al) {
+    le.put32(ob, at, name);
+    le.put32(ob, at + 4, ty);
+    le.put64(ob, at + 8, fl);
+    le.put64(ob, at + 16, addr);
+    le.put64(ob, at + 24, off);
+    le.put64(ob, at + 32, sz);
+    le.put64(ob, at + 48, al);
+    return at + 64;
+}
+
+void phdr(inout U8[_] ob, I64 at, I64 ty, I64 fl, I64 addr, I64 fsz, I64 msz, I64 al) {
+    le.put32(ob, at, ty);
+    le.put32(ob, at + 4, fl);
+    if (ty == 1) {
+        le.put64(ob, at + 8, addr - BASE);
+        le.put64(ob, at + 16, addr);
+        le.put64(ob, at + 24, addr);
+    }
+    le.put64(ob, at + 32, fsz);
+    le.put64(ob, at + 40, msz);
+    le.put64(ob, at + 48, al);
+}
+
+// The output section names, in the order of the section headers, each with its NUL.
+const I64 SH_RODATA = 1;
+const I64 SH_TEXT = 9;
+const I64 SH_PREINIT = 15;
+const I64 SH_INIT = 30;
+const I64 SH_FINI = 42;
+const I64 SH_GOT = 54;
+const I64 SH_DATA = 59;
+const I64 SH_BSS = 65;
+const I64 SH_SHSTR = 70;
+const I64 SHSTR_LEN = 80;
+
+// Writes the executable into ob; its length, or -1.
+I64 emit(in U8[_] fb, inout I64[_] t, inout U8[_] ob, inout U8[_] msg) {
+    I64 fend = t[R_FEND];
+    // the headers, the sections, the .got, the section headers
+    I64 shstr = align_up(fend, 8);
+    I64 shoff = align_up(shstr + SHSTR_LEN, 8);
+    I64 total = shoff + 64 * (NGROUP + 2);
+    if (total > len(ob) && len(ob) > MAX_OUT) {
+        return fail(msg, t, "limit: the executable is larger than 32 MiB");
+    }
+    if (total > len(ob)) {
+        return fail(msg, t, "limit: the executable is larger than 8 MiB");
+    }
+    for i in 0..total {
+        ob[i] = 0;
+    }
+    for i in 0..t[R_NSEC] {
+        I64 s = SEC_T + i * SW;
+        if (t[s + S_GROUP] >= 0 && t[s + S_TYPE] != SHT_NOBITS && t[s + S_SIZE] > 0) {
+            I64 a = t[s + S_ADDR] - BASE;
+            I64 f = t[s + S_OFF];
+            ob[a..a + t[s + S_SIZE]] = fb[f..f + t[s + S_SIZE]];
+        }
+    }
+    for g in 0..t[R_NGLOB] {
+        I64 gr = GLOB_T + g * GW;
+        if (t[gr + G_GOT] >= 0) {
+            le.put64(ob, t[R_GSTART + GR_GOT] - BASE + 8 * t[gr + G_GOT], t[gr + G_ADDR]);
+        }
+    }
+    for o in 0..t[R_NOBJ] {
+        if (t[OBJ_T + o * OW + O_LOADED] == 1) {
+            if (relocate(fb, t, ob, msg, o) < 0) {
+                return -1;
+            }
+        }
+    }
+    // ELF header
+    ob[0] = 0x7f;
+    ob[1] = 'E';
+    ob[2] = 'L';
+    ob[3] = 'F';
+    ob[4] = 2;
+    ob[5] = 1;
+    ob[6] = 1;
+    le.put16(ob, 16, 2);           // ET_EXEC
+    le.put16(ob, 18, 62);          // EM_X86_64
+    le.put32(ob, 20, 1);
+    le.put64(ob, 24, t[R_ENTRY]);
+    le.put64(ob, 32, 64);
+    le.put64(ob, 40, shoff);
+    le.put16(ob, 52, 64);
+    le.put16(ob, 54, 56);
+    le.put16(ob, 56, NPHDR);
+    le.put16(ob, 58, 64);
+    le.put16(ob, 60, NGROUP + 2);
+    le.put16(ob, 62, NGROUP + 1);
+    // program headers: R (headers and .rodata), R X (.text), R W (the rest), the stack
+    I64 ro = t[R_GEND + GR_RODATA];
+    I64 tx0 = t[R_GSTART + GR_TEXT];
+    I64 tx1 = t[R_GEND + GR_TEXT];
+    I64 rw0 = t[R_GSTART + GR_PREINIT];
+    phdr(ob, 64, 1, 4, BASE, ro - BASE, ro - BASE, PAGE);
+    phdr(ob, 120, 1, 5, tx0, tx1 - tx0, tx1 - tx0, PAGE);
+    phdr(ob, 176, 1, 6, rw0, fend - (rw0 - BASE), t[R_END] - rw0, PAGE);
+    phdr(ob, 232, 0x6474e551, 6, 0, 0, 0, 16);   // PT_GNU_STACK
+    // section names and headers
+    ob[shstr..shstr + SHSTR_LEN] = b"\0.rodata\0.text\0.preinit_array\0.init_array\0.fini_array\0.got\0.data\0.bss\0.shstrtab\0";
+    I64 at = shoff + 64;
+    at = shdr(ob, at, SH_RODATA, SHT_PROGBITS, SHF_ALLOC, t[R_GSTART + GR_RODATA], t[R_GSTART + GR_RODATA] - BASE,
+              ro - t[R_GSTART + GR_RODATA], 1);
+    at = shdr(ob, at, SH_TEXT, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, tx0, tx0 - BASE, tx1 - tx0, 16);
+    at = shdr(ob, at, SH_PREINIT, SHT_PREINIT_ARRAY, SHF_ALLOC | SHF_WRITE, rw0, rw0 - BASE,
+              t[R_GEND + GR_PREINIT] - rw0, 8);
+    I64 a = t[R_GSTART + GR_INIT];
+    at = shdr(ob, at, SH_INIT, SHT_INIT_ARRAY, SHF_ALLOC | SHF_WRITE, a, a - BASE, t[R_GEND + GR_INIT] - a, 8);
+    a = t[R_GSTART + GR_FINI];
+    at = shdr(ob, at, SH_FINI, SHT_FINI_ARRAY, SHF_ALLOC | SHF_WRITE, a, a - BASE, t[R_GEND + GR_FINI] - a, 8);
+    a = t[R_GSTART + GR_GOT];
+    at = shdr(ob, at, SH_GOT, SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, a, a - BASE, t[R_GEND + GR_GOT] - a, 8);
+    a = t[R_GSTART + GR_DATA];
+    at = shdr(ob, at, SH_DATA, SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, a, a - BASE, t[R_GEND + GR_DATA] - a, 8);
+    a = t[R_GSTART + GR_BSS];
+    at = shdr(ob, at, SH_BSS, SHT_NOBITS, SHF_ALLOC | SHF_WRITE, a, fend, t[R_END] - a, 8);
+    _ = shdr(ob, at, SH_SHSTR, SHT_STRTAB, 0, 0, shstr, SHSTR_LEN, 1);
+    return total;
+}
+
+// ---- the linker ----
+
+// Links the driver's files (FILE rows, R_NFILE) into ob: the executable's length, or -1 with the
+// message in msg[0..t[R_MSG]).
+export I64 link(in U8[_] fb, inout I64[_] t, inout U8[_] ob, inout U8[_] msg) {
+    t[R_MSG] = 0;
+    for i in 2..FILE_T {
+        t[i] = 0;
+    }
+    for i in HASH_T..T_SIZE {
+        t[i] = 0;
+    }
+    // inputs in order (4.1)
+    for f in 0..t[R_NFILE] {
+        I64 base = t[FILE_T + f * FW + F_OFF];
+        I64 n = t[FILE_T + f * FW + F_LEN];
+        if (n >= 8 && name_starts(fb, base, "!<arch>\n")) {
+            if (archive(fb, t, msg, f) < 0) {
+                return -1;
+            }
+        } else {
+            I64 o = add_obj(fb, t, msg, f, base, n, -1, 0);
+            if (o < 0) {
+                return -1;
+            }
+            if (load(fb, t, msg, o) < 0) {
+                return -1;
+            }
+        }
+    }
+    // names (4.2)
+    ld_names(fb, t);
+    for g in 0..t[R_NGLOB] {
+        I64 gr = GLOB_T + g * GW;
+        if (t[gr + G_DEF] == DEF_NONE && t[gr + G_REF] == 2 && t[gr + G_LDEF] == 0) {
+            return fail_name(msg, t, fb, "undefined symbol: ", t[gr + G_NAME]);
+        }
+    }
+    I64 st = find_lit(fb, t, "_start");
+    if (st < 0 || t[GLOB_T + st * GW + G_DEF] == DEF_NONE) {
+        return fail(msg, t, "undefined symbol: _start");
+    }
+    if (got_scan(fb, t, msg) < 0) {
+        return -1;
+    }
+    // layout (4.3)
+    I64 at = group(t, GR_RODATA, BASE + HDR);
+    at = group(t, GR_TEXT, align_up(at, PAGE));
+    at = group(t, GR_PREINIT, align_up(at, PAGE));
+    at = group(t, GR_INIT, at);
+    at = group(t, GR_FINI, at);
+    at = align_up(at, 8);
+    t[R_GSTART + GR_GOT] = at;
+    at = at + 8 * t[R_NGOT];
+    t[R_GEND + GR_GOT] = at;
+    at = group(t, GR_DATA, at);
+    t[R_FEND] = at - BASE;
+    at = group(t, GR_BSS, at);
+    // common symbols, after .bss
+    for g in 0..t[R_NGLOB] {
+        I64 gr = GLOB_T + g * GW;
+        if (t[gr + G_DEF] == DEF_COMMON) {
+            I64 al = t[gr + G_ALIGN];
+            if (al < 1) {
+                al = 1;
+            }
+            at = align_up(at, al);
+            t[gr + G_ADDR] = at;
+            at = at + t[gr + G_SIZE];
+        }
+    }
+    t[R_GEND + GR_BSS] = at;
+    t[R_END] = at;
+    // addresses of the names
+    for g in 0..t[R_NGLOB] {
+        I64 gr = GLOB_T + g * GW;
+        I64 def = t[gr + G_DEF];
+        if (def == DEF_WEAK || def == DEF_STRONG) {
+            I64 shndx = t[gr + G_SHNDX];
+            if (shndx == SHN_ABS) {
+                t[gr + G_ADDR] = t[gr + G_VALUE];
+            } else {
+                I64 s = SEC_T + (t[OBJ_T + t[gr + G_OBJ] * OW + O_SEC0] + shndx) * SW;
+                if (t[s + S_GROUP] < 0) {
+                    return fail_name(msg, t, fb, "a symbol is defined in a dropped section: ", t[gr + G_NAME]);
+                }
+                t[gr + G_ADDR] = t[s + S_ADDR] + t[gr + G_VALUE];
+            }
+        } else if (def == DEF_NONE) {
+            t[gr + G_ADDR] = 0;
+            if (t[gr + G_LDEF] > 0) {
+                t[gr + G_ADDR] = ld_value(t, t[gr + G_LDEF]);
+            }
+        }
+    }
+    t[R_ENTRY] = t[GLOB_T + st * GW + G_ADDR];
+    return emit(fb, t, ob, msg);
+}
