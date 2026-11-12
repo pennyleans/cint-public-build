@@ -211,7 +211,7 @@ int compile_qbe(const outset *set, const char *bin, const char *exe, const char 
         sbuf assembly = {0}, object = {0};
         sb_f(&assembly, "%s.s", stem); sb_f(&object, "%s.o", stem); free(stem);
         if (src == NULL || assembly.p == NULL || object.p == NULL) status = CINT_EXIT_ENVIRONMENT;
-        if (status == 0) { const char *args[] = {g.tc.qbe, "-t", g.tc.target, src, "-o", assembly.p, NULL}; status = qbe_tool(args, log); }
+        if (status == 0) { const char *args[] = {g.tc.qbe, "-t", g.tc.target, "-o", assembly.p, src, NULL}; status = qbe_tool(args, log); }
         if (status == 0) {
             const char *args[38]; size_t a = 0;
             args[a++] = g.tc.assembler;

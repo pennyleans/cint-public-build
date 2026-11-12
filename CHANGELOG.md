@@ -2,6 +2,23 @@
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), with one section added: **Compiler coverage**, the conformance counts for the release and the cases that moved from unsupported to compared. Versions follow [Semantic Versioning](https://semver.org/); before 1.0, a minor version may break anything.
 
+## [0.2.19] - 2026-11-12
+
+### Changed
+
+- The experimental executor `cpu-qbe` tests many checks in the QBE SSA it emits. In a function that is not a kernel and calls neither a kernel nor an external function, the checks of `+`, `-`, `*`, negation, shifts and conversions between integer types, index checks and shape checks run inline, and only a failing test calls the runtime helper, which decides the outcome. `uabs`, `min`, `max`, and division and remainder by a positive power of two, are computed inline with no call. An index proved in bounds is not tested. Fault records, sites and fuel are unchanged. SPEC-09P.6 replaces SPEC-09P.5 for this change (5.3, paragraph 8).
+- `cint` passes `-o` before the input file when it runs QBE, so a QBE built with a strict POSIX `getopt` accepts the command. `tools/cint_check.py` does the same.
+- `tools/cint_qbe_check.py` lists a third QBE 1.3 binary, a static build, and checks one more refused module.
+- `cint --version` reports 0.2.19.
+
+### Fixed
+
+- SPEC-09P.6 5.6 lists the 15 modules of the compiler, including `back_qbe`, which SPEC-09P.5 left out.
+
+### Compiler coverage
+
+The suite and the reference are those of 0.2.17, and the `cpu-c17` and `cpu-c17-spec` counts of 0.2.17 stand. With QBE 1.3 and GCC 16.2.1 at `-O2` on Linux x86-64, `cpu-qbe` agrees with the reference on the 1,864,521 records of the 690 programs it compiles.
+
 ## [0.2.18] - 2026-11-09
 
 ### Added

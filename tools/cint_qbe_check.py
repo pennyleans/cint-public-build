@@ -25,6 +25,9 @@ QBE_PINS = {
         ('c0818978acec60ebb6167fade60fb7012cbf20ca', 'QBE 1.3, arm64_apple build'),
     '2ef7f22c5e0ca6d9f9fdff9b1c5cb6ac8d10dcdfdbd4f7e55102dc51cd75e650':
         ('c0818978acec60ebb6167fade60fb7012cbf20ca', 'QBE 1.3, amd64_sysv build'),
+    '6691f76ae3141e86858ecf5f7d7e113fc026a478d2565be0bec8940a80b1f569':
+        ('c0818978acec60ebb6167fade60fb7012cbf20ca',
+         'QBE 1.3 from qbe-1.3.tar.xz, musl-gcc -O2 -static -s, amd64_sysv build'),
     'cccdfe3dcf37e7d1120883d160a98d3ea4bc48d21a489f3db51f2c7f1d93281f':
         ('a6d50eb952525a234bf76ba151861f73b7a382ac952d985f2b9af1df5368225d',
          'QBE 1.2 from qbe_1.2.orig.tar.xz (Ubuntu pool), cc -std=c99 -g, amd64_sysv build'),
@@ -108,7 +111,8 @@ def main():
 
     checks = []
     try:
-        for name in ('hello', 'empty', 'bytes', 'call', 'locals', 'state', 'arrays', 'records', 'ivar'):
+        for name in ('hello', 'empty', 'bytes', 'call', 'locals', 'state', 'arrays', 'records', 'ivar',
+                     'refuse_extent'):
             src = root / (name + '.ci')
             ref = run_program(src.read_bytes(), name + '.ci', root=str(root))
             assert ref.kind == 'value'
@@ -137,10 +141,10 @@ def main():
             checks.append({'case': name, 'stdout_sha256': hashlib.sha256(ref.stdout).hexdigest(),
                            'fuel': ref.fuel, 'deterministic': True})
         r = call([a.cint, 'emit-qbe', '--root', root, '--toolchain', tc,
-                  '--out', a.out / 'refuse_extent', 'refuse_extent.ci'], 2)
+                  '--out', a.out / 'refuse_kernel', 'refuse_kernel.ci'], 2)
         assert b'E_UNSUPPORTED cpu-qbe capability entry' in r.stderr
-        assert not (a.out / 'refuse_extent' / 'MANIFEST.ref').exists()
-        checks.append({'case': 'refuse_extent', 'refused': True})
+        assert not (a.out / 'refuse_kernel' / 'MANIFEST.ref').exists()
+        checks.append({'case': 'refuse_kernel', 'refused': True})
     finally:
         (a.out / 'observations.json').write_text(json.dumps({'checks': checks, 'commands': records}, indent=2) + '\n')
     print('PASS cpu-qbe local:', len(checks), 'probes; conformance is cint_check --backend cpu-qbe')

@@ -1917,7 +1917,7 @@ def program_objects(p: Program, tc: Toolchain, tools: dict, work: pathlib.Path, 
         if "qbe" in tools:
             q = tools["qbe"]
             asm, obj = d / (pathlib.Path(f).stem + ".s"), d / (pathlib.Path(f).stem + tc.obj)
-            tc.run([q["qbe"], "-t", q["target"], f, "-o", asm], d, "%s: qbe %s" % (p.name, pathlib.Path(f).name))
+            tc.run([q["qbe"], "-t", q["target"], "-o", asm, f], d, "%s: qbe %s" % (p.name, pathlib.Path(f).name))
             tc.run([q["as"], *q["as_flags"], "-o", obj, asm], d, "%s: as %s" % (p.name, asm.name))
             objs.append(obj)
         else:

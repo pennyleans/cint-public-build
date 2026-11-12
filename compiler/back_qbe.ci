@@ -11,11 +11,11 @@
 // Bool. A wrapping result is cut back to its type with one extension. SIR temporary d is
 // `%t<d>`, slot k (a parameter or a local) is `%s<k>`; QBE builds SSA from them.
 //
-// Checks. Every operation that can fault calls the runtime's cpu-qbe entry point for it
-// (rt/cint_qbe.c), the helper emitted C inlines, so its record, site and fuel are the C
-// build's by construction (BACK-03); its int32 result branches to the function's one fault
-// exit, `@fault`, which returns 0. Calls take cint_rt_call_enter's protocol, never the lean
-// one, so funcs[].lean is not read.
+// Checks. Every operation that can fault records its fault through the runtime's cpu-qbe entry
+// point (rt/cint_qbe.c), directly or from a cold block when the hot check is inline in a plain
+// function (RT-10, CINTC-OQ-84 item 21), so its record, site and fuel are the C build's by
+// construction (BACK-03), and branches to `@fault`, which returns 0. Calls take
+// cint_rt_call_enter's protocol, never the lean one, so funcs[].lean is not read.
 //
 // Phases. Q1 admits the scalar surface: the integer and Bool types, locals, arithmetic,
 // conversions, comparisons, the integer built-ins of narrow results, assertions, prints,
@@ -70,6 +70,7 @@ struct QState {
     I64 nsir;
     I64 nslot;
     I64 nfunc;
+    I64 plain;
 }
 
 // ---------------------------------------------------------------- capabilities
@@ -79,6 +80,40 @@ struct QState {
 Bool scalar(I32 ty) {
     return ty == lowering.T_BOOL || (ty >= lowering.T_I8 && ty <= lowering.T_I64) ||
         (ty >= lowering.T_U8 && ty <= lowering.T_U64) || (lowering.is_q(ty) && !lowering.is_limbs(ty));
+}
+
+// Whether ty is one of the eight scalar integer types, I8 to I64 and U8 to U64.
+Bool qbe_scalar_int(I32 ty) {
+    return (ty >= lowering.T_I8 && ty <= lowering.T_I64) || (ty >= lowering.T_U8 && ty <= lowering.T_U64);
+}
+
+// Whether function fn leaves at the first fault, so a node executes only with ctx->faulted == 0
+// (RT-10, CINTC-OQ-76 item 4; back_c.plain_fn).
+I64 qbe_plain_fn(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, I64 fn) {
+    if ((funcs[fn].flags & lowering.FN_KERNEL) != 0) {
+        return 0;
+    }
+    I64 last = funcs[fn].last as I64;
+    for i in funcs[fn].first as I64..last {
+        I32 k = sir[i].op & lowering.OP_MASK;
+        if (k == lowering.SO_KCALL || (k == lowering.SO_CALL && sir[i].b == 1)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+// Whether checked conversion from -> ty fits every value of from (back_c.plain_as).
+Bool qbe_plain_as(I32 ty, I32 from) {
+    I64 wt = fold.ty_width(ty as I64);
+    I64 wf = fold.ty_width(from as I64);
+    if (lowering.is_signed(from)) {
+        return lowering.is_signed(ty) && wt >= wf;
+    }
+    if (lowering.is_signed(ty)) {
+        return wt > wf;
+    }
+    return wt >= wf;
 }
 
 // Whether the values of ty are signed: a signed integer, or fixed point, whose storage integer is.
@@ -1370,6 +1405,32 @@ void checked[b](inout emit.Writer[_] w, inout U8[b] dst, inout QState[_] q) {
     q[0].nlab += 1;
 }
 
+// `jnz %ok, @u<pass>, @u<bad>` and @u<bad>: the cold block where the runtime helper judges.
+I64 cold_begin[b](inout emit.Writer[_] w, inout U8[b] dst, inout QState[_] q) {
+    I64 pass = q[0].nlab + 1;
+    text(w, dst, "    jnz %ok, @u");
+    num(w, dst, pass);
+    text(w, dst, ", @u");
+    num(w, dst, q[0].nlab);
+    emit.w_nl(w, dst);
+    text(w, dst, "@u");
+    num(w, dst, q[0].nlab);
+    emit.w_nl(w, dst);
+    q[0].nlab += 2;
+    q[0].term = 0;
+    return pass;
+}
+
+void cold_end[b](inout emit.Writer[_] w, inout U8[b] dst, inout QState[_] q, I64 pass) {
+    text(w, dst, "    jnz %ok, @u");
+    num(w, dst, pass);
+    line(w, dst, ", @fault");
+    text(w, dst, "@u");
+    num(w, dst, pass);
+    emit.w_nl(w, dst);
+    q[0].term = 0;
+}
+
 // The value of operand v of function fn: node v's temporary, or the slot of parameter -(v + 1).
 void opnd[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs,
         in QState[_] q, I64 v) {
@@ -1495,6 +1556,549 @@ void fn_sym[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, in s
 
 // ---------------------------------------------------------------- nodes
 
+// The runtime call of a checked binary or shift node, writing through %out.
+void w_bin_call[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs,
+        in lowering.SirSlot[_] slots, in U8[_] pbytes, inout QState[_] q, I64 i) {
+    I32 op = sir[i].c;
+    I32 ty = sir[i].ty;
+    I64 a = sir[i].a as I64;
+    I64 bb = sir[i].b as I64;
+    ins(w, dst, q);
+    if (op == lowering.B_SHL || op == lowering.B_SHR) {
+        // shl.checked, shl.wrap (f 1) and shr.checked: the count's pattern and tag.
+        text(w, dst, "%ok =w call $cint_qbe_shift_");
+        suffix(w, dst, ty);
+        text(w, dst, "(l %ctx, ");
+        site(w, dst, pbytes, q, sir[i].site as I64);
+        text(w, dst, ", w ");
+        if (op == lowering.B_SHR) { num(w, dst, 2); } else { num(w, dst, sir[i].f as I64); }
+        text(w, dst, ", l ");
+        opnd(w, dst, sir, funcs, q, a);
+        text(w, dst, ", l ");
+        opnd(w, dst, sir, funcs, q, bb);
+        text(w, dst, ", w ");
+        num(w, dst, lowering.value_type(sir, funcs, slots, q[0].fn, bb) as I64);
+    } else {
+        text(w, dst, "%ok =w call $cint_qbe_");
+        switch (op) {
+            case lowering.B_ADD: text(w, dst, "add_");
+            case lowering.B_SUB: text(w, dst, "sub_");
+            case lowering.B_MUL: text(w, dst, "mul_");
+            case lowering.B_DIV: text(w, dst, "div_");
+            default: text(w, dst, "rem_");
+        }
+        suffix(w, dst, ty);
+        text(w, dst, "(l %ctx, ");
+        site(w, dst, pbytes, q, sir[i].site as I64);
+        text(w, dst, ", l ");
+        opnd(w, dst, sir, funcs, q, a);
+        text(w, dst, ", l ");
+        opnd(w, dst, sir, funcs, q, bb);
+    }
+    line(w, dst, ", l %out)");
+}
+
+void w_bin_cold[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs,
+        in lowering.SirSlot[_] slots, in U8[_] pbytes, inout QState[_] q, I64 i) {
+    I64 pass = cold_begin(w, dst, q);
+    w_bin_call(w, dst, sir, funcs, slots, pbytes, q, i);
+    cold_end(w, dst, q, pass);
+}
+
+void w_bin_inline[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs,
+        in lowering.SirSlot[_] slots, in U8[_] pbytes, inout QState[_] q, I64 i) {
+    I32 op = sir[i].c;
+    I32 ty = sir[i].ty;
+    I64 a = sir[i].a as I64;
+    I64 bb = sir[i].b as I64;
+    I64 wt = fold.ty_width(ty as I64);
+    Bool sg = lowering.is_signed(ty);
+    Bool ac = a >= 0 && (sir[a].op & lowering.OP_MASK) == lowering.SO_CONST;
+    Bool bc = bb >= 0 && (sir[bb].op & lowering.OP_MASK) == lowering.SO_CONST;
+    if (op == lowering.B_SHL || op == lowering.B_SHR) {
+        I32 ct = lowering.value_type(sir, funcs, slots, q[0].fn, bb);
+        if (!qbe_scalar_int(ct)) {
+            w_bin_call(w, dst, sir, funcs, slots, pbytes, q, i);
+            checked(w, dst, q);
+            load_out(w, dst, sir, q, i);
+            return;
+        }
+        if (bc) {
+            I64 sh = sir[bb].val;
+            if (sh < 0 || sh >= wt) {
+                w_bin_call(w, dst, sir, funcs, slots, pbytes, q, i);
+                checked(w, dst, q);
+                load_out(w, dst, sir, q, i);
+                return;
+            }
+            if (sh == 0) {
+                ins(w, dst, q);
+                tmp(w, dst, sir, i);
+                text(w, dst, " =l copy ");
+                opnd(w, dst, sir, funcs, q, a);
+                emit.w_nl(w, dst);
+                return;
+            }
+            if (op == lowering.B_SHR) {
+                ins(w, dst, q);
+                tmp(w, dst, sir, i);
+                if (sg) { text(w, dst, " =l sar "); } else { text(w, dst, " =l shr "); }
+                opnd(w, dst, sir, funcs, q, a);
+                text(w, dst, ", ");
+                num(w, dst, sh);
+                emit.w_nl(w, dst);
+                return;
+            }
+            if (sir[i].f == 1) {
+                ins(w, dst, q);
+                text(w, dst, "%x =l shl ");
+                opnd(w, dst, sir, funcs, q, a);
+                text(w, dst, ", ");
+                num(w, dst, sh);
+                emit.w_nl(w, dst);
+                norm_x(w, dst, sir, q, i, ty);
+                return;
+            }
+            ins(w, dst, q);
+            text(w, dst, "%xa =l shl ");
+            opnd(w, dst, sir, funcs, q, a);
+            text(w, dst, ", ");
+            num(w, dst, sh);
+            emit.w_nl(w, dst);
+            ins(w, dst, q);
+            text(w, dst, "%x");
+            norm_op(w, dst, ty);
+            line(w, dst, "%xa");
+            ins(w, dst, q);
+            if (sg) { text(w, dst, "%xb =l sar %x, "); } else { text(w, dst, "%xb =l shr %x, "); }
+            num(w, dst, sh);
+            emit.w_nl(w, dst);
+            ins(w, dst, q);
+            text(w, dst, "%ok =w ceql %xb, ");
+            opnd(w, dst, sir, funcs, q, a);
+            emit.w_nl(w, dst);
+            w_bin_cold(w, dst, sir, funcs, slots, pbytes, q, i);
+            ins(w, dst, q);
+            tmp(w, dst, sir, i);
+            line(w, dst, " =l copy %x");
+            return;
+        }
+        ins(w, dst, q);
+        text(w, dst, "%ok =w culel ");
+        opnd(w, dst, sir, funcs, q, bb);
+        text(w, dst, ", ");
+        num(w, dst, wt - 1);
+        emit.w_nl(w, dst);
+        ins(w, dst, q);
+        text(w, dst, "%sh =w copy ");
+        opnd(w, dst, sir, funcs, q, bb);
+        emit.w_nl(w, dst);
+        if (op == lowering.B_SHR) {
+            ins(w, dst, q);
+            if (sg) { text(w, dst, "%x =l sar "); } else { text(w, dst, "%x =l shr "); }
+            opnd(w, dst, sir, funcs, q, a);
+            line(w, dst, ", %sh");
+        } else {
+            ins(w, dst, q);
+            text(w, dst, "%xa =l shl ");
+            opnd(w, dst, sir, funcs, q, a);
+            line(w, dst, ", %sh");
+            ins(w, dst, q);
+            text(w, dst, "%x");
+            norm_op(w, dst, ty);
+            line(w, dst, "%xa");
+            if (sir[i].f == 0) {
+                ins(w, dst, q);
+                if (sg) { line(w, dst, "%xb =l sar %x, %sh"); } else { line(w, dst, "%xb =l shr %x, %sh"); }
+                ins(w, dst, q);
+                text(w, dst, "%ok2 =w ceql %xb, ");
+                opnd(w, dst, sir, funcs, q, a);
+                emit.w_nl(w, dst);
+                ins(w, dst, q);
+                line(w, dst, "%ok =w and %ok, %ok2");
+            }
+        }
+        w_bin_cold(w, dst, sir, funcs, slots, pbytes, q, i);
+        ins(w, dst, q);
+        tmp(w, dst, sir, i);
+        line(w, dst, " =l copy %x");
+        return;
+    }
+    if (op == lowering.B_DIV || op == lowering.B_REM) {
+        if (bc) {
+            U64 cu = sir[bb].val as% U64;
+            Bool pow2 = cu > 0 && (cu & (cu - 1)) == 0;
+            if (sg && sir[bb].val <= 0) { pow2 = false; }
+            if (pow2) {
+                ins(w, dst, q);
+                tmp(w, dst, sir, i);
+                if (op == lowering.B_REM) {
+                    if (cu == 1) {
+                        line(w, dst, " =l copy 0");
+                        return;
+                    }
+                    text(w, dst, " =l and ");
+                    opnd(w, dst, sir, funcs, q, a);
+                    text(w, dst, ", ");
+                    num(w, dst, (cu - 1) as% I64);
+                    emit.w_nl(w, dst);
+                    return;
+                }
+                I64 sh = 0;
+                U64 t = cu;
+                while (t > 1) {
+                    t = t >> 1;
+                    sh += 1;
+                }
+                if (sh == 0) {
+                    text(w, dst, " =l copy ");
+                    opnd(w, dst, sir, funcs, q, a);
+                    emit.w_nl(w, dst);
+                    return;
+                }
+                if (sg) { text(w, dst, " =l sar "); } else { text(w, dst, " =l shr "); }
+                opnd(w, dst, sir, funcs, q, a);
+                text(w, dst, ", ");
+                num(w, dst, sh);
+                emit.w_nl(w, dst);
+                return;
+            }
+        }
+        w_bin_call(w, dst, sir, funcs, slots, pbytes, q, i);
+        checked(w, dst, q);
+        load_out(w, dst, sir, q, i);
+        return;
+    }
+    if (wt < 64) {
+        ins(w, dst, q);
+        if (op == lowering.B_ADD) { text(w, dst, "%x =l add "); }
+        else if (op == lowering.B_SUB) { text(w, dst, "%x =l sub "); }
+        else { text(w, dst, "%x =l mul "); }
+        opnd(w, dst, sir, funcs, q, a);
+        text(w, dst, ", ");
+        opnd(w, dst, sir, funcs, q, bb);
+        emit.w_nl(w, dst);
+        if (sg) {
+            ins(w, dst, q);
+            text(w, dst, "%xa");
+            norm_op(w, dst, ty);
+            line(w, dst, "%x");
+            ins(w, dst, q);
+            line(w, dst, "%ok =w ceql %xa, %x");
+        } else if (op == lowering.B_SUB) {
+            ins(w, dst, q);
+            text(w, dst, "%ok =w cugel ");
+            opnd(w, dst, sir, funcs, q, a);
+            text(w, dst, ", ");
+            opnd(w, dst, sir, funcs, q, bb);
+            emit.w_nl(w, dst);
+        } else {
+            ins(w, dst, q);
+            text(w, dst, "%ok =w culel %x, ");
+            num(w, dst, (1 << wt) - 1);
+            emit.w_nl(w, dst);
+        }
+        w_bin_cold(w, dst, sir, funcs, slots, pbytes, q, i);
+        ins(w, dst, q);
+        tmp(w, dst, sir, i);
+        line(w, dst, " =l copy %x");
+        return;
+    }
+    if (!sg) {
+        if (op == lowering.B_ADD) {
+            if (bc && sir[bb].val == 0) {
+                ins(w, dst, q);
+                tmp(w, dst, sir, i);
+                text(w, dst, " =l copy ");
+                opnd(w, dst, sir, funcs, q, a);
+                emit.w_nl(w, dst);
+                return;
+            }
+            if (ac && sir[a].val == 0) {
+                ins(w, dst, q);
+                tmp(w, dst, sir, i);
+                text(w, dst, " =l copy ");
+                opnd(w, dst, sir, funcs, q, bb);
+                emit.w_nl(w, dst);
+                return;
+            }
+            ins(w, dst, q);
+            text(w, dst, "%x =l add ");
+            opnd(w, dst, sir, funcs, q, a);
+            text(w, dst, ", ");
+            opnd(w, dst, sir, funcs, q, bb);
+            emit.w_nl(w, dst);
+            ins(w, dst, q);
+            text(w, dst, "%ok =w cugel %x, ");
+            opnd(w, dst, sir, funcs, q, a);
+            emit.w_nl(w, dst);
+            w_bin_cold(w, dst, sir, funcs, slots, pbytes, q, i);
+            ins(w, dst, q);
+            tmp(w, dst, sir, i);
+            line(w, dst, " =l copy %x");
+            return;
+        }
+        if (op == lowering.B_SUB) {
+            if (bc && sir[bb].val == 0) {
+                ins(w, dst, q);
+                tmp(w, dst, sir, i);
+                text(w, dst, " =l copy ");
+                opnd(w, dst, sir, funcs, q, a);
+                emit.w_nl(w, dst);
+                return;
+            }
+            ins(w, dst, q);
+            text(w, dst, "%ok =w cugel ");
+            opnd(w, dst, sir, funcs, q, a);
+            text(w, dst, ", ");
+            opnd(w, dst, sir, funcs, q, bb);
+            emit.w_nl(w, dst);
+            w_bin_cold(w, dst, sir, funcs, slots, pbytes, q, i);
+            ins(w, dst, q);
+            tmp(w, dst, sir, i);
+            text(w, dst, " =l sub ");
+            opnd(w, dst, sir, funcs, q, a);
+            text(w, dst, ", ");
+            opnd(w, dst, sir, funcs, q, bb);
+            emit.w_nl(w, dst);
+            return;
+        }
+        if (ac || bc) {
+            I64 cv = bb;
+            I64 ov = a;
+            if (!bc) { cv = a; ov = bb; }
+            U64 cu = sir[cv].val as% U64;
+            if (cu == 0) {
+                ins(w, dst, q);
+                tmp(w, dst, sir, i);
+                line(w, dst, " =l copy 0");
+                return;
+            }
+            if (cu == 1) {
+                ins(w, dst, q);
+                tmp(w, dst, sir, i);
+                text(w, dst, " =l copy ");
+                opnd(w, dst, sir, funcs, q, ov);
+                emit.w_nl(w, dst);
+                return;
+            }
+            U64 umax = 0xFFFFFFFFFFFFFFFF;
+            I64 hi = (umax / cu) as% I64;
+            ins(w, dst, q);
+            text(w, dst, "%ok =w culel ");
+            opnd(w, dst, sir, funcs, q, ov);
+            text(w, dst, ", ");
+            num(w, dst, hi);
+            emit.w_nl(w, dst);
+            w_bin_cold(w, dst, sir, funcs, slots, pbytes, q, i);
+            ins(w, dst, q);
+            tmp(w, dst, sir, i);
+            text(w, dst, " =l mul ");
+            opnd(w, dst, sir, funcs, q, a);
+            text(w, dst, ", ");
+            opnd(w, dst, sir, funcs, q, bb);
+            emit.w_nl(w, dst);
+            return;
+        }
+        w_bin_call(w, dst, sir, funcs, slots, pbytes, q, i);
+        checked(w, dst, q);
+        load_out(w, dst, sir, q, i);
+        return;
+    }
+    U64 sbit = 0x8000000000000000;
+    I64 smax = 0x7FFFFFFFFFFFFFFF;
+    if (op == lowering.B_ADD) {
+        if (ac || bc) {
+            I64 cv = bb;
+            I64 ov = a;
+            if (!bc) { cv = a; ov = bb; }
+            I64 c = sir[cv].val;
+            if (c == 0) {
+                ins(w, dst, q);
+                tmp(w, dst, sir, i);
+                text(w, dst, " =l copy ");
+                opnd(w, dst, sir, funcs, q, ov);
+                emit.w_nl(w, dst);
+                return;
+            }
+            ins(w, dst, q);
+            if (c > 0) {
+                text(w, dst, "%ok =w cslel ");
+                opnd(w, dst, sir, funcs, q, ov);
+                text(w, dst, ", ");
+                num(w, dst, smax - c);
+            } else {
+                U64 ulo = sbit -% (c as% U64);
+                text(w, dst, "%ok =w csgel ");
+                opnd(w, dst, sir, funcs, q, ov);
+                text(w, dst, ", ");
+                num(w, dst, ulo as% I64);
+            }
+            emit.w_nl(w, dst);
+            w_bin_cold(w, dst, sir, funcs, slots, pbytes, q, i);
+            ins(w, dst, q);
+            tmp(w, dst, sir, i);
+            text(w, dst, " =l add ");
+            opnd(w, dst, sir, funcs, q, ov);
+            text(w, dst, ", ");
+            num(w, dst, c);
+            emit.w_nl(w, dst);
+            return;
+        }
+        ins(w, dst, q);
+        text(w, dst, "%x =l add ");
+        opnd(w, dst, sir, funcs, q, a);
+        text(w, dst, ", ");
+        opnd(w, dst, sir, funcs, q, bb);
+        emit.w_nl(w, dst);
+        ins(w, dst, q);
+        text(w, dst, "%xa =l xor %x, ");
+        opnd(w, dst, sir, funcs, q, a);
+        emit.w_nl(w, dst);
+        ins(w, dst, q);
+        text(w, dst, "%xb =l xor %x, ");
+        opnd(w, dst, sir, funcs, q, bb);
+        emit.w_nl(w, dst);
+        ins(w, dst, q);
+        line(w, dst, "%xz =l and %xa, %xb");
+        ins(w, dst, q);
+        line(w, dst, "%ok =w csgel %xz, 0");
+        w_bin_cold(w, dst, sir, funcs, slots, pbytes, q, i);
+        ins(w, dst, q);
+        tmp(w, dst, sir, i);
+        line(w, dst, " =l copy %x");
+        return;
+    }
+    if (op == lowering.B_SUB) {
+        if (bc) {
+            I64 c = sir[bb].val;
+            if (c == 0) {
+                ins(w, dst, q);
+                tmp(w, dst, sir, i);
+                text(w, dst, " =l copy ");
+                opnd(w, dst, sir, funcs, q, a);
+                emit.w_nl(w, dst);
+                return;
+            }
+            ins(w, dst, q);
+            if (c > 0) {
+                U64 ulo = sbit +% (c as% U64);
+                text(w, dst, "%ok =w csgel ");
+                opnd(w, dst, sir, funcs, q, a);
+                text(w, dst, ", ");
+                num(w, dst, ulo as% I64);
+            } else {
+                U64 uhi = (smax as U64) +% (c as% U64);
+                text(w, dst, "%ok =w cslel ");
+                opnd(w, dst, sir, funcs, q, a);
+                text(w, dst, ", ");
+                num(w, dst, uhi as% I64);
+            }
+            emit.w_nl(w, dst);
+            w_bin_cold(w, dst, sir, funcs, slots, pbytes, q, i);
+            ins(w, dst, q);
+            tmp(w, dst, sir, i);
+            text(w, dst, " =l sub ");
+            opnd(w, dst, sir, funcs, q, a);
+            text(w, dst, ", ");
+            num(w, dst, c);
+            emit.w_nl(w, dst);
+            return;
+        }
+        ins(w, dst, q);
+        text(w, dst, "%x =l sub ");
+        opnd(w, dst, sir, funcs, q, a);
+        text(w, dst, ", ");
+        opnd(w, dst, sir, funcs, q, bb);
+        emit.w_nl(w, dst);
+        ins(w, dst, q);
+        text(w, dst, "%xa =l xor ");
+        opnd(w, dst, sir, funcs, q, a);
+        text(w, dst, ", ");
+        opnd(w, dst, sir, funcs, q, bb);
+        emit.w_nl(w, dst);
+        ins(w, dst, q);
+        text(w, dst, "%xb =l xor %x, ");
+        opnd(w, dst, sir, funcs, q, a);
+        emit.w_nl(w, dst);
+        ins(w, dst, q);
+        line(w, dst, "%xz =l and %xa, %xb");
+        ins(w, dst, q);
+        line(w, dst, "%ok =w csgel %xz, 0");
+        w_bin_cold(w, dst, sir, funcs, slots, pbytes, q, i);
+        ins(w, dst, q);
+        tmp(w, dst, sir, i);
+        line(w, dst, " =l copy %x");
+        return;
+    }
+    if (ac || bc) {
+        I64 cv = bb;
+        I64 ov = a;
+        if (!bc) { cv = a; ov = bb; }
+        I64 c = sir[cv].val;
+        if (c == 0) {
+            ins(w, dst, q);
+            tmp(w, dst, sir, i);
+            line(w, dst, " =l copy 0");
+            return;
+        }
+        if (c == 1) {
+            ins(w, dst, q);
+            tmp(w, dst, sir, i);
+            text(w, dst, " =l copy ");
+            opnd(w, dst, sir, funcs, q, ov);
+            emit.w_nl(w, dst);
+            return;
+        }
+        if (c == -1) {
+            ins(w, dst, q);
+            text(w, dst, "%ok =w cnel ");
+            opnd(w, dst, sir, funcs, q, ov);
+            line(w, dst, ", -9223372036854775808");
+            w_bin_cold(w, dst, sir, funcs, slots, pbytes, q, i);
+            ins(w, dst, q);
+            tmp(w, dst, sir, i);
+            text(w, dst, " =l sub 0, ");
+            opnd(w, dst, sir, funcs, q, ov);
+            emit.w_nl(w, dst);
+            return;
+        }
+        U64 mlo = 0;
+        U64 mhi = 0;
+        if (c > 0) {
+            U64 mc = c as% U64;
+            mlo = sbit / mc;
+            mhi = (smax as U64) / mc;
+        } else {
+            U64 mc = 0 -% (c as% U64);
+            mlo = (smax as U64) / mc;
+            mhi = sbit / mc;
+        }
+        ins(w, dst, q);
+        text(w, dst, "%xa =l add ");
+        opnd(w, dst, sir, funcs, q, ov);
+        text(w, dst, ", ");
+        num(w, dst, mlo as% I64);
+        emit.w_nl(w, dst);
+        ins(w, dst, q);
+        text(w, dst, "%ok =w culel %xa, ");
+        num(w, dst, (mlo + mhi) as% I64);
+        emit.w_nl(w, dst);
+        w_bin_cold(w, dst, sir, funcs, slots, pbytes, q, i);
+        ins(w, dst, q);
+        tmp(w, dst, sir, i);
+        text(w, dst, " =l mul ");
+        opnd(w, dst, sir, funcs, q, a);
+        text(w, dst, ", ");
+        opnd(w, dst, sir, funcs, q, bb);
+        emit.w_nl(w, dst);
+        return;
+    }
+    w_bin_call(w, dst, sir, funcs, slots, pbytes, q, i);
+    checked(w, dst, q);
+    load_out(w, dst, sir, q, i);
+}
+
 void w_bin[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs,
         in lowering.SirSlot[_] slots, in U8[_] pbytes, inout QState[_] q, I64 i) {
     I32 op = sir[i].c;
@@ -1564,40 +2168,11 @@ void w_bin[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, i
         line(w, dst, ")");
         return;
     }
-    ins(w, dst, q);
-    if (op == lowering.B_SHL || op == lowering.B_SHR) {
-        // shl.checked, shl.wrap (f 1) and shr.checked: the count's pattern and tag.
-        text(w, dst, "%ok =w call $cint_qbe_shift_");
-        suffix(w, dst, ty);
-        text(w, dst, "(l %ctx, ");
-        site(w, dst, pbytes, q, sir[i].site as I64);
-        text(w, dst, ", w ");
-        if (op == lowering.B_SHR) { num(w, dst, 2); } else { num(w, dst, sir[i].f as I64); }
-        text(w, dst, ", l ");
-        opnd(w, dst, sir, funcs, q, a);
-        text(w, dst, ", l ");
-        opnd(w, dst, sir, funcs, q, bb);
-        text(w, dst, ", w ");
-        num(w, dst, lowering.value_type(sir, funcs, slots, q[0].fn, bb) as I64);
-        line(w, dst, ", l %out)");
-    } else {
-        text(w, dst, "%ok =w call $cint_qbe_");
-        switch (op) {
-            case lowering.B_ADD: text(w, dst, "add_");
-            case lowering.B_SUB: text(w, dst, "sub_");
-            case lowering.B_MUL: text(w, dst, "mul_");
-            case lowering.B_DIV: text(w, dst, "div_");
-            default: text(w, dst, "rem_");
-        }
-        suffix(w, dst, ty);
-        text(w, dst, "(l %ctx, ");
-        site(w, dst, pbytes, q, sir[i].site as I64);
-        text(w, dst, ", l ");
-        opnd(w, dst, sir, funcs, q, a);
-        text(w, dst, ", l ");
-        opnd(w, dst, sir, funcs, q, bb);
-        line(w, dst, ", l %out)");
+    if (q[0].plain != 0 && qbe_scalar_int(ty)) {
+        w_bin_inline(w, dst, sir, funcs, slots, pbytes, q, i);
+        return;
     }
+    w_bin_call(w, dst, sir, funcs, slots, pbytes, q, i);
     checked(w, dst, q);
     load_out(w, dst, sir, q, i);
 }
@@ -1621,26 +2196,43 @@ void w_builtin[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] si
     }
     if (id == fold.BI_UABS) {
         ins(w, dst, q);
-        tmp(w, dst, sir, i);
-        text(w, dst, " =l call $cint_qbe_uabs_");
-        suffix(w, dst, bo);
-        text(w, dst, "(l ");
+        text(w, dst, "%xa =l copy ");
         opnd(w, dst, sir, funcs, q, sir[i].a as I64);
-        line(w, dst, ")");
+        emit.w_nl(w, dst);
+        ins(w, dst, q);
+        line(w, dst, "%xz =l sar %xa, 63");
+        ins(w, dst, q);
+        line(w, dst, "%x =l xor %xa, %xz");
+        ins(w, dst, q);
+        tmp(w, dst, sir, i);
+        line(w, dst, " =l sub %x, %xz");
         return;
     }
     if (id == fold.BI_MIN || id == fold.BI_MAX) {
+        Bool bs = signed(bo);
+        ins(w, dst, q);
+        text(w, dst, "%xa =l copy ");
+        opnd(w, dst, sir, funcs, q, sir[i].a as I64);
+        emit.w_nl(w, dst);
+        ins(w, dst, q);
+        text(w, dst, "%xb =l copy ");
+        opnd(w, dst, sir, funcs, q, sir[i].b as I64);
+        emit.w_nl(w, dst);
+        ins(w, dst, q);
+        if (id == fold.BI_MAX) {
+            if (bs) { line(w, dst, "%xz =l csgel %xa, %xb"); } else { line(w, dst, "%xz =l cugel %xa, %xb"); }
+        } else {
+            if (bs) { line(w, dst, "%xz =l cslel %xa, %xb"); } else { line(w, dst, "%xz =l culel %xa, %xb"); }
+        }
+        ins(w, dst, q);
+        line(w, dst, "%xz =l sub 0, %xz");
+        ins(w, dst, q);
+        line(w, dst, "%x =l xor %xa, %xb");
+        ins(w, dst, q);
+        line(w, dst, "%x =l and %x, %xz");
         ins(w, dst, q);
         tmp(w, dst, sir, i);
-        text(w, dst, " =l call $cint_qbe_minmax_");
-        suffix(w, dst, bo);
-        text(w, dst, "(w ");
-        if (id == fold.BI_MAX) { num(w, dst, 1); } else { num(w, dst, 0); }
-        text(w, dst, ", l ");
-        opnd(w, dst, sir, funcs, q, sir[i].a as I64);
-        text(w, dst, ", l ");
-        opnd(w, dst, sir, funcs, q, sir[i].b as I64);
-        line(w, dst, ")");
+        line(w, dst, " =l xor %xb, %x");
         return;
     }
     ins(w, dst, q);
@@ -1678,6 +2270,20 @@ void w_builtin[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] si
     load_out(w, dst, sir, q, i);
 }
 
+void w_as_call[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs,
+        in U8[_] pbytes, inout QState[_] q, I64 i) {
+    call_ctx(w, dst, q, "cint_qbe_as");
+    text(w, dst, ", ");
+    site(w, dst, pbytes, q, sir[i].site as I64);
+    text(w, dst, ", w ");
+    num(w, dst, sir[i].f as I64);
+    text(w, dst, ", w ");
+    num(w, dst, sir[i].ty as I64);
+    text(w, dst, ", l ");
+    opnd(w, dst, sir, funcs, q, sir[i].a as I64);
+    line(w, dst, ", l %out)");
+}
+
 void w_as[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs,
         in U8[_] pbytes, inout QState[_] q, I64 i) {
     I32 from = sir[i].f;
@@ -1704,16 +2310,66 @@ void w_as[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, in
         line(w, dst, ")");
         return;
     }
-    call_ctx(w, dst, q, "cint_qbe_as");
-    text(w, dst, ", ");
-    site(w, dst, pbytes, q, sir[i].site as I64);
-    text(w, dst, ", w ");
-    num(w, dst, from as I64);
-    text(w, dst, ", w ");
-    num(w, dst, ty as I64);
-    text(w, dst, ", l ");
-    opnd(w, dst, sir, funcs, q, a);
-    line(w, dst, ", l %out)");
+    if (q[0].plain != 0 && qbe_scalar_int(ty) && qbe_scalar_int(from)) {
+        if (qbe_plain_as(ty, from)) {
+            ins(w, dst, q);
+            tmp(w, dst, sir, i);
+            text(w, dst, " =l copy ");
+            opnd(w, dst, sir, funcs, q, a);
+            emit.w_nl(w, dst);
+            return;
+        }
+        I64 wt = fold.ty_width(ty as I64);
+        if (lowering.is_signed(from)) {
+            if (!lowering.is_signed(ty)) {
+                ins(w, dst, q);
+                if (wt == 64) {
+                    text(w, dst, "%ok =w csgel ");
+                    opnd(w, dst, sir, funcs, q, a);
+                    line(w, dst, ", 0");
+                } else {
+                    text(w, dst, "%ok =w culel ");
+                    opnd(w, dst, sir, funcs, q, a);
+                    text(w, dst, ", ");
+                    num(w, dst, (1 << wt) - 1);
+                    emit.w_nl(w, dst);
+                }
+            } else {
+                ins(w, dst, q);
+                text(w, dst, "%xa");
+                norm_op(w, dst, ty);
+                opnd(w, dst, sir, funcs, q, a);
+                emit.w_nl(w, dst);
+                ins(w, dst, q);
+                text(w, dst, "%ok =w ceql %xa, ");
+                opnd(w, dst, sir, funcs, q, a);
+                emit.w_nl(w, dst);
+            }
+        } else {
+            I64 hi = 0x7FFFFFFFFFFFFFFF;
+            if (lowering.is_signed(ty)) {
+                if (wt < 64) { hi = (1 << (wt - 1)) - 1; }
+            } else {
+                hi = (1 << wt) - 1;
+            }
+            ins(w, dst, q);
+            text(w, dst, "%ok =w culel ");
+            opnd(w, dst, sir, funcs, q, a);
+            text(w, dst, ", ");
+            num(w, dst, hi);
+            emit.w_nl(w, dst);
+        }
+        I64 pass = cold_begin(w, dst, q);
+        w_as_call(w, dst, sir, funcs, pbytes, q, i);
+        cold_end(w, dst, q, pass);
+        ins(w, dst, q);
+        tmp(w, dst, sir, i);
+        text(w, dst, " =l copy ");
+        opnd(w, dst, sir, funcs, q, a);
+        emit.w_nl(w, dst);
+        return;
+    }
+    w_as_call(w, dst, sir, funcs, pbytes, q, i);
     checked(w, dst, q);
     load_out(w, dst, sir, q, i);
 }
@@ -2513,23 +3169,64 @@ void w_node[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, in s
         case lowering.SO_BUILTIN:
             w_builtin(w, dst, sir, funcs, slots, pbytes, q, i);
         case lowering.SO_UN:
-            ins(w, dst, q);
             if (sir[i].c == lowering.U_NEG) {
-                text(w, dst, "%ok =w call $cint_qbe_neg_");
-                suffix(w, dst, ty);
-                text(w, dst, "(l %ctx, ");
-                site(w, dst, pbytes, q, sir[i].site as I64);
-                text(w, dst, ", l ");
-                opnd(w, dst, sir, funcs, q, a);
-                line(w, dst, ", l %out)");
-                checked(w, dst, q);
-                load_out(w, dst, sir, q, i);
+                if (q[0].plain != 0 && qbe_scalar_int(ty)) {
+                    I64 wt = fold.ty_width(ty as I64);
+                    ins(w, dst, q);
+                    if (!lowering.is_signed(ty)) {
+                        text(w, dst, "%ok =w ceql ");
+                        opnd(w, dst, sir, funcs, q, a);
+                        line(w, dst, ", 0");
+                    } else if (wt < 64) {
+                        text(w, dst, "%ok =w cnel ");
+                        opnd(w, dst, sir, funcs, q, a);
+                        text(w, dst, ", ");
+                        num(w, dst, -(1 << (wt - 1)));
+                        emit.w_nl(w, dst);
+                    } else {
+                        text(w, dst, "%ok =w cnel ");
+                        opnd(w, dst, sir, funcs, q, a);
+                        line(w, dst, ", -9223372036854775808");
+                    }
+                    I64 pass = cold_begin(w, dst, q);
+                    ins(w, dst, q);
+                    text(w, dst, "%ok =w call $cint_qbe_neg_");
+                    suffix(w, dst, ty);
+                    text(w, dst, "(l %ctx, ");
+                    site(w, dst, pbytes, q, sir[i].site as I64);
+                    text(w, dst, ", l ");
+                    opnd(w, dst, sir, funcs, q, a);
+                    line(w, dst, ", l %out)");
+                    cold_end(w, dst, q, pass);
+                    ins(w, dst, q);
+                    tmp(w, dst, sir, i);
+                    if (!lowering.is_signed(ty)) {
+                        line(w, dst, " =l copy 0");
+                    } else {
+                        text(w, dst, " =l sub 0, ");
+                        opnd(w, dst, sir, funcs, q, a);
+                        emit.w_nl(w, dst);
+                    }
+                } else {
+                    ins(w, dst, q);
+                    text(w, dst, "%ok =w call $cint_qbe_neg_");
+                    suffix(w, dst, ty);
+                    text(w, dst, "(l %ctx, ");
+                    site(w, dst, pbytes, q, sir[i].site as I64);
+                    text(w, dst, ", l ");
+                    opnd(w, dst, sir, funcs, q, a);
+                    line(w, dst, ", l %out)");
+                    checked(w, dst, q);
+                    load_out(w, dst, sir, q, i);
+                }
             } else if (sir[i].c == lowering.U_LNOT) {
+                ins(w, dst, q);
                 tmp(w, dst, sir, i);
                 text(w, dst, " =l xor ");
                 opnd(w, dst, sir, funcs, q, a);
                 line(w, dst, ", 1");
             } else {
+                ins(w, dst, q);
                 text(w, dst, "%x =l xor ");
                 opnd(w, dst, sir, funcs, q, a);
                 line(w, dst, ", -1");
@@ -3604,23 +4301,85 @@ I64 desc_of[b](inout emit.Writer[_] w, inout U8[b] dst, inout QState[_] q, in lo
 // (a view slot) the element offset of SO_EOFF.
 void elem_addr[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs,
         in lowering.SirSlot[_] slots, inout QState[_] q, I64 k, I64 v) {
-    ins(w, dst, q);
+    I64 esz = elem_size(slots, k);
+    Bool zero = v >= 0 && (sir[v].op & lowering.OP_MASK) == lowering.SO_CONST && sir[v].val == 0;
     if (slots[k].kind == lowering.SK_VIEW) {
-        text(w, dst, "%ea =l mul ");
-        opnd(w, dst, sir, funcs, q, v);
-        text(w, dst, ", %d");
+        if (esz == 0) {
+            ins(w, dst, q);
+            text(w, dst, "%ea =l copy %s");
+            num(w, dst, k);
+            emit.w_nl(w, dst);
+            return;
+        }
+        if (zero) {
+            ins(w, dst, q);
+            if (esz == 1) {
+                text(w, dst, "%ea =l add %s");
+                num(w, dst, k);
+                text(w, dst, ", %o");
+                num(w, dst, k);
+                emit.w_nl(w, dst);
+                return;
+            }
+            text(w, dst, "%ea =l mul %o");
+            num(w, dst, k);
+            text(w, dst, ", ");
+            num(w, dst, esz);
+            emit.w_nl(w, dst);
+        } else {
+            ins(w, dst, q);
+            text(w, dst, "%ea =l mul ");
+            opnd(w, dst, sir, funcs, q, v);
+            text(w, dst, ", %d");
+            num(w, dst, k);
+            emit.w_nl(w, dst);
+            text(w, dst, "    %ea =l add %ea, %o");
+            num(w, dst, k);
+            emit.w_nl(w, dst);
+            if (esz != 1) {
+                text(w, dst, "    %ea =l mul %ea, ");
+                num(w, dst, esz);
+                emit.w_nl(w, dst);
+            }
+        }
+        text(w, dst, "    %ea =l add %s");
         num(w, dst, k);
-        emit.w_nl(w, dst);
-        text(w, dst, "    %ea =l add %ea, %o");
-        num(w, dst, k);
-        emit.w_nl(w, dst);
-        text(w, dst, "    %ea =l mul %ea, ");
-    } else {
-        text(w, dst, "%ea =l mul ");
-        opnd(w, dst, sir, funcs, q, v);
-        text(w, dst, ", ");
+        line(w, dst, ", %ea");
+        return;
     }
-    num(w, dst, elem_size(slots, k));
+    if (zero || esz == 0) {
+        if (nview(slots, k)) {
+            vget(w, dst, q, k, 0, 'b', 0);
+            line(w, dst, "    %ea =l copy %b0");
+            return;
+        }
+        ins(w, dst, q);
+        text(w, dst, "%ea =l copy %s");
+        num(w, dst, k);
+        emit.w_nl(w, dst);
+        return;
+    }
+    if (esz == 1) {
+        if (nview(slots, k)) {
+            vget(w, dst, q, k, 0, 'b', 0);
+            text(w, dst, "    %ea =l add %b0, ");
+            opnd(w, dst, sir, funcs, q, v);
+            emit.w_nl(w, dst);
+            return;
+        }
+        ins(w, dst, q);
+        text(w, dst, "%ea =l add %s");
+        num(w, dst, k);
+        text(w, dst, ", ");
+        opnd(w, dst, sir, funcs, q, v);
+        emit.w_nl(w, dst);
+        return;
+    }
+    ins(w, dst, q);
+    text(w, dst, "%ea =l mul ");
+    opnd(w, dst, sir, funcs, q, v);
+    text(w, dst, ", ");
+    num(w, dst, esz);
     emit.w_nl(w, dst);
     if (nview(slots, k)) {
         vget(w, dst, q, k, 0, 'b', 0);
@@ -3640,11 +4399,33 @@ void node_data[b](inout emit.Writer[_] w, inout U8[b] dst, in U8[_] pbytes, in Q
     num(w, dst, i);
 }
 
+// Whether SO_ICHECK node i has a constant index within a static array extent in a plain function.
+Bool plain_icheck(in lowering.Sir[_] sir, in lowering.SirSlot[_] slots, in QState[_] q, I64 i) {
+    if (q[0].plain == 0) {
+        return false;
+    }
+    I64 b = sir[i].b as I64;
+    if (b < 0 || (sir[b].op & lowering.OP_MASK) != lowering.SO_CONST) {
+        return false;
+    }
+    I64 a = sir[i].a as I64;
+    I64 ext = -1;
+    if (sir[i].c > 0) {
+        ext = lowering.array_extent(lowering.field_type(slots, slots[a].ty, (sir[i].c - 1) as I64));
+    } else if (!nview(slots, a) && slots[a].kind != lowering.SK_VIEW) {
+        ext = lowering.array_extent(slots[a].ty);
+    }
+    return sir[b].val >= 0 && sir[b].val < ext;
+}
+
 // index.checked (back_c's SO_ICHECK): an index outside the extent records E_BOUNDS through
 // cint_index_check, or cint_index_check_dim for a view of rank 2 to 4 (ruling R1), with the
 // operation's name, and leaves at @fault.
 void w_icheck[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs,
         in lowering.SirSlot[_] slots, in U8[_] pbytes, inout QState[_] q, I64 i) {
+    if (plain_icheck(sir, slots, q, i)) {
+        return;
+    }
     I64 a = sir[i].a as I64;
     I64 d = 0;
     if (nview(slots, a)) { d = sir[i].f as I64; }
@@ -3715,6 +4496,12 @@ void w_shape[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir,
         emit.w_nl(w, dst);
     }
     ext_get(w, dst, q, slots, a, dm, 'e', 1);
+    I64 pass = -1;
+    if (q[0].plain != 0) {
+        ins(w, dst, q);
+        line(w, dst, "%ok =w ceql %e0, %e1");
+        pass = cold_begin(w, dst, q);
+    }
     if (k == lowering.SO_COPY_SHAPE) {
         call_ctx(w, dst, q, "cint_qbe_copy_shape");
         text(w, dst, ", ");
@@ -3735,7 +4522,11 @@ void w_shape[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir,
         num(w, dst, sir[i].b as I64);
     }
     line(w, dst, ", l %e0, l %e1)");
-    checked(w, dst, q);
+    if (pass >= 0) {
+        cold_end(w, dst, q, pass);
+    } else {
+        checked(w, dst, q);
+    }
 }
 
 // Whole-array assignment (back_c's SO_ACOPY): every element in index order, through each side's
@@ -4832,6 +5623,7 @@ void w_func[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, in s
     q[0].fn = fn;
     q[0].term = 0;
     q[0].nlab = 0;
+    q[0].plain = qbe_plain_fn(sir, funcs, fn);
     text(w, dst, "export function w ");
     fn_sym(w, dst, src, toks, funcs, pbytes, q, fn);
     text(w, dst, "(l %ctx");
@@ -5014,7 +5806,8 @@ void w_func[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, in s
     // The operation names of the function's checks (back_c.op_name) and its string bytes.
     for i in funcs[fn].first as I64..funcs[fn].last as I64 {
         I32 k = sir[i].op & lowering.OP_MASK;
-        if ((sir[i].op & lowering.FL_LIVE) != 0 && (k == lowering.SO_ICHECK || k == lowering.SO_VSLICE)) {
+        if ((sir[i].op & lowering.FL_LIVE) != 0 &&
+                ((k == lowering.SO_ICHECK && !plain_icheck(sir, slots, q, i)) || k == lowering.SO_VSLICE)) {
             text(w, dst, "data ");
             node_data(w, dst, pbytes, q, 'i', i);
             text(w, dst, " = {{ b \"");
@@ -5911,6 +6704,7 @@ export void write_module[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8
     q[0].nsir = ls[0].nsir;
     q[0].nslot = ls[0].nslot;
     q[0].nfunc = ls[0].nfunc;
+    q[0].plain = 0;
     line(w, dst, "# cint-core-1, cint-rt-3, cpu-qbe, emitted by cintc");
     line(w, dst, "type :site = {{ w, w }}");
     line(w, dst, "type :view = align 8 {{ l 18 }}");

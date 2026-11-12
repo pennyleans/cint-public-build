@@ -1,0 +1,9 @@
+kernel copy_k[n](in I64[n] u, out I64[n] v) over [i: n] {
+    v[i] = u[i];
+}
+
+void main() {
+    I64[2] a = [1, 2];
+    I64[2] b;
+    copy_k(a, b);
+}
