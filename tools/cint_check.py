@@ -1579,8 +1579,12 @@ def table_rows(c_text: str):
 
 QBE_DATA_RE = re.compile(r"^data \$(cg\w+_x[bs]\d+) = \{ (b[ 0-9,b]*) \}$", re.M)
 QBE_EXPORTS_RE = re.compile(r"^data \$(cg\w+)_exports = align 8 \{ (.*) \}$", re.M)
-QBE_ROW_RE = re.compile(r"l \$(cg\w+_xb(\d+)), w (\d+), w 0, w 1, w [123], w 0, w \d+, l 0, "
-                        r"l (?:0|\$cg\w+_xn\d+), l \$(cg\w+_xs(\d+)), l (\d+), l \$(cx\w+)")
+# A function row (kind 1, no shape symbols), or a kernel's (kind 2, `pure`, its shape symbols'
+# names first and its parameters' 16 bytes a name after them; SIMD-7).
+QBE_ROW_RE = re.compile(r"l \$(cg\w+_xb(\d+)), w (\d+), w 0, "
+                        r"(?:w 1, w [123], w 0, w \d+, l 0, l (?:0|\$cg\w+_xn\d+)"
+                        r"|w 2, w 1, w \d+, w \d+, l (?:0|\$cg\w+_xn\d+), l (?:0|\$cg\w+_xn\d+(?: \+ \d+)?)), "
+                        r"l \$(cg\w+_xs(\d+)), l (\d+), l \$(cx\w+)")
 QBE_WRAPPER_RE = re.compile(r"^export function w \$(cx\w+)\(", re.M)
 
 

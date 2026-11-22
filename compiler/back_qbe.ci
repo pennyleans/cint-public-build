@@ -23,7 +23,9 @@
 // and observer entries. Q2 adds scalar module state, and arrays and views of scalars in a
 // function's frame: index checks, slices, picks, transposes, reversals, copies, reductions,
 // `equal`, `fill`, `reshape`, byte strings and the frame arena's charges, and records of Bool
-// and integer fields with the root's record catalog. check_qbe refuses
+// and integer fields with the root's record catalog. Q3 adds wide integers and fixed point.
+// SIMD-7 adds kernels and their dispatches, scalar, as back_c writes them (the section
+// "kernels"), and an exported kernel's host-issued dispatch. check_qbe refuses
 // every other function, slot, type and node with its capability (CAP_*), so a build never
 // falls back to cpu-c17.
 
@@ -134,9 +136,14 @@ I64 fn_refusal(in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 f
         lowering.FN_USED | lowering.FN_FAULT | lowering.FN_FALLS | lowering.FN_IMPORT | lowering.FN_TEST |
         lowering.FN_OBSERVES | lowering.FN_SPEC | lowering.FN_FRAME | lowering.FN_ISTRUCT | lowering.FN_ICONST |
         lowering.FN_IVAR | lowering.FN_ERRU | lowering.FN_EXTERN | lowering.FN_UNRESTRICTED | lowering.FN_GRANTS |
-        lowering.FN_ARGS | lowering.FN_SCRATCH;
+        lowering.FN_ARGS | lowering.FN_SCRATCH | lowering.FN_KERNEL;
     if ((funcs[fn].flags & lowering.FN_ERRU) != 0) {
         allowed = allowed | 16711680;   // the error set's underlying type (lowering.func_etag)
+    }
+    // A kernel exported from the root module has a host-issued dispatch (SPEC-02 K-15) through
+    // its cx wrapper (w_kcx), admitted for integer parameters and views of integers (kcx_ok).
+    if (kernel_fn(funcs, fn) && root && (funcs[fn].flags & lowering.FN_EXPORT) != 0 && !kcx_ok(funcs, slots, fn)) {
+        return CAP_ENTRY;
     }
     // An entry has a wrapper with the C ABI: an export of the root module (A-12), a script,
     // `main` or an observer. A library module's export is called by QBE-built code only.
@@ -168,6 +175,10 @@ I64 fn_refusal(in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 f
         Bool args = (funcs[fn].flags & lowering.FN_ARGS) != 0 &&
             p == p0 + (funcs[fn].nparam as I64) - 1 && slots[p].kind == lowering.SK_VIEW;
         if (lowering.is_grants(slots, p) || args) {
+            continue;
+        }
+        // A kernel's scalar `out`: the address of the cell its publication writes (w_kcall).
+        if (kout_ok(slots, p)) {
             continue;
         }
         // A view or record parameter of a function that is not an entry, or of a public export.
@@ -1088,6 +1099,10 @@ Bool node_ok(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.S
                 (sir[i].c == 2 || (sir[i + 1].op & lowering.OP_MASK) != lowering.SO_ETAG);
         case lowering.SO_ARG:
             I64 ga = sir[i].a as I64;
+            if (karg(sir, i)) {
+                // A dispatch's argument: a value, an array as a view (e 7), a scalar `out` (e 8).
+                return sir[i].e == 0 || (sir[i].e == 7 && any_view(slots, ga)) || (sir[i].e == 8 && kcell_ok(slots, ga));
+            }
             return sir[i].e == 0 || sir[i].e == 4 || sir[i].e == 5 || sir[i].e == 9 || ((sir[i].e == 1 || sir[i].e == 2) &&
                 any_view(slots, ga)) || (sir[i].e == 7 && view_slot(slots, ga)) ||
                 ((sir[i].e == 3 || sir[i].e == 6) && record_slot(slots, ga));
@@ -1169,6 +1184,29 @@ Bool node_ok(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.S
                 lowering.SO_CASE, lowering.SO_DEFAULT, lowering.SO_ITEM, lowering.SO_HI, lowering.SO_BODY,
                 lowering.SO_CASE_END, lowering.SO_BREAK, lowering.SO_CONTINUE, lowering.SO_END, lowering.SO_BLOCK:
             return true;
+        // A kernel's dispatch (w_knode): views of written and read array parameters, and the
+        // accumulators of scalar `out` parameters of 64 bits or fewer or of limbs.
+        case lowering.SO_KCALL:
+            return kernel_fn(funcs, sir[i].a as I64);
+        case lowering.SO_KENTRY, lowering.SO_KWHERE, lowering.SO_KFUEL, lowering.SO_KPUSH, lowering.SO_KITEM,
+                lowering.SO_KSTEP, lowering.SO_KPHASE, lowering.SO_KPOP:
+            return true;
+        case lowering.SO_KSHAPE:
+            return view_slot(slots, sir[i].a as I64);
+        case lowering.SO_KALIAS, lowering.SO_KSTAGE:
+            return view_slot(slots, sir[i].a as I64) && view_slot(slots, sir[i].b as I64);
+        case lowering.SO_KACC, lowering.SO_KEPI:
+            return kout_ok(slots, sir[i].a as I64);
+        case lowering.SO_KRED:
+            // min and max compare a contribution with the running value at the target's type.
+            I64 rop = sir[i].f as I64;
+            return kout_ok(slots, sir[i].b as I64) && rop >= 1 && rop <= 8 && rop != 5 &&
+                ((rop != 6 && rop != 7) || back_c.st_of(sir[i].val as I32) == back_c.st_of(ty));
+        case lowering.SO_KPUB:
+            if (sir[i].b >= 0) {
+                return view_slot(slots, sir[i].a as I64) && view_slot(slots, sir[i].b as I64);
+            }
+            return kout_ok(slots, sir[i].a as I64);
         default:
             return false;
     }
@@ -1448,8 +1486,13 @@ void tmp[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, I64
     num(w, dst, sir[i].dst as I64);
 }
 
-// `:site $<module symbol>_qs<k>`, site k as the aggregate the runtime takes by value.
+// `:site $<module symbol>_qs<k>`, site k as the aggregate the runtime takes by value; or
+// `:site %ks`, a kernel's dispatch site (lowering.KSITE, back_c.c_site).
 void site[b](inout emit.Writer[_] w, inout U8[b] dst, in U8[_] pbytes, in QState[_] q, I64 k) {
+    if (k < 0) {
+        text(w, dst, ":site %ks");
+        return;
+    }
     text(w, dst, ":site $cg");
     cg_part(w, dst, pbytes, q[0].at, back_c.stem_bytes(pbytes, q[0].at, q[0].len));
     text(w, dst, "_qs");
@@ -3439,6 +3482,11 @@ void w_node[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, in s
             jump(w, dst, q, a, 'e');
         case lowering.SO_CONTINUE:
             jump(w, dst, q, a, 'n');
+        case lowering.SO_KCALL, lowering.SO_KENTRY, lowering.SO_KSHAPE, lowering.SO_KWHERE, lowering.SO_KALIAS,
+                lowering.SO_KFUEL, lowering.SO_KSTAGE, lowering.SO_KACC, lowering.SO_KPUSH, lowering.SO_KITEM,
+                lowering.SO_KSTEP, lowering.SO_KRED, lowering.SO_KPHASE, lowering.SO_KEPI, lowering.SO_KPOP,
+                lowering.SO_KPUB:
+            w_knode(w, dst, src, toks, sir, funcs, slots, pbytes, q, i);
         default:
             // SO_LOCAL of a scalar (its slot is zero from the function's start, as in C),
             // SO_DISCARD, SO_ARG (read by its call) and the structure nodes write nothing.
@@ -3597,7 +3645,9 @@ Bool uses_state(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowerin
         I64 fn) {
     for i in funcs[fn].first as I64..funcs[fn].last as I64 {
         I32 k = sir[i].op & lowering.OP_MASK;
-        if ((sir[i].op & lowering.FL_LIVE) != 0 && (k == lowering.SO_LOAD || k == lowering.SO_STORE) &&
+        // A load, a store, or a dispatch's scalar `out` argument (e 8) of a module variable.
+        if ((sir[i].op & lowering.FL_LIVE) != 0 &&
+                (k == lowering.SO_LOAD || k == lowering.SO_STORE || (k == lowering.SO_ARG && sir[i].e == 8)) &&
                 slots[sir[i].a as I64].kind == lowering.SK_GLOBAL) {
             return true;
         }
@@ -4129,6 +4179,13 @@ Bool any_view(in lowering.SirSlot[_] slots, I64 k) {
     return k >= 0 && (array_slot(slots, k) || view_slot(slots, k));
 }
 
+// Whether parameter p comes by its address `%s<p>q` and the function copies it into its own
+// `%s<p>`: a view of rank 2 to 4, a record or a handle by value, as C passes them. A kernel's
+// scalar `out` is the address its publication writes, never a copy.
+Bool param_copy(in lowering.SirSlot[_] slots, I64 p) {
+    return slots[p].kind != lowering.SK_KOUT && (nview(slots, p) || slots[p].kind == lowering.SK_SPARAM || boxed(slots[p].ty));
+}
+
 I64 elem_size(in lowering.SirSlot[_] slots, I64 k) {
     if (nview(slots, k) && slots[k].ty < lowering.T_STRUCT) {
         return size_of(lowering.array_elem(slots[k].ty));
@@ -4151,10 +4208,15 @@ void vt[b](inout emit.Writer[_] w, inout U8[b] dst, U8 c, I64 j) {
 }
 
 // A descriptor: `%s<p>` for a view slot p, `%da` (p -1) and `%db` (p -2) the function's two
-// scratch descriptors, built for a runtime call from an array or a view parameter.
+// scratch descriptors, built for a runtime call from an array or a view parameter; `%kv<j>`
+// (p -3 - j) the descriptor of argument node j of a dispatch (w_kcall).
 void dptr[b](inout emit.Writer[_] w, inout U8[b] dst, I64 p) {
     if (p == -1) { text(w, dst, "%da"); }
     else if (p == -2) { text(w, dst, "%db"); }
+    else if (p < -2) {
+        text(w, dst, "%kv");
+        num(w, dst, -3 - p);
+    }
     else { vt(w, dst, 's', p); }
 }
 
@@ -5594,6 +5656,1017 @@ I64 record_data[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, 
     return rsize;
 }
 
+// ---------------------------------------------------------------- kernels
+
+// A kernel's dispatch (SPEC-02 F-1 to F-8, R-1 to R-7; SIMD-7) as back_c.c_kernel_node writes it
+// in C, node for node. The kernel's own function takes the dispatch site `:site %ks` and the
+// writable bits `w %kw` after the context, then its parameters: a view by the address of its
+// descriptor, which the kernel copies; a scalar `in` by value; a scalar `out` by the address of
+// the cell its publication writes, an 8-byte cell for a value of 64 bits or fewer (the caller's
+// %ko<j>) and the value's own bytes for a wide one. Its state is back_c.kernel_locals': %kd the
+// dispatch number, %kph the phase, %kwi the work-item, %kst its step ordinal, %kwn the item after
+// the last one and %kc0 to %kc3 the `over` counters; and for each scalar `out` at position j,
+// %za<j> its exact total (a cint_zacc of 32 bytes, or a cint_wzacc of 264 for a wide side),
+// %ra<j> its running value, %na<j> its contributions and %ka<j> the part of a sum not yet in
+// %za<j>. Every check that can fault calls the runtime (the dispatch function itself, or its
+// rt/cint_qbe_kern.c entry point) and branches to @fault, which sets the record's address with
+// cint_rt_dispatch_fault, as the C function's fault label does, before it returns 0.
+
+Bool kernel_fn(in lowering.SirFunc[_] funcs, I64 fn) {
+    return (funcs[fn].flags & lowering.FN_KERNEL) != 0;
+}
+
+// A scalar `out` parameter slot of a kernel whose accumulator is written here: a value of 64
+// bits or fewer, or limbs.
+Bool kout_ok(in lowering.SirSlot[_] slots, I64 k) {
+    return k >= 0 && slots[k].kind == lowering.SK_KOUT && (scalar(slots[k].ty) || lowering.is_limbs(slots[k].ty));
+}
+
+// Whether argument node i belongs to a dispatch: the first node after it that is not an
+// argument is an SO_KCALL (the c arguments come right before their call).
+Bool karg(in lowering.Sir[_] sir, I64 i) {
+    I64 j = i + 1;
+    while ((sir[j].op & lowering.OP_MASK) == lowering.SO_ARG) {
+        j += 1;
+    }
+    return (sir[j].op & lowering.OP_MASK) == lowering.SO_KCALL;
+}
+
+// A slot a dispatch's scalar `out` argument may name: a local (a QBE temporary, or a wide
+// value's own bytes) or a module variable of this module (its bytes in the block, `%gst`). A
+// parameter is not a writable place (C2067), and the probes reach no other kind.
+Bool kcell_ok(in lowering.SirSlot[_] slots, I64 k) {
+    I32 sk = slots[k].kind;
+    return (sk == lowering.SK_LOCAL || sk == lowering.SK_GLOBAL) &&
+        (scalar(slots[k].ty) || lowering.is_limbs(slots[k].ty));
+}
+
+// The type of operand v of the function being written: node v's, or parameter -(v + 1)'s.
+I32 opnd_ty(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, in QState[_] q,
+        I64 v) {
+    if (v >= 0) {
+        return sir[v].ty;
+    }
+    return slots[(funcs[q[0].fn].pslot0 as I64) - v - 1].ty;
+}
+
+// `%<c>a<j>`: an accumulator of scalar `out` slot k of the kernel being written (back_c.acc_name).
+void kacc[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.SirFunc[_] funcs, in QState[_] q, U8 c, I64 k) {
+    emit.w_byte(w, dst, '%');
+    emit.w_byte(w, dst, c);
+    emit.w_byte(w, dst, 'a');
+    num(w, dst, k - (funcs[q[0].fn].pslot0 as I64));
+}
+
+// `@u<n>` as a block's label, opening it.
+void kblock[b](inout emit.Writer[_] w, inout U8[b] dst, inout QState[_] q, I64 u) {
+    text(w, dst, "@u");
+    num(w, dst, u);
+    emit.w_nl(w, dst);
+    q[0].term = 0;
+}
+
+// `jnz <x>, @u<y>, @u<z>`.
+void kjnz[b, n](inout emit.Writer[_] w, inout U8[b] dst, inout QState[_] q, in U8[n] x, I64 y, I64 z) {
+    ins(w, dst, q);
+    text(w, dst, "jnz ");
+    text(w, dst, x);
+    text(w, dst, ", @u");
+    num(w, dst, y);
+    text(w, dst, ", @u");
+    num(w, dst, z);
+    emit.w_nl(w, dst);
+}
+
+// The data `$cg<P>_kn<fn>`: kernel fn's qualified name for its fault records, the module's path
+// with `.` for `/`, a `.` and the kernel's name (back_c: dotted, then tok_text), and a NUL.
+void w_kname[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, in scan.Token[t] toks,
+        in lowering.SirFunc[_] funcs, in U8[_] pbytes, in QState[_] q, I64 fn) {
+    text(w, dst, "data ");
+    mod_sym(w, dst, pbytes, q);
+    text(w, dst, "_kn");
+    num(w, dst, fn);
+    text(w, dst, " = {{ ");
+    I64 at = q[0].at;
+    for i in at..at + back_c.stem_bytes(pbytes, at, q[0].len) {
+        text(w, dst, "b ");
+        if (pbytes[i] == '/') {
+            num(w, dst, '.' as I64);
+        } else {
+            num(w, dst, pbytes[i] as I64);
+        }
+        text(w, dst, ", ");
+    }
+    text(w, dst, "b ");
+    num(w, dst, '.' as I64);
+    text(w, dst, ", ");
+    I64 tk = funcs[fn].name as I64;
+    bytes(w, dst, src, lowering.name_at(toks, tk), lowering.name_len(toks, tk));
+    line(w, dst, ", b 0 }}");
+}
+
+// The kernel's state at @start (back_c.kernel_locals), and the cells of the dispatches function
+// fn makes: %kv<j> the descriptor of argument j built from a local array or a rank-1 view, %ko<j>
+// the cell of a scalar `out` argument j.
+void w_klocals[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs,
+        in lowering.SirSlot[_] slots, I64 fn) {
+    if (kernel_fn(funcs, fn)) {
+        line(w, dst, "    %kd =l copy 0");
+        line(w, dst, "    %kph =w copy 0");
+        line(w, dst, "    %kwi =l copy 0");
+        line(w, dst, "    %kst =l copy 0");
+        line(w, dst, "    %kwn =l copy -1");
+        for c in 0..4 {
+            text(w, dst, "    %kc");
+            num(w, dst, c);
+            line(w, dst, " =l copy 0");
+        }
+        I64 p0 = funcs[fn].pslot0 as I64;
+        for p in p0..p0 + (funcs[fn].nparam as I64) {
+            if (slots[p].kind != lowering.SK_KOUT) { continue; }
+            I64 j = p - p0;
+            I64 zb = 32;
+            if (back_c.wide_acc(sir, funcs, slots, fn, p)) { zb = 264; }
+            text(w, dst, "    %za");
+            num(w, dst, j);
+            text(w, dst, " =l alloc8 ");
+            num(w, dst, zb);
+            emit.w_nl(w, dst);
+            text(w, dst, "    call $cint_qbe_zero(l %za");
+            num(w, dst, j);
+            text(w, dst, ", l ");
+            num(w, dst, zb);
+            line(w, dst, ")");
+            if (boxed(slots[p].ty)) {
+                I64 nb = size_of(slots[p].ty);
+                text(w, dst, "    %ra");
+                num(w, dst, j);
+                text(w, dst, " =l alloc8 ");
+                num(w, dst, frame_bytes(nb));
+                emit.w_nl(w, dst);
+                text(w, dst, "    call $cint_qbe_zero(l %ra");
+                num(w, dst, j);
+                text(w, dst, ", l ");
+                num(w, dst, nb);
+                line(w, dst, ")");
+            } else {
+                text(w, dst, "    %ra");
+                num(w, dst, j);
+                line(w, dst, " =l copy 0");
+            }
+            text(w, dst, "    %na");
+            num(w, dst, j);
+            line(w, dst, " =l copy 0");
+            text(w, dst, "    %ka");
+            num(w, dst, j);
+            line(w, dst, " =l copy 0");
+        }
+    }
+    for i in funcs[fn].first as I64..funcs[fn].last as I64 {
+        if ((sir[i].op & lowering.OP_MASK) != lowering.SO_KCALL || (sir[i].op & lowering.FL_LIVE) == 0) {
+            continue;
+        }
+        for j in i - (sir[i].c as I64)..i {
+            I64 ga = sir[j].a as I64;
+            if (sir[j].e == 7 && !nview(slots, ga)) {
+                text(w, dst, "    %kv");
+                num(w, dst, j);
+                line(w, dst, " =l alloc8 88");
+            } else if (sir[j].e == 8 && !boxed(slots[ga].ty)) {
+                text(w, dst, "    %ko");
+                num(w, dst, j);
+                line(w, dst, " =l alloc8 8");
+            }
+        }
+    }
+}
+
+// A dispatch (SO_KCALL): kernel a with the dispatch site, the writable bits in val and its c
+// arguments: a view's descriptor (its own, or %kv<j> built as back_c.c_desc builds it), a scalar
+// `in`'s value, and a scalar `out`'s cell %ko<j>, which holds the slot's value before the call
+// and gives the slot the published one once the kernel returned (a module variable at its
+// width); a wide `out` is its own bytes, `%kg<j>` for a module variable's.
+void w_kcall[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, in scan.Token[t] toks,
+        in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, in U8[_] pbytes,
+        inout QState[_] q, I64 i) {
+    I64 nargs = sir[i].c as I64;
+    for j in i - nargs..i {
+        I64 ga = sir[j].a as I64;
+        if (sir[j].e == 7 && !nview(slots, ga)) {
+            desc_into(w, dst, q, slots, -3 - j, ga);
+        } else if (sir[j].e == 8 && slots[ga].kind == lowering.SK_GLOBAL) {
+            state_addr(w, dst, sir, slots, q, ga);
+            ins(w, dst, q);
+            if (boxed(slots[ga].ty)) {
+                text(w, dst, "%kg");
+                num(w, dst, j);
+                line(w, dst, " =l copy %ga");
+            } else {
+                text(w, dst, "%kx =l ");
+                load_op(w, dst, slots[ga].ty);
+                line(w, dst, " %ga");
+                ins(w, dst, q);
+                text(w, dst, "storel %kx, %ko");
+                num(w, dst, j);
+                emit.w_nl(w, dst);
+            }
+        } else if (sir[j].e == 8 && !boxed(slots[ga].ty)) {
+            ins(w, dst, q);
+            text(w, dst, "storel %s");
+            num(w, dst, ga);
+            text(w, dst, ", %ko");
+            num(w, dst, j);
+            emit.w_nl(w, dst);
+        }
+    }
+    ins(w, dst, q);
+    text(w, dst, "%ok =w call ");
+    fn_sym(w, dst, src, toks, funcs, pbytes, q, sir[i].a as I64);
+    text(w, dst, "(l %ctx, ");
+    site(w, dst, pbytes, q, sir[i].site as I64);
+    text(w, dst, ", w ");
+    num(w, dst, sir[i].val);
+    for j in i - nargs..i {
+        I64 ga = sir[j].a as I64;
+        text(w, dst, ", l ");
+        if (sir[j].e == 7 && nview(slots, ga)) {
+            dptr(w, dst, ga);
+        } else if (sir[j].e == 7) {
+            dptr(w, dst, -3 - j);
+        } else if (sir[j].e == 8 && boxed(slots[ga].ty) && slots[ga].kind == lowering.SK_GLOBAL) {
+            text(w, dst, "%kg");
+            num(w, dst, j);
+        } else if (sir[j].e == 8 && boxed(slots[ga].ty)) {
+            dptr(w, dst, ga);
+        } else if (sir[j].e == 8) {
+            text(w, dst, "%ko");
+            num(w, dst, j);
+        } else {
+            opnd(w, dst, sir, funcs, q, ga);
+        }
+    }
+    line(w, dst, ")");
+    checked(w, dst, q);
+    for j in i - nargs..i {
+        I64 ga = sir[j].a as I64;
+        if (sir[j].e == 8 && !boxed(slots[ga].ty) && slots[ga].kind == lowering.SK_GLOBAL) {
+            ins(w, dst, q);
+            text(w, dst, "%kx =l loadl %ko");
+            num(w, dst, j);
+            emit.w_nl(w, dst);
+            state_addr(w, dst, sir, slots, q, ga);
+            ins(w, dst, q);
+            store_op(w, dst, slots[ga].ty);
+            line(w, dst, " %kx, %ga");
+        } else if (sir[j].e == 8 && !boxed(slots[ga].ty)) {
+            ins(w, dst, q);
+            text(w, dst, "%s");
+            num(w, dst, ga);
+            text(w, dst, " =l loadl %ko");
+            num(w, dst, j);
+            emit.w_nl(w, dst);
+        }
+    }
+}
+
+// SO_KFUEL: F-5 checks 6 to 8 (cint_rt_dispatch_bound), then N into slot a, the saturating
+// product of the extents in slots b to b + f - 1 and 0 when one of them is at most 0, and its
+// charge when N is above 0.
+void w_kfuel[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, in U8[_] pbytes,
+        inout QState[_] q, I64 i) {
+    I64 a = sir[i].a as I64;
+    I64 s = sir[i].site as I64;
+    I64 d0 = sir[i].b as I64;
+    I64 d1 = d0 + (sir[i].f as I64);
+    call_ctx(w, dst, q, "cint_qk_bound");
+    text(w, dst, ", ");
+    site(w, dst, pbytes, q, s);
+    line(w, dst, ")");
+    checked(w, dst, q);
+    ins(w, dst, q);
+    text(w, dst, "%s");
+    num(w, dst, a);
+    line(w, dst, " =l copy 1");
+    for d in d0..d1 {
+        I64 u = q[0].nlab;
+        q[0].nlab += 5;
+        ins(w, dst, q);
+        text(w, dst, "%kz =w cslel %s");
+        num(w, dst, d);
+        line(w, dst, ", 0");
+        kjnz(w, dst, q, "%kz", u, u + 1);
+        kblock(w, dst, q, u);
+        text(w, dst, "    %s");
+        num(w, dst, a);
+        line(w, dst, " =l copy 0");
+        text(w, dst, "    jmp @u");
+        num(w, dst, u + 4);
+        emit.w_nl(w, dst);
+        kblock(w, dst, q, u + 1);
+        line(w, dst, "    %kq =l copy 9223372036854775807");
+        text(w, dst, "    %kq =l div %kq, %s");
+        num(w, dst, d);
+        emit.w_nl(w, dst);
+        text(w, dst, "    %kz =w csgtl %s");
+        num(w, dst, a);
+        line(w, dst, ", %kq");
+        kjnz(w, dst, q, "%kz", u + 2, u + 3);
+        kblock(w, dst, q, u + 2);
+        text(w, dst, "    %s");
+        num(w, dst, a);
+        line(w, dst, " =l copy 9223372036854775807");
+        text(w, dst, "    jmp @u");
+        num(w, dst, u + 4);
+        emit.w_nl(w, dst);
+        kblock(w, dst, q, u + 3);
+        text(w, dst, "    %s");
+        num(w, dst, a);
+        text(w, dst, " =l mul %s");
+        num(w, dst, a);
+        text(w, dst, ", %s");
+        num(w, dst, d);
+        emit.w_nl(w, dst);
+        kblock(w, dst, q, u + 4);
+    }
+    I64 v = q[0].nlab;
+    q[0].nlab += 2;
+    ins(w, dst, q);
+    text(w, dst, "%kz =w csgtl %s");
+    num(w, dst, a);
+    line(w, dst, ", 0");
+    kjnz(w, dst, q, "%kz", v, v + 1);
+    kblock(w, dst, q, v);
+    call_ctx(w, dst, q, "cint_qbe_fuel");
+    text(w, dst, ", ");
+    site(w, dst, pbytes, q, s);
+    text(w, dst, ", l %s");
+    num(w, dst, a);
+    line(w, dst, ")");
+    text(w, dst, "    jnz %ok, @u");
+    num(w, dst, v + 1);
+    line(w, dst, ", @fault");
+    kblock(w, dst, q, v + 1);
+}
+
+// The `over` variables in slots bb to bb + f - 1 of work-item %kwi divided out of it over the
+// extents in slots cc to cc + f - 1, row-major (back_c.kitem_digits); into the counters %kc0 to
+// %kc<f - 1> when `counters` is set.
+void kdigits[b](inout emit.Writer[_] w, inout U8[b] dst, inout QState[_] q, I64 bb, I64 cc, I64 f, Bool counters) {
+    ins(w, dst, q);
+    line(w, dst, "%kr =l copy %kwi");
+    I64 d = f - 1;
+    while (d >= 0) {
+        ins(w, dst, q);
+        if (counters) {
+            text(w, dst, "%kc");
+            num(w, dst, d);
+        } else {
+            text(w, dst, "%s");
+            num(w, dst, bb + d);
+        }
+        text(w, dst, " =l rem %kr, %s");
+        num(w, dst, cc + d);
+        emit.w_nl(w, dst);
+        if (d > 0) {
+            ins(w, dst, q);
+            text(w, dst, "%kr =l div %kr, %s");
+            num(w, dst, cc + d);
+            emit.w_nl(w, dst);
+        }
+        d -= 1;
+    }
+}
+
+// SO_KITEM: work-item a, its step ordinal at 0, and the f `over` variables from slot b at its
+// indices over the extents from slot c. For f of 1 to 4 they are the counters of
+// back_c.kitem_counters: when the item follows the last one (%kwn) the last counter steps and
+// each that reaches its extent returns to 0 and carries; any other item is divided out.
+void w_kitem[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs,
+        inout QState[_] q, I64 i) {
+    I64 bb = sir[i].b as I64;
+    I64 cc = sir[i].c as I64;
+    I64 f = sir[i].f as I64;
+    ins(w, dst, q);
+    text(w, dst, "%kwi =l copy ");
+    opnd(w, dst, sir, funcs, q, sir[i].a as I64);
+    emit.w_nl(w, dst);
+    ins(w, dst, q);
+    line(w, dst, "%kst =l copy 0");
+    if (f < 1 || f > 4) {
+        kdigits(w, dst, q, bb, cc, f, false);
+        return;
+    }
+    I64 u = q[0].nlab;
+    q[0].nlab += 3 + 2 * f;
+    ins(w, dst, q);
+    line(w, dst, "%kz =w cnel %kwi, %kwn");
+    kjnz(w, dst, q, "%kz", u, u + 1);
+    kblock(w, dst, q, u);
+    kdigits(w, dst, q, bb, cc, f, true);
+    ins(w, dst, q);
+    text(w, dst, "jmp @u");
+    num(w, dst, u + 2);
+    emit.w_nl(w, dst);
+    kblock(w, dst, q, u + 1);
+    ins(w, dst, q);
+    text(w, dst, "%kc");
+    num(w, dst, f - 1);
+    text(w, dst, " =l add %kc");
+    num(w, dst, f - 1);
+    line(w, dst, ", 1");
+    I64 d = f - 1;
+    while (d >= 0) {
+        I64 cy = u + 3 + 2 * d;
+        ins(w, dst, q);
+        text(w, dst, "%kz =w ceql %kc");
+        num(w, dst, d);
+        text(w, dst, ", %s");
+        num(w, dst, cc + d);
+        emit.w_nl(w, dst);
+        kjnz(w, dst, q, "%kz", cy, cy + 1);
+        kblock(w, dst, q, cy);
+        ins(w, dst, q);
+        text(w, dst, "%kc");
+        num(w, dst, d);
+        line(w, dst, " =l copy 0");
+        if (d > 0) {
+            ins(w, dst, q);
+            text(w, dst, "%kc");
+            num(w, dst, d - 1);
+            text(w, dst, " =l add %kc");
+            num(w, dst, d - 1);
+            line(w, dst, ", 1");
+        }
+        kblock(w, dst, q, cy + 1);
+        d -= 1;
+    }
+    kblock(w, dst, q, u + 2);
+    ins(w, dst, q);
+    line(w, dst, "%kwn =l add %kwi, 1");
+    for g in 0..f {
+        ins(w, dst, q);
+        text(w, dst, "%s");
+        num(w, dst, bb + g);
+        text(w, dst, " =l copy %kc");
+        num(w, dst, g);
+        emit.w_nl(w, dst);
+    }
+}
+
+// `jnz %kz, @u<u>, @u<u + 1>`, then @u<u>: `<acc> =l copy <operand a>` (or the bytes of a wide
+// one), then @u<u + 1>: a running value that %kz replaces.
+void kreplace[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs,
+        in lowering.SirSlot[_] slots, inout QState[_] q, I64 a, I64 bb) {
+    I64 u = q[0].nlab;
+    q[0].nlab += 2;
+    kjnz(w, dst, q, "%kz", u, u + 1);
+    kblock(w, dst, q, u);
+    ins(w, dst, q);
+    if (boxed(slots[bb].ty)) {
+        text(w, dst, "blit ");
+        opnd(w, dst, sir, funcs, q, a);
+        text(w, dst, ", ");
+        kacc(w, dst, funcs, q, 'r', bb);
+        blit_n(w, dst, slots[bb].ty);
+    } else {
+        kacc(w, dst, funcs, q, 'r', bb);
+        text(w, dst, " =l copy ");
+        opnd(w, dst, sir, funcs, q, a);
+        emit.w_nl(w, dst);
+    }
+    kblock(w, dst, q, u + 1);
+}
+
+// SO_KRED with a wide side (back_c.kred_wide): a sum into %za<j> by its limbs (an I8 to U64
+// contribution by its 64-bit pattern), a fold_checked step through cint_rt_wide_fold_step, and
+// the others on %ra<j> through the wide helpers.
+void w_kred_wide[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs,
+        in lowering.SirSlot[_] slots, in U8[_] pbytes, inout QState[_] q, I64 i) {
+    I32 ty = sir[i].ty;
+    I32 cty = sir[i].val as I32;
+    I64 a = sir[i].a as I64;
+    I64 bb = sir[i].b as I64;
+    I64 op = sir[i].f as I64;
+    if (op == 1 && !lowering.is_limbs(cty)) {
+        ins(w, dst, q);
+        text(w, dst, "storel ");
+        opnd(w, dst, sir, funcs, q, a);
+        line(w, dst, ", %out");
+        ins(w, dst, q);
+        text(w, dst, "call $cint_wzacc_add(l ");
+        kacc(w, dst, funcs, q, 'z', bb);
+        text(w, dst, ", w ");
+        num(w, dst, rt_tag(cty));
+        line(w, dst, ", l %out)");
+    } else if (op == 1) {
+        ins(w, dst, q);
+        text(w, dst, "call $cint_wzacc_add(l ");
+        kacc(w, dst, funcs, q, 'z', bb);
+        text(w, dst, ", w ");
+        num(w, dst, rt_tag(back_c.st_of(cty)));
+        text(w, dst, ", l ");
+        opnd(w, dst, sir, funcs, q, a);
+        line(w, dst, ")");
+    } else if (op == 4) {
+        call_ctx(w, dst, q, "cint_qk_wfold");
+        text(w, dst, ", ");
+        site(w, dst, pbytes, q, sir[i].site as I64);
+        text(w, dst, ", w ");
+        num(w, dst, rt_tag(ty));
+        text(w, dst, ", l ");
+        kacc(w, dst, funcs, q, 'n', bb);
+        text(w, dst, ", l ");
+        kacc(w, dst, funcs, q, 'r', bb);
+        text(w, dst, ", l ");
+        opnd(w, dst, sir, funcs, q, a);
+        line(w, dst, ")");
+        checked(w, dst, q);
+    } else if (op == 6 || op == 7) {
+        ins(w, dst, q);
+        text(w, dst, "%kz =w ceql ");
+        kacc(w, dst, funcs, q, 'n', bb);
+        line(w, dst, ", 0");
+        ins(w, dst, q);
+        text(w, dst, "%ky =w call $cint_qw_lt_");
+        suffix(w, dst, back_c.st_of(ty));
+        text(w, dst, "(l ");
+        if (op == 6) {
+            opnd(w, dst, sir, funcs, q, a);
+            text(w, dst, ", l ");
+            kacc(w, dst, funcs, q, 'r', bb);
+        } else {
+            kacc(w, dst, funcs, q, 'r', bb);
+            text(w, dst, ", l ");
+            opnd(w, dst, sir, funcs, q, a);
+        }
+        line(w, dst, ")");
+        ins(w, dst, q);
+        line(w, dst, "%kz =w or %kz, %ky");
+        kreplace(w, dst, sir, funcs, slots, q, a, bb);
+    } else {
+        // sum_wrap and sum_sat: a running value, each step at the element's width (BX15-06).
+        ins(w, dst, q);
+        if (op == 2) {
+            text(w, dst, "call $cint_qw_add_wrap_");
+        } else {
+            text(w, dst, "call $cint_qw_add_sat_");
+        }
+        suffix(w, dst, back_c.st_of(ty));
+        text(w, dst, "(l ");
+        kacc(w, dst, funcs, q, 'r', bb);
+        text(w, dst, ", l ");
+        opnd(w, dst, sir, funcs, q, a);
+        text(w, dst, ", l ");
+        kacc(w, dst, funcs, q, 'r', bb);
+        line(w, dst, ")");
+    }
+}
+
+// SO_KRED (back_c.c_kred): contribution a into the accumulator of scalar `out` b, reduction f
+// (CINT_REDUCE_*: 1 sum, 2 sum_wrap, 3 sum_sat, 4 fold_checked, 6 min, 7 max, 8 count), then one more
+// contribution. A narrow sum adds into %ka<j> (back_c.ksum_add): plainly when back_c.ksum_fits
+// proves it cannot overflow, else checked as CINT_RT_OVF(add, i64) is, an addition that would
+// overflow moving %ka<j> into %za<j> first.
+void w_kred[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs,
+        in lowering.SirSlot[_] slots, in U8[_] pbytes, inout QState[_] q, I64 i) {
+    I64 fn = q[0].fn;
+    I32 ty = sir[i].ty;
+    I32 cty = sir[i].val as I32;
+    I64 a = sir[i].a as I64;
+    I64 bb = sir[i].b as I64;
+    I64 op = sir[i].f as I64;
+    if (back_c.wide_acc(sir, funcs, slots, fn, bb)) {
+        w_kred_wide(w, dst, sir, funcs, slots, pbytes, q, i);
+    } else if ((op == 1 || op == 2) && back_c.ksum_narrow(cty) && back_c.ksum_fits(sir, funcs, fn, i)) {
+        ins(w, dst, q);
+        kacc(w, dst, funcs, q, 'k', bb);
+        text(w, dst, " =l add ");
+        kacc(w, dst, funcs, q, 'k', bb);
+        text(w, dst, ", ");
+        opnd(w, dst, sir, funcs, q, a);
+        emit.w_nl(w, dst);
+    } else if ((op == 1 || op == 2) && back_c.ksum_narrow(cty)) {
+        I64 u = q[0].nlab;
+        q[0].nlab += 2;
+        ins(w, dst, q);
+        text(w, dst, "%kt =l add ");
+        kacc(w, dst, funcs, q, 'k', bb);
+        text(w, dst, ", ");
+        opnd(w, dst, sir, funcs, q, a);
+        emit.w_nl(w, dst);
+        ins(w, dst, q);
+        text(w, dst, "%ksx =l xor ");
+        kacc(w, dst, funcs, q, 'k', bb);
+        line(w, dst, ", %kt");
+        ins(w, dst, q);
+        text(w, dst, "%ksy =l xor ");
+        opnd(w, dst, sir, funcs, q, a);
+        line(w, dst, ", %kt");
+        ins(w, dst, q);
+        line(w, dst, "%ksx =l and %ksx, %ksy");
+        ins(w, dst, q);
+        line(w, dst, "%kz =w csltl %ksx, 0");
+        kjnz(w, dst, q, "%kz", u, u + 1);
+        kblock(w, dst, q, u);
+        ins(w, dst, q);
+        text(w, dst, "call $cint_qk_zacc_add(l ");
+        kacc(w, dst, funcs, q, 'z', bb);
+        text(w, dst, ", w 20, l ");
+        kacc(w, dst, funcs, q, 'k', bb);
+        line(w, dst, ")");
+        ins(w, dst, q);
+        text(w, dst, "%kt =l copy ");
+        opnd(w, dst, sir, funcs, q, a);
+        emit.w_nl(w, dst);
+        kblock(w, dst, q, u + 1);
+        ins(w, dst, q);
+        kacc(w, dst, funcs, q, 'k', bb);
+        line(w, dst, " =l copy %kt");
+    } else if (op == 1 || op == 2) {
+        ins(w, dst, q);
+        text(w, dst, "call $cint_qk_zacc_add(l ");
+        kacc(w, dst, funcs, q, 'z', bb);
+        text(w, dst, ", w ");
+        num(w, dst, rt_tag(cty));
+        text(w, dst, ", l ");
+        opnd(w, dst, sir, funcs, q, a);
+        line(w, dst, ")");
+    } else if (op == 3) {
+        ins(w, dst, q);
+        kacc(w, dst, funcs, q, 'r', bb);
+        text(w, dst, " =l call $cint_qbe_sat_");
+        suffix(w, dst, back_c.st_of(ty));
+        text(w, dst, "(w 1, l ");
+        kacc(w, dst, funcs, q, 'r', bb);
+        text(w, dst, ", l ");
+        opnd(w, dst, sir, funcs, q, a);
+        line(w, dst, ")");
+    } else if (op == 4) {
+        ins(w, dst, q);
+        text(w, dst, "storel ");
+        kacc(w, dst, funcs, q, 'r', bb);
+        line(w, dst, ", %out");
+        ins(w, dst, q);
+        text(w, dst, "%ok =w call $cint_qk_kfold_");
+        if (lowering.is_q(ty)) { text(w, dst, "q_"); }
+        suffix(w, dst, back_c.st_of(ty));
+        text(w, dst, "(l %ctx, ");
+        site(w, dst, pbytes, q, sir[i].site as I64);
+        if (lowering.is_q(ty)) {
+            text(w, dst, ", w ");
+            num(w, dst, lowering.frac_of(ty));
+        }
+        text(w, dst, ", l ");
+        kacc(w, dst, funcs, q, 'n', bb);
+        text(w, dst, ", l %out, l ");
+        opnd(w, dst, sir, funcs, q, a);
+        line(w, dst, ")");
+        checked(w, dst, q);
+        ins(w, dst, q);
+        kacc(w, dst, funcs, q, 'r', bb);
+        line(w, dst, " =l loadl %out");
+    } else if (op == 6 || op == 7) {
+        Bool sg = signed(ty);
+        ins(w, dst, q);
+        text(w, dst, "%kz =w ceql ");
+        kacc(w, dst, funcs, q, 'n', bb);
+        line(w, dst, ", 0");
+        ins(w, dst, q);
+        if (op == 6 && sg) { text(w, dst, "%ky =w csltl "); }
+        else if (op == 6) { text(w, dst, "%ky =w cultl "); }
+        else if (sg) { text(w, dst, "%ky =w csgtl "); }
+        else { text(w, dst, "%ky =w cugtl "); }
+        opnd(w, dst, sir, funcs, q, a);
+        text(w, dst, ", ");
+        kacc(w, dst, funcs, q, 'r', bb);
+        emit.w_nl(w, dst);
+        ins(w, dst, q);
+        line(w, dst, "%kz =w or %kz, %ky");
+        kreplace(w, dst, sir, funcs, slots, q, a, bb);
+    } else {
+        // count: a true contribution adds 1 to the running value, as C's `+= 1` on its type.
+        I64 u = q[0].nlab;
+        q[0].nlab += 2;
+        ins(w, dst, q);
+        text(w, dst, "%kz =w cnel ");
+        opnd(w, dst, sir, funcs, q, a);
+        line(w, dst, ", 0");
+        kjnz(w, dst, q, "%kz", u, u + 1);
+        kblock(w, dst, q, u);
+        ins(w, dst, q);
+        text(w, dst, "%x =l add ");
+        kacc(w, dst, funcs, q, 'r', bb);
+        line(w, dst, ", 1");
+        ins(w, dst, q);
+        kacc(w, dst, funcs, q, 'r', bb);
+        norm_op(w, dst, ty);
+        line(w, dst, "%x");
+        kblock(w, dst, q, u + 1);
+    }
+    ins(w, dst, q);
+    kacc(w, dst, funcs, q, 'n', bb);
+    text(w, dst, " =l add ");
+    kacc(w, dst, funcs, q, 'n', bb);
+    line(w, dst, ", 1");
+}
+
+// SO_KEPI (back_c): the epilogue of the accumulator of scalar `out` a, reduction f. A wide
+// side's sum fits through cint_rt_wzacc_fit (a fixed-point one through cint_rt_wzacc_fit_q) and
+// its sum_wrap ran on %ra<j>; a narrow sum adds what is left in %ka<j> and fits through
+// cint_ksum_<t> (sum) or wraps through cint_kwrap_<t> (sum_wrap); a min or a max with no
+// contribution faults.
+void w_kepi[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs,
+        in lowering.SirSlot[_] slots, in U8[_] pbytes, inout QState[_] q, I64 i) {
+    I64 fn = q[0].fn;
+    I32 ty = sir[i].ty;
+    I32 cty = sir[i].val as I32;
+    I64 a = sir[i].a as I64;
+    I64 f = sir[i].f as I64;
+    I64 s = sir[i].site as I64;
+    if ((f == 1 || f == 2) && back_c.wide_acc(sir, funcs, slots, fn, a)) {
+        if (f == 1) {
+            Bool bx = boxed(slots[a].ty);
+            if (lowering.is_q(ty)) {
+                call_ctx(w, dst, q, "cint_qk_wsum_q");
+                text(w, dst, ", ");
+                site(w, dst, pbytes, q, s);
+                text(w, dst, ", w ");
+                num(w, dst, rt_tag(ty));
+            } else {
+                call_ctx(w, dst, q, "cint_qk_wsum");
+                text(w, dst, ", ");
+                site(w, dst, pbytes, q, s);
+                text(w, dst, ", w ");
+                num(w, dst, rt_tag(cty));
+                text(w, dst, ", w ");
+                num(w, dst, rt_tag(ty));
+            }
+            text(w, dst, ", l ");
+            kacc(w, dst, funcs, q, 'n', a);
+            text(w, dst, ", l ");
+            kacc(w, dst, funcs, q, 'z', a);
+            text(w, dst, ", l ");
+            if (bx) {
+                kacc(w, dst, funcs, q, 'r', a);
+            } else {
+                text(w, dst, "%out");
+            }
+            line(w, dst, ")");
+            checked(w, dst, q);
+            if (!bx) {
+                ins(w, dst, q);
+                kacc(w, dst, funcs, q, 'r', a);
+                text(w, dst, " =l ");
+                load_op(w, dst, ty);
+                line(w, dst, " %out");
+            }
+        }
+        return;
+    }
+    if (f == 1 || f == 2) {
+        ins(w, dst, q);
+        text(w, dst, "call $cint_qk_zacc_add(l ");
+        kacc(w, dst, funcs, q, 'z', a);
+        text(w, dst, ", w 20, l ");
+        kacc(w, dst, funcs, q, 'k', a);
+        line(w, dst, ")");
+    }
+    if (f == 1) {
+        ins(w, dst, q);
+        text(w, dst, "%ok =w call $cint_qk_ksum_");
+        if (lowering.is_q(ty)) { text(w, dst, "q_"); }
+        suffix(w, dst, back_c.st_of(ty));
+        text(w, dst, "(l %ctx, ");
+        site(w, dst, pbytes, q, s);
+        text(w, dst, ", w ");
+        if (lowering.is_q(ty)) {
+            num(w, dst, lowering.frac_of(ty));
+        } else {
+            num(w, dst, rt_tag(cty));
+        }
+        text(w, dst, ", l ");
+        kacc(w, dst, funcs, q, 'n', a);
+        text(w, dst, ", l ");
+        kacc(w, dst, funcs, q, 'z', a);
+        line(w, dst, ", l %out)");
+        checked(w, dst, q);
+        ins(w, dst, q);
+        kacc(w, dst, funcs, q, 'r', a);
+        line(w, dst, " =l loadl %out");
+    } else if (f == 2) {
+        ins(w, dst, q);
+        kacc(w, dst, funcs, q, 'r', a);
+        text(w, dst, " =l call $cint_qk_kwrap_");
+        suffix(w, dst, back_c.st_of(ty));
+        text(w, dst, "(l ");
+        kacc(w, dst, funcs, q, 'z', a);
+        line(w, dst, ")");
+    } else if (f == 6 || f == 7) {
+        I64 u = q[0].nlab;
+        q[0].nlab += 2;
+        ins(w, dst, q);
+        text(w, dst, "%kz =w ceql ");
+        kacc(w, dst, funcs, q, 'n', a);
+        line(w, dst, ", 0");
+        kjnz(w, dst, q, "%kz", u, u + 1);
+        kblock(w, dst, q, u);
+        call_ctx(w, dst, q, "cint_qk_empty");
+        text(w, dst, ", ");
+        site(w, dst, pbytes, q, s);
+        if (f == 7) { text(w, dst, ", w 1, w "); } else { text(w, dst, ", w 0, w "); }
+        num(w, dst, rt_tag(ty));
+        line(w, dst, ")");
+        text(w, dst, "    jnz %ok, @u");
+        num(w, dst, u + 1);
+        line(w, dst, ", @fault");
+        kblock(w, dst, q, u + 1);
+    }
+}
+
+// A kernel node (lowering.SO_KCALL to lowering.SO_KPUB), as back_c.c_kernel_node writes it; a
+// node whose site is lowering.KSITE faults at the dispatch site %ks (site).
+void w_knode[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, in scan.Token[t] toks,
+        in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, in U8[_] pbytes,
+        inout QState[_] q, I64 i) {
+    I32 k = sir[i].op & lowering.OP_MASK;
+    I32 ty = sir[i].ty;
+    I64 a = sir[i].a as I64;
+    I64 bb = sir[i].b as I64;
+    I64 f = sir[i].f as I64;
+    I64 c = sir[i].c as I64;
+    I64 s = sir[i].site as I64;
+    switch (k) {
+        case lowering.SO_KCALL:
+            w_kcall(w, dst, src, toks, sir, funcs, slots, pbytes, q, i);
+        case lowering.SO_KENTRY:
+            ins(w, dst, q);
+            line(w, dst, "%kd =l call $cint_rt_dispatch_number(l %ctx)");
+        case lowering.SO_KSHAPE:
+            ext_get(w, dst, q, slots, a, f, 'e', 0);
+            call_ctx(w, dst, q, "cint_qbe_shape_dim");
+            text(w, dst, ", ");
+            site(w, dst, pbytes, q, s);
+            text(w, dst, ", w ");
+            num(w, dst, c);
+            text(w, dst, ", w ");
+            num(w, dst, f);
+            text(w, dst, ", l ");
+            opnd(w, dst, sir, funcs, q, bb);
+            line(w, dst, ", l %e0)");
+            checked(w, dst, q);
+        case lowering.SO_KWHERE:
+            // F-5 check 5: a false constraint faults (cint_rt_fault_where returns false).
+            Bool sg = signed(opnd_ty(sir, funcs, slots, q, a));
+            ins(w, dst, q);
+            switch (sir[i].f) {
+                case lowering.CMP_EQ: text(w, dst, "%ok =w ceql ");
+                case lowering.CMP_NE: text(w, dst, "%ok =w cnel ");
+                case lowering.CMP_LT:
+                    if (sg) { text(w, dst, "%ok =w csltl "); } else { text(w, dst, "%ok =w cultl "); }
+                case lowering.CMP_LE:
+                    if (sg) { text(w, dst, "%ok =w cslel "); } else { text(w, dst, "%ok =w culel "); }
+                case lowering.CMP_GT:
+                    if (sg) { text(w, dst, "%ok =w csgtl "); } else { text(w, dst, "%ok =w cugtl "); }
+                default:
+                    if (sg) { text(w, dst, "%ok =w csgel "); } else { text(w, dst, "%ok =w cugel "); }
+            }
+            opnd(w, dst, sir, funcs, q, a);
+            text(w, dst, ", ");
+            opnd(w, dst, sir, funcs, q, bb);
+            emit.w_nl(w, dst);
+            I64 pass = cold_begin(w, dst, q);
+            call_ctx(w, dst, q, "cint_qk_where");
+            text(w, dst, ", ");
+            site(w, dst, pbytes, q, s);
+            text(w, dst, ", l ");
+            num(w, dst, c);
+            text(w, dst, ", l ");
+            opnd(w, dst, sir, funcs, q, a);
+            text(w, dst, ", l ");
+            opnd(w, dst, sir, funcs, q, bb);
+            line(w, dst, ")");
+            cold_end(w, dst, q, pass);
+        case lowering.SO_KALIAS:
+            // F-5 check 7: the writable bits of positions c and f, from %kw.
+            ins(w, dst, q);
+            text(w, dst, "%kwa =w shr %kw, ");
+            num(w, dst, c);
+            emit.w_nl(w, dst);
+            ins(w, dst, q);
+            line(w, dst, "%kwa =w and %kwa, 1");
+            ins(w, dst, q);
+            text(w, dst, "%kwb =w shr %kw, ");
+            num(w, dst, f);
+            emit.w_nl(w, dst);
+            ins(w, dst, q);
+            line(w, dst, "%kwb =w and %kwb, 1");
+            ins(w, dst, q);
+            line(w, dst, "%kwb =w shl %kwb, 1");
+            ins(w, dst, q);
+            line(w, dst, "%kwa =w or %kwa, %kwb");
+            call_ctx(w, dst, q, "cint_qk_alias");
+            text(w, dst, ", ");
+            site(w, dst, pbytes, q, s);
+            text(w, dst, ", w ");
+            num(w, dst, c);
+            text(w, dst, ", w ");
+            num(w, dst, f);
+            text(w, dst, ", l ");
+            dptr(w, dst, a);
+            text(w, dst, ", l ");
+            dptr(w, dst, bb);
+            text(w, dst, ", w ");
+            num(w, dst, rt_tag(ty));
+            line(w, dst, ", w %kwa)");
+            checked(w, dst, q);
+        case lowering.SO_KFUEL:
+            w_kfuel(w, dst, sir, pbytes, q, i);
+        case lowering.SO_KSTAGE:
+            call_ctx(w, dst, q, "cint_qk_stage");
+            text(w, dst, ", ");
+            site(w, dst, pbytes, q, s);
+            text(w, dst, ", l ");
+            dptr(w, dst, a);
+            text(w, dst, ", l ");
+            dptr(w, dst, bb);
+            text(w, dst, ", l ");
+            num(w, dst, size_of(ty));
+            if (f == 2) { line(w, dst, ", w 1)"); } else { line(w, dst, ", w 0)"); }
+            checked(w, dst, q);
+        case lowering.SO_KACC:
+            ins(w, dst, q);
+            if (boxed(slots[a].ty)) {
+                text(w, dst, "blit ");
+                opnd(w, dst, sir, funcs, q, bb);
+                text(w, dst, ", ");
+                kacc(w, dst, funcs, q, 'r', a);
+                blit_n(w, dst, slots[a].ty);
+            } else {
+                kacc(w, dst, funcs, q, 'r', a);
+                text(w, dst, " =l copy ");
+                opnd(w, dst, sir, funcs, q, bb);
+                emit.w_nl(w, dst);
+            }
+        case lowering.SO_KPUSH:
+            ins(w, dst, q);
+            text(w, dst, "call $cint_rt_dispatch_push(l %ctx, ");
+            site(w, dst, pbytes, q, s);
+            line(w, dst, ")");
+            ins(w, dst, q);
+            line(w, dst, "%ok =w call $cint_qk_faulted(l %ctx)");
+            ins(w, dst, q);
+            line(w, dst, "%ok =w ceqw %ok, 0");
+            checked(w, dst, q);
+            ins(w, dst, q);
+            line(w, dst, "%kph =w copy 1");
+        case lowering.SO_KITEM:
+            w_kitem(w, dst, sir, funcs, q, i);
+        case lowering.SO_KSTEP:
+            ins(w, dst, q);
+            line(w, dst, "%kst =l add %kst, 1");
+        case lowering.SO_KRED:
+            w_kred(w, dst, sir, funcs, slots, pbytes, q, i);
+        case lowering.SO_KPHASE:
+            ins(w, dst, q);
+            line(w, dst, "%kph =w copy 2");
+        case lowering.SO_KEPI:
+            w_kepi(w, dst, sir, funcs, slots, pbytes, q, i);
+        case lowering.SO_KPOP:
+            ins(w, dst, q);
+            line(w, dst, "call $cint_rt_dispatch_pop(l %ctx)");
+        default:
+            // SO_KPUB: staging view b into array parameter a, or the accumulator into the cell of
+            // scalar `out` a.
+            if (bb >= 0) {
+                call_ctx(w, dst, q, "cint_qbe_copy_view");
+                text(w, dst, ", ");
+                site(w, dst, pbytes, q, s);
+                text(w, dst, ", l ");
+                dptr(w, dst, a);
+                text(w, dst, ", l ");
+                dptr(w, dst, bb);
+                text(w, dst, ", l ");
+                num(w, dst, size_of(ty));
+                line(w, dst, ")");
+                checked(w, dst, q);
+            } else if (boxed(slots[a].ty)) {
+                ins(w, dst, q);
+                text(w, dst, "blit ");
+                kacc(w, dst, funcs, q, 'r', a);
+                text(w, dst, ", %s");
+                num(w, dst, a);
+                blit_n(w, dst, slots[a].ty);
+            } else {
+                ins(w, dst, q);
+                text(w, dst, "storel ");
+                kacc(w, dst, funcs, q, 'r', a);
+                text(w, dst, ", %s");
+                num(w, dst, a);
+                emit.w_nl(w, dst);
+            }
+    }
+}
+
 // The most arguments of an extern call of function fn, or -1 when it calls no extern.
 I64 host_args(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, I64 fn) {
     I64 n = -1;
@@ -5627,11 +6700,15 @@ void w_func[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, in s
     text(w, dst, "export function w ");
     fn_sym(w, dst, src, toks, funcs, pbytes, q, fn);
     text(w, dst, "(l %ctx");
+    if (kernel_fn(funcs, fn)) {
+        // A kernel's dispatch site and the writable bits of its array arguments (w_kcall).
+        text(w, dst, ", :site %ks, w %kw");
+    }
     I64 p0 = funcs[fn].pslot0 as I64;
     for p in p0..p0 + (funcs[fn].nparam as I64) {
         text(w, dst, ", l %s");
         num(w, dst, p);
-        if (nview(slots, p) || slots[p].kind == lowering.SK_SPARAM || boxed(slots[p].ty)) {
+        if (param_copy(slots, p)) {
             text(w, dst, "q");
         }
         if (slots[p].kind == lowering.SK_VIEW) {
@@ -5737,8 +6814,9 @@ void w_func[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, in s
     if ((funcs[fn].flags & lowering.FN_SCRATCH) != 0) {
         line(w, dst, "    %af =l call $cint_rt_scratch_mark(l %ctx)");
     }
+    w_klocals(w, dst, sir, funcs, slots, fn);
     for p in p0..p0 + (funcs[fn].nparam as I64) {
-        if (nview(slots, p) || slots[p].kind == lowering.SK_SPARAM || boxed(slots[p].ty)) {
+        if (param_copy(slots, p)) {
             // A view parameter of rank 2 to 4, a record or a handle by value is the callee's own
             // copy, as C passes it by value.
             I64 nb = 88;
@@ -5797,12 +6875,29 @@ void w_func[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, in s
             line(w, dst, "storel 0, %etag");
         }
         frame_return(w, dst, funcs, q);
+        if (kernel_fn(funcs, fn)) {
+            // The dispatch has published every written parameter: its boundary at `dispatch`
+            // density (SPEC-06 1.5; OQ-234).
+            ins(w, dst, q);
+            line(w, dst, "call $cint_rt_dispatch_end(l %ctx, l %kd)");
+        }
         ins(w, dst, q);
         line(w, dst, "ret 1");
     }
     line(w, dst, "@fault");
+    if (kernel_fn(funcs, fn)) {
+        // The dispatch's address in the record (SPEC-02 F-8; ruling R9).
+        text(w, dst, "    call $cint_rt_dispatch_fault(l %ctx, l ");
+        mod_sym(w, dst, pbytes, q);
+        text(w, dst, "_kn");
+        num(w, dst, fn);
+        line(w, dst, ", l %kd, w %kph, l %kwi, l %kst)");
+    }
     line(w, dst, "    ret 0");
     line(w, dst, "}}");
+    if (kernel_fn(funcs, fn)) {
+        w_kname(w, dst, src, toks, funcs, pbytes, q, fn);
+    }
     // The operation names of the function's checks (back_c.op_name) and its string bytes.
     for i in funcs[fn].first as I64..funcs[fn].last as I64 {
         I32 k = sir[i].op & lowering.OP_MASK;
@@ -5966,7 +7061,7 @@ void w_observer[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, 
 }
 
 // Whether function fn has a row of the reflection table and a cx wrapper (back_c.c_table): an
-// export of this module. check_qbe refuses kernels and `Grants` parameters.
+// export of this module, a kernel's a host-issued dispatch (w_kcx).
 // Only the root module's exports have rows (SPEC-03 A-12, interim rule; back_c o[0].root).
 Bool has_row(in lowering.SirFunc[_] funcs, in QState[_] q, I64 fn) {
     // An export with a `Grants` parameter has neither (SPEC-04 LS-326).
@@ -6003,17 +7098,29 @@ void w_table[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, in 
         if (!has_row(funcs, q, fn)) { continue; }
         I64 np = funcs[fn].nparam as I64;
         I64 p0 = funcs[fn].pslot0 as I64;
+        // A kernel's names are its shape symbols' and then its parameters' (back_c.c_table).
+        I64 ns = 0;
+        if (kernel_fn(funcs, fn)) { ns = lowering.size_count(nodes, funcs, fn); }
         name_data(w, dst, src, toks, pbytes, q, funcs[fn].name as I64, nx, -1);
-        for k in 0..np {
-            name_data(w, dst, src, toks, pbytes, q, slots[p0 + k].name as I64, nx, k);
+        I64 z = -1;
+        if (ns > 0) { z = nodes[funcs[fn].node as I64].d as I64; }
+        I64 zk = 0;
+        while (z >= 0) {
+            name_data(w, dst, src, toks, pbytes, q, nodes[z].tok as I64, nx, zk);
+            zk += 1;
+            z = nodes[z].next as I64;
         }
-        if (np > 0) {
+        for k in 0..np {
+            name_data(w, dst, src, toks, pbytes, q, slots[p0 + k].name as I64, nx, ns + k);
+        }
+        if (ns + np > 0) {
             text(w, dst, "data ");
             mod_sym(w, dst, pbytes, q);
             text(w, dst, "_xn");
             num(w, dst, nx);
             text(w, dst, " = align 8 {{ ");
-            for k in 0..np {
+            if (ns > 0) { z = nodes[funcs[fn].node as I64].d as I64; }
+            for k in 0..ns + np {
                 if (k > 0) { text(w, dst, ", "); }
                 text(w, dst, "l ");
                 mod_sym(w, dst, pbytes, q);
@@ -6022,7 +7129,12 @@ void w_table[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, in 
                 emit.w_byte(w, dst, '_');
                 num(w, dst, k);
                 text(w, dst, ", w ");
-                num(w, dst, lowering.name_len(toks, slots[p0 + k].name as I64));
+                if (k < ns) {
+                    num(w, dst, lowering.name_len(toks, nodes[z].tok as I64));
+                    z = nodes[z].next as I64;
+                } else {
+                    num(w, dst, lowering.name_len(toks, slots[p0 + k - ns].name as I64));
+                }
                 text(w, dst, ", w 0");
             }
             line(w, dst, " }}");
@@ -6032,7 +7144,11 @@ void w_table[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, in 
         text(w, dst, "_xs");
         num(w, dst, nx);
         text(w, dst, " = {{ b");
-        _ = back_c.qbe_signature(w, dst, decls, pm, pbytes, src, toks, nodes, funcs, slots, q[0].module, fn);
+        if (kernel_fn(funcs, fn)) {
+            _ = back_c.qbe_kernel_signature(w, dst, src, toks, nodes, funcs, slots, fn);
+        } else {
+            _ = back_c.qbe_signature(w, dst, decls, pm, pbytes, src, toks, nodes, funcs, slots, q[0].module, fn);
+        }
         line(w, dst, " }}");
         nx += 1;
     }
@@ -6048,8 +7164,15 @@ void w_table[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, in 
             emit.Writer[1] m;
             U8[1] unused;
             emit.w_measure(m);
-            I64 siglen = back_c.qbe_signature(m, unused, decls, pm, pbytes, src, toks, nodes, funcs, slots,
-                q[0].module, fn);
+            I64 siglen = 0;
+            I64 ns = 0;
+            if (kernel_fn(funcs, fn)) {
+                siglen = back_c.qbe_kernel_signature(m, unused, src, toks, nodes, funcs, slots, fn);
+                ns = lowering.size_count(nodes, funcs, fn);
+            } else {
+                siglen = back_c.qbe_signature(m, unused, decls, pm, pbytes, src, toks, nodes, funcs, slots,
+                    q[0].module, fn);
+            }
             I64 effect = 1;
             if ((funcs[fn].flags & lowering.FN_UNRESTRICTED) != 0) { effect = 3; }
             else if ((funcs[fn].flags & lowering.FN_OBSERVES) != 0) { effect = 2; }
@@ -6060,15 +7183,34 @@ void w_table[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, in 
             num(w, dst, j);
             text(w, dst, ", w ");
             num(w, dst, lowering.name_len(toks, tk));
-            text(w, dst, ", w 0, w 1, w ");
-            num(w, dst, effect);
-            text(w, dst, ", w 0, w ");
+            if (kernel_fn(funcs, fn)) {
+                // CINT_EXPORT_KERNEL, `pure` (SPEC-02 K-11), its shape symbols and parameters.
+                text(w, dst, ", w 0, w 2, w 1, w ");
+                num(w, dst, ns);
+            } else {
+                text(w, dst, ", w 0, w 1, w ");
+                num(w, dst, effect);
+                text(w, dst, ", w 0");
+            }
+            text(w, dst, ", w ");
             num(w, dst, np);
-            text(w, dst, ", l 0, l ");
+            text(w, dst, ", l ");
+            if (ns > 0) {
+                mod_sym(w, dst, pbytes, q);
+                text(w, dst, "_xn");
+                num(w, dst, j);
+            } else {
+                text(w, dst, "0");
+            }
+            text(w, dst, ", l ");
             if (np > 0) {
                 mod_sym(w, dst, pbytes, q);
                 text(w, dst, "_xn");
                 num(w, dst, j);
+                if (ns > 0) {
+                    text(w, dst, " + ");
+                    num(w, dst, 16 * ns);
+                }
             } else {
                 text(w, dst, "0");
             }
@@ -6196,6 +7338,331 @@ void w_bind_data[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src,
     }
 }
 
+// One cint_bind per view of parameters first to end - 1 at `%g`, 56 bytes (back_c.public_binds):
+// the view, its type, the element size, the Bool offsets and their count, the parameter's
+// index, its mode and rank, ptr.
+void w_binds[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, in scan.Token[t] toks,
+        in parse.Node[_] nodes, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots,
+        inout limits.Decl[_] decls, in U8[_] pbytes, in QState[_] q, I64 fn, I64 first, I64 end) {
+    I64 j = 0;
+    for p in first..end {
+        if (!back_c.public_view(slots, p)) { continue; }
+        I32 ty = public_elem(slots, p);
+        I64 row = 0;
+        if (ty >= lowering.T_STRUCT) { row = record_row(src, toks, funcs, slots, q, decls, ty); }
+        emit.Writer[1] m;
+        U8[1] unused;
+        emit.w_measure(m);
+        I64 nb = back_c.public_offsets(m, unused, decls, ty, row, 0);
+        I64 at = 56 * j;
+        text(w, dst, "    %xa =l add %g, ");
+        num(w, dst, at);
+        emit.w_nl(w, dst);
+        text(w, dst, "    storel %p");
+        num(w, dst, p - first);
+        line(w, dst, ", %xa");
+        text(w, dst, "    %xa =l add %g, ");
+        num(w, dst, at + 8);
+        emit.w_nl(w, dst);
+        text(w, dst, "    storel ");
+        bind_sym(w, dst, pbytes, q, 't', fn, j);
+        line(w, dst, ", %xa");
+        text(w, dst, "    %xa =l add %g, ");
+        num(w, dst, at + 16);
+        emit.w_nl(w, dst);
+        text(w, dst, "    storel ");
+        num(w, dst, ty_size(slots, ty));
+        line(w, dst, ", %xa");
+        text(w, dst, "    %xa =l add %g, ");
+        num(w, dst, at + 24);
+        emit.w_nl(w, dst);
+        text(w, dst, "    storel ");
+        if (nb > 0) { bind_sym(w, dst, pbytes, q, 'b', fn, j); } else { num(w, dst, 0); }
+        line(w, dst, ", %xa");
+        I64 mode = 0;
+        I32 op = nodes[back_c.public_node(nodes, funcs, fn, p)].op;
+        if (op == scan.KW_OUT) { mode = 1; } else if (op == scan.KW_INOUT) { mode = 2; }
+        I64[4] wv;
+        wv[0] = nb;
+        wv[1] = p - first;
+        wv[2] = mode;
+        wv[3] = lowering.slot_rank(slots, p);
+        for f in 0..4 {
+            text(w, dst, "    %xa =l add %g, ");
+            num(w, dst, at + 32 + 4 * f);
+            emit.w_nl(w, dst);
+            text(w, dst, "    storew ");
+            num(w, dst, wv[f]);
+            line(w, dst, ", %xa");
+        }
+        text(w, dst, "    %xa =l add %g, ");
+        num(w, dst, at + 48);
+        emit.w_nl(w, dst);
+        line(w, dst, "    storel 0, %xa");
+        j += 1;
+    }
+}
+
+// The bound arguments of parameters first to end - 1, from their binds at `%g`: `%a<k>` the
+// bound pointer, a rank-1 view's extent `%n<k>` and stride `%d<k>`, and a view of rank 2 to 4
+// its cint_vdesc `%vd<k>`.
+void w_bound[b](inout emit.Writer[_] w, inout U8[b] dst, in lowering.SirSlot[_] slots, I64 first, I64 end) {
+    I64 j = 0;
+    for p in first..end {
+        if (!back_c.public_view(slots, p)) { continue; }
+        I64 k = p - first;
+        text(w, dst, "    %xa =l add %g, ");
+        num(w, dst, 56 * j + 48);
+        emit.w_nl(w, dst);
+        text(w, dst, "    %a");
+        num(w, dst, k);
+        line(w, dst, " =l loadl %xa");
+        if (slots[p].kind == lowering.SK_VIEW) {
+            text(w, dst, "    %xa =l add %p");
+            num(w, dst, k);
+            line(w, dst, ", 48");
+            text(w, dst, "    %n");
+            num(w, dst, k);
+            line(w, dst, " =l loadl %xa");
+            text(w, dst, "    %xa =l add %p");
+            num(w, dst, k);
+            line(w, dst, ", 80");
+            text(w, dst, "    %d");
+            num(w, dst, k);
+            line(w, dst, " =l loadl %xa");
+        } else if (slots[p].kind == lowering.SK_NVIEW) {
+            // The body's cint_vdesc: the bound origin element, origin 0, the rank, and the
+            // argument's extents and strides (back_c.public_vdesc).
+            I64 rk = lowering.slot_rank(slots, p);
+            text(w, dst, "    storel %a");
+            num(w, dst, k);
+            text(w, dst, ", %vd");
+            num(w, dst, k);
+            emit.w_nl(w, dst);
+            for f in 1..11 {
+                text(w, dst, "    %xa =l add %vd");
+                num(w, dst, k);
+                text(w, dst, ", ");
+                num(w, dst, 8 * f);
+                emit.w_nl(w, dst);
+                I64 dm = (f - 3) % 4;
+                if (f == 1) {
+                    line(w, dst, "    storel 0, %xa");
+                } else if (f == 2) {
+                    text(w, dst, "    storel ");
+                    num(w, dst, rk);
+                    line(w, dst, ", %xa");
+                } else if (dm >= rk) {
+                    line(w, dst, "    storel 0, %xa");
+                } else {
+                    text(w, dst, "    %xb =l add %p");
+                    num(w, dst, k);
+                    text(w, dst, ", ");
+                    if (f < 7) { num(w, dst, 48 + 8 * dm); } else { num(w, dst, 80 + 8 * dm); }
+                    emit.w_nl(w, dst);
+                    line(w, dst, "    %xc =l loadl %xb");
+                    line(w, dst, "    storel %xc, %xa");
+                }
+            }
+        }
+        j += 1;
+    }
+}
+
+// Whether exported kernel fn has the wrapper w_kcx writes, for the parameters its host test
+// runs (compiler/tests/qbe_kernels.py, khost_host.c): every scalar, `in` or `out`, and every
+// view's element is an integer of 64 bits or fewer. A kernel with a wide or fixed-point
+// parameter or element is refused (`entry`) until a test dispatches one from a host.
+Bool kcx_ok(in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn) {
+    I64 p0 = funcs[fn].pslot0 as I64;
+    for p in p0..p0 + (funcs[fn].nparam as I64) {
+        I32 ty = slots[p].ty;
+        if (nview(slots, p)) { ty = lowering.array_elem(slots[p].ty); }
+        if (!qbe_scalar_int(ty)) { return false; }
+    }
+    return true;
+}
+
+// The cx wrapper of exported kernel fn, a host-issued dispatch (SPEC-03 A-12, A-13; SPEC-02
+// K-15), as back_c.c_public_kernel writes it: the entry opens without a fuel unit, since a
+// dispatch charges only its own (F-8); in parameter order, a NULL `out` pointer and a Bool
+// above 1 are refused; the runtime binds the views (F-5 checks 1 to 3, whose fault sets the
+// dispatch address at the entry phase and takes the dispatch number) and hands the binds to
+// the dispatch (check 4, cint_rt_dispatch_host); the kernel makes checks 5 to 9 itself. A
+// scalar `out` is written at its C width only when the entry returns CINT_OK (A-4).
+void w_kcx[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, in scan.Token[t] toks,
+        in parse.Node[_] nodes, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots,
+        inout limits.Decl[_] decls, in U8[_] pbytes, in back_c.PMod[_] pm, inout QState[_] q, I64 fn) {
+    I64 first = funcs[fn].pslot0 as I64;
+    I64 end = first + (funcs[fn].nparam as I64);
+    I64 nv = 0;
+    I64 kw = 0;
+    Bool outs = false;
+    for p in first..end {
+        if (slots[p].kind == lowering.SK_NVIEW) {
+            nv += 1;
+            I32 op = nodes[back_c.public_node(nodes, funcs, fn, p)].op;
+            if (op == scan.KW_OUT || op == scan.KW_INOUT) {
+                kw = kw | (1 << (p - first));
+            }
+        }
+        if (slots[p].kind == lowering.SK_KOUT) { outs = true; }
+    }
+    w_bind_data(w, dst, src, toks, funcs, slots, decls, pbytes, pm, q, fn, first, end);
+    text(w, dst, "export function w ");
+    cx_sym(w, dst, src, toks, funcs, pbytes, q, fn);
+    text(w, dst, "(l %ctx, l %fuel");
+    for p in first..end {
+        text(w, dst, ", ");
+        if (slots[p].kind == lowering.SK_NVIEW) {
+            text(w, dst, ":view");
+        } else if (slots[p].kind == lowering.SK_KOUT) {
+            text(w, dst, "l");
+        } else {
+            cls(w, dst, slots[p].ty);
+        }
+        text(w, dst, " %p");
+        num(w, dst, p - first);
+    }
+    line(w, dst, ") {{");
+    line(w, dst, "@start");
+    if (nv > 0) {
+        text(w, dst, "    %g =l alloc8 ");
+        num(w, dst, 56 * nv);
+        emit.w_nl(w, dst);
+    }
+    for p in first..end {
+        if (slots[p].kind == lowering.SK_NVIEW) {
+            text(w, dst, "    %vd");
+            num(w, dst, p - first);
+            line(w, dst, " =l alloc8 88");
+        } else if (slots[p].kind == lowering.SK_KOUT) {
+            text(w, dst, "    %o");
+            num(w, dst, p - first);
+            line(w, dst, " =l alloc8 8");
+            text(w, dst, "    storel 0, %o");
+            num(w, dst, p - first);
+            emit.w_nl(w, dst);
+        }
+    }
+    text(w, dst, "    %st =w call $cint_rt_entry_open(l %ctx, ");
+    site(w, dst, pbytes, q, funcs[fn].entry as I64);
+    line(w, dst, ", l %fuel, l 0)");
+    line(w, dst, "    jnz %st, @out, @k0");
+    line(w, dst, "@k0");
+    for p in first..end {
+        I64 k = p - first;
+        if (slots[p].kind == lowering.SK_KOUT) {
+            text(w, dst, "    %null =w ceql %p");
+            num(w, dst, k);
+            line(w, dst, ", 0");
+            text(w, dst, "    jnz %null, @rresult, @k");
+            num(w, dst, k + 1);
+            emit.w_nl(w, dst);
+        } else if (slots[p].kind != lowering.SK_NVIEW) {
+            text(w, dst, "    %v");
+            num(w, dst, k);
+            if (slots[p].ty == lowering.T_BOOL) {
+                text(w, dst, " =l extub %p");
+                num(w, dst, k);
+                emit.w_nl(w, dst);
+                text(w, dst, "    %bad =w cugtl %v");
+                num(w, dst, k);
+                line(w, dst, ", 1");
+                text(w, dst, "    jnz %bad, @rbool, @k");
+                num(w, dst, k + 1);
+                emit.w_nl(w, dst);
+            } else {
+                norm_op(w, dst, slots[p].ty);
+                text(w, dst, "%p");
+                num(w, dst, k);
+                emit.w_nl(w, dst);
+            }
+        }
+        text(w, dst, "@k");
+        num(w, dst, k + 1);
+        emit.w_nl(w, dst);
+    }
+    if (nv > 0) {
+        w_binds(w, dst, src, toks, nodes, funcs, slots, decls, pbytes, q, fn, first, end);
+        text(w, dst, "    %ok =w call $cint_rt_bind_views(l %ctx, ");
+        site(w, dst, pbytes, q, funcs[fn].entry as I64);
+        text(w, dst, ", l %g, w ");
+        num(w, dst, nv);
+        line(w, dst, ")");
+        line(w, dst, "    %ok =w extub %ok");
+        line(w, dst, "    jnz %ok, @host, @unbound");
+        line(w, dst, "@unbound");
+        line(w, dst, "    %ok =w call $cint_qk_faulted(l %ctx)");
+        line(w, dst, "    jnz %ok, @entryfault, @end");
+        line(w, dst, "@host");
+        text(w, dst, "    call $cint_rt_dispatch_host(l %ctx, l %g, w ");
+        num(w, dst, nv);
+        line(w, dst, ")");
+        line(w, dst, "    %ok =w call $cint_qk_faulted(l %ctx)");
+        line(w, dst, "    jnz %ok, @entryfault, @call");
+        // The dispatch's address at the entry phase, with the dispatch number it takes (F-1).
+        line(w, dst, "@entryfault");
+        line(w, dst, "    %kd =l call $cint_rt_dispatch_number(l %ctx)");
+        text(w, dst, "    call $cint_rt_dispatch_fault(l %ctx, l ");
+        mod_sym(w, dst, pbytes, q);
+        text(w, dst, "_kn");
+        num(w, dst, fn);
+        line(w, dst, ", l %kd, w 0, l 0, l 0)");
+        line(w, dst, "    jmp @end");
+        line(w, dst, "@call");
+    }
+    w_bound(w, dst, slots, first, end);
+    text(w, dst, "    %ok =w call ");
+    fn_sym(w, dst, src, toks, funcs, pbytes, q, fn);
+    text(w, dst, "(l %ctx, ");
+    site(w, dst, pbytes, q, funcs[fn].entry as I64);
+    text(w, dst, ", w ");
+    num(w, dst, kw);
+    for p in first..end {
+        I64 k = p - first;
+        if (slots[p].kind == lowering.SK_NVIEW) {
+            text(w, dst, ", l %vd");
+        } else if (slots[p].kind == lowering.SK_KOUT) {
+            text(w, dst, ", l %o");
+        } else {
+            text(w, dst, ", l %v");
+        }
+        num(w, dst, k);
+    }
+    line(w, dst, ")");
+    line(w, dst, "    %st =w call $cint_rt_entry_end(l %ctx)");
+    if (outs) {
+        line(w, dst, "    %good =w ceqw %st, 0");
+        line(w, dst, "    %keep =w and %ok, %good");
+        line(w, dst, "    jnz %keep, @put, @out");
+        line(w, dst, "@put");
+        for p in first..end {
+            if (slots[p].kind != lowering.SK_KOUT) { continue; }
+            I64 k = p - first;
+            text(w, dst, "    %rv =l loadl %o");
+            num(w, dst, k);
+            emit.w_nl(w, dst);
+            text(w, dst, "    ");
+            store_op(w, dst, slots[p].ty);
+            text(w, dst, " %rv, %p");
+            num(w, dst, k);
+            emit.w_nl(w, dst);
+        }
+    }
+    line(w, dst, "@out");
+    line(w, dst, "    ret %st");
+    line(w, dst, "@rbool");
+    line(w, dst, "    call $cint_rt_refuse(l %ctx, w 11)");
+    line(w, dst, "    jmp @end");
+    line(w, dst, "@rresult");
+    line(w, dst, "    call $cint_rt_refuse(l %ctx, w 12)");
+    line(w, dst, "@end");
+    line(w, dst, "    %st =w call $cint_rt_entry_end(l %ctx)");
+    line(w, dst, "    ret %st");
+    line(w, dst, "}}");
+}
+
 // The cx wrapper of export fn (SPEC-03 A-12; back_c.c_public): the C prototype of the export's
 // type signature, entry_open, the Bool and NULL-result refusals, the binds of its views and
 // records (each argument a 144-byte cint_view by value, `:view`, which QBE passes in memory as
@@ -6302,65 +7769,7 @@ void w_cx[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, in sca
         line(w, dst, "@bind");
     }
     if (nv > 0) {
-        // One cint_bind per view, 56 bytes (back_c.public_binds): the view, its type, the element
-        // size, the Bool offsets and their count, the parameter's index, its mode and rank, ptr.
-        I64 j = 0;
-        for p in first..end {
-            if (!back_c.public_view(slots, p)) { continue; }
-            I32 ty = public_elem(slots, p);
-            I64 row = 0;
-            if (ty >= lowering.T_STRUCT) { row = record_row(src, toks, funcs, slots, q, decls, ty); }
-            emit.Writer[1] m;
-            U8[1] unused;
-            emit.w_measure(m);
-            I64 nb = back_c.public_offsets(m, unused, decls, ty, row, 0);
-            I64 at = 56 * j;
-            text(w, dst, "    %xa =l add %g, ");
-            num(w, dst, at);
-            emit.w_nl(w, dst);
-            text(w, dst, "    storel %p");
-            num(w, dst, p - first);
-            line(w, dst, ", %xa");
-            text(w, dst, "    %xa =l add %g, ");
-            num(w, dst, at + 8);
-            emit.w_nl(w, dst);
-            text(w, dst, "    storel ");
-            bind_sym(w, dst, pbytes, q, 't', fn, j);
-            line(w, dst, ", %xa");
-            text(w, dst, "    %xa =l add %g, ");
-            num(w, dst, at + 16);
-            emit.w_nl(w, dst);
-            text(w, dst, "    storel ");
-            num(w, dst, ty_size(slots, ty));
-            line(w, dst, ", %xa");
-            text(w, dst, "    %xa =l add %g, ");
-            num(w, dst, at + 24);
-            emit.w_nl(w, dst);
-            text(w, dst, "    storel ");
-            if (nb > 0) { bind_sym(w, dst, pbytes, q, 'b', fn, j); } else { num(w, dst, 0); }
-            line(w, dst, ", %xa");
-            I64 mode = 0;
-            I32 op = nodes[back_c.public_node(nodes, funcs, fn, p)].op;
-            if (op == scan.KW_OUT) { mode = 1; } else if (op == scan.KW_INOUT) { mode = 2; }
-            I64[4] wv;
-            wv[0] = nb;
-            wv[1] = p - first;
-            wv[2] = mode;
-            wv[3] = lowering.slot_rank(slots, p);
-            for f in 0..4 {
-                text(w, dst, "    %xa =l add %g, ");
-                num(w, dst, at + 32 + 4 * f);
-                emit.w_nl(w, dst);
-                text(w, dst, "    storew ");
-                num(w, dst, wv[f]);
-                line(w, dst, ", %xa");
-            }
-            text(w, dst, "    %xa =l add %g, ");
-            num(w, dst, at + 48);
-            emit.w_nl(w, dst);
-            line(w, dst, "    storel 0, %xa");
-            j += 1;
-        }
+        w_binds(w, dst, src, toks, nodes, funcs, slots, decls, pbytes, q, fn, first, end);
         text(w, dst, "    %ok =w call $cint_rt_bind_views(l %ctx, ");
         site(w, dst, pbytes, q, funcs[fn].entry as I64);
         text(w, dst, ", l %g, w ");
@@ -6437,66 +7846,7 @@ void w_cx[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] src, in sca
         num(w, dst, z);
         if (fq[0] < 0) { line(w, dst, " =l copy 0"); } else { line(w, dst, " =l loadl %xa"); }
     }
-    I64 j = 0;
-    for p in first..end {
-        if (!back_c.public_view(slots, p)) { continue; }
-        I64 k = p - first;
-        text(w, dst, "    %xa =l add %g, ");
-        num(w, dst, 56 * j + 48);
-        emit.w_nl(w, dst);
-        text(w, dst, "    %a");
-        num(w, dst, k);
-        line(w, dst, " =l loadl %xa");
-        if (slots[p].kind == lowering.SK_VIEW) {
-            text(w, dst, "    %xa =l add %p");
-            num(w, dst, k);
-            line(w, dst, ", 48");
-            text(w, dst, "    %n");
-            num(w, dst, k);
-            line(w, dst, " =l loadl %xa");
-            text(w, dst, "    %xa =l add %p");
-            num(w, dst, k);
-            line(w, dst, ", 80");
-            text(w, dst, "    %d");
-            num(w, dst, k);
-            line(w, dst, " =l loadl %xa");
-        } else if (slots[p].kind == lowering.SK_NVIEW) {
-            // The body's cint_vdesc: the bound origin element, origin 0, the rank, and the
-            // argument's extents and strides (back_c.public_vdesc).
-            I64 rk = lowering.slot_rank(slots, p);
-            text(w, dst, "    storel %a");
-            num(w, dst, k);
-            text(w, dst, ", %vd");
-            num(w, dst, k);
-            emit.w_nl(w, dst);
-            for f in 1..11 {
-                text(w, dst, "    %xa =l add %vd");
-                num(w, dst, k);
-                text(w, dst, ", ");
-                num(w, dst, 8 * f);
-                emit.w_nl(w, dst);
-                I64 dm = (f - 3) % 4;
-                if (f == 1) {
-                    line(w, dst, "    storel 0, %xa");
-                } else if (f == 2) {
-                    text(w, dst, "    storel ");
-                    num(w, dst, rk);
-                    line(w, dst, ", %xa");
-                } else if (dm >= rk) {
-                    line(w, dst, "    storel 0, %xa");
-                } else {
-                    text(w, dst, "    %xb =l add %p");
-                    num(w, dst, k);
-                    text(w, dst, ", ");
-                    if (f < 7) { num(w, dst, 48 + 8 * dm); } else { num(w, dst, 80 + 8 * dm); }
-                    emit.w_nl(w, dst);
-                    line(w, dst, "    %xc =l loadl %xb");
-                    line(w, dst, "    storel %xc, %xa");
-                }
-            }
-        }
-        j += 1;
-    }
+    w_bound(w, dst, slots, first, end);
     text(w, dst, "    %ok =w call ");
     fn_sym(w, dst, src, toks, funcs, pbytes, q, fn);
     text(w, dst, "(l %ctx");
@@ -6828,7 +8178,9 @@ export void write_module[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8
         }
     }
     for fn in 0..ls[0].nfunc {
-        if (has_row(funcs, q, fn)) {
+        if (has_row(funcs, q, fn) && kernel_fn(funcs, fn)) {
+            w_kcx(w, dst, src, toks, nodes, funcs, slots, decls, pbytes, pm, q, fn);
+        } else if (has_row(funcs, q, fn)) {
             w_cx(w, dst, src, toks, nodes, funcs, slots, decls, pbytes, pm, q, fn);
         }
     }

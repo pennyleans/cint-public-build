@@ -102,6 +102,13 @@ data $cg_1_t_xs0 = { b 29 0 0 0 20 }
 data $cg_1_t_exports = align 8 { l $cg_1_t_xb0, w 3, w 0, w 1, w 1, w 0, w 0, l 0, l 0, l $cg_1_t_xs0, l 5, l $cx_1_t_3_run }
 export function w $cx_1_t_3_run(l %ctx, l %fuel, l %result) {
 """
+# A kernel's row (compiler/back_qbe.ci w_table, SIMD-7): kind 2, `pure`, one shape symbol and two
+# parameters, the shape symbol's name first and the parameters' 16 bytes a name after it.
+QBE_SSA_KERNEL = """data $cg_1_t_xb0 = { b 107, b 107 }
+data $cg_1_t_xs0 = { b 29 0 0 0 20 }
+data $cg_1_t_exports = align 8 { l $cg_1_t_xb0, w 2, w 0, w 2, w 1, w 1, w 2, l $cg_1_t_xn0, l $cg_1_t_xn0 + 16, l $cg_1_t_xs0, l 5, l $cx_1_t_2_kk }
+export function w $cx_1_t_2_kk(l %ctx, l %fuel, :view %p0, l %p1) {
+"""
 
 
 class QbeBackend(unittest.TestCase):
@@ -153,6 +160,18 @@ class QbeBackend(unittest.TestCase):
             with self.subTest(new=new):
                 rows, problems = cint_check.qbe_table_rows(QBE_SSA.replace(old, new, 1))
                 self.assertTrue(any(words in p for p in problems), problems)
+
+    def test_ssa_kernel_rows(self):
+        self.assertEqual(cint_check.qbe_table_rows(QBE_SSA_KERNEL), ([("kk", bytes([29, 0, 0, 0, 20]))], []))
+        # Not a row back_qbe writes: a function row (kind 1) with a shape symbol, a kernel row that
+        # is not `pure`, or one whose parameter names lie somewhere other than after the shape names
+        # in their own array.
+        for old, new in (("w 2, w 0, w 2, w 1, w 1,", "w 2, w 0, w 1, w 1, w 1,"),
+                         ("w 2, w 0, w 2, w 1, w 1,", "w 2, w 0, w 2, w 2, w 1,"),
+                         ("l $cg_1_t_xn0 + 16,", "l $cx_1_t_2_kk + 16,")):
+            with self.subTest(new=new):
+                rows, problems = cint_check.qbe_table_rows(QBE_SSA_KERNEL.replace(old, new, 1))
+                self.assertTrue(any("not in the form" in p for p in problems), problems)
 
     def test_options(self):
         base = ["--leg", "gcc", "--opt", "2", "--helpers", "builtin", "--backend", "cpu-qbe"]

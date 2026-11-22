@@ -36,6 +36,7 @@ class CintLint(unittest.TestCase):
             "rt/cint_qbe.c": "\n",
             "rt/cint_qbe_wide.c": "\n",
             "rt/cint_qbe_fixed.c": "\n",
+            "rt/cint_qbe_kern.c": "\n",
             "rt/cint_state_internal.h": "\n",
             "rt/cint_mem.c": "\n",
             "rt/cint_mem.h": "\n",

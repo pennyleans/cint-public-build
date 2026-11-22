@@ -75,6 +75,7 @@ SIZE_ROWS = (
     ("cint_qbe.c", ("rt/cint_qbe.c",), 300, 450),   # the cpu-qbe entry points (RT-OQ-82, SPEC-09 BACK-18), included by rt/cint_rt.c; Proposed
     ("cint_qbe_wide.c", ("rt/cint_qbe_wide.c",), 250, 350),   # the cpu-qbe wide-integer entry points (RT-OQ-82, Q3), included by rt/cint_rt.c; Proposed
     ("cint_qbe_fixed.c", ("rt/cint_qbe_fixed.c",), 80, 150),  # the cpu-qbe fixed-point entry points (RT-OQ-82, Q3), included by rt/cint_rt.c; Proposed
+    ("cint_qbe_kern.c", ("rt/cint_qbe_kern.c",), 150, 200),  # the cpu-qbe kernel entry points (RT-OQ-82, SIMD-7), included by rt/cint_rt.c; Proposed
     ("cint_rec_host.c", ("rt/cint_rec_host.c",), 350, 500),
     # Decision 2026-10-06 on OQ-212: arenas, pools and handles, outside the cint_rt row.
     ("cint_mem (rt/cint_mem.c, rt/cint_mem.h)", ("rt/cint_mem.c", "rt/cint_mem.h"), 600, 900),

@@ -1,46 +1,61 @@
 <p align="center">
   <a href="https://integerc.dev/"><img src="https://integerc.dev/cint-wordmark.svg" width="320" alt="cint"></a>
   <br>
-  A compiled language for checked integer arithmetic.
-  <br><br>
-  <a href="https://github.com/pennyleans/cint-public-build/releases/latest"><img src="https://img.shields.io/github/v/release/pennyleans/cint-public-build" alt="Latest release"></a>
-  <img src="https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS-blue" alt="Windows, Linux and macOS">
+  <a href="https://github.com/pennyleans/cint-public-build/releases/tag/v0.2.20"><img src="https://img.shields.io/badge/release-v0.2.20-blue" alt="Release v0.2.20"></a>
+  <a href="https://github.com/pennyleans/cint-public-build/blob/v0.2.20/docs/spec/SPEC-09P.7-TOOLCHAIN.md#measured-agreement"><img src="https://img.shields.io/badge/release%20CI-47%2F47%20passing-brightgreen" alt="Release CI: 47 of 47 checks passing"></a>
+  <a href="https://github.com/pennyleans/cint-public-build/blob/v0.2.20/docs/spec/SPEC-09P.7-TOOLCHAIN.md#measured-agreement"><img src="https://img.shields.io/badge/conformance-0%20disagreements-brightgreen" alt="Release conformance: 0 disagreements in the C17 and QBE comparisons"></a>
+  <a href="#supported-platforms"><img src="https://img.shields.io/badge/CPU-x86--64-blue" alt="Supported processor architecture: x86-64"></a>
+  <a href="#supported-platforms"><img src="https://img.shields.io/badge/CPU-Arm64-blue" alt="Supported processor architecture: Arm64"></a>
 </p>
 
 # cint
 
-cint is an integer-only programming language with C-family syntax. Every plain arithmetic operator is checked. An overflow stops the program with a fault record containing the operation, operands and source position. Wrapping and saturating arithmetic use explicit operators.
+cint is a compiled programming language for checked integer arithmetic. It uses C-family syntax and integer and fixed-point types.
 
-The compiler is written in cint and emits C17. A seed compiler written in C builds it from source with GCC, Clang, MSVC or Apple Clang.
+An `I64` holds signed 64-bit integers. Adding one to its largest value stops the program instead of wrapping to a negative number:
 
-```text
+```
 void main() {
     I64 big = 9223372036854775807;
     I64 next = big + 1;
 }
 ```
 
-The addition faults with `E_OVERFLOW`, reporting the exact result `9223372036854775808` and the `I64` limit. Integer and fixed-point arithmetic need no floating-point types.
+The `E_OVERFLOW` fault record identifies the operation, its operands, and the source position. Separate operators request wrapping or saturation explicitly.
+
+- The compiler is written in cint and emits C17. A small C seed compiler builds it from source.
+- The runtime has a C ABI. An experimental QBE backend provides a separate native build path.
+- The reference implementation and conformance suite check the compiler's results, including its fault records.
 
 ## Get started
 
-[Download the latest source release](https://github.com/pennyleans/cint-public-build/releases/latest) or clone the repository. Python 3 and a C17 compiler are required to bootstrap.
+[Download the latest source release](https://github.com/pennyleans/cint-public-build/releases/latest) or clone the repository. Bootstrap requires Python 3 and a C17 compiler. On Linux with GCC:
 
 ```sh
 git clone https://github.com/pennyleans/cint-public-build.git
 cd cint-public-build
-python3 tools/cint_bootstrap.py --leg gcc
+python3 tools/cint_bootstrap.py --leg gcc --out ../cint-build
 ```
 
-Use `clang`, `msvc` or `apple-clang` for the other compiler configurations. The command is written to `$CINT_BUILD/boot/gcc/cint` for GCC, with the selected configuration replacing `gcc` on other builds. `CINT_BUILD` defaults to `cint-build` in the system temporary directory. Add that directory to `PATH`, then run:
+The bootstrap writes `cint` to `../cint-build`. Run a program that faults, run the ledger tests, or build the ledger as an executable:
 
 ```sh
-cint run examples/hello_overflow.ci
-cint test examples/ledger.ci
-cint build --out ledger-build examples/ledger.ci
+../cint-build/cint run examples/hello_overflow.ci
+../cint-build/cint test examples/ledger.ci
+../cint-build/cint build --out ../ledger-build examples/ledger.ci
 ```
 
-The overflow example ends with a fault. `cint build` creates an executable; `cint emit-c` writes C17 source. Build the debugging tools with `python3 tools/cint_tools.py --leg gcc`.
+Use `cint emit-c` to inspect the generated C17. Build the debugging tools with `python3 tools/cint_tools.py --leg gcc`.
+
+## Supported platforms
+
+These are the C17 toolchain configurations in the [conformance matrix](docs/spec/SPEC-09P.7-TOOLCHAIN.md#the-run-matrix). Pass the corresponding `--leg` to the bootstrap command.
+
+| Processor | Operating system | Compiler leg |
+| --- | --- | --- |
+| x86-64 | Linux | `gcc` or `clang` |
+| x86-64 | Windows | `msvc` |
+| Arm64 (AArch64) | macOS | `apple-clang` |
 
 ## Documentation
 
@@ -65,7 +80,7 @@ The reference defines the executable language rules. The conformance suite compa
 
 ## Status
 
-cint is in development. Versions before 1.0 may introduce breaking changes. The compiler implements part of the reference language and refuses unsupported forms with C9102. [SPEC-09P.5, section 12](docs/spec/SPEC-09P.5-TOOLCHAIN.md) lists those forms; component `OPEN.md` files record further limitations.
+cint is in development. Versions before 1.0 may introduce breaking changes. The compiler implements part of the reference language and reports unsupported forms. [SPEC-09P.7, section 12](docs/spec/SPEC-09P.7-TOOLCHAIN.md#refusals-of-the-cint-tools-in-0-2-0) lists those forms.
 
 cint is separate from CINT, the former C/C++ interpreter in CERN ROOT.
 

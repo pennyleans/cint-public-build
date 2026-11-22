@@ -111,8 +111,10 @@ def main():
 
     checks = []
     try:
+        # refuse_extent and refuse_kernel keep their names from when they were refused: run-time
+        # extents since item 13 of CINTC-OQ-84, kernels since SIMD-7 (item 22).
         for name in ('hello', 'empty', 'bytes', 'call', 'locals', 'state', 'arrays', 'records', 'ivar',
-                     'refuse_extent'):
+                     'refuse_extent', 'refuse_kernel'):
             src = root / (name + '.ci')
             ref = run_program(src.read_bytes(), name + '.ci', root=str(root))
             assert ref.kind == 'value'
@@ -140,11 +142,6 @@ def main():
             assert emitted[0] == emitted[1]
             checks.append({'case': name, 'stdout_sha256': hashlib.sha256(ref.stdout).hexdigest(),
                            'fuel': ref.fuel, 'deterministic': True})
-        r = call([a.cint, 'emit-qbe', '--root', root, '--toolchain', tc,
-                  '--out', a.out / 'refuse_kernel', 'refuse_kernel.ci'], 2)
-        assert b'E_UNSUPPORTED cpu-qbe capability entry' in r.stderr
-        assert not (a.out / 'refuse_kernel' / 'MANIFEST.ref').exists()
-        checks.append({'case': 'refuse_kernel', 'refused': True})
     finally:
         (a.out / 'observations.json').write_text(json.dumps({'checks': checks, 'commands': records}, indent=2) + '\n')
     print('PASS cpu-qbe local:', len(checks), 'probes; conformance is cint_check --backend cpu-qbe')

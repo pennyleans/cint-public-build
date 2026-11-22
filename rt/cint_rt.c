@@ -3333,3 +3333,4 @@ void cint_rt_scratch_release(cint_ctx *ctx, int64_t mark)
 #include "cint_qbe.c" /* the cpu-qbe entry points (RT-OQ-82), counted in its own 4.2 row */
 #include "cint_qbe_wide.c" /* the cpu-qbe wide-integer entry points (RT-OQ-82), counted in its own 4.2 row */
 #include "cint_qbe_fixed.c" /* the cpu-qbe fixed-point entry points (RT-OQ-82), counted in its own 4.2 row */
+#include "cint_qbe_kern.c" /* the cpu-qbe kernel entry points (RT-OQ-82, SIMD-7), counted in its own 4.2 row */

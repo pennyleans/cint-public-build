@@ -7072,7 +7072,7 @@ void c_kred[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, in 
 // Whether the accumulator of scalar `out` slot k of kernel fn has a wide side (box 15 unit 4c;
 // rt/OPEN.md RT-OQ-54): a wide target, or wide contributions to a sum. Its exact total is then
 // a cint_wzacc, and the steps of the other reductions are rt/cint_wide.h's helpers.
-Bool wide_acc(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I64 k) {
+export Bool wide_acc(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn, I64 k) {
     if (lowering.is_limbs(slots[k].ty)) {
         return true;
     }
@@ -7184,7 +7184,7 @@ void kred_wide[b, n, t](inout emit.Writer[_] w, inout U8[b] dst, in U8[n] text, 
 }
 
 // Whether a sum's contribution of type ty is exact as an int64_t: I8 to I64 and U8 to U32.
-Bool ksum_narrow(I32 ty) {
+export Bool ksum_narrow(I32 ty) {
     switch (st_of(ty)) {
         case lowering.T_I8, lowering.T_I16, lowering.T_I32, lowering.T_I64, lowering.T_U8, lowering.T_U16,
                 lowering.T_U32:
@@ -7240,7 +7240,7 @@ I64 kwhere_bound(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, I64 fn, I
 // kwhere_bound, so the dispatch runs at most N items, the product of those bounds (SO_KFUEL),
 // and N times the largest magnitude of the contribution's type stays below 2^63. The
 // constraints are checked at entry (SO_KWHERE), before any item runs.
-Bool ksum_fits(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, I64 fn, I64 i) {
+export Bool ksum_fits(in lowering.Sir[_] sir, in lowering.SirFunc[_] funcs, I64 fn, I64 i) {
     I64 mag = 0;
     switch (st_of(sir[i].val as I32)) {
         case lowering.T_I8: mag = 128;
@@ -12479,6 +12479,19 @@ export I64 qbe_signature[b](inout emit.Writer[_] w, inout U8[b] dst, inout limit
     I64 bk = decl.block_of(d, mi);
     I64 row = table_row(text, toks, funcs, d, bk, fn, bk + 1);
     sig_export(w, dst, st, d, pm, pbytes, text, toks, nodes, funcs, slots, o, fn, row);
+    return st[3];
+}
+
+// The type signature of exported kernel fn (sig_kernel) as QBE `b` data items, and its byte
+// count, for back_qbe's reflection rows (SIMD-7).
+export I64 qbe_kernel_signature[b](inout emit.Writer[_] w, inout U8[b] dst, in U8[_] text, in scan.Token[_] toks,
+        in parse.Node[_] nodes, in lowering.SirFunc[_] funcs, in lowering.SirSlot[_] slots, I64 fn) {
+    I64[4] st;
+    st[0] = -2;
+    st[1] = 0;
+    st[2] = 0;
+    st[3] = 0;
+    sig_kernel(w, dst, st, text, toks, nodes, funcs, slots, fn);
     return st[3];
 }
 

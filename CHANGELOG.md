@@ -2,6 +2,21 @@
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), with one section added: **Compiler coverage**, the conformance counts for the release and the cases that moved from unsupported to compared. Versions follow [Semantic Versioning](https://semver.org/); before 1.0, a minor version may break anything.
 
+## [0.2.20] - 2026-11-22
+
+### Added
+
+- The experimental executor `cpu-qbe` compiles kernels and their dispatches, which 0.2.19 refused. A dispatch runs its work items one at a time, in the order of `cpu-c17`, and every check of a kernel calls the runtime, so the fault record, the dispatch number, the phase, the work item and the fuel are those of `cpu-c17`. An exported kernel of the root module whose parameters or view elements are not integers of 64 bits or fewer is still refused, with the capability `entry`. SPEC-09P.7 replaces SPEC-09P.6 for this change (5.3, paragraph 8).
+- `rt/cint_qbe_kern.c` holds the runtime entry points that `cpu-qbe` kernels call. `compiler/tests/qbe_kernels.py` builds each of its probes with `cpu-c17` and `cpu-qbe` and checks both against the reference.
+
+### Changed
+
+- `cint --version` reports 0.2.20.
+
+### Compiler coverage
+
+The 53 kernel cases that `cpu-qbe` refused in 0.2.19 leave `conformance/unsupported.txt`. `cpu-qbe` compiles 743 programs of the suite, against 690 in 0.2.19, and agrees with the reference on all 1,868,144 records. No case of the suite changed. The `cpu-c17` counts of 0.2.17 stand, and a rerun at 0.2.20 gives them again.
+
 ## [0.2.19] - 2026-11-12
 
 ### Changed

@@ -1,0 +1,27 @@
+// compiler/tests/qbe/khost.ci: exported kernels that compiler/tests/qbe_kernels.py dispatches
+// from a C host (khost_host.c) through their cx wrappers, the program built once by cpu-c17
+// and once by cpu-qbe (SIMD-7; SPEC-02 K-15; SPEC-03 A-12, A-13).
+
+export kernel kscale[h, w](in I32[h, w] a, in I32 k, out I32[h, w] b, out I32 t32, out I64 t64)
+        over [y: h, x: w] {
+    I32 v = a[y, x] * k;
+    b[y, x] = v;
+    reduce t32 = sum(v);
+    reduce t64 = sum(v);
+}
+
+export kernel kbump[n](inout I64[n] a, in I8 d, out I64 c) over [i: n] {
+    a[i] = a[i] + (d as I64);
+    reduce c = count(a[i] > 2);
+}
+
+// No scalar `out`: the wrapper returns the entry's status alone (back_c.c_public_kernel's !outs).
+export kernel kramp[h, w](in I64 base, out I64[h, w] y) over [r: h, c: w] {
+    y[r, c] = base + r * 10 + c;
+}
+
+// Five `over` variables over one extent of 8,192: N is 2^65, so the dispatch's N saturates at
+// the largest I64 and the entry's fuel charge of N faults before any work-item.
+export kernel khuge[n](in I64[n] x, out I64 s) over [a: n, b: n, c: n, d: n, e: n] {
+    reduce s = sum(x[a]);
+}
